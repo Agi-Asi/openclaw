@@ -317,24 +317,54 @@ async function waitForGatewayReadiness(params) {
   throw new Error(`extracted gateway did not become ready:\n${params.readOutput()}`);
 }
 
+async function waitForGatewayProcessGroupExit(processGroupId, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(processGroupId, 0);
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "ESRCH") {
+        return true;
+      }
+      throw error;
+    }
+    await new Promise((resolvePromise) => {
+      setTimeout(resolvePromise, 50);
+    });
+  }
+  return false;
+}
+
 async function stopGatewaySmoke(child) {
-  if (child.exitCode !== null) {
+  if (process.platform === "win32" || !child.pid) {
+    if (child.exitCode === null) {
+      child.kill("SIGTERM");
+      await Promise.race([
+        new Promise((resolvePromise) => {
+          child.once("exit", resolvePromise);
+        }),
+        new Promise((resolvePromise) => {
+          setTimeout(resolvePromise, 5_000);
+        }),
+      ]);
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await new Promise((resolvePromise) => {
+          child.once("exit", resolvePromise);
+        });
+      }
+    }
     return;
   }
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolvePromise) => {
-      child.once("exit", resolvePromise);
-    }),
-    new Promise((resolvePromise) => {
-      setTimeout(resolvePromise, 5_000);
-    }),
-  ]);
-  if (child.exitCode === null) {
-    child.kill("SIGKILL");
-    await new Promise((resolvePromise) => {
-      child.once("exit", resolvePromise);
-    });
+
+  const processGroupId = -child.pid;
+  process.kill(processGroupId, "SIGTERM");
+  if (await waitForGatewayProcessGroupExit(processGroupId, 5_000)) {
+    return;
+  }
+  process.kill(processGroupId, "SIGKILL");
+  if (!(await waitForGatewayProcessGroupExit(processGroupId, 5_000))) {
+    throw new Error("failed to stop the extracted gateway process group");
   }
 }
 
@@ -421,7 +451,12 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
         "--port",
         String(port),
       ],
-      { cwd, env: smokeEnv, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd,
+        detached: process.platform !== "win32",
+        env: smokeEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     const appendGatewayOutput = (chunk) => {
       gatewayOutput += chunk.toString();
