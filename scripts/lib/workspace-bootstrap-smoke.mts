@@ -1,6 +1,6 @@
 // Verifies installed packages can bootstrap the default OpenClaw workspace files.
 import { execFileSync, spawn } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -59,7 +59,16 @@ function stageDistRuntimeArtifact(rootDir, artifactRoot) {
   const deploymentRoot = join(artifactRoot, "deployment");
   execFileSync(
     "pnpm",
-    ["--ignore-scripts", "--filter", "openclaw", "deploy", "--legacy", "--prod", deploymentRoot],
+    [
+      "--frozen-lockfile",
+      "--config.inject-workspace-packages=true",
+      "--ignore-scripts",
+      "--filter",
+      "openclaw",
+      "deploy",
+      "--prod",
+      deploymentRoot,
+    ],
     { cwd: rootDir, stdio: "inherit" },
   );
   copyDistRuntimeArtifactPath(deploymentRoot, artifactRoot, "node_modules");
@@ -89,6 +98,7 @@ const WORKSPACE_BOOTSTRAP_SMOKE_TIMEOUT_MS = 15_000;
 const DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS = 20_000;
 const DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const SAFE_UNIX_SMOKE_PATH = "/usr/bin:/bin";
+const BUNDLED_PLUGIN_SMOKE_ID = "acpx";
 
 /**
  * Creates a minimal isolated environment for workspace bootstrap smoke runs.
@@ -349,6 +359,27 @@ async function waitForGatewayReadiness(params) {
   throw new Error(`extracted gateway did not become ready:\n${params.readOutput()}`);
 }
 
+async function waitForGatewayPluginLoaded(params) {
+  const expectedOutput = `plugin: ${BUNDLED_PLUGIN_SMOKE_ID}`;
+  const deadline = Date.now() + DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (params.child.exitCode !== null) {
+      throw new Error(
+        `extracted gateway exited before loading ${BUNDLED_PLUGIN_SMOKE_ID}:\n${params.readOutput()}`,
+      );
+    }
+    if (params.readOutput().includes(expectedOutput)) {
+      return;
+    }
+    await new Promise((resolvePromise) => {
+      setTimeout(resolvePromise, 100);
+    });
+  }
+  throw new Error(
+    `extracted gateway did not load ${BUNDLED_PLUGIN_SMOKE_ID}:\n${params.readOutput()}`,
+  );
+}
+
 async function waitForGatewayProcessGroupExit(processGroupId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -430,6 +461,19 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
       OPENCLAW_CONFIG_PATH: join(homeDir, "openclaw.json"),
       OPENCLAW_STATE_DIR: join(homeDir, "state"),
     };
+    writeFileSync(
+      artifactEnvOverrides.OPENCLAW_CONFIG_PATH,
+      `${JSON.stringify(
+        {
+          plugins: {
+            allow: [BUNDLED_PLUGIN_SMOKE_ID],
+            entries: { [BUNDLED_PLUGIN_SMOKE_ID]: { enabled: true } },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
     const smokeEnv = createWorkspaceBootstrapSmokeEnv(process.env, homeDir, artifactEnvOverrides);
     const gatewayEnv = { ...smokeEnv };
     delete gatewayEnv.OPENCLAW_DISABLE_BUNDLED_PLUGINS;
@@ -493,6 +537,7 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
       gateway.stdout.on("data", appendGatewayOutput);
       gateway.stderr.on("data", appendGatewayOutput);
       await waitForGatewayReadiness({ child: gateway, port, readOutput: () => gatewayOutput });
+      await waitForGatewayPluginLoaded({ child: gateway, readOutput: () => gatewayOutput });
     } finally {
       if (gateway) {
         await stopGatewaySmoke(gateway);
