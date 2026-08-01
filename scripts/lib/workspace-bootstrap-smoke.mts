@@ -1,6 +1,6 @@
 // Verifies installed packages can bootstrap the default OpenClaw workspace files.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -25,6 +25,7 @@ export const DIST_RUNTIME_ARTIFACT_BASE_PATHS = [
   "src/agents/templates",
   "dist",
   "dist-runtime",
+  "node_modules",
 ];
 
 const DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS = [
@@ -41,6 +42,37 @@ const DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS = DIST_RUNTIME_ARTIFACT_PACKAGE
 
 function packageArtifactPath(sourcePath) {
   return sourcePath.replace(/^packages\//u, "node_modules/@openclaw/");
+}
+
+function copyDistRuntimeArtifactPath(
+  rootDir,
+  artifactRoot,
+  sourcePath,
+  destinationPath = sourcePath,
+) {
+  const destination = join(artifactRoot, destinationPath);
+  mkdirSync(dirname(destination), { recursive: true });
+  cpSync(join(rootDir, sourcePath), destination, { dereference: true, recursive: true });
+}
+
+function stageDistRuntimeArtifact(rootDir, artifactRoot) {
+  const deploymentRoot = join(artifactRoot, "deployment");
+  execFileSync(
+    "pnpm",
+    ["--ignore-scripts", "--filter", "openclaw", "deploy", "--legacy", "--prod", deploymentRoot],
+    { cwd: rootDir, stdio: "inherit" },
+  );
+  copyDistRuntimeArtifactPath(deploymentRoot, artifactRoot, "node_modules");
+  rmSync(deploymentRoot, { force: true, recursive: true });
+
+  for (const sourcePath of DIST_RUNTIME_ARTIFACT_BASE_PATHS) {
+    if (sourcePath !== "node_modules") {
+      copyDistRuntimeArtifactPath(rootDir, artifactRoot, sourcePath);
+    }
+  }
+  for (const sourcePath of DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS) {
+    copyDistRuntimeArtifactPath(rootDir, artifactRoot, sourcePath, packageArtifactPath(sourcePath));
+  }
 }
 
 // HEARTBEAT.md ships in the template pack for docs/doctor context but is no
@@ -256,11 +288,11 @@ function validateDistRuntimeArtifactEntries(entries, expectedPaths) {
       entry === "docs/reference/templates" ||
       entry.startsWith("docs/reference/templates/") ||
       entry === "node_modules" ||
-      entry === "node_modules/@openclaw"
+      entry.startsWith("node_modules/")
     ) {
       return false;
     }
-    return !/^node_modules\/@openclaw\/[^/]+\/(?:package\.json|dist(?:\/.*)?)$/u.test(entry);
+    return true;
   });
   if (unexpectedEntries.length > 0) {
     throw new Error(
@@ -373,105 +405,102 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
   const archivePath = resolve(params.archivePath);
   const compressor = params.compressor ?? "zstdmt";
   const artifactPaths = collectDistRuntimeArtifactPaths(rootDir);
+  const artifactRoot = mkdtempSync(join(tmpdir(), "openclaw-dist-runtime-artifact-"));
   mkdirSync(dirname(archivePath), { recursive: true });
-  execFileSync(
-    "tar",
-    [
-      "--posix",
-      "-cf",
-      archivePath,
-      "--use-compress-program",
-      compressor,
-      // Workspace packages must resolve from the extracted artifact rather than
-      // the checkout that produced it; normal Node resolution then needs no hook.
-      "--transform=s,^packages/\\([^/\\]*\\)/,node_modules/@openclaw/\\1/,",
-      ...DIST_RUNTIME_ARTIFACT_BASE_PATHS,
-      ...DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS,
-    ],
-    { cwd: rootDir, stdio: "inherit" },
-  );
-
-  const entries = listDistRuntimeArtifactEntries(archivePath, compressor);
-  validateDistRuntimeArtifactEntries(entries, artifactPaths);
-
-  const smokeRoot = mkdtempSync(join(tmpdir(), "openclaw-dist-runtime-artifact-smoke-"));
-  const packageRoot = join(smokeRoot, "package");
-  const homeDir = join(smokeRoot, "home");
-  const cwd = join(smokeRoot, "cwd");
-  mkdirSync(packageRoot, { recursive: true });
-  mkdirSync(homeDir, { recursive: true });
-  mkdirSync(cwd, { recursive: true });
-
-  const artifactEnvOverrides = {
-    OPENCLAW_CONFIG_PATH: join(homeDir, "openclaw.json"),
-    OPENCLAW_STATE_DIR: join(homeDir, "state"),
-  };
-  const smokeEnv = createWorkspaceBootstrapSmokeEnv(process.env, homeDir, artifactEnvOverrides);
-
-  let gateway;
-  let gatewayOutput = "";
   try {
+    stageDistRuntimeArtifact(rootDir, artifactRoot);
     execFileSync(
       "tar",
-      ["--use-compress-program", compressor, "-xf", archivePath, "-C", packageRoot],
-      { stdio: "inherit" },
+      ["--posix", "-cf", archivePath, "--use-compress-program", compressor, ...artifactPaths],
+      { cwd: artifactRoot, stdio: "inherit" },
     );
-    runInstalledWorkspaceBootstrapSmoke({
-      packageRoot,
-      envOverrides: artifactEnvOverrides,
-    });
 
-    const acpHelp = execFileSync(
-      process.execPath,
-      [join(packageRoot, "openclaw.mjs"), "acp", "--help"],
-      {
-        cwd,
-        encoding: "utf8",
-        env: smokeEnv,
-        maxBuffer: DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES,
-        timeout: DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS,
-      },
-    );
-    if (!acpHelp.includes("Usage: openclaw acp")) {
-      throw new Error("extracted ACP startup did not return the expected help output");
-    }
+    const entries = listDistRuntimeArtifactEntries(archivePath, compressor);
+    validateDistRuntimeArtifactEntries(entries, artifactPaths);
 
-    const port = await reserveLoopbackPort();
-    gateway = spawn(
-      process.execPath,
-      [
-        join(packageRoot, "openclaw.mjs"),
-        "gateway",
-        "run",
-        "--allow-unconfigured",
-        "--auth",
-        "none",
-        "--bind",
-        "loopback",
-        "--port",
-        String(port),
-      ],
-      {
-        cwd,
-        detached: process.platform !== "win32",
-        env: smokeEnv,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    const appendGatewayOutput = (chunk) => {
-      gatewayOutput += chunk.toString();
-      if (Buffer.byteLength(gatewayOutput) > DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES) {
-        gatewayOutput = gatewayOutput.slice(-DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES);
-      }
+    const smokeRoot = mkdtempSync(join(tmpdir(), "openclaw-dist-runtime-artifact-smoke-"));
+    const packageRoot = join(smokeRoot, "package");
+    const homeDir = join(smokeRoot, "home");
+    const cwd = join(smokeRoot, "cwd");
+    mkdirSync(packageRoot, { recursive: true });
+    mkdirSync(homeDir, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+
+    const artifactEnvOverrides = {
+      OPENCLAW_CONFIG_PATH: join(homeDir, "openclaw.json"),
+      OPENCLAW_STATE_DIR: join(homeDir, "state"),
     };
-    gateway.stdout.on("data", appendGatewayOutput);
-    gateway.stderr.on("data", appendGatewayOutput);
-    await waitForGatewayReadiness({ child: gateway, port, readOutput: () => gatewayOutput });
-  } finally {
-    if (gateway) {
-      await stopGatewaySmoke(gateway);
+    const smokeEnv = createWorkspaceBootstrapSmokeEnv(process.env, homeDir, artifactEnvOverrides);
+    const gatewayEnv = { ...smokeEnv };
+    delete gatewayEnv.OPENCLAW_DISABLE_BUNDLED_PLUGINS;
+
+    let gateway;
+    let gatewayOutput = "";
+    try {
+      execFileSync(
+        "tar",
+        ["--use-compress-program", compressor, "-xf", archivePath, "-C", packageRoot],
+        { stdio: "inherit" },
+      );
+      runInstalledWorkspaceBootstrapSmoke({
+        packageRoot,
+        envOverrides: artifactEnvOverrides,
+      });
+
+      const acpHelp = execFileSync(
+        process.execPath,
+        [join(packageRoot, "openclaw.mjs"), "acp", "--help"],
+        {
+          cwd,
+          encoding: "utf8",
+          env: smokeEnv,
+          maxBuffer: DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES,
+          timeout: DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS,
+        },
+      );
+      if (!acpHelp.includes("Usage: openclaw acp")) {
+        throw new Error("extracted ACP startup did not return the expected help output");
+      }
+
+      const port = await reserveLoopbackPort();
+      gateway = spawn(
+        process.execPath,
+        [
+          join(packageRoot, "openclaw.mjs"),
+          "gateway",
+          "run",
+          "--allow-unconfigured",
+          "--auth",
+          "none",
+          "--bind",
+          "loopback",
+          "--port",
+          String(port),
+        ],
+        {
+          cwd,
+          detached: process.platform !== "win32",
+          env: gatewayEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const appendGatewayOutput = (chunk) => {
+        gatewayOutput += chunk.toString();
+        if (Buffer.byteLength(gatewayOutput) > DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES) {
+          gatewayOutput = gatewayOutput.slice(-DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES);
+        }
+      };
+      gateway.stdout.on("data", appendGatewayOutput);
+      gateway.stderr.on("data", appendGatewayOutput);
+      await waitForGatewayReadiness({ child: gateway, port, readOutput: () => gatewayOutput });
+    } finally {
+      if (gateway) {
+        await stopGatewaySmoke(gateway);
+      }
+      rmSync(smokeRoot, { force: true, recursive: true });
     }
-    rmSync(smokeRoot, { force: true, recursive: true });
+  } finally {
+    rmSync(artifactRoot, { force: true, recursive: true });
   }
 
   return { archivePath, artifactPaths };

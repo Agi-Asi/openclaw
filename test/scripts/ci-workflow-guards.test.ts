@@ -7545,6 +7545,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "TSDOWN_PACKAGE_OUTPUT_ROOTS",
       '"packages/plugin-sdk/dist"',
       '"node_modules/@openclaw/"',
+      '"node_modules"',
     ]) {
       expect(artifactBuilder).toContain(requiredPath);
     }
@@ -7552,6 +7553,10 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(artifactBuilder).not.toContain("--import");
     expect(artifactBuilder).not.toContain("dist-runtime-artifact-resolver-hook");
     expect(artifactBuilder).toContain("node_modules/@openclaw");
+    expect(artifactBuilder).toContain(
+      '"--ignore-scripts", "--filter", "openclaw", "deploy", "--legacy", "--prod"',
+    );
+    expect(artifactBuilder).toContain("delete gatewayEnv.OPENCLAW_DISABLE_BUNDLED_PLUGINS");
     expect(artifactBuilder).toContain('detached: process.platform !== "win32"');
     expect(artifactBuilder).toContain('process.kill(processGroupId, "SIGKILL")');
     expect(artifactBuilder).toContain('"acp", "--help"');
