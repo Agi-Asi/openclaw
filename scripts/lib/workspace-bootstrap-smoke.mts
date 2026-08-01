@@ -18,7 +18,7 @@ export const WORKSPACE_TEMPLATE_PACK_PATHS: readonly string[] = [
   "docs/reference/templates/BOOTSTRAP.md",
 ];
 
-export const DIST_RUNTIME_ARTIFACT_BASE_PATHS = [
+const DIST_RUNTIME_ARTIFACT_BASE_PATHS = [
   "openclaw.mjs",
   "package.json",
   "docs/reference/templates",
@@ -237,7 +237,7 @@ export function runInstalledWorkspaceBootstrapSmoke(params: { packageRoot: strin
   }
 }
 
-export function collectDistRuntimeArtifactPaths(rootDir) {
+function collectDistRuntimeArtifactPaths(rootDir) {
   const missingPaths = DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS.filter(
     (artifactPath) => !existsSync(join(rootDir, artifactPath)),
   );
