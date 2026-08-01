@@ -1,10 +1,9 @@
 // Verifies installed packages can bootstrap the default OpenClaw workspace files.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { TSDOWN_PACKAGE_OUTPUT_ROOTS } from "./tsdown-output-roots.mjs";
 
 /**
@@ -33,8 +32,16 @@ const DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS = [
   "packages/plugin-sdk/dist",
 ].toSorted((left, right) => left.localeCompare(right));
 
-export const DIST_RUNTIME_ARTIFACT_WORKSPACE_PACKAGE_NAMES =
-  DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS.map((distPath) => `@openclaw/${distPath.split("/")[1]}`);
+const DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS = DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS.flatMap(
+  (distPath) => {
+    const packageRoot = dirname(distPath);
+    return [`${packageRoot}/package.json`, distPath];
+  },
+);
+
+function packageArtifactPath(sourcePath) {
+  return sourcePath.replace(/^packages\//u, "node_modules/@openclaw/");
+}
 
 // HEARTBEAT.md ships in the template pack for docs/doctor context but is no
 // longer seeded into new workspaces; heartbeat context lives in cron scratch.
@@ -50,9 +57,6 @@ const WORKSPACE_BOOTSTRAP_SMOKE_TIMEOUT_MS = 15_000;
 const DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS = 20_000;
 const DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const SAFE_UNIX_SMOKE_PATH = "/usr/bin:/bin";
-const DIST_RUNTIME_ARTIFACT_RESOLVER_HOOK = fileURLToPath(
-  new URL("./dist-runtime-artifact-resolver-hook.mjs", import.meta.url),
-);
 
 /**
  * Creates a minimal isolated environment for workspace bootstrap smoke runs.
@@ -192,11 +196,7 @@ export function runInstalledWorkspaceBootstrapSmoke(params: { packageRoot: strin
 }
 
 export function collectDistRuntimeArtifactPaths(rootDir) {
-  const packagePaths = DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS.flatMap((distPath) => {
-    const packageRoot = dirname(distPath);
-    return [`${packageRoot}/package.json`, distPath];
-  });
-  const missingPaths = packagePaths.filter(
+  const missingPaths = DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS.filter(
     (artifactPath) => !existsSync(join(rootDir, artifactPath)),
   );
   if (missingPaths.length > 0) {
@@ -204,49 +204,10 @@ export function collectDistRuntimeArtifactPaths(rootDir) {
       `dist runtime artifact inputs are missing required workspace package paths: ${missingPaths.join(", ")}`,
     );
   }
-  return [...DIST_RUNTIME_ARTIFACT_BASE_PATHS, ...packagePaths].toSorted((left, right) =>
-    left.localeCompare(right),
-  );
-}
-
-function selectRuntimeExport(value) {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  for (const condition of ["import", "node", "default"]) {
-    const selected = selectRuntimeExport(value[condition]);
-    if (selected) {
-      return selected;
-    }
-  }
-  return undefined;
-}
-
-export function resolveDistRuntimeArtifactWorkspaceImport(params) {
-  if (!params.specifier.startsWith("@openclaw/")) {
-    return undefined;
-  }
-  const parts = params.specifier.split("/");
-  const packageName = parts.slice(0, 2).join("/");
-  if (!params.workspacePackageNames.has(packageName)) {
-    return undefined;
-  }
-
-  const packageRoot = join(params.artifactRoot, "packages", parts[1]);
-  const packageJsonPath = join(packageRoot, "package.json");
-  if (!existsSync(packageJsonPath)) {
-    throw new Error(`artifact workspace package is unavailable: ${packageName}`);
-  }
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-  const exportName = parts.length > 2 ? `./${parts.slice(2).join("/")}` : ".";
-  const target = selectRuntimeExport(packageJson.exports?.[exportName]);
-  if (!target || target.includes("/src/")) {
-    throw new Error(`artifact workspace export is unavailable: ${params.specifier}`);
-  }
-  return pathToFileURL(resolve(packageRoot, target)).href;
+  return [
+    ...DIST_RUNTIME_ARTIFACT_BASE_PATHS,
+    ...DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS.map(packageArtifactPath),
+  ].toSorted((left, right) => left.localeCompare(right));
 }
 
 function listDistRuntimeArtifactEntries(archivePath, compressor) {
@@ -294,11 +255,12 @@ function validateDistRuntimeArtifactEntries(entries, expectedPaths) {
       entry === "docs/reference" ||
       entry === "docs/reference/templates" ||
       entry.startsWith("docs/reference/templates/") ||
-      entry === "packages"
+      entry === "node_modules" ||
+      entry === "node_modules/@openclaw"
     ) {
       return false;
     }
-    return !/^packages\/[^/]+\/(?:package\.json|dist(?:\/.*)?)$/u.test(entry);
+    return !/^node_modules\/@openclaw\/[^/]+\/(?:package\.json|dist(?:\/.*)?)$/u.test(entry);
   });
   if (unexpectedEntries.length > 0) {
     throw new Error(
@@ -370,6 +332,9 @@ async function stopGatewaySmoke(child) {
   ]);
   if (child.exitCode === null) {
     child.kill("SIGKILL");
+    await new Promise((resolvePromise) => {
+      child.once("exit", resolvePromise);
+    });
   }
 }
 
@@ -381,16 +346,25 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
   mkdirSync(dirname(archivePath), { recursive: true });
   execFileSync(
     "tar",
-    ["--posix", "-cf", archivePath, "--use-compress-program", compressor, ...artifactPaths],
+    [
+      "--posix",
+      "-cf",
+      archivePath,
+      "--use-compress-program",
+      compressor,
+      // Workspace packages must resolve from the extracted artifact rather than
+      // the checkout that produced it; normal Node resolution then needs no hook.
+      "--transform=s,^packages/\\([^/\\]*\\)/,node_modules/@openclaw/\\1/,",
+      ...DIST_RUNTIME_ARTIFACT_BASE_PATHS,
+      ...DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS,
+    ],
     { cwd: rootDir, stdio: "inherit" },
   );
 
   const entries = listDistRuntimeArtifactEntries(archivePath, compressor);
   validateDistRuntimeArtifactEntries(entries, artifactPaths);
 
-  const smokeParent = join(rootDir, ".artifacts");
-  mkdirSync(smokeParent, { recursive: true });
-  const smokeRoot = mkdtempSync(join(smokeParent, "dist-runtime-artifact-smoke-"));
+  const smokeRoot = mkdtempSync(join(tmpdir(), "openclaw-dist-runtime-artifact-smoke-"));
   const packageRoot = join(smokeRoot, "package");
   const homeDir = join(smokeRoot, "home");
   const cwd = join(smokeRoot, "cwd");
@@ -398,12 +372,7 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
   mkdirSync(homeDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
 
-  const nodeArgs = ["--import", DIST_RUNTIME_ARTIFACT_RESOLVER_HOOK];
   const artifactEnvOverrides = {
-    OPENCLAW_ARTIFACT_ROOT: packageRoot,
-    OPENCLAW_ARTIFACT_WORKSPACE_PACKAGES: JSON.stringify(
-      DIST_RUNTIME_ARTIFACT_WORKSPACE_PACKAGE_NAMES,
-    ),
     OPENCLAW_CONFIG_PATH: join(homeDir, "openclaw.json"),
     OPENCLAW_STATE_DIR: join(homeDir, "state"),
   };
@@ -419,13 +388,12 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
     );
     runInstalledWorkspaceBootstrapSmoke({
       packageRoot,
-      nodeArgs,
       envOverrides: artifactEnvOverrides,
     });
 
     const acpHelp = execFileSync(
       process.execPath,
-      [...nodeArgs, join(packageRoot, "openclaw.mjs"), "acp", "--help"],
+      [join(packageRoot, "openclaw.mjs"), "acp", "--help"],
       {
         cwd,
         encoding: "utf8",
@@ -442,7 +410,6 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
     gateway = spawn(
       process.execPath,
       [
-        ...nodeArgs,
         join(packageRoot, "openclaw.mjs"),
         "gateway",
         "run",

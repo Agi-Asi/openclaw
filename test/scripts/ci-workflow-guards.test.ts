@@ -20,7 +20,6 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { NATIVE_I18N_LOCALES } from "../../scripts/native-i18n-locales.ts";
-import { resolveDistRuntimeArtifactWorkspaceImport } from "../../scripts/lib/workspace-bootstrap-smoke.mjs";
 import { SUPPORTED_LOCALES } from "../../ui/src/i18n/lib/registry.ts";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 
@@ -7545,11 +7544,14 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       '"dist-runtime"',
       "TSDOWN_PACKAGE_OUTPUT_ROOTS",
       '"packages/plugin-sdk/dist"',
-      "DIST_RUNTIME_ARTIFACT_WORKSPACE_PACKAGE_NAMES",
+      '"node_modules/@openclaw/"',
     ]) {
       expect(artifactBuilder).toContain(requiredPath);
     }
     expect(artifactBuilder).toContain("runInstalledWorkspaceBootstrapSmoke");
+    expect(artifactBuilder).not.toContain("--import");
+    expect(artifactBuilder).not.toContain("dist-runtime-artifact-resolver-hook");
+    expect(artifactBuilder).toContain("node_modules/@openclaw");
     expect(artifactBuilder).toContain('"acp", "--help"');
     expect(artifactBuilder).toContain("/readyz");
     expect(artifactBuilder).toContain("dist-runtime/extensions/");
@@ -7561,28 +7563,6 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(buildArtifactSteps.map((step: WorkflowStep) => step.name)).not.toContain(
       "Cache dist build",
     );
-  });
-
-  it("fails closed when an extracted workspace package is absent", () => {
-    const artifactRoot = mkdtempSync(path.join(tmpdir(), "openclaw-runtime-artifact-"));
-    try {
-      expect(() =>
-        resolveDistRuntimeArtifactWorkspaceImport({
-          artifactRoot,
-          specifier: "@openclaw/ai",
-          workspacePackageNames: new Set(["@openclaw/ai"]),
-        }),
-      ).toThrow("artifact workspace package is unavailable: @openclaw/ai");
-      expect(
-        resolveDistRuntimeArtifactWorkspaceImport({
-          artifactRoot,
-          specifier: "@openclaw/fs-safe",
-          workspacePackageNames: new Set(["@openclaw/ai"]),
-        }),
-      ).toBeUndefined();
-    } finally {
-      rmSync(artifactRoot, { force: true, recursive: true });
-    }
   });
 
   it("keeps the AI runtime in Testbox build artifact caches", () => {
