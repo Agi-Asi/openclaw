@@ -20,8 +20,14 @@ import {
 const { monitorSlackProvider } = await import("./monitor/provider.js");
 
 const slackTestState = getSlackTestState();
-const { sendMock, replyMock, reactMock, reactionAddMock, upsertPairingRequestMock } =
-  slackTestState;
+const {
+  sendMock,
+  replyMock,
+  reactMock,
+  reactionAddMock,
+  settleProvisionalParentForkMock,
+  upsertPairingRequestMock,
+} = slackTestState;
 
 beforeEach(() => {
   resetInboundDedupe();
@@ -951,8 +957,78 @@ describe("monitorSlackProvider tool results", () => {
         SessionKey: expectedThreadSessionKey,
         ParentSessionKey: followUpParentSessionKey,
       });
+      if (threadInheritParent === undefined) {
+        expect(settleProvisionalParentForkMock).toHaveBeenCalledTimes(1);
+        expect(settleProvisionalParentForkMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            outcome: "confirm",
+            sessionKey: expectedThreadSessionKey,
+          }),
+        );
+      } else {
+        expect(settleProvisionalParentForkMock).not.toHaveBeenCalled();
+      }
     },
   );
+
+  it("retires silent unset inheritance before a later user-created thread turn", async () => {
+    setOpenChannelDirectMessages({ replyToMode: "all" });
+    const contexts: Array<{
+      ParentSessionKey?: string;
+      ProvisionalParentForkId?: string;
+      SessionKey?: string;
+    }> = [];
+    replyMock.mockImplementation(async (ctx: unknown) => {
+      contexts.push((ctx ?? {}) as (typeof contexts)[number]);
+      return contexts.length === 1 ? undefined : { text: "reply after the user opened the thread" };
+    });
+
+    await runSlackMessageOnce(
+      monitorSlackProvider,
+      {
+        event: makeSlackMessageEvent({
+          text: "the bot may stay silent",
+          ts: "222.111",
+          channel_type: "channel",
+        }),
+      },
+      { awaitDispatch: true },
+    );
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(settleProvisionalParentForkMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "retire",
+        sessionKey: "agent:main:slack:channel:c1:thread:222.111",
+      }),
+    );
+
+    await runSlackMessageOnce(
+      monitorSlackProvider,
+      {
+        event: makeSlackMessageEvent({
+          text: "a user-created thread turn",
+          ts: "222.222",
+          thread_ts: "222.111",
+          parent_user_id: "U1",
+          channel_type: "channel",
+        }),
+      },
+      { awaitDispatch: true },
+    );
+
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]).toMatchObject({
+      SessionKey: "agent:main:slack:channel:c1:thread:222.111",
+      ParentSessionKey: "agent:main:slack:channel:c1",
+      ProvisionalParentForkId: expect.any(String),
+    });
+    expect(contexts[1]).toMatchObject({
+      SessionKey: "agent:main:slack:channel:c1:thread:222.111",
+    });
+    expect(contexts[1]?.ParentSessionKey).toBeUndefined();
+    expect(contexts[1]?.ProvisionalParentForkId).toBeUndefined();
+    expect(settleProvisionalParentForkMock).toHaveBeenCalledTimes(1);
+  });
 
   it("injects starter context for thread replies", async () => {
     replyMock.mockResolvedValue({ text: "ok" });

@@ -4,26 +4,55 @@ import type { InternalSessionEntry, SessionEntry } from "../../config/sessions.j
 import { isModelSelectionLocked } from "../../sessions/model-overrides.js";
 import { forkSessionFromParent, resolveParentForkDecision } from "./session-fork.js";
 
+function withProvisionalParentFork(params: {
+  id?: string;
+  parentSessionKey?: string;
+  sessionEntry: SessionEntry;
+}): SessionEntry {
+  const id = params.id?.trim();
+  if (!id || !params.parentSessionKey) {
+    return params.sessionEntry;
+  }
+  const current = params.sessionEntry.provisionalParentFork;
+  if (current?.id === id && current.parentSessionKey === params.parentSessionKey) {
+    return params.sessionEntry;
+  }
+  return {
+    ...params.sessionEntry,
+    provisionalParentFork: {
+      id,
+      parentSessionKey: params.parentSessionKey,
+      createdAt: Date.now(),
+    },
+  };
+}
+
 export async function prepareReplySessionParentFork(params: {
   agentId: string;
   alreadyForked: boolean;
   parentSessionKey?: string;
+  provisionalParentForkId?: string;
   readEntry: (sessionKey: string) => SessionEntry | undefined;
   sessionEntry: SessionEntry;
   sessionKey: string;
   storePath: string;
   warn: (message: string) => void;
 }): Promise<SessionEntry> {
+  const sessionEntry = withProvisionalParentFork({
+    id: params.provisionalParentForkId,
+    parentSessionKey: params.parentSessionKey,
+    sessionEntry: params.sessionEntry,
+  });
   if (
     !params.parentSessionKey ||
     params.parentSessionKey === params.sessionKey ||
     params.alreadyForked
   ) {
-    return params.sessionEntry;
+    return sessionEntry;
   }
   const parentEntry = params.readEntry(params.parentSessionKey);
   if (!parentEntry?.sessionId) {
-    return params.sessionEntry;
+    return sessionEntry;
   }
   if (isModelSelectionLocked(parentEntry)) {
     // A locked harness owns the parent's model and transcript lineage. Keep the
@@ -32,7 +61,7 @@ export async function prepareReplySessionParentFork(params: {
     params.warn(
       `skipping parent fork (model selection locked): parentKey=${params.parentSessionKey} → sessionKey=${params.sessionKey}`,
     );
-    return { ...params.sessionEntry, forkedFromParent: true };
+    return { ...sessionEntry, forkedFromParent: true };
   }
   const decision = await resolveParentForkDecision({
     parentEntry,
@@ -46,7 +75,7 @@ export async function prepareReplySessionParentFork(params: {
       `skipping parent fork (parent too large): parentKey=${params.parentSessionKey} → sessionKey=${params.sessionKey} ` +
         `parentTokens=${decision.parentTokens} maxTokens=${decision.maxTokens}`,
     );
-    return { ...params.sessionEntry, forkedFromParent: true };
+    return { ...sessionEntry, forkedFromParent: true };
   }
   const fork = await forkSessionFromParent({
     parentEntry,
@@ -56,7 +85,7 @@ export async function prepareReplySessionParentFork(params: {
     storePath: params.storePath,
   });
   if (!fork) {
-    return params.sessionEntry;
+    return sessionEntry;
   }
   params.warn(
     `forking from parent session: parentKey=${params.parentSessionKey} → sessionKey=${params.sessionKey} ` +
@@ -65,8 +94,8 @@ export async function prepareReplySessionParentFork(params: {
   // The fork replaces this thread's transcript identity; recovery state from
   // the preseed row must not govern a later interruption of the fork.
   const forkedEntry: InternalSessionEntry = {
-    ...params.sessionEntry,
-    ...buildMainSessionRecoveryClearPatch(params.sessionEntry),
+    ...sessionEntry,
+    ...buildMainSessionRecoveryClearPatch(sessionEntry),
     sessionId: fork.sessionId,
     lifecycleRunId: undefined,
     forkSource: {

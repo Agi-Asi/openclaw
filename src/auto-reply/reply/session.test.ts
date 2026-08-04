@@ -593,6 +593,56 @@ describe("initSessionState thread forking", () => {
     warn.mockRestore();
   });
 
+  it("isolates a later thread turn from an unconfirmed provisional parent fork", async () => {
+    const root = await makeCaseDir("openclaw-thread-session-provisional-");
+    const storePath = path.join(root, "sessions.json");
+    const parentSessionKey = "agent:main:slack:channel:c1";
+    const parentSessionId = "parent-session";
+    const threadSessionKey = "agent:main:slack:channel:c1:thread:silent";
+    const provisionalId = "slack:default:t1:c1:silent";
+    await writeSessionStoreFast(storePath, {
+      [parentSessionKey]: {
+        sessionId: parentSessionId,
+        updatedAt: Date.now(),
+      },
+    });
+    const cfg = { session: { store: storePath } } as OpenClawConfig;
+
+    const rootTurn = await initSessionState({
+      ctx: {
+        Body: "Start a bot-opened thread",
+        SessionKey: threadSessionKey,
+        ParentSessionKey: parentSessionKey,
+        ProvisionalParentForkId: provisionalId,
+      },
+      cfg,
+    });
+
+    expect(rootTurn.sessionEntry.provisionalParentFork).toMatchObject({
+      id: provisionalId,
+      parentSessionKey,
+    });
+    expect(rootTurn.sessionEntry.forkSource).toEqual({
+      sessionKey: parentSessionKey,
+      sessionId: parentSessionId,
+    });
+
+    const userCreatedThreadTurn = await initSessionState({
+      ctx: {
+        Body: "A user opens the thread after the bot stayed silent",
+        SessionKey: threadSessionKey,
+      },
+      cfg,
+    });
+
+    expect(userCreatedThreadTurn.sessionEntry.provisionalParentFork).toBeUndefined();
+    expect(userCreatedThreadTurn.sessionEntry.forkSource).toBeUndefined();
+    expect(userCreatedThreadTurn.sessionEntry.forkedFromParent).toBeUndefined();
+    expect(userCreatedThreadTurn.sessionEntry.totalTokens).toBe(0);
+    expect(userCreatedThreadTurn.sessionEntry.totalTokensFresh).toBe(true);
+    expect(sessionForkMocks.forkSessionFromParent).toHaveBeenCalledTimes(1);
+  });
+
   it("forks from parent when thread session key already exists but was not forked yet", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const root = await makeCaseDir("openclaw-thread-session-existing-");

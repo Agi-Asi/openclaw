@@ -39,6 +39,7 @@ type SlackRoutingContext = {
   threadTs: string | undefined;
   isThreadReply: boolean;
   threadKeys: ReturnType<typeof resolveThreadSessionKeys>;
+  provisionalParentForkId: string | undefined;
   sessionKey: string;
   historyKey: string;
 };
@@ -258,6 +259,18 @@ export function resolveSlackRoutingContext(params: {
   const shouldInheritParent =
     ctx.threadInheritParent === true ||
     (ctx.threadInheritParent === undefined && seededRoomThreadId !== undefined);
+  const provisionalParentForkId =
+    ctx.threadInheritParent === undefined && seededRoomThreadId
+      ? [
+          "slack",
+          account.accountId,
+          eventScope?.teamId || ctx.teamId,
+          message.channel,
+          seededRoomThreadId,
+        ]
+          .map((part) => encodeURIComponent(part))
+          .join(":")
+      : undefined;
   const baseConversationId = resolveSlackBaseConversationId({
     message,
     isDirectMessage,
@@ -335,6 +348,7 @@ export function resolveSlackRoutingContext(params: {
     threadTs,
     isThreadReply,
     threadKeys,
+    provisionalParentForkId,
     sessionKey,
     historyKey,
   };

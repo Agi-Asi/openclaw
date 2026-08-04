@@ -600,6 +600,17 @@ async function initSessionStateAttemptLocked(
   if (archivedSessionError) {
     throw new Error(archivedSessionError);
   }
+  const provisionalParentForkId = normalizeOptionalString(ctx.ProvisionalParentForkId);
+  const resetUnconfirmedParentFork = Boolean(
+    entry?.provisionalParentFork && entry.provisionalParentFork.id !== provisionalParentForkId,
+  );
+  if (resetUnconfirmedParentFork) {
+    // The owning channel never confirmed this parent-seeded generation with a
+    // visible reply. Treat another inbound turn as a fresh isolated session so
+    // a user-created thread cannot observe the provisional parent transcript.
+    isNewSession = true;
+    resetTriggered = true;
+  }
   // Locked model selection is coupled to the current native session id. Reject before
   // lifecycle cleanup so a reset cannot detach the durable harness binding.
   if (resetTriggered && isModelSelectionLocked(entry)) {
@@ -913,6 +924,11 @@ async function initSessionStateAttemptLocked(
     groupActivation: entry?.groupActivation,
     groupActivationNeedsSystemIntro: entry?.groupActivationNeedsSystemIntro,
   };
+  if (resetUnconfirmedParentFork) {
+    sessionEntry.provisionalParentFork = undefined;
+    sessionEntry.forkSource = undefined;
+    sessionEntry.forkedFromParent = undefined;
+  }
   const metaPatch = deriveSessionMetaPatch({
     ctx: sessionCtxForState,
     sessionKey,
@@ -1011,6 +1027,7 @@ async function initSessionStateAttemptLocked(
         agentId,
         alreadyForked,
         parentSessionKey,
+        provisionalParentForkId,
         readEntry,
         sessionEntry: entryToCommit,
         sessionKey,
