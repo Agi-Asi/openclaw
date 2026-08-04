@@ -217,7 +217,9 @@ describe("monitorSlackProvider tool results", () => {
       channels: { C1: { allow: true, requireMention: false } },
       ...(params?.groupPolicy ? { groupPolicy: params.groupPolicy } : {}),
       ...(params?.replyToMode ? { replyToMode: params.replyToMode } : {}),
-      ...(params?.threadInheritParent ? { thread: { inheritParent: true } } : {}),
+      ...(params?.threadInheritParent !== undefined
+        ? { thread: { inheritParent: params.threadInheritParent } }
+        : {}),
     };
     slackTestState.config = {
       messages: params?.includeAckReactionConfig
@@ -885,22 +887,72 @@ describe("monitorSlackProvider tool results", () => {
     expect(ctx.ParentSessionKey).toBeUndefined();
   });
 
-  it("keeps thread parent inheritance opt-in", async () => {
-    replyMock.mockResolvedValue({ text: "thread reply" });
-    setOpenChannelDirectMessages({ threadInheritParent: true });
+  it.each([
+    {
+      label: "unset inheritance",
+      threadInheritParent: undefined,
+      rootParentSessionKey: "agent:main:slack:channel:c1",
+      followUpParentSessionKey: undefined,
+    },
+    {
+      label: "explicit isolation",
+      threadInheritParent: false,
+      rootParentSessionKey: undefined,
+      followUpParentSessionKey: undefined,
+    },
+    {
+      label: "explicit inheritance",
+      threadInheritParent: true,
+      rootParentSessionKey: "agent:main:slack:channel:c1",
+      followUpParentSessionKey: "agent:main:slack:channel:c1",
+    },
+  ])(
+    "routes a bot-opened thread through Slack ingress and dispatch for $label",
+    async ({ threadInheritParent, rootParentSessionKey, followUpParentSessionKey }) => {
+      setOpenChannelDirectMessages({ replyToMode: "all", threadInheritParent });
+      const contexts: Array<{ SessionKey?: string; ParentSessionKey?: string }> = [];
+      replyMock.mockImplementation(async (ctx: unknown) => {
+        contexts.push((ctx ?? {}) as { SessionKey?: string; ParentSessionKey?: string });
+        return { text: "thread reply" };
+      });
 
-    await runSlackMessageOnce(monitorSlackProvider, {
-      event: makeSlackMessageEvent({
-        thread_ts: "111.222",
-        channel_type: "channel",
-      }),
-    });
+      await runSlackMessageOnce(
+        monitorSlackProvider,
+        {
+          event: makeSlackMessageEvent({
+            text: "start the thread",
+            ts: "111.222",
+            channel_type: "channel",
+          }),
+        },
+        { awaitDispatch: true },
+      );
+      await runSlackMessageOnce(
+        monitorSlackProvider,
+        {
+          event: makeSlackMessageEvent({
+            text: "continue in the thread",
+            ts: "111.333",
+            thread_ts: "111.222",
+            parent_user_id: "bot-user",
+            channel_type: "channel",
+          }),
+        },
+        { awaitDispatch: true },
+      );
 
-    expect(replyMock).toHaveBeenCalledTimes(1);
-    const ctx = getFirstReplySessionCtx();
-    expect(ctx.SessionKey).toBe("agent:main:slack:channel:c1:thread:111.222");
-    expect(ctx.ParentSessionKey).toBe("agent:main:slack:channel:c1");
-  });
+      expect(contexts).toHaveLength(2);
+      const expectedThreadSessionKey = "agent:main:slack:channel:c1:thread:111.222";
+      expect(contexts[0]).toMatchObject({
+        SessionKey: expectedThreadSessionKey,
+        ParentSessionKey: rootParentSessionKey,
+      });
+      expect(contexts[1]).toMatchObject({
+        SessionKey: expectedThreadSessionKey,
+        ParentSessionKey: followUpParentSessionKey,
+      });
+    },
+  );
 
   it("injects starter context for thread replies", async () => {
     replyMock.mockResolvedValue({ text: "ok" });
