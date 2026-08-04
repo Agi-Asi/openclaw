@@ -100,7 +100,7 @@ export type SlackSlashCommandConfig = {
 export type SlackThreadConfig = {
   /** Scope for thread history context (thread|channel). Default: thread. */
   historyScope?: "thread" | "channel";
-  /** Parent transcript policy. Unset inherits bot-opened threads; true inherits all; false isolates all. */
+  /** Parent transcript policy. Unset inherits bot-opened threads; true inherits all eligible threads; false isolates all. Locked parents stay isolated. */
   inheritParent?: boolean;
   /** Maximum number of thread messages to fetch as context when starting a new thread session (default: 20). Set to 0 to disable thread history fetching. */
   initialHistoryLimit?: number;

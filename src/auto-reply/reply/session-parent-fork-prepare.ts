@@ -1,6 +1,7 @@
 // Prepares parent-context fork metadata for guarded reply session initialization.
 import { buildMainSessionRecoveryClearPatch } from "../../agents/main-session-recovery/main-session-recovery-clear.js";
 import type { InternalSessionEntry, SessionEntry } from "../../config/sessions.js";
+import { isModelSelectionLocked } from "../../sessions/model-overrides.js";
 import { forkSessionFromParent, resolveParentForkDecision } from "./session-fork.js";
 
 export async function prepareReplySessionParentFork(params: {
@@ -23,6 +24,15 @@ export async function prepareReplySessionParentFork(params: {
   const parentEntry = params.readEntry(params.parentSessionKey);
   if (!parentEntry?.sessionId) {
     return params.sessionEntry;
+  }
+  if (isModelSelectionLocked(parentEntry)) {
+    // A locked harness owns the parent's model and transcript lineage. Keep the
+    // child usable without copying that protected context, and mark the fork
+    // decision handled so later turns do not retry it.
+    params.warn(
+      `skipping parent fork (model selection locked): parentKey=${params.parentSessionKey} → sessionKey=${params.sessionKey}`,
+    );
+    return { ...params.sessionEntry, forkedFromParent: true };
   }
   const decision = await resolveParentForkDecision({
     parentEntry,

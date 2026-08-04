@@ -714,6 +714,40 @@ describe("initSessionState thread forking", () => {
     expect(result.sessionEntry.totalTokensFresh).toBe(true);
   });
 
+  it("starts an isolated Slack thread when the parent model selection is locked", async () => {
+    const root = await makeCaseDir("openclaw-thread-session-locked-parent-");
+    const storePath = path.join(root, "sessions.json");
+    const parentSessionKey = "agent:main:slack:channel:c1";
+    const parentSessionId = "locked-parent-session";
+    const threadSessionKey = "agent:main:slack:channel:c1:thread:locked";
+    await writeSessionStoreFast(storePath, {
+      [parentSessionKey]: {
+        sessionId: parentSessionId,
+        modelSelectionLocked: true,
+        updatedAt: Date.now(),
+      },
+    });
+
+    const result = await initSessionState({
+      ctx: {
+        Body: "Start the bot-opened thread",
+        SessionKey: threadSessionKey,
+        ParentSessionKey: parentSessionKey,
+      },
+      cfg: { session: { store: storePath } } as OpenClawConfig,
+    });
+
+    expect(result.sessionKey).toBe(threadSessionKey);
+    expect(result.sessionEntry.sessionId).not.toBe(parentSessionId);
+    expect(result.sessionEntry.forkedFromParent).toBe(true);
+    expect(result.sessionEntry.forkSource).toBeUndefined();
+    expect(sessionForkMocks.forkSessionFromParent).not.toHaveBeenCalled();
+    expect(readSessionStoreFast(storePath)[parentSessionKey]).toMatchObject({
+      sessionId: parentSessionId,
+      modelSelectionLocked: true,
+    });
+  });
+
   it("skips fork when resolved parent token estimate exceeds threshold", async () => {
     const root = await makeCaseDir("openclaw-thread-session-overflow-estimated-");
     const parentSessionId = "parent-overflow-estimated";

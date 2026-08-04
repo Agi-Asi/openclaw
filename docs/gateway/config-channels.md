@@ -424,7 +424,7 @@ WhatsApp runs through the gateway's web channel (Baileys Web). It starts automat
       replyToMode: "off", // off | first | all | batched
       thread: {
         historyScope: "thread", // thread | channel
-        // inheritParent: true, // omit: bot-opened threads only; true: all; false: none
+        // inheritParent: true, // omit: bot-opened only; true: all eligible; false: none
         initialHistoryLimit: 20,
       },
       actions: {
@@ -501,7 +501,7 @@ WhatsApp runs through the gateway's web channel (Baileys Web). It starts automat
 
 **Reaction notification modes:** `off`, `own` (default), `all`, `allowlist` (from `reactionAllowlist`).
 
-**Thread session isolation:** `thread.historyScope` is per-thread (default) or shared across channel. When `thread.inheritParent` is unset (default), bot-opened channel threads copy the parent channel transcript while existing user-created threads stay isolated. Set it to `true` to copy the parent transcript into every new thread session, or `false` to isolate every thread. `thread.initialHistoryLimit` (default `20`) caps how many existing thread messages are fetched when a new thread session starts; `0` disables thread history fetching.
+**Thread session isolation:** `thread.historyScope` is per-thread (default) or shared across channel. When `thread.inheritParent` is unset (default), bot-opened channel threads copy the parent channel transcript while existing user-created threads stay isolated. Set it to `true` to copy eligible parent transcripts into every new thread session, or `false` to isolate every thread. A model-selection-locked parent remains protected, so its child starts isolated instead of failing or copying the locked transcript. `thread.initialHistoryLimit` (default `20`) caps how many existing thread messages are fetched when a new thread session starts; `0` disables thread history fetching.
 
 - Slack native streaming plus the Slack assistant-style "is typing..." thread status require a reply thread target. Top-level DMs stay off-thread by default, so they can still stream through Slack draft post-and-edit previews instead of showing the thread-style native stream/status preview.
 - `typingReaction` adds a temporary reaction to the inbound Slack message while a reply is running, then removes it on completion. Use a Slack emoji shortcode such as `"hourglass_flowing_sand"`.
