@@ -23,7 +23,7 @@ import {
 type SlackRoutingContextDeps = {
   cfg: OpenClawConfig;
   teamId: string;
-  threadInheritParent: boolean;
+  threadInheritParent?: boolean;
   threadHistoryScope: "thread" | "channel";
 };
 
@@ -252,6 +252,12 @@ export function resolveSlackRoutingContext(params: {
         ? threadTs
         : autoThreadId;
   const routedThreadId = canonicalThreadId ?? (isRoomish ? seededRoomThreadId : undefined);
+  // A bot-opened thread is a continuation of the channel turn that created it,
+  // so inherit that transcript once by default. Existing user-created threads
+  // stay isolated unless configured otherwise, and an explicit false opts out.
+  const shouldInheritParent =
+    ctx.threadInheritParent === true ||
+    (ctx.threadInheritParent === undefined && seededRoomThreadId !== undefined);
   const baseConversationId = resolveSlackBaseConversationId({
     message,
     isDirectMessage,
@@ -307,8 +313,7 @@ export function resolveSlackRoutingContext(params: {
       : resolveThreadSessionKeys({
           baseSessionKey: route.sessionKey,
           threadId: routedThreadId,
-          parentSessionKey:
-            routedThreadId && ctx.threadInheritParent ? route.sessionKey : undefined,
+          parentSessionKey: routedThreadId && shouldInheritParent ? route.sessionKey : undefined,
         });
   const sessionKey = threadKeys.sessionKey;
   const historyKey =

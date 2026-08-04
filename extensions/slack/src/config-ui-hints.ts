@@ -145,7 +145,7 @@ export const slackChannelConfigUiHints = {
   },
   "thread.inheritParent": {
     label: "Slack Thread Parent Inheritance",
-    help: "If true, Slack thread sessions inherit the parent channel transcript (default: false).",
+    help: "Parent transcript policy: unset inherits bot-opened threads only, true inherits all threads, and false isolates all threads.",
   },
   "thread.initialHistoryLimit": {
     label: "Slack Thread Initial History Limit",
