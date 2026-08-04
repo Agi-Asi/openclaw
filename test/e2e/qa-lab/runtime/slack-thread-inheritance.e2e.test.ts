@@ -3,17 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ResolvedSlackAccount } from "../../../extensions/slack/src/accounts.js";
-import { resolveSlackRoutingContext } from "../../../extensions/slack/src/monitor/message-handler/prepare-routing.js";
-import type { SlackMessageEvent } from "../../../extensions/slack/src/types.js";
-import type { OpenClawConfig } from "../../config/config.js";
+import type { ResolvedSlackAccount } from "../../../../extensions/slack/src/accounts.js";
+import { resolveSlackRoutingContext } from "../../../../extensions/slack/src/monitor/message-handler/prepare-routing.js";
+import type { SlackMessageEvent } from "../../../../extensions/slack/src/types.js";
+import { initSessionState } from "../../../../src/auto-reply/reply/test/session.test-support.js";
+import type { OpenClawConfig } from "../../../../src/config/config.js";
 import {
   appendTranscriptMessage,
   loadTranscriptEvents,
   replaceSessionEntry,
-} from "../../config/sessions/session-accessor.js";
-import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
-import { initSessionState } from "./test/session.test-support.js";
+} from "../../../../src/config/sessions/session-accessor.js";
+import { closeOpenClawStateDatabaseForTest } from "../../../../src/state/openclaw-state-db.js";
 
 const roots: string[] = [];
 
