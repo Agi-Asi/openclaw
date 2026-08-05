@@ -674,10 +674,14 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     await progress.finalizeDraftProgressCard("error");
   }
   await progress.dropDetachedProgressCards();
+  const confirmedSlackReplyDelivered = delivery.observedReplyDelivery || streamFallbackDelivered;
 
   if (prepared.provisionalParentFork) {
     try {
-      const outcome = anyReplyDelivered ? "confirm" : "retire";
+      // Queue counts describe attempted dispatcher work, not transport
+      // success. Keep copied parent context only after Slack acknowledges a
+      // normal, preview, streaming, or fallback delivery.
+      const outcome = confirmedSlackReplyDelivered ? "confirm" : "retire";
       const settlement = await settleProvisionalParentFork({
         agentId: route.agentId,
         id: prepared.provisionalParentFork.id,

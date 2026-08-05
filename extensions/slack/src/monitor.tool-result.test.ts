@@ -1030,6 +1030,33 @@ describe("monitorSlackProvider tool results", () => {
     expect(settleProvisionalParentForkMock).toHaveBeenCalledTimes(1);
   });
 
+  it("retires unset inheritance when ordinary Slack delivery rejects", async () => {
+    setOpenChannelDirectMessages({ replyToMode: "all" });
+    replyMock.mockResolvedValue({ text: "this send will fail" });
+    sendMock.mockRejectedValueOnce(new Error("channel_not_found"));
+
+    await runSlackMessageOnce(
+      monitorSlackProvider,
+      {
+        event: makeSlackMessageEvent({
+          text: "start a thread whose reply cannot be delivered",
+          ts: "333.111",
+          channel_type: "channel",
+        }),
+      },
+      { awaitDispatch: true },
+    );
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(settleProvisionalParentForkMock).toHaveBeenCalledTimes(1);
+    expect(settleProvisionalParentForkMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "retire",
+        sessionKey: "agent:main:slack:channel:c1:thread:333.111",
+      }),
+    );
+  });
+
   it("injects starter context for thread replies", async () => {
     replyMock.mockResolvedValue({ text: "ok" });
 
