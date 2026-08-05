@@ -628,12 +628,11 @@ async function initSessionStateAttemptLocked(
   }
   const provisionalParentForkId = normalizeOptionalString(ctx.ProvisionalParentForkId);
   const parentSessionKey = normalizeOptionalString(ctx.ParentSessionKey);
-  const provisionalParentForkOwned = Boolean(
+  const provisionalParentForkOwned =
     !provisionalParentForkId ||
     createdNewEntry ||
     (entry?.provisionalParentFork?.id === provisionalParentForkId &&
-      entry.provisionalParentFork.parentSessionKey === parentSessionKey),
-  );
+      entry.provisionalParentFork.parentSessionKey === parentSessionKey);
   const resetUnconfirmedParentFork = Boolean(
     entry?.provisionalParentFork && entry.provisionalParentFork.id !== provisionalParentForkId,
   );
