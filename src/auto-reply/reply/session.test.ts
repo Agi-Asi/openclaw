@@ -645,6 +645,49 @@ describe("initSessionState thread forking", () => {
     expect(sessionForkMocks.forkSessionFromParent).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves a user-created thread when a provisional bot root arrives late", async () => {
+    const root = await makeCaseDir("openclaw-thread-session-delayed-root-");
+    const storePath = path.join(root, "sessions.json");
+    const parentSessionKey = "agent:main:slack:channel:c1";
+    const parentSessionId = "parent-session";
+    const threadSessionKey = "agent:main:slack:channel:c1:thread:user-first";
+    const provisionalId = "slack:default:t1:c1:user-first";
+    await writeSessionStoreFast(storePath, {
+      [parentSessionKey]: {
+        sessionId: parentSessionId,
+        updatedAt: Date.now(),
+      },
+    });
+    const cfg = { session: { store: storePath } } as OpenClawConfig;
+
+    const userTurn = await initSessionState({
+      ctx: {
+        Body: "A user creates the thread first",
+        SessionKey: threadSessionKey,
+      },
+      cfg,
+    });
+    const userSessionId = userTurn.sessionEntry.sessionId;
+
+    const delayedRoot = await initSessionState({
+      ctx: {
+        Body: "A delayed bot root tries to open the same thread",
+        SessionKey: threadSessionKey,
+        ParentSessionKey: parentSessionKey,
+        ProvisionalParentForkId: provisionalId,
+      },
+      cfg,
+    });
+
+    expect(delayedRoot.sessionEntry.sessionId).toBe(userSessionId);
+    expect(delayedRoot.sessionEntry.forkedFromParent).toBe(true);
+    expect(delayedRoot.sessionEntry.provisionalParentFork).toBeUndefined();
+    expect(delayedRoot.sessionEntry.forkSource).toBeUndefined();
+    expect(delayedRoot.sessionEntry.totalTokens).toBe(0);
+    expect(delayedRoot.sessionEntry.totalTokensFresh).toBe(true);
+    expect(sessionForkMocks.forkSessionFromParent).not.toHaveBeenCalled();
+  });
+
   it("forks from parent when thread session key already exists but was not forked yet", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const root = await makeCaseDir("openclaw-thread-session-existing-");

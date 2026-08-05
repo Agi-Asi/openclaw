@@ -6,8 +6,10 @@ import type { OpenClawConfig } from "../../config/config.js";
 import {
   loadSessionEntry,
   loadTranscriptEvents,
+  recordInboundSessionMeta,
   replaceSessionEntry,
   replaceTranscriptEvents,
+  updateSessionLastRoute,
 } from "../../config/sessions/session-accessor.js";
 import { settleProvisionalParentFork } from "../../plugin-sdk/session-store-runtime.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
@@ -95,15 +97,34 @@ describe("provisional parent fork SQLite isolation", () => {
     await seedParentTranscript({ parentSessionId, parentSessionKey, secret, storePath });
 
     const cfg = { session: { store: storePath } } as OpenClawConfig;
+    const rootContext = finalizeInboundContext({
+      Body: "Start a bot-opened thread",
+      ParentSessionKey: parentSessionKey,
+      ProvisionalParentForkId: provisionalId,
+      Provider: "slack",
+      SessionKey: threadSessionKey,
+    });
+    await updateSessionLastRoute({
+      channel: "slack",
+      ctx: rootContext,
+      sessionKey: threadSessionKey,
+      storePath,
+      threadId: "shared-root",
+      to: "channel:c1",
+    });
+    await recordInboundSessionMeta({
+      ctx: rootContext,
+      sessionKey: threadSessionKey,
+      storePath,
+    });
+    expect(
+      loadSessionEntry({ sessionKey: threadSessionKey, storePath })?.provisionalParentFork,
+    ).toEqual(expect.objectContaining({ id: provisionalId, parentSessionKey }));
+
     const provisional = await initSessionState({
       commandAuthorized: true,
       cfg,
-      ctx: finalizeInboundContext({
-        Body: "Start a bot-opened thread",
-        ParentSessionKey: parentSessionKey,
-        ProvisionalParentForkId: provisionalId,
-        SessionKey: threadSessionKey,
-      }),
+      ctx: rootContext,
     });
     const provisionalSessionId = provisional.sessionId;
     expect(provisional.sessionEntry.provisionalParentFork?.id).toBe(provisionalId);
@@ -159,6 +180,98 @@ describe("provisional parent fork SQLite isolation", () => {
     expect(loadSessionEntry({ sessionKey: threadSessionKey, storePath })?.sessionId).toBe(
       isolated.sessionId,
     );
+  });
+
+  it("preserves user-owned context when a provisional bot root arrives late", async () => {
+    const storePath = await makeStorePath();
+    const parentSessionKey = "agent:main:slack:channel:c3";
+    const parentSessionId = "parent-delayed-root";
+    const threadSessionKey = "agent:main:slack:channel:c3:thread:user-first";
+    const provisionalId = "slack:default:t1:c3:user-first";
+    const parentSecret = "parent context must not replace the child";
+    const childSecret = "user-created thread context must survive";
+    await seedParentTranscript({
+      parentSessionId,
+      parentSessionKey,
+      secret: parentSecret,
+      storePath,
+    });
+
+    const cfg = { session: { store: storePath } } as OpenClawConfig;
+    const userTurn = await initSessionState({
+      commandAuthorized: true,
+      cfg,
+      ctx: finalizeInboundContext({
+        Body: "A user creates the thread first",
+        Provider: "slack",
+        SessionKey: threadSessionKey,
+      }),
+    });
+    await replaceTranscriptEvents(
+      {
+        agentId: "main",
+        sessionId: userTurn.sessionId,
+        sessionKey: threadSessionKey,
+        storePath,
+      },
+      [
+        {
+          type: "session",
+          version: 3,
+          id: userTurn.sessionId,
+          timestamp: "2026-08-04T00:01:00.000Z",
+          cwd: path.dirname(storePath),
+        },
+        {
+          type: "message",
+          id: "child-user",
+          parentId: null,
+          timestamp: "2026-08-04T00:01:01.000Z",
+          message: { role: "user", content: childSecret },
+        },
+      ],
+    );
+
+    const delayedRootContext = finalizeInboundContext({
+      Body: "A delayed bot root targets the occupied thread",
+      ParentSessionKey: parentSessionKey,
+      ProvisionalParentForkId: provisionalId,
+      Provider: "slack",
+      SessionKey: threadSessionKey,
+    });
+    await recordInboundSessionMeta({
+      ctx: delayedRootContext,
+      sessionKey: threadSessionKey,
+      storePath,
+    });
+    expect(
+      loadSessionEntry({ sessionKey: threadSessionKey, storePath })?.provisionalParentFork,
+    ).toBeUndefined();
+
+    const delayedRoot = await initSessionState({
+      commandAuthorized: true,
+      cfg,
+      ctx: delayedRootContext,
+    });
+
+    expect(delayedRoot.sessionId).toBe(userTurn.sessionId);
+    expect(delayedRoot.sessionEntry).toMatchObject({
+      forkedFromParent: true,
+      totalTokens: 0,
+      totalTokensFresh: true,
+    });
+    expect(delayedRoot.sessionEntry.provisionalParentFork).toBeUndefined();
+    expect(delayedRoot.sessionEntry.forkSource).toBeUndefined();
+    const transcript = JSON.stringify(
+      await loadTranscriptEvents({
+        agentId: "main",
+        sessionId: delayedRoot.sessionId,
+        sessionKey: threadSessionKey,
+        storePath,
+      }),
+    );
+    expect(transcript).toContain(childSecret);
+    expect(transcript).not.toContain(parentSecret);
   });
 
   it("stays isolated when Slack retirement wins during lifecycle admission drain", async () => {

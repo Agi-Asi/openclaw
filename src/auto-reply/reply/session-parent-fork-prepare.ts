@@ -31,6 +31,7 @@ export async function prepareReplySessionParentFork(params: {
   agentId: string;
   alreadyForked: boolean;
   parentSessionKey?: string;
+  provisionalParentForkOwned: boolean;
   provisionalParentForkId?: string;
   readEntry: (sessionKey: string) => SessionEntry | undefined;
   sessionEntry: SessionEntry;
@@ -38,6 +39,19 @@ export async function prepareReplySessionParentFork(params: {
   storePath: string;
   warn: (message: string) => void;
 }): Promise<SessionEntry> {
+  if (params.provisionalParentForkId && !params.provisionalParentForkOwned) {
+    // Default inheritance is owned by the inbound event that first materialized
+    // this thread row. A delayed bot root must not replace an ordinary thread
+    // session that a user already created under the same canonical key.
+    params.warn(
+      `skipping parent fork (existing child owns session): parentKey=${params.parentSessionKey ?? "unknown"} → sessionKey=${params.sessionKey}`,
+    );
+    return {
+      ...params.sessionEntry,
+      provisionalParentFork: undefined,
+      forkedFromParent: true,
+    };
+  }
   const sessionEntry = withProvisionalParentFork({
     id: params.provisionalParentForkId,
     parentSessionKey: params.parentSessionKey,
