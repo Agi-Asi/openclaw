@@ -637,7 +637,9 @@ describe("initSessionState thread forking", () => {
 
     expect(userCreatedThreadTurn.sessionEntry.provisionalParentFork).toBeUndefined();
     expect(userCreatedThreadTurn.sessionEntry.forkSource).toBeUndefined();
-    expect(userCreatedThreadTurn.sessionEntry.forkedFromParent).toBeUndefined();
+    expect(userCreatedThreadTurn.sessionEntry.forkedFromParent).toBe(true);
+    expect(userCreatedThreadTurn.sessionEntry.sessionId).not.toBe(rootTurn.sessionEntry.sessionId);
+    expect(userCreatedThreadTurn.sessionEntry.usageFamilySessionIds).toBeUndefined();
     expect(userCreatedThreadTurn.sessionEntry.totalTokens).toBe(0);
     expect(userCreatedThreadTurn.sessionEntry.totalTokensFresh).toBe(true);
     expect(sessionForkMocks.forkSessionFromParent).toHaveBeenCalledTimes(1);
