@@ -195,7 +195,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: canonical Computer Use wire contract and node-host provider seam.
       // -1: retire the deprecated messaging-targets subpath.
       // +2: bounded provider streams and read-only SecretRef resolution.
-      146,
+      // +2: versioned multiplayer-memory authorization contract and conformance suite.
+      148,
       env,
     ),
     publicExports: readPluginSdkSurfaceBudgetEnv(
@@ -300,7 +301,9 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: account-scoped model catalog discovery for native agent harnesses.
       // +2: shared delegation policy (mode resolver + section builder) so harness
       //     runtimes render the same guidance instead of diverging prompt copies.
-      4334,
+      // +56: versioned serializable memory-authorization contract and reusable backend-conformance
+      //      types, capability declarations, and helpers.
+      4390,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -385,7 +388,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: canonical sensitive-URL redactor so plugin CLI errors never print URL userinfo.
       // +2: shared delegation policy (mode resolver + section builder) so harness
       //     runtimes render the same guidance instead of diverging prompt copies.
-      2577,
+      // +6: capability-declaration validators and pure backend-conformance helpers.
+      2583,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
@@ -412,7 +416,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // -1: infra-runtime now names its error exports explicitly.
       // -1: infra-runtime excludes the internal system-event receipt API.
       // -1: infra-runtime re-exports number coercion directly from its canonical owner.
-      50,
+      // +2: focused authorization-contract and conformance facades.
+      52,
       env,
     ),
   };
