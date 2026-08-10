@@ -301,9 +301,9 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: account-scoped model catalog discovery for native agent harnesses.
       // +2: shared delegation policy (mode resolver + section builder) so harness
       //     runtimes render the same guidance instead of diverging prompt copies.
-      // +56: versioned serializable memory-authorization contract and reusable backend-conformance
+      // +57: versioned serializable memory-authorization contract and reusable backend-conformance
       //      types, capability declarations, and helpers.
-      4390,
+      4391,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
