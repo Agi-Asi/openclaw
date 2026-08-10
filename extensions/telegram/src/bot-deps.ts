@@ -36,6 +36,7 @@ import { syncTelegramMenuCommands } from "./bot-native-command-menu.js";
 import { deliverReplies, emitTelegramMessageSentHooks } from "./bot/delivery.js";
 import { createTelegramDraftStream } from "./draft-stream.js";
 import { recordOutboundMessageForPromptContext } from "./outbound-message-context.js";
+import { getOptionalTelegramRuntime } from "./runtime.js";
 import { editMessageTelegram } from "./send.js";
 import { wasSentByBot } from "./sent-message-cache.js";
 
@@ -54,6 +55,20 @@ type ResolveTelegramApprovalParams = {
 type ResolveTelegramApproval = (
   params: ResolveTelegramApprovalParams,
 ) => Promise<ApprovalResolveResult | void>;
+
+type TelegramMemoryIdentityAdmission = {
+  attachVerifiedDirectSender: (params: {
+    context: object;
+    channel: string;
+    accountId: string;
+    stableSenderId: string;
+  }) => void;
+  admitVerifiedDirectPairingSender: (params: {
+    channel: string;
+    accountId: string;
+    stableSenderId: string;
+  }) => unknown;
+};
 
 export type TelegramBotDeps = {
   getRuntimeConfig: typeof getRuntimeConfig;
@@ -84,6 +99,8 @@ export type TelegramBotDeps = {
   editMessageTelegram?: typeof editMessageTelegram;
   recordOutboundMessageForPromptContext?: typeof recordOutboundMessageForPromptContext;
   createChannelMessageReplyPipeline?: typeof createChannelMessageReplyPipeline;
+  /** Loader-bound capability; no sender evidence crosses the plugin boundary as authority. */
+  memoryIdentityAdmission?: TelegramMemoryIdentityAdmission;
 };
 
 export const defaultTelegramBotDeps: TelegramBotDeps = {
@@ -170,5 +187,10 @@ export const defaultTelegramBotDeps: TelegramBotDeps = {
   },
   get createChannelMessageReplyPipeline() {
     return createChannelMessageReplyPipeline;
+  },
+  get memoryIdentityAdmission() {
+    return getOptionalTelegramRuntime()?.channel.memoryIdentityAdmission as
+      | TelegramMemoryIdentityAdmission
+      | undefined;
   },
 };

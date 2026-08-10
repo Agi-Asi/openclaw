@@ -3,6 +3,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { normalizeOptionalAgentRuntimeId } from "../agents/agent-runtime-id.js";
 import { createHostChannelInboundEventContextBuilder } from "../channels/inbound-event/host-context-builder.js";
 import { registerChannelAdmissionEvidenceOwner } from "../channels/message-access/admission-evidence.js";
+import { createChannelMemoryIdentityAdmission } from "../channels/message-access/memory-identity-admission.js";
 import { createChannelIngressDrain } from "../channels/message/ingress-drain.js";
 import { createChannelIngressQueue } from "../channels/message/ingress-queue.js";
 import {
@@ -638,6 +639,7 @@ export function createPluginRuntimeResolver(state: PluginRegistryState) {
       }
     };
     let scopedAgentRuntime: PluginRuntime["agent"] | undefined;
+    let scopedChannelRuntime: PluginRuntime["channel"] | undefined;
     const runtime = new Proxy(registryParams.runtime, {
       get(target, prop, receiver) {
         const runWithPluginScope = <T>(run: () => T): T => {
@@ -785,6 +787,34 @@ export function createPluginRuntimeResolver(state: PluginRegistryState) {
                 return await gateway.request(method, params, options);
               }),
           } satisfies PluginRuntime["gateway"];
+        }
+        if (prop === "channel") {
+          if (scopedChannelRuntime) {
+            return scopedChannelRuntime;
+          }
+          const channel: PluginRuntime["channel"] = getRuntimeProperty();
+          scopedChannelRuntime = {
+            ...channel,
+            memoryIdentityAdmission: createChannelMemoryIdentityAdmission({
+              pluginId,
+              adapterId: `plugin:${pluginId}`,
+              ownsChannel: (channelId) =>
+                registry.channels.some(
+                  (entry) => entry.pluginId === pluginId && entry.plugin.id === channelId,
+                ),
+              isActive: () => {
+                const record =
+                  pluginRuntimeRecordById.get(pluginId) ??
+                  registry.plugins.find((entry) => entry.id === pluginId);
+                return (
+                  record?.status === "loaded" &&
+                  record.enabled &&
+                  (record.origin === "bundled" || record.trustedOfficialInstall === true)
+                );
+              },
+            }),
+          } satisfies PluginRuntime["channel"];
+          return scopedChannelRuntime;
         }
         if (prop === "nodes") {
           const nodes = getRuntimeProperty();

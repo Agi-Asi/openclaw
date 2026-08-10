@@ -146,6 +146,7 @@ export const buildTelegramMessageContext = async ({
   runtime,
   sessionRuntime,
   upsertPairingRequest,
+  memoryIdentityAdmission,
   sendChatActionHandler,
 }: BuildTelegramMessageContextParams): Promise<TelegramMessageContext | null> => {
   const msg = primaryCtx.message;
@@ -374,6 +375,7 @@ export const buildTelegramMessageContext = async ({
       bot,
       logger,
       upsertPairingRequest,
+      memoryIdentityAdmission,
     }))
   ) {
     return null;

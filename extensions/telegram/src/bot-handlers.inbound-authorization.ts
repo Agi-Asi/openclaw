@@ -426,6 +426,7 @@ export function createTelegramHandlerAuthorization({
               bot,
               logger,
               upsertPairingRequest: telegramDeps.upsertChannelPairingRequest,
+              memoryIdentityAdmission: telegramDeps.memoryIdentityAdmission,
             })
           : await isTelegramDmAccessAllowed({
               dmPolicy,

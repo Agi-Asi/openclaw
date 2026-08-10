@@ -209,6 +209,10 @@ export function createRuntimeChannel(options?: {
           maxAgeMs,
         }),
     },
+    // The loader replaces this placeholder with a capability bound to one
+    // trusted channel adapter; global runtime state must never hold it.
+    memoryIdentityAdmission:
+      undefined as unknown as PluginRuntime["channel"]["memoryIdentityAdmission"],
     runtimeContexts: createChannelRuntimeContextRegistry(),
   } satisfies PluginRuntime["channel"];
 

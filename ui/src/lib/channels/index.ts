@@ -70,6 +70,7 @@ export type ChannelCapability = {
     requestId: string;
     notify: boolean;
     bootstrapCommandOwner: boolean;
+    targetProfileId?: string;
   }) => Promise<ChannelsPairingApproveResult | null>;
   dismissPairing: (params: {
     channel: string;
@@ -322,6 +323,7 @@ async function approveChannelPairing(
     requestId: string;
     notify: boolean;
     bootstrapCommandOwner: boolean;
+    targetProfileId?: string;
   },
 ): Promise<ChannelsPairingApproveResult | null> {
   const client = state.client;
