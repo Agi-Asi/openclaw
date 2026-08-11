@@ -39,6 +39,14 @@ import {
 import { createDeferred, withTestTimeout } from "../../test/helpers/promise.js";
 import { createOperationalRunInstanceRef } from "../agents/admitted-run-context.js";
 import { listRunningSessions } from "../agents/bash-process-registry.js";
+import {
+  enableMemoryShadowReadOnlyMode,
+  resetMemoryIsolationCutoverForTest,
+} from "../plugins/memory-cutover.js";
+import {
+  closeOpenClawAgentDatabasesForTest,
+  openOpenClawAgentDatabase,
+} from "../state/openclaw-agent-db.js";
 import { buildWorkerConnectParams, type WorkerLaunchDescriptor } from "./launch-descriptor.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "./transcript-message.js";
 import { WorkerAdmissionDeadlineExceededError } from "./worker-connection-contract.js";
@@ -896,6 +904,7 @@ describe("worker runtime", () => {
     const result = await runWorkerDescriptor(launch);
 
     expect(result.status).toBe("completed");
+    expect(browserRuntimeMocks.createWorkerBrowserToolRuntime).not.toHaveBeenCalled();
     expect(gateway.inferenceRequests).toHaveLength(1);
     expect(gateway.inferenceRequests[0]?.modelRef).toEqual(MODEL_REF);
     expect(gateway.inferenceRequests[0]?.context.systemPrompt).toContain("worker-bootstrap-marker");
@@ -958,6 +967,44 @@ describe("worker runtime", () => {
       "sessions_spawn",
       "sessions_send",
     ]);
+  });
+
+  it("keeps an enforced agent's worker tool surface read-only after state isolation", async () => {
+    const memoryStateDir = await mkdtemp(path.join(tmpdir(), "openclaw-worker-memory-state-"));
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = memoryStateDir;
+    try {
+      resetMemoryIsolationCutoverForTest();
+      const database = openOpenClawAgentDatabase({ agentId: "main" });
+      database.db
+        .prepare(
+          `INSERT INTO session_memory_subjects
+           (session_key, binding_id, principal_id, subject_kind, subject_revision, created_at)
+           VALUES ('agent:main:pilot', NULL, 'principal-alice', 'agent', 'test-revision', 1)`,
+        )
+        .run();
+      expect(enableMemoryShadowReadOnlyMode({ agentId: "main", nowMs: 1 })).toBe(
+        "shadow-read-only",
+      );
+      closeOpenClawAgentDatabasesForTest();
+
+      const { gateway, launch } = await setup();
+      await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
+
+      expect(browserRuntimeMocks.createWorkerBrowserToolRuntime).not.toHaveBeenCalled();
+      expect(gateway.inferenceRequests[0]?.context.tools?.map((tool) => tool.name)).toEqual([
+        "read",
+      ]);
+    } finally {
+      resetMemoryIsolationCutoverForTest();
+      closeOpenClawAgentDatabasesForTest();
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      await rm(memoryStateDir, { recursive: true, force: true });
+    }
   });
 
   it("runs with no tools when the Gateway authority is empty", async () => {

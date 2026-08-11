@@ -28,7 +28,6 @@ import { wrapToolWithGatewayCallerIdentity } from "../agents/tools/gateway-calle
 import { DEFAULT_AGENTS_FILENAME, loadWorkspaceBootstrapFiles } from "../agents/workspace.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { AssistantMessage, AssistantMessageEventStreamLike } from "../llm/types.js";
-import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { createWorkerBrowserToolRuntime, type WorkerBrowserRuntime } from "./browser-runtime.js";
 import { createWorkerLiveRuntime } from "./embedded-agent-live.runtime.js";
@@ -98,6 +97,7 @@ type RunWorkerEmbeddedTurnParams = {
   permissionMode?: import("../../packages/gateway-protocol/src/schema/sessions-row.js").SessionPermissionMode;
   browser?: WorkerBrowserLaunchDescriptor;
   browserRuntime?: WorkerBrowserRuntime;
+  memoryIsolationCutover: boolean;
   signal?: AbortSignal;
 };
 
@@ -151,16 +151,21 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
   });
 
   const allowedToolNameSet = new Set<string>(params.allowedToolNames);
-  const localToolNameSet = new Set<string>(WORKER_LOCAL_TOOL_NAMES);
   const permissionToolPolicy = params.permissionMode
     ? resolveSessionPermissionCoreToolPolicy({ mode: params.permissionMode })
     : undefined;
   const omittedToolNames = permissionToolPolicy?.readOnly
     ? new Set<WorkerToolName>(["write", "edit", "apply_patch"])
     : undefined;
-  const activeToolNames = WORKER_TOOL_NAMES.filter(
+  // P1C's selected-memory pilot exposes no mutation or execution path. The worker builds core
+  // tools directly, so it must apply the primary agent's final read-only surface itself.
+  const availableToolNames = params.memoryIsolationCutover
+    ? (["read"] as const)
+    : WORKER_LOCAL_TOOL_NAMES;
+  const activeToolNames = availableToolNames.filter(
     (name) => allowedToolNameSet.has(name) && !omittedToolNames?.has(name),
   );
+  const localToolNameSet = new Set<string>(availableToolNames);
   const headlessApprovalText = params.permissionMode
     ? `Exec denied (approval_required) in worker ${params.permissionMode} permission mode. Run this command locally for interactive approval, or ask an administrator to clear the session permission mode.`
     : undefined;
@@ -168,19 +173,20 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
     codingRoot: params.cwd,
     containmentRoot: params.workerContainmentRoot,
     includeBaseCodingTools: true,
-    includeShellTools: true,
+    includeShellTools: !params.memoryIsolationCutover,
     workspaceOnly: permissionToolPolicy?.workspaceOnly ?? false,
-    readOnly: permissionToolPolicy?.readOnly ?? false,
+    readOnly: params.memoryIsolationCutover || permissionToolPolicy?.readOnly === true,
     modelContextWindowTokens: model.contextWindow,
     imageSanitization: {},
     applyPatchEnabled:
+      !params.memoryIsolationCutover &&
       permissionToolPolicy?.readOnly !== true &&
       isApplyPatchAllowedForModel({
         modelProvider: params.modelRef.provider,
         modelId: params.modelRef.model,
       }),
     applyPatchWorkspaceOnly: permissionToolPolicy?.applyPatchWorkspaceOnly ?? true,
-    memoryFileMutationGuard: isMemoryIsolationCutoverAgent(DEFAULT_AGENT_ID)
+    memoryFileMutationGuard: params.memoryIsolationCutover
       ? createMemoryFileMutationGuard({ mutationRoot: params.cwd })
       : undefined,
     execDefaults: {
@@ -247,7 +253,11 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
         }),
       );
       const discoveredToolNames = new Set(localTools.map((tool) => tool.name));
-      for (const toolName of WORKER_REQUIRED_LOCAL_TOOL_NAMES) {
+      const requiredToolNames = [
+        ...(params.memoryIsolationCutover ? ["read"] : WORKER_REQUIRED_LOCAL_TOOL_NAMES),
+        ...(browserRuntime ? ["browser"] : []),
+      ];
+      for (const toolName of requiredToolNames) {
         if (omittedToolNames?.has(toolName)) {
           continue;
         }

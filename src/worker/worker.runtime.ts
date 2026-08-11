@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { isPathInside } from "../infra/path-guards.js";
 import { registerSecretValueForRedaction } from "../logging/secret-redaction-registry.js";
+import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
+import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import type { WorkerBrowserRuntime } from "./browser-runtime.js";
 import { buildWorkerConnectParams, type WorkerLaunchDescriptor } from "./launch-descriptor.js";
 import { createWorkerConnection, type WorkerConnectionState } from "./worker-connection.js";
@@ -77,6 +79,9 @@ export async function runWorkerDescriptor(
       "worker workspace path escapes its assigned containment root; reprovision the worker workspace and retry",
     );
   }
+  // Workers replace their state directory below. Resolve the durable P1C posture first so the
+  // isolated runtime cannot reinterpret an enforced agent as legacy because its scratch DB is empty.
+  const memoryIsolationCutover = isMemoryIsolationCutoverAgent(DEFAULT_AGENT_ID);
   const stateDir = await mkdtemp(path.join(tmpdir(), "openclaw-worker-"));
   await chmod(stateDir, 0o700);
   const previousStateDir = process.env.OPENCLAW_STATE_DIR;
@@ -174,6 +179,7 @@ export async function runWorkerDescriptor(
         allowedToolNames: descriptor.assignment.toolAuthority.allowedToolNames,
         ...(descriptor.assignment.browser ? { browser: descriptor.assignment.browser } : {}),
         ...(options.browserRuntime ? { browserRuntime: options.browserRuntime } : {}),
+        memoryIsolationCutover,
         inference: { stream },
         transcript: {
           commit: async (messages) => {
