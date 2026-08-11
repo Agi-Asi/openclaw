@@ -157,10 +157,10 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
   const omittedToolNames = permissionToolPolicy?.readOnly
     ? new Set<WorkerToolName>(["write", "edit", "apply_patch"])
     : undefined;
-  // P1C's selected-memory pilot exposes no mutation or execution path. The worker builds core
-  // tools directly, so it must apply the primary agent's final read-only surface itself.
+  // Workers do not host selected-memory plugin tools. Exposing their generic read tool would
+  // bypass the broker, so the P1C cutover gives them no filesystem or process capability.
   const availableToolNames = params.memoryIsolationCutover
-    ? (["read"] as const)
+    ? ([] as const)
     : WORKER_LOCAL_TOOL_NAMES;
   const activeToolNames = availableToolNames.filter(
     (name) => allowedToolNameSet.has(name) && !omittedToolNames?.has(name),
@@ -254,7 +254,7 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
       );
       const discoveredToolNames = new Set(localTools.map((tool) => tool.name));
       const requiredToolNames = [
-        ...(params.memoryIsolationCutover ? ["read"] : WORKER_REQUIRED_LOCAL_TOOL_NAMES),
+        ...(params.memoryIsolationCutover ? [] : WORKER_REQUIRED_LOCAL_TOOL_NAMES),
         ...(browserRuntime ? ["browser"] : []),
       ];
       for (const toolName of requiredToolNames) {
