@@ -20,6 +20,7 @@ import {
   sqliteSessionStateDeleteSnapshotsEqual,
 } from "./session-accessor.sqlite-delete-snapshot.js";
 import type { SessionStateDeleteSnapshot } from "./session-accessor.sqlite-delete-snapshot.types.js";
+import { readAuthorizedTranscriptEventSeqs } from "./session-transcript-memory-policy.js";
 import { serializeJsonlLines } from "./transcript-jsonl.js";
 
 type TranscriptArchiveDatabase = Pick<
@@ -143,11 +144,18 @@ function readTranscriptArchiveContent(
     database,
     db
       .selectFrom("transcript_events")
-      .select("event_json")
+      .select(["event_json", "seq"])
       .where("session_id", "=", sessionId)
       .orderBy("seq", "asc"),
-  ).rows.map((row) => row.event_json);
-  return serializeJsonlLines(lines);
+  ).rows;
+  // An archive is an export surface. Once cut over, a raw row without a
+  // current companion label must not become a durable bypass of the replay fence.
+  const authorizedSeqs = readAuthorizedTranscriptEventSeqs(database, sessionId);
+  return serializeJsonlLines(
+    (authorizedSeqs ? lines.filter((row) => authorizedSeqs.has(row.seq)) : lines).map(
+      (row) => row.event_json,
+    ),
+  );
 }
 
 export function materializeTranscriptArchiveInWorker(

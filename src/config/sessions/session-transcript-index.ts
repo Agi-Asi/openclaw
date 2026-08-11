@@ -14,6 +14,7 @@ import {
   getNodeSqliteKysely,
 } from "../../infra/kysely-sync.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "../../state/openclaw-agent-db.generated.js";
+import { readAuthorizedTranscriptEventSeqs } from "./session-transcript-memory-policy.js";
 import {
   buildSessionTranscriptProjection,
   extractTranscriptIndexEntry,
@@ -204,8 +205,14 @@ export function indexAppendedTranscriptEventInTransaction(
     event: unknown;
     eventId: string | null;
     createdAt: number;
+    memoryPolicyAuthorized?: boolean;
   },
 ): boolean {
+  if (params.memoryPolicyAuthorized === false) {
+    // A pending companion must never reach the FTS or active-path projection.
+    markSessionTranscriptIndexDirtyInTransaction(db, params.sessionId);
+    return true;
+  }
   const watermark = readSessionTranscriptProjectionState(db, params.sessionId);
   if (!watermark) {
     if (params.seq !== 0) {
@@ -352,9 +359,12 @@ function rebuildSessionTranscriptIndexInTransaction(
   sessionId: string,
   rows: readonly SessionTranscriptProjectionSourceRow[],
 ): void {
+  const authorizedSeqs = readAuthorizedTranscriptEventSeqs(db, sessionId);
+  const projectedRows = authorizedSeqs ? rows.filter((row) => authorizedSeqs.has(row.seq)) : rows;
   const projection = buildSessionTranscriptProjection({
-    rows,
+    rows: projectedRows,
     sessionId,
+    sourceIndexedSeq: rows.at(-1)?.seq ?? -1,
     sourceTranscriptUpdatedAt: null,
   });
   deleteFtsRows(db, sessionId);

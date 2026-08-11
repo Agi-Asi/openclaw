@@ -16,6 +16,7 @@ import {
   type SandboxApplyPatchConfig,
 } from "./apply-patch-file-ops.js";
 import { applyUpdateHunk } from "./apply-patch-update.js";
+import type { MemoryFileMutationGuard } from "./memory-file-mutation-guard.js";
 import type { MemoryWriteProvenanceObserver } from "./memory-write-provenance.js";
 import { resolvePathFromInput } from "./path-policy.js";
 import type { AgentTool } from "./runtime/index.js";
@@ -118,6 +119,7 @@ export function createApplyPatchTool(
     root?: string;
     sandbox?: SandboxApplyPatchConfig;
     workspaceOnly?: boolean;
+    memoryFileMutationGuard?: MemoryFileMutationGuard;
     memoryWriteProvenance?: MemoryWriteProvenanceObserver;
   } = {},
 ): AgentTool<typeof applyPatchSchema, ApplyPatchToolDetails> {
@@ -147,6 +149,7 @@ export function createApplyPatchTool(
         root,
         sandbox,
         workspaceOnly,
+        memoryFileMutationGuard: options.memoryFileMutationGuard,
         memoryWriteProvenance: options.memoryWriteProvenance,
         signal,
       });

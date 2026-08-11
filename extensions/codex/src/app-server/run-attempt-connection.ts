@@ -12,6 +12,7 @@ import {
   resolveDiagnosticModelContentCapturePolicy,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
+import { isLegacyMemorySurfaceDisabled } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { resolveCodexAppServerForModelProvider } from "./app-server-policy.js";
 import {
   resolveCodexAppServerAuthProfileId,
@@ -49,6 +50,34 @@ import {
 } from "./session-permission-policy.js";
 import { getLeasedSharedCodexAppServerClient } from "./shared-client.js";
 import { rotateOversizedCodexAppServerStartupBinding } from "./startup-binding.js";
+
+const CODEX_PROJECT_DOCUMENTS_DISABLED_OVERRIDE = "project_doc_max_bytes=0";
+
+function fenceCodexProjectDocumentsForMemoryIsolation(params: {
+  agentId: string;
+  appServer: ReturnType<typeof resolveCodexBindingAppServerConnection>["appServer"];
+}) {
+  if (!isLegacyMemorySurfaceDisabled(params.agentId)) {
+    return params.appServer;
+  }
+  if (params.appServer.start.transport !== "stdio") {
+    // Codex reads project documents while a process initializes. A pre-existing
+    // endpoint cannot receive the startup override, so continuing would reopen
+    // workspace MEMORY.md through project_doc_fallback_filenames.
+    throw new Error(
+      "Codex memory-isolation runs require a local stdio app-server so project documents can be disabled at startup",
+    );
+  }
+  return {
+    ...params.appServer,
+    start: {
+      ...params.appServer.start,
+      // Upstream applies repeated -c values in order; append after operator args
+      // so their local config.toml is never rewritten or allowed to re-enable docs.
+      args: [...params.appServer.start.args, "-c", CODEX_PROJECT_DOCUMENTS_DISABLED_OVERRIDE],
+    },
+  };
+}
 
 export async function prepareCodexAttemptConnection({ params, options }: CodexRunAttemptInput) {
   const attemptStartedAt = Date.now();
@@ -345,7 +374,15 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
       env: process.env,
       agentDir,
     });
-    return { session, appServer: withPreparedProcessEnv(trusted) };
+    return {
+      session,
+      appServer: withPreparedProcessEnv(
+        fenceCodexProjectDocumentsForMemoryIsolation({
+          agentId: sessionAgentId,
+          appServer: trusted,
+        }),
+      ),
+    };
   };
   let resolvedAppServer = resolveFinalAppServer(configuredAppServer, reviewerPolicyContext);
   let appServer = resolvedAppServer.appServer;

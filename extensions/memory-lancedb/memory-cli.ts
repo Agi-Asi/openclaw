@@ -1,3 +1,4 @@
+import { isLegacyMemorySurfaceDisabled } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { parseStrictPositiveInteger } from "openclaw/plugin-sdk/number-runtime";
 import { defaultRuntime } from "openclaw/plugin-sdk/runtime";
 import type { OpenClawPluginApi } from "./api.js";
@@ -11,6 +12,15 @@ import {
   type MemoryDB,
 } from "./lancedb-store.js";
 import { normalizeRecallQuery } from "./memory-policy.js";
+
+const LEGACY_MEMORY_CLI_UNAVAILABLE =
+  "Legacy memory CLI access is unavailable after scoped-memory cutover.";
+
+function assertLegacyMemoryCliAvailable(agentId: string): void {
+  if (isLegacyMemorySurfaceDisabled(agentId)) {
+    throw new Error(LEGACY_MEMORY_CLI_UNAVAILABLE);
+  }
+}
 
 function parsePositiveIntegerOption(value: string | undefined, flag: string): number | undefined {
   if (value === undefined) {
@@ -123,6 +133,7 @@ export function registerMemoryCli(
         .option("--order-by-created-at", "Order memories by createdAt descending", false)
         .action(async (opts) => {
           const agentId = resolveCliAgentId(opts.agent);
+          assertLegacyMemoryCliAvailable(agentId);
           const limit = parsePositiveIntegerOption(opts.limit, "--limit");
           const entries = await db.list(agentId, limit, {
             orderByCreatedAt: Boolean(opts.orderByCreatedAt),
@@ -141,6 +152,7 @@ export function registerMemoryCli(
           let operationFailed = false;
           try {
             const agentId = resolveCliAgentId(opts.agent);
+            assertLegacyMemoryCliAvailable(agentId);
             const limit = parsePositiveIntegerOption(opts.limit, "--limit");
             const config = resolveConfig();
             const vector = await embeddings.embed(
@@ -187,6 +199,7 @@ export function registerMemoryCli(
         .option("--order-by <order>", "Order by column and direction (e.g., createdAt:desc)")
         .action(async (opts) => {
           const agentId = resolveCliAgentId(opts.agent);
+          assertLegacyMemoryCliAvailable(agentId);
           const outputColumns = parseMemoryCliColumns(opts.cols);
           const order = parseMemoryCliOrder(opts.orderBy);
           const selectedColumns = [...outputColumns];
@@ -227,6 +240,7 @@ export function registerMemoryCli(
         .option("--agent <id>", "Agent id (default: configured default agent)")
         .action(async (opts) => {
           const agentId = resolveCliAgentId(opts.agent);
+          assertLegacyMemoryCliAvailable(agentId);
           const count = await db.count(agentId);
           console.log(`Total memories: ${count}`);
         });

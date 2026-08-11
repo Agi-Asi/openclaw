@@ -59,6 +59,36 @@ type MemorySearchToolQueryDebug = NonNullable<
   Awaited<ReturnType<typeof executeMemorySearchToolQuery>>["debug"]
 >;
 
+function isAuthorizedMemoryUnavailable(
+  value: unknown,
+): value is Readonly<{ disabled: true; unavailable: true; error: "memory unavailable" }> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { disabled?: unknown }).disabled === true &&
+    (value as { unavailable?: unknown }).unavailable === true &&
+    (value as { error?: unknown }).error === "memory unavailable"
+  );
+}
+
+function authorizedMemoryUnavailableResult() {
+  return jsonResult(buildMemorySearchUnavailableResult("memory unavailable"));
+}
+
+function resolveAuthorizedMemorySources(
+  requestedCorpus: "memory" | "wiki" | "all" | "sessions" | undefined,
+): readonly MemorySource[] {
+  if (requestedCorpus === "memory") {
+    return ["memory"];
+  }
+  if (requestedCorpus === "sessions") {
+    return ["sessions"];
+  }
+  // `all` has no supplemental-plugin escape hatch in enforced mode. It means
+  // all stores admitted by the selected runtime, across its content sources.
+  return ["memory", "sessions"];
+}
+
 const MEMORY_SEARCH_TOOL_COOLDOWN_MS = 60_000;
 
 const memorySearchToolCooldowns = new Map<string, { until: number; error: string }>();
@@ -363,6 +393,8 @@ export function createMemorySearchTool(options: {
   sandboxed?: boolean;
   oneShotCliRun?: boolean;
   conversationRecall?: OpenClawPluginToolContext["conversationRecall"];
+  memoryReadEnforced?: OpenClawPluginToolContext["memoryReadEnforced"];
+  authorizedMemoryRead?: OpenClawPluginToolContext["authorizedMemoryRead"];
   activeProjectKeys?: readonly string[];
   acquireLocalService?: MemoryCoreAcquireLocalService;
 }) {
@@ -392,6 +424,33 @@ export function createMemorySearchTool(options: {
         // The trusted runtime chooses the recall corpus; model-authored arguments cannot broaden it.
         const requestedCorpus =
           options.conversationRecall?.corpus === "sessions" ? "sessions" : modelRequestedCorpus;
+        if (options.memoryReadEnforced) {
+          const host = options.authorizedMemoryRead;
+          if (!host) {
+            return authorizedMemoryUnavailableResult();
+          }
+          const authorized = await host.search({
+            query,
+            sources: resolveAuthorizedMemorySources(requestedCorpus),
+            limit: maxResults,
+            signal: callerSignal,
+          });
+          if (isAuthorizedMemoryUnavailable(authorized)) {
+            return authorizedMemoryUnavailableResult();
+          }
+          const allowed = authorized.results
+            .filter((result) => minScore === undefined || result.score >= minScore)
+            .map((result) => ({ ...result, corpus: result.source }));
+          const citationsMode = resolveMemoryCitationsMode(cfg);
+          const decorated = decorateCitations(
+            allowed,
+            shouldIncludeCitations({
+              mode: citationsMode,
+              sessionKey: options.agentSessionKey,
+            }),
+          );
+          return jsonResult({ results: decorated, citations: citationsMode });
+        }
         const cooldownKey = resolveMemorySearchToolCooldownKey({
           agentId,
           agentSessionKey: options.agentSessionKey,
@@ -681,6 +740,8 @@ export function createMemoryGetTool(options: {
   agentId?: string;
   agentSessionKey?: string;
   sandboxed?: boolean;
+  memoryReadEnforced?: OpenClawPluginToolContext["memoryReadEnforced"];
+  authorizedMemoryRead?: OpenClawPluginToolContext["authorizedMemoryRead"];
   acquireLocalService?: MemoryCoreAcquireLocalService;
 }) {
   return createMemoryTool({
@@ -694,9 +755,24 @@ export function createMemoryGetTool(options: {
       ({ cfg, agentId }) =>
       async (_toolCallId, params) => {
         const rawParams = asToolParamsRecord(params);
-        const relPath = readStringParam(rawParams, "path", { required: true });
         const from = readPositiveIntegerParam(rawParams, "from");
         const lines = readPositiveIntegerParam(rawParams, "lines");
+        if (options.memoryReadEnforced) {
+          const handleId = readStringParam(rawParams, "handleId", { required: true });
+          const host = options.authorizedMemoryRead;
+          if (!host) {
+            return authorizedMemoryUnavailableResult();
+          }
+          const result = await host.read({
+            handleId,
+            ...(from !== undefined ? { from } : {}),
+            ...(lines !== undefined ? { lines } : {}),
+          });
+          return isAuthorizedMemoryUnavailable(result)
+            ? authorizedMemoryUnavailableResult()
+            : jsonResult(result);
+        }
+        const relPath = readStringParam(rawParams, "path", { required: true });
         const requestedCorpus = readCorpusParam(rawParams, ["memory", "wiki", "all"]);
         const { readAgentMemoryFile } = await loadMemoryToolRuntime();
         if (requestedCorpus === "wiki") {

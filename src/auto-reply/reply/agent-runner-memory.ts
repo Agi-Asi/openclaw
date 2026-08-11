@@ -54,6 +54,7 @@ import { logVerbose } from "../../globals.js";
 import { isAbortError } from "../../infra/abort-signal.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
 import { resolveMemoryFlushPlan, type MemoryFlushPlan } from "../../plugins/memory-state.js";
 import { CommandLane } from "../../process/lanes.js";
 import { isIncognitoSessionKey, isUnscopedSessionKeySentinel } from "../../routing/session-key.js";
@@ -782,7 +783,10 @@ export async function runPreflightCompactionIfNeeded(params: {
     }),
     modelId: params.followupRun.run.model ?? params.defaultModel,
   });
-  const memoryFlushPlan = resolveMemoryFlushPlan({ cfg: params.cfg });
+  const memoryFlushPlan = resolveMemoryFlushPlan({
+    cfg: params.cfg,
+    agentId: compactionAgentId,
+  });
   const reserveTokensFloor = memoryFlushPlan?.reserveTokensFloor ?? 20_000;
   const softThresholdTokens = memoryFlushPlan?.softThresholdTokens ?? 4_000;
   const freshPersistedTokens = resolveFreshSessionTotalTokens(entry);
@@ -1095,6 +1099,15 @@ export async function runMemoryFlushIfNeeded(params: {
     params.replyOperation?.updateSessionId(sessionId);
     params.onSessionIdChanged?.(sessionId);
   };
+  const memoryFlushAgentId = params.sessionKey
+    ? resolveAgentIdFromSessionKey(
+        params.sessionKey,
+        params.followupRun.run.agentId ?? resolveDefaultAgentId(params.cfg),
+      )
+    : (params.followupRun.run.agentId ?? resolveDefaultAgentId(params.cfg));
+  if (isMemoryIsolationCutoverAgent(memoryFlushAgentId)) {
+    return { sessionEntry: params.sessionEntry, outcome: "skipped" };
+  }
   const memoryFlushWritable = (() => {
     if (!params.sessionKey) {
       return true;
