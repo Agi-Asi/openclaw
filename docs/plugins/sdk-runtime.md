@@ -419,8 +419,10 @@ snapshots; OpenClaw owns all persistence and lifecycle coordination.
     PCM and renders the returned events.
 
     ```typescript
+    const connection = new AbortController();
     const session = await api.runtime.talk.openSession({
       sessionKey: "agent:main:avatar",
+      signal: connection.signal,
       onEvent: (event) => renderVoiceEvent(event),
     });
 
@@ -428,6 +430,9 @@ snapshots; OpenClaw owns all persistence and lifecycle coordination.
     session.cancelOutput("barge-in");
     session.close();
     ```
+
+    Bind `signal` to the browser or socket displaying the session. Aborting it releases the Talk
+    session if that connection disappears.
 
     `sessionKey` selects the agent conversation and workspace. `provider`, `model`, `voice`, and
     `language` optionally override its configured Talk defaults. Input and output use signed
