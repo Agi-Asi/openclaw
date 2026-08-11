@@ -21,6 +21,8 @@ const STATE_SQLITE_CONFLICTING_OPTION_NAMES = [
   "deep",
   "lint",
   "postUpgrade",
+  "memoryIsolation",
+  "memoryIsolationAgent",
   "sessionSqlite",
   "sessionSqliteStore",
   "sessionSqliteAgent",
@@ -40,6 +42,30 @@ function exitDoctorError(message: string, json: boolean): void {
   }
   defaultRuntime.exit(2);
 }
+
+const MEMORY_ISOLATION_CONFLICTING_OPTION_NAMES = [
+  "workspaceSuggestions",
+  "yes",
+  "repair",
+  "fix",
+  "force",
+  "nonInteractive",
+  "generateGatewayToken",
+  "allowExec",
+  "deep",
+  "lint",
+  "postUpgrade",
+  "sessionSqlite",
+  "sessionSqliteStore",
+  "sessionSqliteAgent",
+  "sessionSqliteAllAgents",
+  "stateSqlite",
+  "githubIssue",
+  "severityMin",
+  "all",
+  "skip",
+  "only",
+] as const;
 
 /** Register maintenance commands that inspect or mutate local OpenClaw state. */
 export function registerMaintenanceCommands(program: Command) {
@@ -70,6 +96,11 @@ export function registerMaintenanceCommands(program: Command) {
       "Emit plugin-compat findings only (machine-readable with --json)",
       false,
     )
+    .option(
+      "--memory-isolation <mode>",
+      "Manage the durable P1C memory posture (status|shadow-read-only|legacy)",
+    )
+    .option("--memory-isolation-agent <id>", "With --memory-isolation: select one configured agent")
     .option(
       "--session-sqlite <mode>",
       "Run session SQLite migration mode (dry-run|import|validate|inspect|compact|restore|recover)",
@@ -106,6 +137,24 @@ export function registerMaintenanceCommands(program: Command) {
       [],
     )
     .action(async (opts, command) => {
+      const memoryIsolation = parseDoctorMemoryIsolationMode(opts.memoryIsolation);
+      if (
+        memoryIsolation &&
+        hasExplicitOptions(command, MEMORY_ISOLATION_CONFLICTING_OPTION_NAMES)
+      ) {
+        defaultRuntime.error(
+          "doctor memory isolation can only be combined with --memory-isolation-agent and --json.",
+        );
+        defaultRuntime.exit(2);
+        return;
+      }
+      if (!memoryIsolation && typeof opts.memoryIsolationAgent === "string") {
+        defaultRuntime.error(
+          "doctor memory isolation agent requires --memory-isolation. Use `openclaw doctor --memory-isolation status --memory-isolation-agent <id>`.",
+        );
+        defaultRuntime.exit(2);
+        return;
+      }
       if (
         typeof opts.stateSqlite === "string" &&
         hasExplicitOptions(command, STATE_SQLITE_CONFLICTING_OPTION_NAMES)
@@ -179,6 +228,10 @@ export function registerMaintenanceCommands(program: Command) {
             allowExec: Boolean(opts.allowExec),
             deep: Boolean(opts.deep),
             postUpgrade: Boolean(opts.postUpgrade),
+            ...(memoryIsolation ? { memoryIsolation } : {}),
+            ...(typeof opts.memoryIsolationAgent === "string"
+              ? { memoryIsolationAgent: opts.memoryIsolationAgent }
+              : {}),
             ...(stateSqlite ? { stateSqlite } : {}),
             ...(sessionSqlite ? { sessionSqlite } : {}),
             ...(typeof opts.sessionSqliteStore === "string"
@@ -305,6 +358,20 @@ function hasSessionSqliteOnlyDoctorOptions(opts: {
       opts.sessionSqliteAllAgents === true ||
       typeof opts.sessionSqliteStore === "string")
   );
+}
+
+function parseDoctorMemoryIsolationMode(
+  value: unknown,
+): "status" | "shadow-read-only" | "legacy" | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "status" || value === "shadow-read-only" || value === "legacy") {
+    return value;
+  }
+  defaultRuntime.error("Invalid --memory-isolation mode. Use status, shadow-read-only, or legacy.");
+  defaultRuntime.exit(2);
+  throw new Error("unreachable");
 }
 
 function parseDoctorStateSqliteMode(value: unknown, json: boolean): "compact" | undefined {
