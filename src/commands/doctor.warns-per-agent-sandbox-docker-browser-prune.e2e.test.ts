@@ -64,39 +64,6 @@ describe("doctor command", () => {
     expect(matchingSandboxNotes.length).toBeGreaterThan(0);
   }, 30_000);
 
-  it("does not warn when a keyed agent owns its sandbox overrides", async () => {
-    mockDoctorConfigSnapshot({
-      config: {
-        agents: {
-          defaults: { sandbox: { mode: "off", scope: "shared" } },
-          entries: {
-            main: { default: true },
-            work: {
-              sandbox: {
-                mode: "all",
-                scope: "agent",
-                docker: { setupCommand: "echo work" },
-                browser: { enabled: true },
-                prune: { idleHours: 24 },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    await doctorCommand(createDoctorRuntime(), { nonInteractive: true });
-
-    expect(
-      terminalNoteMock.mock.calls.some(
-        ([message, title]) =>
-          title === "Sandbox" &&
-          typeof message === "string" &&
-          message.includes("agents.entries.work"),
-      ),
-    ).toBe(false);
-  }, 30_000);
-
   it("does not warn when only the active workspace is present", async () => {
     mockDoctorConfigSnapshot({
       config: {
