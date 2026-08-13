@@ -76,7 +76,10 @@ import {
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
 import { resolveAgentRunUsage } from "./openai-agent-run-usage.js";
 import { resolveOpenAiCompatError, validateOpenAiSamplingParams } from "./openai-compat-errors.js";
-import { resolveOpenAiHttpAgentRunTerminalOutcome } from "./openai-http-terminal-outcome.js";
+import {
+  resolveOpenAiHttpAgentRunTerminalOutcome,
+  resolveOpenAiHttpResultText,
+} from "./openai-http-terminal-outcome.js";
 import {
   isToolChoiceConstraintSatisfied,
   resolveUnsatisfiedToolChoiceMessage,
@@ -741,31 +744,11 @@ function buildAgentPrompt(
   };
 }
 
-function resolveAgentResponseText(result: unknown): string {
-  const payloads = (result as { payloads?: Array<{ isError?: boolean; text?: string }> } | null)
-    ?.payloads;
-  if (!Array.isArray(payloads) || payloads.length === 0) {
-    return "No response from OpenClaw.";
+function coerceRequest(val: unknown): OpenAiChatCompletionRequest {
+  if (!val || typeof val !== "object") {
+    return {};
   }
-  const content = payloads
-    .filter((payload) => payload.isError !== true)
-    .map((p) => (typeof p.text === "string" ? p.text : ""))
-    .filter(Boolean)
-    .join("\n\n");
-  return content || "No response from OpenClaw.";
-}
-
-function resolveAgentResponseCommentary(result: unknown): string {
-  const payloads = (result as { payloads?: Array<{ isError?: boolean; text?: string }> } | null)
-    ?.payloads;
-  if (!Array.isArray(payloads) || payloads.length === 0) {
-    return "";
-  }
-  return payloads
-    .filter((payload) => payload.isError !== true)
-    .map((p) => (typeof p.text === "string" ? p.text : ""))
-    .filter(Boolean)
-    .join("\n\n");
+  return val as OpenAiChatCompletionRequest;
 }
 
 type PendingToolCall = {
@@ -1176,7 +1159,7 @@ export async function handleOpenAiHttpRequest(
       }
 
       if (stopReason === "tool_calls" && pendingToolCalls && pendingToolCalls.length > 0) {
-        const commentary = resolveAgentResponseCommentary(result);
+        const commentary = resolveOpenAiHttpResultText(result);
         sendJson(res, 200, {
           id: runId,
           object: "chat.completion",
@@ -1201,7 +1184,7 @@ export async function handleOpenAiHttpRequest(
         });
         return true;
       }
-      const content = resolveAgentResponseText(result);
+      const content = resolveOpenAiHttpResultText(result) || "No response from OpenClaw.";
 
       sendJson(res, 200, {
         id: runId,
@@ -1251,15 +1234,9 @@ export async function handleOpenAiHttpRequest(
   let bufferedAssistantContent = "";
   let bufferedReplaceableAssistantContent = "";
   let finalUsage: OpenAiChatCompletionsUsage | undefined;
-  type StreamFinalization =
-    | {
-        status: "completed";
-        finishReason: "stop" | "tool_calls";
-        outcome?: AgentRunTerminalOutcome;
-      }
-    | { status: "failed"; outcome: AgentRunTerminalOutcome };
-  let finalizeRequested: StreamFinalization | null = null;
-  const readFinalization = (): StreamFinalization | null => finalizeRequested;
+  let finalizeRequested = false;
+  let finalizeFinishReason: "stop" | "tool_calls" = "stop";
+  let terminalOutcome: AgentRunTerminalOutcome | undefined;
   let finalizeScheduled = false;
   let resultResolved = false;
   let closed = false;
@@ -1269,14 +1246,17 @@ export async function handleOpenAiHttpRequest(
   let unsubscribe = () => {};
   let stopWatchingDisconnect = () => {};
 
-  const finalizeFailedStream = (error: { message: string; type: string; code?: string }) => {
+  const finishStreamWithError = (
+    error: { message: string; type: string; code?: string },
+    includeUsage = false,
+  ) => {
     if (closed) {
       return;
     }
     closed = true;
     stopWatchingDisconnect();
     unsubscribe();
-    if (streamIncludeUsage && finalUsage) {
+    if (includeUsage && streamIncludeUsage && finalUsage) {
       writeUsageChunk(res, { runId, model, usage: finalUsage });
     }
     writeSse(res, { error });
@@ -1289,8 +1269,8 @@ export async function handleOpenAiHttpRequest(
       return;
     }
     // Resolved preserved errors are failures, not successful assistant stops.
-    if (finalizeRequested.status === "failed") {
-      finalizeFailedStream({ message: "internal error", type: "api_error" });
+    if (terminalOutcome?.reason && terminalOutcome.reason !== "completed") {
+      finishStreamWithError({ message: "internal error", type: "api_error" }, true);
       return;
     }
     if (streamIncludeUsage && !finalUsage) {
@@ -1303,12 +1283,7 @@ export async function handleOpenAiHttpRequest(
       if (closed) {
         return;
       }
-      const finalization = finalizeRequested;
-      if (!finalization) {
-        finalizeScheduled = false;
-        return;
-      }
-      if (finalization.status === "failed") {
+      if (terminalOutcome?.reason && terminalOutcome.reason !== "completed") {
         finalizeScheduled = false;
         maybeFinalize();
         return;
@@ -1337,22 +1312,17 @@ export async function handleOpenAiHttpRequest(
     outcome?: AgentRunTerminalOutcome,
   ) => {
     // Failed attempts remain provisional until a recovered fallback settles.
-    const previous = readFinalization();
-    const preservedFinishReason =
-      previous?.status === "completed" && previous.finishReason === "tool_calls"
-        ? "tool_calls"
-        : finishReason;
-    const preservedOutcome = outcome ?? previous?.outcome;
-    finalizeRequested = {
-      status: "completed",
-      finishReason: preservedFinishReason,
-      ...(preservedOutcome ? { outcome: preservedOutcome } : {}),
-    };
+    if (finishReason === "tool_calls") {
+      finalizeFinishReason = finishReason;
+    }
+    terminalOutcome = outcome ?? terminalOutcome;
+    finalizeRequested = true;
     maybeFinalize();
   };
 
   const requestFailedStream = (outcome: AgentRunTerminalOutcome) => {
-    finalizeRequested = { status: "failed", outcome };
+    terminalOutcome = outcome;
+    finalizeRequested = true;
     maybeFinalize();
   };
 
@@ -1442,7 +1412,7 @@ export async function handleOpenAiHttpRequest(
           phase,
           data: evt.data,
         });
-        const outcome = mergeAgentRunTerminalOutcome(finalizeRequested?.outcome, incomingOutcome);
+        const outcome = mergeAgentRunTerminalOutcome(terminalOutcome, incomingOutcome);
         if (outcome.reason === "completed") {
           requestFinalize("stop", outcome);
         } else {
@@ -1451,18 +1421,6 @@ export async function handleOpenAiHttpRequest(
       }
     }
   });
-
-  const finishStreamWithError = (error: { message: string; type: string; code?: string }) => {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    stopWatchingDisconnect();
-    unsubscribe();
-    writeSse(res, { error });
-    writeDone(res);
-    res.end();
-  };
 
   // Agent cleanup and deferred SSE delivery have independent lifetimes;
   // shutdown must wait until both have settled, whichever finishes last.
@@ -1500,11 +1458,12 @@ export async function handleOpenAiHttpRequest(
       }
 
       finalUsage = resolveChatCompletionUsage(result);
+      const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, terminalOutcome);
+      terminalOutcome = outcome;
       if (terminalStreamError) {
         finishStreamWithError(terminalStreamError);
         return;
       }
-      const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, readFinalization()?.outcome);
       if (outcome.reason !== "completed") {
         requestFailedStream(outcome);
         return;
@@ -1538,7 +1497,7 @@ export async function handleOpenAiHttpRequest(
         if (!sawAssistantDelta) {
           const commentary =
             bufferedAssistantContent ||
-            resolveAgentResponseCommentary(result) ||
+            resolveOpenAiHttpResultText(result) ||
             bufferedReplaceableAssistantContent;
           if (commentary) {
             sawAssistantDelta = true;
@@ -1563,9 +1522,8 @@ export async function handleOpenAiHttpRequest(
         }
 
         const content =
-          resolveAgentResponseCommentary(result) ||
+          resolveOpenAiHttpResultText(result) ||
           bufferedReplaceableAssistantContent ||
-          resolveAgentResponseText(result) ||
           "No response from OpenClaw.";
 
         sawAssistantDelta = true;
