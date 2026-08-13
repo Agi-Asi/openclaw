@@ -341,7 +341,7 @@ describe("doctor state integrity oauth dir checks", () => {
     expect(stateIntegrityText()).toContain("CRITICAL: OAuth dir missing");
   });
 
-  it("warns about orphaned on-disk agent directories missing from agents.list", async () => {
+  it("preserves list-roster paths in orphaned agent recovery advice", async () => {
     createAgentDir("big-brain");
     createAgentDir("cerebro");
 
@@ -352,8 +352,42 @@ describe("doctor state integrity oauth dir checks", () => {
     });
 
     expect(text).toContain("without a matching agents.list entry");
+    expect(text).toContain("Restore the missing agents.list entries");
     expect(text).toContain("Examples: big-brain, cerebro");
     expect(text).toContain("config-driven routing, identity, and model selection will ignore them");
+    expect(text).not.toContain("agents.entries");
+  });
+
+  it("points canonical agent-state recovery at the keyed agent roster", async () => {
+    createAgentDir("orphan");
+
+    const text = await runStateIntegrityText({
+      agents: {
+        entries: { main: { default: true } },
+      },
+    });
+
+    expect(text).toContain("without a matching agents.entries entry");
+    expect(text).toContain("Restore the missing agents.entries entries");
+    expect(text).toContain("Examples: orphan");
+    expect(text).not.toContain("agents.list");
+  });
+
+  it("does not label canonical configured agent directories as orphaned", async () => {
+    createAgentDir("main");
+    createAgentDir("ops");
+
+    const text = await runStateIntegrityText({
+      agents: {
+        entries: {
+          main: { default: true },
+          ops: {},
+        },
+      },
+    });
+
+    expect(text).not.toContain("on disk without a matching");
+    expect(text).not.toContain("Examples: ops");
   });
 
   it("detects orphaned agent dirs even when the on-disk folder casing differs", async () => {
@@ -365,7 +399,7 @@ describe("doctor state integrity oauth dir checks", () => {
       },
     });
 
-    expect(text).toContain("without a matching agents.list entry");
+    expect(text).toContain("on disk without a matching");
     expect(text).toContain("Examples: Research (id research)");
   });
 
@@ -380,7 +414,7 @@ describe("doctor state integrity oauth dir checks", () => {
       },
     });
 
-    expect(text).not.toContain("without a matching agents.list entry");
+    expect(text).not.toContain("on disk without a matching");
     expect(text).not.toContain("Examples:");
   });
 
@@ -393,7 +427,7 @@ describe("doctor state integrity oauth dir checks", () => {
       },
     });
 
-    expect(text).not.toContain("without a matching agents.list entry");
+    expect(text).not.toContain("on disk without a matching");
     expect(text).not.toContain("Examples: main");
   });
 
@@ -428,7 +462,7 @@ describe("doctor state integrity oauth dir checks", () => {
       },
     });
 
-    expect(text).toContain("without a matching agents.list entry");
+    expect(text).toContain("on disk without a matching");
     expect(text).toContain("Examples: legacy");
   });
 
@@ -517,7 +551,7 @@ describe("doctor state integrity oauth dir checks", () => {
         },
       });
 
-      expect(text).toContain("without a matching agents.list entry");
+      expect(text).toContain("on disk without a matching");
       expect(text).toContain("Examples: Research (id research)");
     } finally {
       realpathSpy.mockRestore();
@@ -548,7 +582,7 @@ describe("doctor state integrity oauth dir checks", () => {
         },
       });
 
-      expect(text).not.toContain("without a matching agents.list entry");
+      expect(text).not.toContain("on disk without a matching");
       expect(text).not.toContain("Examples:");
     } finally {
       realpathSpy.mockRestore();
