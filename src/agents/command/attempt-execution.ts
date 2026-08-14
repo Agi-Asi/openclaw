@@ -1225,6 +1225,8 @@ export function runAgentAttempt(params: {
         params.onLifecycleGenerationChanged?.(info.lifecycleGeneration);
       }
     },
+    onQueueStateChange: params.opts.onQueueStateChange,
+    queueWorkId: params.opts.queueWorkId,
     onSessionIdChanged: params.opts.onSessionIdChanged,
     bootstrapPromptWarningSignaturesSeen,
     bootstrapPromptWarningSignature,

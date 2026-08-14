@@ -1,6 +1,7 @@
 // Tests for gateway runtime subscription wiring.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createChannelParticipantAdmissionEvidence } from "../../test/helpers/channel-admission-evidence.js";
+import { createDeferred } from "../../test/helpers/promise.js";
 import {
   configureExecutionIdentityAdmissionSink,
   enqueueExecutionIdentityContextAtAdmission,
@@ -15,6 +16,8 @@ import {
   resetAgentEventsForTest,
 } from "../infra/agent-events.js";
 import type { SubsystemLogger } from "../logging/subsystem.js";
+import { enqueueCommandInLane, setCommandLaneConcurrency } from "../process/command-queue.js";
+import { resetCommandQueueStateForTest } from "../process/command-queue.test-support.js";
 import { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import {
   emitSessionTranscriptUpdate,
@@ -24,6 +27,7 @@ import {
   createTaskRecord,
   markTaskLostById,
   markTaskTerminalById,
+  publishTaskProjectionById,
   recordTaskProgressByRunId,
 } from "../tasks/task-registry.js";
 import { getTaskRegistryObservers } from "../tasks/task-registry.store.js";
@@ -193,6 +197,7 @@ describe("startGatewayEventSubscriptions", () => {
     agentEventHandlerMocks.create.mockReset().mockImplementation(() => {
       throw new Error("server-chat lazy load failure");
     });
+    resetCommandQueueStateForTest();
     installInMemoryTaskRegistryRuntime();
   });
 
@@ -204,6 +209,7 @@ describe("startGatewayEventSubscriptions", () => {
     unsubs?.lifecycleUnsub();
     void unsubs?.taskUnsub();
     resetAgentEventsForTest();
+    resetCommandQueueStateForTest();
     resetTaskRegistryForTests({ persist: false });
     configureExecutionIdentityAdmissionSink(() => false)();
   });
@@ -489,6 +495,123 @@ describe("startGatewayEventSubscriptions", () => {
       notifyPolicy: "silent",
     });
     expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it("broadcasts revised queue waits when a blocker releases", async () => {
+    const broadcast = vi.fn<SubscriptionParams["broadcast"]>();
+    unsubs = startGatewayEventSubscriptions({ ...createParams(), broadcast });
+    await waitForFast(() => expect(getTaskRegistryObservers()).not.toBeNull());
+
+    const lane = "gateway-task-queue-projection";
+    setCommandLaneConcurrency(lane, 1);
+    const activeBlocker = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      task: "Active queue blocker",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+    });
+    const aheadBlocker = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      task: "Next queue blocker",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+    });
+    // A pre-registered active task can enter a nested lane later; its public
+    // projection must reflect the live queue without mutating the durable row.
+    const target = createTaskRecord({
+      runtime: "subagent",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      task: "Pre-registered active task",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+    });
+    if (!activeBlocker || !aheadBlocker || !target) {
+      throw new Error("expected task records");
+    }
+    broadcast.mockClear();
+
+    const activeGate = createDeferred<void>();
+    const aheadGate = createDeferred<void>();
+    const targetGate = createDeferred<void>();
+    const activeRun = enqueueCommandInLane(lane, async () => await activeGate.promise, {
+      workId: activeBlocker.taskId,
+    });
+    const aheadRun = enqueueCommandInLane(lane, async () => await aheadGate.promise, {
+      workId: aheadBlocker.taskId,
+    });
+    const targetRun = enqueueCommandInLane(lane, async () => await targetGate.promise, {
+      workId: target.taskId,
+      onQueueStateChange: () => {
+        publishTaskProjectionById(target.taskId);
+      },
+    });
+    const targetEvents = () =>
+      broadcast.mock.calls
+        .filter(([event]) => event === "task")
+        .map(([, payload]) => payload as TaskEventPayload)
+        .filter(
+          (payload): payload is Extract<TaskEventPayload, { action: "upserted" }> =>
+            payload.action === "upserted" && payload.task.id === target.taskId,
+        );
+
+    try {
+      await waitForFast(() => {
+        expect(targetEvents().at(-1)?.task.queueWait).toMatchObject({
+          queuedAhead: 1,
+          busySlots: 1,
+          capacity: 1,
+          activeBlockers: [expect.objectContaining({ taskId: activeBlocker.taskId })],
+          aheadBlockers: [expect.objectContaining({ taskId: aheadBlocker.taskId })],
+        });
+      });
+      const initial = targetEvents().at(-1)?.task;
+      expect(initial?.status).toBe("queued");
+      expect(initial?.queueEpoch).toEqual(expect.any(String));
+      expect(initial?.queueRevision).toEqual(expect.any(Number));
+
+      activeGate.resolve();
+      await activeRun;
+      await waitForFast(() => {
+        const current = targetEvents().at(-1)?.task;
+        expect(current?.queueEpoch).toBe(initial?.queueEpoch);
+        expect(Number(current?.queueRevision)).toBeGreaterThan(Number(initial?.queueRevision));
+        expect(current?.queueWait).toMatchObject({
+          queuedAhead: 0,
+          busySlots: 1,
+          capacity: 1,
+          activeBlockers: [expect.objectContaining({ taskId: aheadBlocker.taskId })],
+          aheadBlockers: [],
+        });
+      });
+      const afterFirstRelease = targetEvents().at(-1)?.task;
+
+      aheadGate.resolve();
+      await aheadRun;
+      await waitForFast(() => {
+        const current = targetEvents().at(-1)?.task;
+        expect(Number(current?.queueRevision)).toBeGreaterThan(
+          Number(afterFirstRelease?.queueRevision),
+        );
+        expect(current?.status).toBe("running");
+        expect(current).not.toHaveProperty("queueWait");
+      });
+    } finally {
+      activeGate.resolve();
+      aheadGate.resolve();
+      targetGate.resolve();
+      await Promise.allSettled([activeRun, aheadRun, targetRun]);
+    }
   });
 
   it("throttles live subagent progress per task and flushes before terminal status", async () => {

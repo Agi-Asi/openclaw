@@ -261,6 +261,7 @@ export class ChatPane extends ChatPaneBrowserAnnotationRender {
           ? state.sidebarContent.taskId
           : undefined,
       onOpenTaskDetail: (task) => state.handleOpenSidebar({ kind: "task", taskId: task.id }),
+      onNavigateToSession: (sessionKey) => this.onPaneSessionChange?.(this.paneId, sessionKey),
     });
     const backgroundTasks = {
       ...backgroundTasksBase,
@@ -707,9 +708,7 @@ export class ChatPane extends ChatPaneBrowserAnnotationRender {
       panelTemplates,
       primary,
     });
-    return html`${content}${renderChatImageLightbox(
-      state.imageLightbox,
-      state.handleCloseImage,
-    )}${this.renderResetConfirmation()}`;
+    const lightbox = renderChatImageLightbox(state.imageLightbox, state.handleCloseImage);
+    return html`${content}${lightbox}${this.renderResetConfirmation()}`;
   }
 }

@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { withPluginRegistrationContext } from "../plugins/runtime.js";
+import type { DetachedTaskFindParams } from "./detached-task-runtime-contract.js";
 import {
   getDetachedTaskLifecycleRuntimeRegistration,
   registerDetachedTaskLifecycleRuntime,
@@ -12,6 +13,7 @@ import {
   createRunningTaskRun,
   failTaskRunByRunId,
   findDetachedTaskRun,
+  findDetachedTaskRunAcrossRuntimes,
   finalizeTaskRunByRunId,
   getDetachedTaskLifecycleRuntime,
   recordTaskRunProgressByRunId,
@@ -206,6 +208,130 @@ describe("detached-task-runtime", () => {
         error: expect.any(Error),
       }),
     );
+  });
+
+  it("finds one exact non-mirrored task across registered runtime families", () => {
+    const expected = createFakeTaskRecord({
+      taskId: "task-custom-runtime",
+      runtime: "subagent",
+      runId: "run-custom-runtime",
+      childSessionKey: "agent:main:subagent:custom-runtime",
+      createdAt: 20,
+    });
+    const findTaskRun = vi.fn((params: DetachedTaskFindParams) =>
+      params.runtime === expected.runtime ? expected : undefined,
+    );
+    setDetachedTaskLifecycleRuntime({
+      ...getDetachedTaskLifecycleRuntime(),
+      findTaskRun,
+    });
+
+    expect(
+      findDetachedTaskRunAcrossRuntimes({
+        runId: expected.runId ?? "",
+        sessionKey: expected.childSessionKey ?? "",
+        createdAtOrAfter: 15,
+        createdBefore: 30,
+      }),
+    ).toEqual(expected);
+    expect(findTaskRun).toHaveBeenCalledWith({
+      runId: expected.runId,
+      runtime: "subagent",
+      sessionKey: expected.childSessionKey,
+      createdAtOrAfter: 15,
+      createdBefore: 30,
+      allowSessionFallback: false,
+    });
+  });
+
+  it.each([
+    ["run id", { runId: "run-other" }],
+    ["session", { childSessionKey: "agent:main:subagent:other" }],
+    ["lower generation bound", { createdAt: 14 }],
+    ["upper generation bound", { createdAt: 30 }],
+  ])("rejects a registered task with a mismatched %s", (_label, overrides) => {
+    const candidate = createFakeTaskRecord({
+      taskId: "task-mismatched-runtime",
+      runtime: "subagent",
+      runId: "run-custom-runtime",
+      childSessionKey: "agent:main:subagent:custom-runtime",
+      createdAt: 20,
+      ...overrides,
+    });
+    setDetachedTaskLifecycleRuntime({
+      ...getDetachedTaskLifecycleRuntime(),
+      findTaskRun: (params) => (params.runtime === "subagent" ? candidate : undefined),
+    });
+
+    expect(
+      findDetachedTaskRunAcrossRuntimes({
+        runId: "run-custom-runtime",
+        sessionKey: "agent:main:subagent:custom-runtime",
+        createdAtOrAfter: 15,
+        createdBefore: 30,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("rejects ambiguous exact matches from a registered runtime", () => {
+    setDetachedTaskLifecycleRuntime({
+      ...getDetachedTaskLifecycleRuntime(),
+      findTaskRun: (params) =>
+        params.runtime === "subagent" || params.runtime === "acp"
+          ? createFakeTaskRecord({
+              taskId: `task-${params.runtime}`,
+              runtime: params.runtime,
+              runId: params.runId,
+              childSessionKey: params.sessionKey,
+              createdAt: 20,
+            })
+          : undefined,
+    });
+
+    expect(
+      findDetachedTaskRunAcrossRuntimes({
+        runId: "run-ambiguous",
+        sessionKey: "agent:main:subagent:ambiguous",
+        createdAtOrAfter: 15,
+        createdBefore: 30,
+      }),
+    ).toBeUndefined();
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      "Detached task lookup returned multiple exact run matches",
+      expect.objectContaining({
+        runId: "run-ambiguous",
+        firstTaskId: "task-subagent",
+        secondTaskId: "task-acp",
+      }),
+    );
+  });
+
+  it("fails closed when any registered runtime-family lookup throws", () => {
+    const expected = createFakeTaskRecord({
+      taskId: "task-before-lookup-failure",
+      runtime: "subagent",
+      runId: "run-lookup-failure",
+      childSessionKey: "agent:main:subagent:lookup-failure",
+      createdAt: 20,
+    });
+    setDetachedTaskLifecycleRuntime({
+      ...getDetachedTaskLifecycleRuntime(),
+      findTaskRun: (params) => {
+        if (params.runtime === "subagent") {
+          return expected;
+        }
+        throw new Error("runtime-family lookup unavailable");
+      },
+    });
+
+    expect(
+      findDetachedTaskRunAcrossRuntimes({
+        runId: expected.runId ?? "",
+        sessionKey: expected.childSessionKey ?? "",
+        createdAtOrAfter: 15,
+        createdBefore: 30,
+      }),
+    ).toBeUndefined();
   });
 
   it("dispatches lifecycle operations through the installed runtime", async () => {

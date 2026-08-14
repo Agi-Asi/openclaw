@@ -19,6 +19,7 @@ import {
   emitTaskRegistryObserverEvent,
   ensureTaskRegistryReady,
   getTasksByRunId,
+  getTasksByRunScope,
   taskRegistryLog,
   persistTaskRegistry,
   pickPreferredRunIdTask,
@@ -118,6 +119,7 @@ export function listTaskRecordPage(params: {
   offset: number;
   limit: number;
   statuses?: readonly TaskStatus[];
+  includeTask?: (task: TaskRecord) => boolean;
   agentId?: string;
   sessionKey?: string;
   sessionAgentId?: string;
@@ -133,6 +135,7 @@ export function listTaskRecordPage(params: {
     .filter(
       (task) =>
         (!statuses || statuses.has(task.status)) &&
+        (!params.includeTask || params.includeTask(task)) &&
         taskMatchesAgent(task, agentId, params.cfg) &&
         taskMatchesRelatedSession(task, sessionKey, params.sessionAgentId, params.cfg),
     )
@@ -197,6 +200,32 @@ export function findTaskByRunId(runId: string): TaskRecord | undefined {
   ensureTaskRegistryReady();
   const task = pickPreferredRunIdTask(getTasksByRunId(runId));
   return task ? cloneTaskRecord(task) : undefined;
+}
+
+/** Resolves the newest active task generation for one run and session scope. */
+export function resolveActiveTaskByRunScope(params: {
+  runId: string;
+  sessionKey: string;
+}): TaskRecord | undefined {
+  ensureTaskRegistryReady();
+  const task = getTasksByRunScope(params)
+    .filter((candidate) => isActiveTaskStatus(candidate.status))
+    .toSorted(compareTasksNewestFirst)[0];
+  return task ? cloneTaskRecord(task) : undefined;
+}
+
+/** Re-emits an unchanged durable task when transient projection facts changed. */
+export function publishTaskProjectionById(taskId: string): boolean {
+  ensureTaskRegistryReady();
+  const task = tasks.get(taskId.trim());
+  if (!task) {
+    return false;
+  }
+  emitTaskRegistryObserverEvent(() => ({
+    kind: "upserted",
+    task: cloneTaskRecord(task),
+  }));
+  return true;
 }
 
 function listTasksFromIndex(index: Map<string, Set<string>>, key: string): TaskRecord[] {

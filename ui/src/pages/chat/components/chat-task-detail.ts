@@ -1,6 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { html, nothing, type TemplateResult } from "lit";
-import "../../../components/elapsed-time.ts";
 import { icons } from "../../../components/icons.ts";
 import { t } from "../../../i18n/index.ts";
 import { canonicalUiSessionKeyForPersistence } from "../../../lib/sessions/session-key.ts";
@@ -8,7 +7,7 @@ import {
   isActiveTask,
   taskDetail,
   taskRuntimeLabel,
-  taskTimestampMs,
+  taskTimingFacts,
   taskTitle,
 } from "../../../lib/tasks/data.ts";
 import type { TaskSummary } from "../../../lib/tasks/task-summary.ts";
@@ -16,6 +15,7 @@ import type { ChatProps } from "../chat-view.ts";
 import {
   backgroundTaskStatusLabel,
   newestTaskSnapshot,
+  renderBackgroundTaskTiming,
   STATUS_TONES,
 } from "./chat-background-tasks-shared.ts";
 import type { BackgroundTasksProps } from "./chat-background-tasks.types.ts";
@@ -69,9 +69,77 @@ export function renderTaskDetailPanel(params: {
       : renderTaskFallback(currentTask, backgroundTasks, params.host);
   return html`
     <div class="sidebar-panel chat-task-detail" data-task-detail-panel>
-      ${renderTaskHeader(taskTitle(currentTask), currentTask, backgroundTasks)} ${content}
+      ${renderTaskHeader(taskTitle(currentTask), currentTask, backgroundTasks)}
+      ${renderQueueWaitDetail(currentTask, backgroundTasks)} ${content}
     </div>
   `;
+}
+
+function renderWaitBlockers(
+  blockers: readonly NonNullable<TaskSummary["queueWait"]>["activeBlockers"][number][],
+  remaining: number,
+  props: BackgroundTasksProps,
+) {
+  if (blockers.length === 0 && remaining === 0) {
+    return nothing;
+  }
+  return html`<ul class="chat-task-detail__wait-blockers">
+    ${blockers.map((blocker) => {
+      const task = props.tasks?.find((candidate) => candidate.id === blocker.taskId);
+      const sessionKey = blocker.sessionKey;
+      const openBlocker =
+        task && props.onOpenTaskDetail
+          ? () => props.onOpenTaskDetail?.(task)
+          : sessionKey && props.onNavigateToSession
+            ? () => props.onNavigateToSession?.(sessionKey)
+            : null;
+      return html`<li>
+        ${openBlocker
+          ? html`<button class="chat-task-detail__wait-blocker" type="button" @click=${openBlocker}>
+              ${blocker.title}
+            </button>`
+          : html`<span>${blocker.title}</span>`}
+      </li>`;
+    })}
+    ${remaining > 0
+      ? html`<li class="muted">${t("agentTools.more", { count: String(remaining) })}</li>`
+      : nothing}
+  </ul>`;
+}
+
+function renderQueueWaitDetail(
+  task: TaskSummary,
+  props: BackgroundTasksProps,
+): TemplateResult | typeof nothing {
+  const wait = task.status === "queued" ? task.queueWait : undefined;
+  if (!wait) {
+    return nothing;
+  }
+  return html`<div class="chat-task-detail__wait" data-task-wait>
+    <section class="chat-task-detail__wait-group">
+      <h3 class="chat-task-detail__wait-title">
+        ${t("tasksPage.wait.slots", {
+          busy: String(wait.busySlots),
+          capacity: String(wait.capacity),
+        })}
+      </h3>
+      ${renderWaitBlockers(
+        wait.activeBlockers,
+        Math.max(0, wait.busySlots - wait.activeBlockers.length),
+        props,
+      )}
+    </section>
+    <section class="chat-task-detail__wait-group">
+      <h3 class="chat-task-detail__wait-title">
+        ${t("tasksPage.wait.ahead", { count: String(wait.queuedAhead) })}
+      </h3>
+      ${renderWaitBlockers(
+        wait.aheadBlockers,
+        Math.max(0, wait.queuedAhead - wait.aheadBlockers.length),
+        props,
+      )}
+    </section>
+  </div>`;
 }
 
 // No close button here on purpose: the sidebar region header owns the
@@ -83,7 +151,6 @@ function renderTaskHeader(
   backgroundTasks?: BackgroundTasksProps,
 ): TemplateResult {
   const active = task ? isActiveTask(task) : false;
-  const startedMs = task ? taskTimestampMs(task.startedAt ?? task.createdAt) : 0;
   const cancelling = task ? backgroundTasks?.cancellingTaskIds.has(task.id) === true : false;
   return html`
     <div class="sidebar-header chat-task-detail__header">
@@ -102,9 +169,9 @@ function renderTaskHeader(
               >
               <span aria-hidden="true">·</span>
               <span>${taskRuntimeLabel(task)}</span>
-              ${active && startedMs > 0
+              ${taskTimingFacts(task)
                 ? html`<span aria-hidden="true">·</span>
-                    <openclaw-elapsed-time .startMs=${startedMs}></openclaw-elapsed-time>`
+                    <span>${renderBackgroundTaskTiming(task)}</span>`
                 : nothing}
               ${task.lastToolName
                 ? html`<span aria-hidden="true">·</span>
@@ -215,7 +282,7 @@ function renderTaskInspector(task: TaskSummary, props: BackgroundTasksProps): Te
       : nothing}
     <div class="chat-tasks-rail__detail-blocks">
       <section class="chat-tasks-rail__task-inspector-block">
-        <div class="chat-tasks-rail__task-inspector-label">${t("chat.backgroundTasks.prompt")}</div>
+        <div class="chat-tasks-rail__task-inspector-label">${t("common.prompt")}</div>
         <pre>
 ${detailLoading
             ? t("chat.backgroundTasks.detailLoading")

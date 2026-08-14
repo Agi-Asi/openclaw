@@ -1,50 +1,25 @@
 import { html, nothing, type TemplateResult } from "lit";
-import "../../../components/elapsed-time.ts";
 import { icons } from "../../../components/icons.ts";
 import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
-import { formatRelativeTimestamp } from "../../../lib/format.ts";
 import {
-  isActiveTask,
   partitionTasks,
+  taskActiveSummaryLabel,
   taskStatusLabel,
-  taskTimestampMs,
+  taskTimingFacts,
   taskTitle,
 } from "../../../lib/tasks/data.ts";
 import type { TaskSummary } from "../../../lib/tasks/task-summary.ts";
-import { STATUS_TONES } from "./chat-background-tasks-shared.ts";
+import { renderBackgroundTaskTiming, STATUS_TONES } from "./chat-background-tasks-shared.ts";
 import type { BackgroundTasksProps } from "./chat-background-tasks.types.ts";
 import { renderSubagentActivity } from "./chat-subagent-activity.ts";
-
-type BackgroundTasksStatus = { count: number; startedMs: number | null };
-
-/** Summary for the bottom-of-thread status row: active-task count plus the
- * oldest active start time so the row ticks one elapsed label, not one per
- * task. `startedMs` is null when no active task has a usable timestamp. */
-function activeBackgroundTasksStatus(tasks: readonly TaskSummary[]): BackgroundTasksStatus | null {
-  const active = tasks.filter(isActiveTask);
-  if (active.length === 0) {
-    return null;
-  }
-  let startedMs: number | null = null;
-  for (const task of active) {
-    const started = taskTimestampMs(task.startedAt ?? task.createdAt);
-    if (started > 0 && (startedMs === null || started < startedMs)) {
-      startedMs = started;
-    }
-  }
-  return { count: active.length, startedMs };
-}
 
 /** Rows the hover preview shows before deferring to the rail's full list. */
 const STATUS_PREVIEW_LIMIT = 5;
 
 function renderStatusPreviewRow(task: TaskSummary): TemplateResult {
-  const active = isActiveTask(task);
   const tone = STATUS_TONES[task.status];
-  const timeMs = active
-    ? taskTimestampMs(task.startedAt ?? task.createdAt)
-    : taskTimestampMs(task.updatedAt ?? task.createdAt);
+  const timing = taskTimingFacts(task);
   return html`
     <div class="chat-tasks-preview__row">
       ${task.status === "running"
@@ -55,13 +30,9 @@ function renderStatusPreviewRow(task: TaskSummary): TemplateResult {
         <span class="chat-tasks-rail__task-status chat-tasks-rail__task-status--${tone}"
           >${taskStatusLabel(task.status)}</span
         >
-        ${timeMs > 0
+        ${timing
           ? html`<span class="chat-tasks-rail__task-sep" aria-hidden="true">·</span>
-              <span>
-                ${active
-                  ? html`<openclaw-elapsed-time .startMs=${timeMs}></openclaw-elapsed-time>`
-                  : formatRelativeTimestamp(timeMs)}
-              </span>`
+              <span>${renderBackgroundTaskTiming(task)}</span>`
           : nothing}
       </span>
     </div>
@@ -81,7 +52,7 @@ function renderStatusPreview(remainingTasks: readonly TaskSummary[]): TemplateRe
       ${preview.map((task) => renderStatusPreviewRow(task))}
       ${overflow > 0
         ? html`<div class="chat-tasks-preview__more">
-            ${t("chat.backgroundTasks.statusPreviewMore", { count: String(overflow) })}
+            ${t("agentTools.more", { count: String(overflow) })}
           </div>`
         : nothing}
     </div>
@@ -107,17 +78,13 @@ export function renderBackgroundTasksStatusRow(
   const remainingTasks = (backgroundTasks.tasks ?? []).filter(
     (task) => !backgroundTasks.subagentActivity.taskIds.has(task.id),
   );
-  const status = activeBackgroundTasksStatus(remainingTasks);
-  if (subagentActivity === nothing && !status) {
+  const label = taskActiveSummaryLabel(remainingTasks);
+  if (subagentActivity === nothing && !label) {
     return nothing;
   }
-  if (!status) {
+  if (!label) {
     return subagentActivity;
   }
-  const label =
-    status.count === 1
-      ? t("chat.backgroundTasks.statusRunningOne")
-      : t("chat.backgroundTasks.statusRunningMany", { count: String(status.count) });
   const openRail = () => {
     if (backgroundTasks.collapsed) {
       backgroundTasks.onToggleCollapsed();
@@ -129,14 +96,6 @@ export function renderBackgroundTasksStatusRow(
   const aggregate = html`
     <div class="chat-tasks-status" id=${backgroundTasks.statusRowId}>
       <span class="chat-tasks-status__claw" aria-hidden="true">${icons.claw}</span>
-      ${status.startedMs !== null
-        ? html`
-            <span class="chat-tasks-status__time" aria-hidden="true">
-              <openclaw-elapsed-time .startMs=${status.startedMs}></openclaw-elapsed-time>
-            </span>
-            <span class="chat-tasks-status__sep" aria-hidden="true">·</span>
-          `
-        : nothing}
       <span class="sr-only" role="status">${label}</span>
       <openclaw-tooltip class="chat-tasks-status__preview">
         <button class="chat-tasks-status__link" type="button" @click=${openRail}>${label}</button>

@@ -66,6 +66,20 @@ const queuedCron = {
   sessionKey: "agent:main:cron:cleanup",
   createdAt: baseTime - 10_000,
   updatedAt: baseTime - 1_000,
+  queueWait: {
+    since: baseTime - 10_000,
+    queuedAhead: 0,
+    busySlots: 1,
+    capacity: 1,
+    activeBlockers: [
+      {
+        taskId: runningSubagent.id,
+        title: runningSubagent.title,
+        sessionKey: runningSubagent.childSessionKey,
+      },
+    ],
+    aheadBlockers: [],
+  },
 };
 
 const finishedCli = {
@@ -197,10 +211,51 @@ suite.define(() => {
         const chatUrl = page.url();
         const mainTranscript = page.locator(".chat-main .chat-thread");
         const mainTranscriptBefore = withoutElapsedLabels(await mainTranscript.textContent());
-        const openRow = rail.locator('[data-task-id="task-subagent"]');
-        await openRow.click();
+        const queuedRow = rail.locator('[data-task-id="task-cron"]');
+        await queuedRow.click();
         const detailPanel = page.locator("[data-task-detail-panel]");
         await detailPanel.waitFor({ state: "visible" });
+        expect(await detailPanel.textContent()).toContain("Waiting for");
+        expect(await detailPanel.textContent()).toContain("Execution slots occupied · 1/1");
+        expect(await detailPanel.textContent()).toContain("Tasks ahead · 0");
+
+        for (const viewport of [
+          { name: "desktop", width: 1440, height: 900 },
+          { name: "tablet", width: 768, height: 1024 },
+          { name: "mobile", width: 390, height: 844 },
+        ]) {
+          await page.setViewportSize(viewport);
+          const minimumTargetSize = viewport.width <= 768 ? 44 : 24;
+          const blockerBounds = await detailPanel
+            .locator(".chat-task-detail__wait-blocker")
+            .evaluate((element) => {
+              const bounds = element.getBoundingClientRect();
+              return {
+                height: bounds.height,
+                left: bounds.left,
+                right: bounds.right,
+                width: bounds.width,
+              };
+            });
+          expect(blockerBounds.width).toBeGreaterThanOrEqual(minimumTargetSize);
+          expect(blockerBounds.height).toBeGreaterThanOrEqual(minimumTargetSize);
+          expect(blockerBounds.left).toBeGreaterThanOrEqual(0);
+          expect(blockerBounds.right).toBeLessThanOrEqual(viewport.width);
+          await expect
+            .poll(() =>
+              page.evaluate(
+                () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+              ),
+            )
+            .toBe(true);
+          await page.screenshot({
+            path: path.join(railFlowDir, `02-queue-wait-${viewport.name}.png`),
+          });
+        }
+        await page.setViewportSize({ width: 1440, height: 900 });
+
+        const openRow = rail.locator('[data-task-id="task-subagent"]');
+        await detailPanel.locator(".chat-task-detail__wait-blocker").click();
         await detailPanel.getByText("Subagent transcript proof.").waitFor();
         expect(await detailPanel.textContent()).toContain("Map model routing code");
         expect(await detailPanel.textContent()).toContain("Subagent");
@@ -482,9 +537,7 @@ suite.define(() => {
             ),
           )
           .toBe(1);
-        expect(await page.locator(".chat-tasks-status__link").textContent()).toContain(
-          "1 running task",
-        );
+        expect(await page.locator(".chat-tasks-status__link").textContent()).toContain("1 working");
         const statusLink = page.locator(".chat-tasks-status__link");
         await statusLink.hover();
         const previewBody = page.locator(

@@ -1,6 +1,11 @@
 // Shared command-queue runtime state, split out of command-queue.ts so the
 // capacity-group policy can read lane state without importing the queue itself.
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
+import type {
+  CommandLaneGroupState,
+  CommandQueueWorkProjection,
+  CommandQueueWorkWait,
+} from "./command-queue.types.js";
 import { CommandLane } from "./lanes.js";
 
 export type CommandLaneTaskMarker = Readonly<{
@@ -19,6 +24,10 @@ export type QueueEntry = {
   warnAfterMs: number;
   queuedAheadAtEnqueue: number;
   activeAheadAtEnqueue: number;
+  workId?: string;
+  queueWaitStartedAt: number;
+  admissionHold?: symbol;
+  onQueueStateChange?: () => void;
   taskTimeoutMs?: number;
   taskTimeoutProgressAtMs?: () => number | undefined;
   taskTimeoutAbortSignal?: AbortSignal;
@@ -31,6 +40,7 @@ export type LaneState = {
   lane: string;
   queue: QueueEntry[];
   activeTaskIds: Set<number>;
+  activeWorkIds: Map<number, string>;
   maxConcurrent: number;
   draining: boolean;
   generation: number;
@@ -42,18 +52,47 @@ export type ActiveTaskWaiter = {
   timeout?: ReturnType<typeof setTimeout>;
 };
 
+export type CommandQueueState = {
+  lanes: Map<string, LaneState>;
+  activeTaskWaiters: Set<ActiveTaskWaiter>;
+  nextTaskId: number;
+  nextQueueSequence: number;
+  workSnapshotEpoch: string;
+  workSnapshotVersion: number;
+  workSnapshotCacheVersion: number;
+  workSnapshotCache?: ReadonlyMap<string, CommandQueueWorkWait>;
+  workProjectionCache?: CommandQueueWorkProjection;
+  pendingQueueStateCallbacks: Set<() => void>;
+  pendingQueueStateChangedWorkIds: Set<string>;
+  pendingQueueStateLanes: Set<string>;
+  queueStateNotificationScheduled: boolean;
+  laneGroups: Map<string, CommandLaneGroupState>;
+  laneGroupByLane: Map<string, string>;
+};
+
 /**
  * Keep queue runtime state on globalThis so every bundled entry/chunk shares
  * the same lanes, counters, and draining flag in production builds.
  */
 const COMMAND_QUEUE_STATE_KEY = Symbol.for("openclaw.commandQueueState");
 
-export function getQueueState() {
-  const state = resolveGlobalSingleton(COMMAND_QUEUE_STATE_KEY, () => ({
+export function getQueueState(): CommandQueueState {
+  const state = resolveGlobalSingleton<CommandQueueState>(COMMAND_QUEUE_STATE_KEY, () => ({
     lanes: new Map<string, LaneState>(),
     activeTaskWaiters: new Set<ActiveTaskWaiter>(),
     nextTaskId: 1,
     nextQueueSequence: 1,
+    workSnapshotEpoch: crypto.randomUUID(),
+    workSnapshotVersion: 0,
+    workSnapshotCacheVersion: -1,
+    workSnapshotCache: undefined,
+    workProjectionCache: undefined,
+    pendingQueueStateCallbacks: new Set<() => void>(),
+    pendingQueueStateChangedWorkIds: new Set<string>(),
+    pendingQueueStateLanes: new Set<string>(),
+    queueStateNotificationScheduled: false,
+    laneGroups: new Map<string, CommandLaneGroupState>(),
+    laneGroupByLane: new Map<string, string>(),
   }));
   // Schema migration: the singleton may have been created by an older code
   // version (e.g. v2026.4.2) that did not include `activeTaskWaiters`.  After
@@ -67,14 +106,45 @@ export function getQueueState() {
   if (!state.nextQueueSequence) {
     state.nextQueueSequence = 1;
   }
+  if (!state.workSnapshotEpoch) {
+    state.workSnapshotEpoch = crypto.randomUUID();
+  }
+  if (!Number.isFinite(state.workSnapshotVersion)) {
+    state.workSnapshotVersion = 0;
+  }
+  if (!Number.isFinite(state.workSnapshotCacheVersion)) {
+    state.workSnapshotCacheVersion = -1;
+  }
+  if (!state.pendingQueueStateCallbacks) {
+    state.pendingQueueStateCallbacks = new Set<() => void>();
+  }
+  if (!state.pendingQueueStateChangedWorkIds) {
+    state.pendingQueueStateChangedWorkIds = new Set<string>();
+  }
+  if (!state.pendingQueueStateLanes) {
+    state.pendingQueueStateLanes = new Set<string>();
+  }
+  if (typeof state.queueStateNotificationScheduled !== "boolean") {
+    state.queueStateNotificationScheduled = false;
+  }
+  if (!state.laneGroups) {
+    state.laneGroups = new Map<string, CommandLaneGroupState>();
+  }
+  if (!state.laneGroupByLane) {
+    state.laneGroupByLane = new Map<string, string>();
+  }
   let maxQueueSequence = state.nextQueueSequence - 1;
   for (const lane of state.lanes.values()) {
+    if (!lane.activeWorkIds) {
+      lane.activeWorkIds = new Map<number, string>();
+    }
     for (const [index, entry] of (
       lane.queue as Array<
         QueueEntry & {
           activeAheadAtEnqueue?: number;
           priority?: number;
           queuedAheadAtEnqueue?: number;
+          queueWaitStartedAt?: number;
           sequence?: number;
         }
       >
@@ -92,6 +162,9 @@ export function getQueueState() {
       }
       if (typeof entry.activeAheadAtEnqueue !== "number") {
         entry.activeAheadAtEnqueue = lane.activeTaskIds.size;
+      }
+      if (typeof entry.queueWaitStartedAt !== "number") {
+        entry.queueWaitStartedAt = entry.enqueuedAt;
       }
     }
   }

@@ -1,9 +1,10 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
+import "../../components/elapsed-time.ts";
 import { icon, type IconName } from "../../components/icons.ts";
 import { t } from "../../i18n/index.ts";
-import { formatMs, formatRelativeTimestamp } from "../../lib/format.ts";
+import { formatDurationCompact, formatMs, formatRelativeTimestamp } from "../../lib/format.ts";
 import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
 import {
   resolveSessionPreferredFace,
@@ -11,10 +12,12 @@ import {
 } from "../../lib/sessions/route-navigation.ts";
 import {
   partitionTasks,
+  taskActiveSummaryLabel,
   taskDetail,
   taskRuntimeLabel,
   taskStatusChipClass,
   taskStatusLabel,
+  taskTimingFacts,
   taskTimestampMs,
   taskTitle,
 } from "../../lib/tasks/data.ts";
@@ -38,6 +41,93 @@ type TasksProps = {
   onCopyResult: (taskId: string) => void;
   onNavigateToChat: (sessionKey: string) => void;
 };
+
+function renderTaskTiming(task: TaskSummary) {
+  const timing = taskTimingFacts(task);
+  if (!timing) {
+    return nothing;
+  }
+  if (timing.kind === "worked") {
+    return html`<span
+      >${t("chat.workRun.workedFor", {
+        duration: formatDurationCompact(timing.endMs - timing.startMs) ?? "0s",
+      })}</span
+    >`;
+  }
+  return html`<span>
+    ${t(timing.kind === "waiting" ? "tasksPage.activity.waitFor" : "tasksPage.activity.workFor")}
+    <openclaw-elapsed-time .startMs=${timing.startMs}></openclaw-elapsed-time>
+  </span>`;
+}
+
+function blockerNavigationTarget(
+  blocker: NonNullable<TaskSummary["queueWait"]>["activeBlockers"][number],
+  props: TasksProps,
+): string | null {
+  const task = props.tasks.find((candidate) => candidate.id === blocker.taskId);
+  return task?.childSessionKey ?? task?.sessionKey ?? blocker.sessionKey ?? null;
+}
+
+function renderWaitBlockers(
+  blockers: readonly NonNullable<TaskSummary["queueWait"]>["activeBlockers"][number][],
+  remaining: number,
+  props: TasksProps,
+) {
+  if (blockers.length === 0 && remaining === 0) {
+    return nothing;
+  }
+  return html`<ul class="task-wait__blockers">
+    ${blockers.map((blocker) => {
+      const sessionKey = blockerNavigationTarget(blocker, props);
+      return html`<li>
+        ${sessionKey
+          ? html`<button
+              class="task-wait__blocker"
+              type="button"
+              @click=${() => props.onNavigateToChat(sessionKey)}
+            >
+              ${blocker.title}
+            </button>`
+          : html`<span>${blocker.title}</span>`}
+      </li>`;
+    })}
+    ${remaining > 0
+      ? html`<li class="muted">${t("agentTools.more", { count: String(remaining) })}</li>`
+      : nothing}
+  </ul>`;
+}
+
+function renderQueueWait(task: TaskSummary, props: TasksProps) {
+  const wait = task.status === "queued" ? task.queueWait : undefined;
+  if (!wait) {
+    return nothing;
+  }
+  return html`<div class="task-wait" data-task-wait>
+    <section class="task-wait__group">
+      <h3 class="task-wait__title">
+        ${t("tasksPage.wait.slots", {
+          busy: String(wait.busySlots),
+          capacity: String(wait.capacity),
+        })}
+      </h3>
+      ${renderWaitBlockers(
+        wait.activeBlockers,
+        Math.max(0, wait.busySlots - wait.activeBlockers.length),
+        props,
+      )}
+    </section>
+    <section class="task-wait__group">
+      <h3 class="task-wait__title">
+        ${t("tasksPage.wait.ahead", { count: String(wait.queuedAhead) })}
+      </h3>
+      ${renderWaitBlockers(
+        wait.aheadBlockers,
+        Math.max(0, wait.queuedAhead - wait.aheadBlockers.length),
+        props,
+      )}
+    </section>
+  </div>`;
+}
 
 function renderSessionLink(task: TaskSummary, props: TasksProps) {
   const sessionKey = task.childSessionKey ?? task.sessionKey;
@@ -91,6 +181,7 @@ function renderTask(task: TaskSummary, props: TasksProps) {
             : nothing}
         </div>
         ${detail ? html`<div class="list-sub">${detail}</div>` : nothing}
+        ${renderQueueWait(task, props)}
         ${retainedResult
           ? html`<div class="callout warn">
               ${t(dismissedDelivery ? "tasksPage.deliveryDismissed" : "tasksPage.deliveryBlocked")}
@@ -101,6 +192,7 @@ function renderTask(task: TaskSummary, props: TasksProps) {
           : nothing}
       </div>
       <div class="list-meta">
+        ${renderTaskTiming(task)}
         ${timestamp > 0
           ? html`<span title=${formatMs(timestamp)}>${formatRelativeTimestamp(timestamp)}</span>`
           : html`<span>${t("common.na")}</span>`}
@@ -169,13 +261,13 @@ function renderSummaryStrip(tasks: readonly TaskSummary[]) {
     {
       key: "running",
       iconName: "play",
-      label: t("tasksPage.status.running"),
+      label: t("tasksPage.activity.workLabel"),
       value: countByStatus("running"),
     },
     {
       key: "queued",
       iconName: "clock",
-      label: t("tasksPage.status.queued"),
+      label: t("tasksPage.activity.waitLabel"),
       value: countByStatus("queued"),
     },
     {
@@ -221,6 +313,7 @@ function renderSection(
   tasks: readonly TaskSummary[],
   emptyText: string,
   props: TasksProps,
+  countLabel?: string | null,
 ) {
   return html`
     <section class="card stack" data-task-section=${id}>
@@ -230,9 +323,11 @@ function renderSection(
           <div class="card-sub">${subtitle}</div>
         </div>
         <div class="muted">
-          ${tasks.length === 1
-            ? t("tasksPage.taskCountOne")
-            : t("tasksPage.taskCount", { count: String(tasks.length) })}
+          ${countLabel === undefined
+            ? tasks.length === 1
+              ? t("tasksPage.taskCountOne")
+              : t("tasksPage.taskCount", { count: String(tasks.length) })
+            : (countLabel ?? nothing)}
         </div>
       </div>
       ${tasks.length === 0
@@ -270,6 +365,7 @@ export function renderTasks(props: TasksProps) {
         active,
         t("tasksPage.emptyActive"),
         props,
+        taskActiveSummaryLabel(active),
       )}
       ${renderSection(
         "recent",

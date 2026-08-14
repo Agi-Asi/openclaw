@@ -82,6 +82,44 @@ export function isActiveTask(task: TaskSummary): boolean {
   return task.status === "queued" || task.status === "running";
 }
 
+type TaskTimingFacts =
+  | { kind: "waiting" | "working"; startMs: number }
+  | { kind: "worked"; startMs: number; endMs: number };
+
+export function taskTimingFacts(task: TaskSummary): TaskTimingFacts | null {
+  if (task.status === "queued") {
+    const startMs = taskTimestampMs(task.queueWait?.since ?? task.createdAt);
+    return startMs > 0 ? { kind: "waiting", startMs } : null;
+  }
+  if (task.status === "running") {
+    const startMs = taskTimestampMs(task.startedAt);
+    return startMs > 0 ? { kind: "working", startMs } : null;
+  }
+  const startMs = taskTimestampMs(task.startedAt);
+  const endMs = taskTimestampMs(task.endedAt);
+  return startMs > 0 && endMs > startMs ? { kind: "worked", startMs, endMs } : null;
+}
+
+export function taskActiveSummaryLabel(tasks: readonly TaskSummary[]): string | null {
+  let working = 0;
+  let waiting = 0;
+  for (const task of tasks) {
+    if (task.status === "running") {
+      working += 1;
+    } else if (task.status === "queued") {
+      waiting += 1;
+    }
+  }
+  const workingLabel =
+    working > 0 ? t("tasksPage.activity.working", { count: String(working) }) : null;
+  const waitingLabel =
+    waiting > 0 ? t("tasksPage.activity.waiting", { count: String(waiting) }) : null;
+  if (workingLabel && waitingLabel) {
+    return `${workingLabel} · ${waitingLabel}`;
+  }
+  return workingLabel ?? waitingLabel;
+}
+
 export function taskTimestampMs(value: TaskTimestamp | undefined): number {
   if (typeof value === "number") {
     return value;
@@ -104,6 +142,29 @@ function preserveTaskPrompt(
   return prompt && selected.prompt !== prompt ? { ...selected, prompt } : selected;
 }
 
+function mergeNewerActiveSnapshot(current: TaskSummary, lookup: TaskSummary): TaskSummary {
+  if ((current.toolUseCount ?? 0) <= (lookup.toolUseCount ?? 0)) {
+    return lookup;
+  }
+  const {
+    queueEpoch: _currentQueueEpoch,
+    queueRevision: _currentQueueRevision,
+    queueWait: _currentWait,
+    ...currentWithoutQueue
+  } = current;
+  const currentAt = taskTimestampMs(current.updatedAt ?? current.endedAt ?? current.createdAt);
+  const lookupAt = taskTimestampMs(lookup.updatedAt ?? lookup.endedAt ?? lookup.createdAt);
+  return {
+    ...currentWithoutQueue,
+    status: lookup.status,
+    updatedAt: lookupAt >= currentAt ? lookup.updatedAt : current.updatedAt,
+    ...(lookup.startedAt !== undefined ? { startedAt: lookup.startedAt } : {}),
+    ...(lookup.queueEpoch !== undefined ? { queueEpoch: lookup.queueEpoch } : {}),
+    ...(lookup.queueRevision !== undefined ? { queueRevision: lookup.queueRevision } : {}),
+    ...(lookup.queueWait ? { queueWait: lookup.queueWait } : {}),
+  };
+}
+
 export function newestTaskSnapshot(
   current: TaskSummary,
   lookup: TaskSummary | undefined,
@@ -112,18 +173,37 @@ export function newestTaskSnapshot(
   if (!lookup) {
     return current;
   }
+  const currentActive = isActiveTask(current);
+  const lookupActive = isActiveTask(lookup);
+  if (currentActive && lookupActive) {
+    const currentQueueEpoch = current.queueEpoch;
+    const lookupQueueEpoch = lookup.queueEpoch;
+    if (currentQueueEpoch && lookupQueueEpoch && currentQueueEpoch !== lookupQueueEpoch) {
+      return preserveTaskPrompt(mergeNewerActiveSnapshot(current, lookup), current, lookup);
+    }
+    const currentQueueRevision = current.queueRevision ?? 0;
+    const lookupQueueRevision = lookup.queueRevision ?? 0;
+    if (lookupQueueRevision > currentQueueRevision) {
+      return preserveTaskPrompt(mergeNewerActiveSnapshot(current, lookup), current, lookup);
+    }
+    if (lookupQueueRevision < currentQueueRevision) {
+      return preserveTaskPrompt(current, current, lookup);
+    }
+  }
   const currentAt = taskTimestampMs(current.updatedAt ?? current.endedAt ?? current.createdAt);
   const lookupAt = taskTimestampMs(lookup.updatedAt ?? lookup.endedAt ?? lookup.createdAt);
   if (lookupAt > currentAt) {
-    return preserveTaskPrompt(lookup, current, lookup);
+    const selected =
+      isActiveTask(current) && isActiveTask(lookup)
+        ? mergeNewerActiveSnapshot(current, lookup)
+        : lookup;
+    return preserveTaskPrompt(selected, current, lookup);
   }
   if (lookupAt < currentAt) {
     return current;
   }
   // Millisecond clocks collide under load. Ordered pages and events advance
   // active work; only events correct terminal output, and details stay stale-safe.
-  const currentActive = isActiveTask(current);
-  const lookupActive = isActiveTask(lookup);
   if (currentActive !== lookupActive) {
     return preserveTaskPrompt(currentActive ? lookup : current, current, lookup);
   }
@@ -138,13 +218,13 @@ export function newestTaskSnapshot(
   }
   const currentToolCount = current.toolUseCount ?? 0;
   const lookupToolCount = lookup.toolUseCount ?? 0;
-  if (currentToolCount > lookupToolCount) {
-    return preserveTaskPrompt(current, current, lookup);
-  }
-  if (lookupToolCount > currentToolCount || provenance !== "detail") {
-    return preserveTaskPrompt(lookup, current, lookup);
-  }
-  return preserveTaskPrompt(current, current, lookup);
+  const selected =
+    currentToolCount > lookupToolCount
+      ? current
+      : lookupToolCount > currentToolCount || provenance !== "detail"
+        ? lookup
+        : current;
+  return preserveTaskPrompt(selected, current, lookup);
 }
 
 export function sortTasks(tasks: readonly TaskSummary[]): TaskSummary[] {

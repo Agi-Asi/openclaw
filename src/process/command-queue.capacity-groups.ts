@@ -4,6 +4,7 @@ import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 // that file within its size budget; the queue supplies its own `drainLane` so
 // this module never has to import back into it.
 import { getQueueState, normalizeLane } from "./command-queue.state.js";
+import type { CommandLaneBlockReason, CommandLaneGroupState } from "./command-queue.types.js";
 import { CommandLane } from "./lanes.js";
 
 /** Drains a single lane. Supplied by command-queue.ts to avoid a cycle. */
@@ -13,7 +14,7 @@ type DrainLaneFn = (lane: string) => void;
 type BoundedDrainLaneFn = (lane: string, maxStarts?: number) => number | void;
 
 /** Why a lane cannot admit, from the narrowest cause outward. */
-export type CommandLaneBlockReason = "lane" | "group-budget" | "sibling-reservation" | null;
+export type { CommandLaneBlockReason } from "./command-queue.types.js";
 
 /** Declares a group's shared budget and its members' hard reservations. */
 export type CommandLaneGroupSpec = {
@@ -32,12 +33,7 @@ export type CommandLaneGroupSpec = {
   reservations?: Readonly<Record<string, number>>;
 };
 
-export type LaneGroupState = {
-  group: string;
-  budget: number;
-  members: Set<string>;
-  reservations: Map<string, number>;
-};
+export type LaneGroupState = CommandLaneGroupState;
 
 /** Shared across fresh module instances so one group cannot re-enter its arbiter. */
 const DRAINING_GROUPS = resolveGlobalSingleton(

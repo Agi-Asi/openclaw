@@ -20,7 +20,7 @@ import {
   setDetachedTaskDeliveryStatusByRunIdCore,
   startTaskRunByRunIdCore,
 } from "./task-executor.js";
-import type { TaskRecord } from "./task-registry.types.js";
+import type { TaskRecord, TaskRuntime } from "./task-registry.types.js";
 import { findTaskByRunIdForStatus, listTasksForSessionKeyForStatus } from "./task-status-access.js";
 
 const log = createSubsystemLogger("tasks/detached-runtime");
@@ -144,6 +144,59 @@ export function findDetachedTaskRun(params: DetachedTaskFindParams): DetachedTas
   // Older custom runtimes may mirror records into core. When they do not, an
   // empty fallback cannot prove that the runtime-owned task is absent.
   return coreTask ? { lookup: "available", task: coreTask } : { lookup: "unavailable" };
+}
+
+const DETACHED_TASK_RUNTIMES: readonly TaskRuntime[] = ["subagent", "acp", "cli", "cron"];
+
+function taskMatchesExactDetachedRun(
+  task: TaskRecord,
+  params: Omit<DetachedTaskFindParams, "runtime" | "allowSessionFallback"> & {
+    runtime: TaskRuntime;
+  },
+): boolean {
+  return (
+    task.runId === params.runId &&
+    task.runtime === params.runtime &&
+    task.childSessionKey === params.sessionKey &&
+    task.createdAt >= params.createdAtOrAfter &&
+    (params.createdBefore === undefined || task.createdAt < params.createdBefore)
+  );
+}
+
+/** Resolves one exact runtime-owned task without adopting session-fallback rows. */
+export function findDetachedTaskRunAcrossRuntimes(
+  params: Omit<DetachedTaskFindParams, "runtime" | "allowSessionFallback">,
+): TaskRecord | undefined {
+  const registeredRuntime = getRegisteredDetachedTaskLifecycleRuntime();
+  if (!registeredRuntime?.findTaskRun) {
+    return undefined;
+  }
+  let matched: TaskRecord | undefined;
+  for (const runtime of DETACHED_TASK_RUNTIMES) {
+    const result = findDetachedTaskRun({
+      ...params,
+      runtime,
+      allowSessionFallback: false,
+    });
+    if (result.lookup === "unavailable") {
+      return undefined;
+    }
+    const task = result.task;
+    if (!task || !taskMatchesExactDetachedRun(task, { ...params, runtime })) {
+      continue;
+    }
+    if (matched && matched.taskId !== task.taskId) {
+      log.warn("Detached task lookup returned multiple exact run matches", {
+        runId: params.runId,
+        sessionKey: params.sessionKey,
+        firstTaskId: matched.taskId,
+        secondTaskId: task.taskId,
+      });
+      return undefined;
+    }
+    matched = task;
+  }
+  return matched;
 }
 
 export async function tryRecoverTaskBeforeMarkLost(

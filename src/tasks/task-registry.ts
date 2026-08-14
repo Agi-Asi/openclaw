@@ -38,6 +38,7 @@ export {
   listTasksForOwnerKey,
   listTasksForRelatedSessionKey,
   listTasksForSessionKey,
+  publishTaskProjectionById,
   resolveTaskForLookupToken,
 } from "./task-registry-query.js";
 export { publishTaskRecordAfterAtomicStore } from "./task-registry-mutation.js";

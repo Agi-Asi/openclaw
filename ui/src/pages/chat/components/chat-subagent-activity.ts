@@ -13,6 +13,7 @@ const SUBAGENT_ACTIVITY_TERMINAL_RETENTION_MS = 60_000;
 export type SubagentActivityPresentation = {
   rows: TaskSummary[];
   overflowWorking: number;
+  overflowWaiting: number;
   taskIds: ReadonlySet<string>;
   nextExpiryAt: number | null;
 };
@@ -57,19 +58,23 @@ export function deriveSubagentActivity(params: {
   // terminal events cannot displace work that is still progressing.
   const eligible = [...active, ...recentTerminal];
   const rows = eligible.slice(0, SUBAGENT_ACTIVITY_LIMIT);
-  const overflowWorking = eligible
-    .slice(SUBAGENT_ACTIVITY_LIMIT)
-    .filter((task) => task.status === "running").length;
+  const overflow = eligible.slice(SUBAGENT_ACTIVITY_LIMIT);
+  const overflowWorking = overflow.filter((task) => task.status === "running").length;
+  const overflowWaiting = overflow.filter((task) => task.status === "queued").length;
   return {
     rows,
     overflowWorking,
+    overflowWaiting,
     taskIds: new Set(eligible.map((task) => task.id)),
     nextExpiryAt,
   };
 }
 
 function subagentActivityLabel(task: TaskSummary): string {
-  if (isActiveTask(task)) {
+  if (task.status === "queued") {
+    return t("chat.backgroundTasks.subagentActivity.waiting");
+  }
+  if (task.status === "running") {
     return t("chat.backgroundTasks.subagentActivity.working");
   }
   if (task.status === "cancelled") {
@@ -96,7 +101,9 @@ function subagentActivitySnippet(task: TaskSummary): string | undefined {
 function renderSubagentActivityIndicator(task: TaskSummary): TemplateResult {
   if (isActiveTask(task)) {
     return html`<span
-      class="chat-subagent-activity__indicator chat-reading-indicator"
+      class="chat-subagent-activity__indicator ${task.status === "running"
+        ? "chat-reading-indicator"
+        : ""}"
       aria-hidden="true"
       >${icons.claw}</span
     >`;
@@ -176,6 +183,13 @@ export function renderSubagentActivity(
         ? html`<div class="chat-subagent-activity__overflow">
             ${t("chat.backgroundTasks.subagentActivity.moreWorking", {
               count: String(presentation.overflowWorking),
+            })}
+          </div>`
+        : nothing}
+      ${presentation.overflowWaiting > 0
+        ? html`<div class="chat-subagent-activity__overflow">
+            ${t("chat.backgroundTasks.subagentActivity.moreWaiting", {
+              count: String(presentation.overflowWaiting),
             })}
           </div>`
         : nothing}

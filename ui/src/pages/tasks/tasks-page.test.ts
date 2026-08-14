@@ -164,6 +164,66 @@ afterEach(() => {
 });
 
 describe("TasksPage concurrent refresh events", () => {
+  it("shows working and waiting timing with authoritative queue causes", async () => {
+    const running = createTask("task-running", "running", {
+      title: "Compile artifacts",
+      sessionKey: "agent:main:compile",
+      createdAt: 1_000,
+      startedAt: 1_500,
+    });
+    const queued = createTask("task-queued", "queued", {
+      title: "Publish artifacts",
+      createdAt: 1_000,
+      queueWait: {
+        since: 1_500,
+        queuedAhead: 1,
+        busySlots: 2,
+        capacity: 3,
+        activeBlockers: [{ taskId: running.id, title: running.title ?? "Running task" }],
+        aheadBlockers: [
+          {
+            taskId: "task-ahead",
+            title: "Verify artifacts",
+            sessionKey: "agent:main:verify",
+          },
+        ],
+      },
+    });
+    const request = vi.fn(async () => ({ tasks: [running, queued] }));
+    const source = createGateway({ request } as unknown as GatewayBrowserClient);
+    const context = createContext(source.gateway);
+    const page = document.createElement("openclaw-tasks-page") as TasksPageTestElement;
+    page.context = context;
+    document.body.append(page);
+
+    await vi.waitFor(() => expect(page.tasks).toHaveLength(2));
+
+    const active = page.querySelector('[data-task-section="active"]');
+    expect(active?.textContent).toContain("1 working · 1 waiting");
+    expect(active?.textContent).toContain("Working for");
+    expect(active?.textContent).toContain("Waiting for");
+    expect(active?.textContent).toContain("Execution slots occupied · 2/3");
+    expect(active?.textContent).toContain("Tasks ahead · 1");
+    const blockers = active?.querySelectorAll<HTMLButtonElement>(".task-wait__blocker");
+    blockers?.[0]?.click();
+    expect(context.navigate).toHaveBeenCalledWith(
+      "chat",
+      expect.objectContaining({ pathname: expect.any(String) }),
+    );
+    const firstNavigation = vi.mocked(context.navigate).mock.lastCall?.[1];
+    expect(sessionRefFromPath(firstNavigation?.pathname ?? "")).toMatchObject({
+      kind: "literal",
+      sessionKey: "agent:main:compile",
+    });
+
+    blockers?.[1]?.click();
+    const fallbackNavigation = vi.mocked(context.navigate).mock.lastCall?.[1];
+    expect(sessionRefFromPath(fallbackNavigation?.pathname ?? "")).toMatchObject({
+      kind: "literal",
+      sessionKey: "agent:main:verify",
+    });
+  });
+
   it("keeps the later recent page's equally current running progress", async () => {
     const initial = createTask("task-progress", "running", {
       toolUseCount: 2,

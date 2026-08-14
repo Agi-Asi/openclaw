@@ -6,12 +6,16 @@ import os from "node:os";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TaskSummary } from "../../../packages/gateway-protocol/src/index.js";
+import { createDeferred } from "../../../test/helpers/promise.js";
 import {
   INTERNAL_RUNTIME_CONTEXT_BEGIN,
   INTERNAL_RUNTIME_CONTEXT_END,
 } from "../../agents/internal-runtime-context.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { emitAgentEvent } from "../../infra/agent-events.js";
+import { enqueueCommandInLane, setCommandLaneConcurrency } from "../../process/command-queue.js";
+import { resetCommandQueueStateForTest } from "../../process/command-queue.test-support.js";
 import {
   createTaskRecord as createTaskRecordOrNull,
   getTaskById,
@@ -35,8 +39,8 @@ const stateDirEnvSnapshot = captureEnv(["OPENCLAW_STATE_DIR"]);
 const cancelSessionMock = vi.fn();
 const killSubagentRunAdminMock = vi.fn();
 type TaskResponsePayload = {
-  tasks?: Array<Record<string, unknown>>;
-  task?: Record<string, unknown>;
+  tasks?: TaskSummary[];
+  task?: TaskSummary;
   found?: boolean;
   cancelled?: boolean;
   nextCursor?: string;
@@ -57,6 +61,7 @@ beforeEach(async () => {
   stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gateway-tasks-"));
   setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
   resetTaskRegistryForTests();
+  resetCommandQueueStateForTest();
   cancelSessionMock.mockReset();
   killSubagentRunAdminMock.mockReset();
   setTaskRegistryControlRuntimeForTests({
@@ -71,6 +76,7 @@ beforeEach(async () => {
 afterEach(async () => {
   resetTaskRegistryControlRuntimeForTests();
   resetTaskRegistryForTests();
+  resetCommandQueueStateForTest();
   stateDirEnvSnapshot.restore();
   await fs.rm(stateDir, { recursive: true, force: true });
 });
@@ -83,9 +89,14 @@ function captureRespond() {
   return { calls, respond };
 }
 
-function createContext(config: Record<string, unknown> = {}) {
+function createContext(
+  config: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {},
+) {
   return {
     getRuntimeConfig: () => config,
+    chatAbortControllers: new Map(),
+    ...overrides,
   } as never;
 }
 
@@ -112,6 +123,7 @@ async function runTaskHandler(
   method: "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" | "tasks.dismiss",
   params: Record<string, unknown>,
   config: Record<string, unknown> = {},
+  contextOverrides: Record<string, unknown> = {},
 ) {
   const { calls, respond } = captureRespond();
   await expectDefined(
@@ -121,7 +133,7 @@ async function runTaskHandler(
     req: { type: "req", id: `req-${method}`, method },
     params,
     respond,
-    context: createContext(config),
+    context: createContext(config, contextOverrides),
     client: null,
     isWebchatConnect: () => false,
   });
@@ -139,6 +151,134 @@ async function getTaskPayload(taskId: string) {
 }
 
 describe("tasks gateway handlers", () => {
+  it("projects bounded live queue wait facts and omits them from nonqueued tasks", async () => {
+    const lane = "task-summary-queue-wait";
+    setCommandLaneConcurrency(lane, 3);
+    const gates = Array.from({ length: 3 }, () => createDeferred());
+    const activeTaskIds: string[] = [];
+    const activeRuns = gates.map((gate, index) => {
+      const runId = `run-active-${index}`;
+      const task = createTaskRecord({
+        runtime: "cli",
+        requesterSessionKey: "agent:main:main",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:main:main",
+        runId,
+        task: `Active blocker ${index}`,
+        status: "running",
+        deliveryStatus: "not_applicable",
+      });
+      activeTaskIds.push(task.taskId);
+      return enqueueCommandInLane(
+        lane,
+        async () => {
+          await gate.promise;
+        },
+        { workId: task.taskId },
+      );
+    });
+    const queuedTaskIds: string[] = [];
+    const queuedRuns = Array.from({ length: 4 }, (_, index) => {
+      const runId = `run-ahead-${index}`;
+      const task = createTaskRecord({
+        runtime: "cli",
+        requesterSessionKey: "agent:main:main",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:main:main",
+        runId,
+        task: `Queued blocker ${index}`,
+        status: "queued",
+        deliveryStatus: "not_applicable",
+      });
+      queuedTaskIds.push(task.taskId);
+      return enqueueCommandInLane(lane, async () => {}, { workId: task.taskId });
+    });
+    const target = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey: "agent:main:main",
+      runId: "run-target",
+      task: "Target queued task",
+      status: "running",
+      deliveryStatus: "not_applicable",
+    });
+    const targetRun = enqueueCommandInLane(lane, async () => {}, { workId: target.taskId });
+
+    try {
+      const { payload } = await runTaskHandler("tasks.list", {});
+      const projected = payload?.tasks?.find((entry) => entry.taskId === target.taskId);
+      expect(projected?.queueWait).toMatchObject({
+        since: expect.any(Number),
+        queuedAhead: 4,
+        busySlots: 3,
+        capacity: 3,
+        activeBlockers: [
+          expect.objectContaining({
+            taskId: activeTaskIds[0],
+            title: "Active blocker 0",
+          }),
+          expect.objectContaining({
+            taskId: activeTaskIds[1],
+            title: "Active blocker 1",
+          }),
+          expect.objectContaining({
+            taskId: activeTaskIds[2],
+            title: "Active blocker 2",
+          }),
+        ],
+        aheadBlockers: [
+          expect.objectContaining({
+            taskId: queuedTaskIds[0],
+            title: "Queued blocker 0",
+          }),
+          expect.objectContaining({
+            taskId: queuedTaskIds[1],
+            title: "Queued blocker 1",
+          }),
+          expect.objectContaining({
+            taskId: queuedTaskIds[2],
+            title: "Queued blocker 2",
+          }),
+        ],
+      });
+      expect(projected?.queueWait?.activeBlockers).toHaveLength(3);
+      expect(projected?.queueWait?.aheadBlockers).toHaveLength(3);
+      expect(projected?.queueEpoch).toEqual(expect.any(String));
+      expect(projected?.queueRevision).toEqual(expect.any(Number));
+      const queuedOnly = await runTaskHandler("tasks.list", { status: "queued" });
+      expect(
+        queuedOnly.payload?.tasks?.find((entry) => entry.taskId === target.taskId)?.status,
+      ).toBe("queued");
+      const runningOnly = await runTaskHandler("tasks.list", { status: "running" });
+      expect(runningOnly.payload?.tasks).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ taskId: target.taskId })]),
+      );
+      expect(
+        payload?.tasks
+          ?.filter((entry) => entry.status !== "queued")
+          .every((entry) => entry.queueWait === undefined),
+      ).toBe(true);
+
+      markTaskTerminalById({
+        taskId: target.taskId,
+        status: "cancelled",
+        endedAt: Date.now(),
+      });
+      const terminal = (await runTaskHandler("tasks.get", { taskId: target.taskId })).payload?.task;
+      expect(terminal?.status).toBe("cancelled");
+      expect(terminal).not.toHaveProperty("queueWait");
+    } finally {
+      for (const gate of gates) {
+        gate.resolve();
+      }
+      await Promise.all([...activeRuns, ...queuedRuns, targetRun]);
+    }
+  });
+
   it("lists task summaries with SDK-facing statuses and filters", async () => {
     const running = createTaskRecord({
       runtime: "subagent",
@@ -710,31 +850,6 @@ describe("tasks gateway handlers", () => {
     expect(terminal.payload?.task).not.toHaveProperty("lastActivity");
     expect(terminal.payload?.task).not.toHaveProperty("diffStat");
     expect(terminal.payload?.task?.progressSummary).toBe("Milestone remains authoritative");
-  });
-
-  it("cancels running task records and returns the updated task", async () => {
-    const task = createTaskRecord({
-      runtime: "cli",
-      requesterSessionKey: "agent:main:main",
-      ownerKey: "agent:main:main",
-      scopeKind: "session",
-      runId: "run-cancel",
-      task: "Cancelable task",
-      status: "running",
-      deliveryStatus: "pending",
-    });
-
-    const { calls, payload } = await runTaskHandler("tasks.cancel", {
-      taskId: task.taskId,
-      reason: "user stopped task",
-    });
-
-    expect(calls[0]?.[0]).toBe(true);
-    expect(payload?.found).toBe(true);
-    expect(payload?.cancelled).toBe(true);
-    expect(payload?.task?.id).toBe(task.taskId);
-    expect(payload?.task?.status).toBe("cancelled");
-    expect(payload?.task?.error).toBe("user stopped task");
   });
 
   it("cancels ACP tasks through the live Gateway handler and control runtime", async () => {

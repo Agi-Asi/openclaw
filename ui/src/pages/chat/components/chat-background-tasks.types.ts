@@ -27,4 +27,5 @@ export type BackgroundTasksProps = {
   onCancel: (taskId: string) => void;
   onLoadDetail?: (task: TaskSummary) => void;
   onOpenTaskDetail?: (task: TaskSummary) => void;
+  onNavigateToSession?: (sessionKey: string) => void;
 };

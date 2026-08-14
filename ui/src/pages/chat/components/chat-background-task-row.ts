@@ -1,24 +1,26 @@
 import { html, nothing, type TemplateResult } from "lit";
-import "../../../components/elapsed-time.ts";
 import { icons } from "../../../components/icons.ts";
 import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
-import { formatDurationCompact, formatMs, formatRelativeTimestamp } from "../../../lib/format.ts";
+import { formatMs, formatRelativeTimestamp } from "../../../lib/format.ts";
 import {
   isActiveTask,
   taskDetail,
   taskRuntimeLabel,
   taskTimestampMs,
+  taskTimingFacts,
   taskTitle,
 } from "../../../lib/tasks/data.ts";
 import type { TaskSummary } from "../../../lib/tasks/task-summary.ts";
-import { backgroundTaskStatusLabel, STATUS_TONES } from "./chat-background-tasks-shared.ts";
+import {
+  backgroundTaskStatusLabel,
+  renderBackgroundTaskTiming,
+  STATUS_TONES,
+} from "./chat-background-tasks-shared.ts";
 import type { BackgroundTasksProps } from "./chat-background-tasks.types.ts";
 
 type TaskDisplayFacts = {
   active: boolean;
-  finishedDuration?: string;
-  startedMs: number;
   timestamp: number;
   title: string;
   toolUseCount: number;
@@ -26,15 +28,8 @@ type TaskDisplayFacts = {
 
 function taskDisplayFacts(task: TaskSummary): TaskDisplayFacts {
   const active = isActiveTask(task);
-  const startedMs = taskTimestampMs(task.startedAt ?? task.createdAt);
-  const endedMs = taskTimestampMs(task.endedAt);
   return {
     active,
-    finishedDuration:
-      !active && endedMs > startedMs && startedMs > 0
-        ? formatDurationCompact(endedMs - startedMs)
-        : undefined,
-    startedMs,
     timestamp: taskTimestampMs(task.updatedAt ?? task.createdAt),
     title: taskTitle(task),
     toolUseCount: task.toolUseCount ?? 0,
@@ -50,15 +45,9 @@ function renderTaskMeta(task: TaskSummary, facts: TaskDisplayFacts): TemplateRes
       >
       <span class="chat-tasks-rail__task-sep" aria-hidden="true">·</span>
       <span>${taskRuntimeLabel(task)}</span>
-      ${facts.active && facts.startedMs > 0
+      ${taskTimingFacts(task)
         ? html`<span class="chat-tasks-rail__task-sep" aria-hidden="true">·</span>
-            <span
-              ><openclaw-elapsed-time .startMs=${facts.startedMs}></openclaw-elapsed-time
-            ></span>`
-        : nothing}
-      ${facts.finishedDuration
-        ? html`<span class="chat-tasks-rail__task-sep" aria-hidden="true">·</span>
-            <span>${facts.finishedDuration}</span>`
+            <span>${renderBackgroundTaskTiming(task)}</span>`
         : nothing}
       ${!facts.active && facts.timestamp > 0
         ? html`<span class="chat-tasks-rail__task-sep" aria-hidden="true">·</span>

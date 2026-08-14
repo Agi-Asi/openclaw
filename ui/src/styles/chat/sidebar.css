@@ -1510,6 +1510,70 @@ openclaw-chat-sidebar-region,
   white-space: nowrap;
 }
 
+.chat-task-detail__wait {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
+
+.chat-task-detail__wait-group {
+  min-width: 0;
+}
+
+.chat-task-detail__wait-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 650;
+}
+
+.chat-task-detail__wait-blockers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-xs);
+}
+
+.chat-task-detail__wait-blocker {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.chat-task-detail__wait-blocker:hover {
+  text-decoration-color: currentColor;
+}
+
+.chat-task-detail__wait-blocker:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  .chat-task-detail__wait-blocker {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .chat-task-detail__content {
   display: flex;
   padding: 0;

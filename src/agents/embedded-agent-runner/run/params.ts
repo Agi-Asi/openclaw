@@ -319,10 +319,12 @@ export type RunEmbeddedAgentParams = {
    */
   runTimeoutOverrideMs?: number;
   runId: string;
+  queueWorkId?: string;
   /** Trusted runtime-only authorization for one bounded cross-conversation recall pass. */
   conversationRecall?: ConversationRecallContext;
   abortSignal?: AbortSignal;
   onExecutionStarted?: (info?: { lifecycleGeneration?: string }) => void;
+  onQueueStateChange?: () => void;
   onExecutionPhase?: (info: {
     phase: EmbeddedAgentExecutionPhase;
     provider?: string;

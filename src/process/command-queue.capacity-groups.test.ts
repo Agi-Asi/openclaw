@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   enqueueCommandInLane,
   getCommandLaneSnapshot,
+  getCommandQueueWorkSnapshot,
   publishLaneConfiguration,
   resetAllLanes,
   resetCommandLane,
@@ -63,6 +64,66 @@ afterEach(() => {
 });
 
 describe("command lane capacity groups", () => {
+  test("queue work snapshot attributes group-budget blockers across lanes", async () => {
+    setCommandLaneGroup(GROUP, { budget: 1, members: [CRON, HOOK] });
+
+    const cronGate = gate();
+    const cronRun = enqueueCommandInLane(CRON, async () => await cronGate.promise, {
+      workId: "run-cron-active",
+    });
+    const hookRun = enqueueCommandInLane(HOOK, async () => {}, {
+      workId: "run-hook-queued",
+    });
+    await settle();
+
+    expect(getCommandQueueWorkSnapshot().get("run-hook-queued")).toMatchObject({
+      lane: HOOK,
+      blockedBy: "group-budget",
+      queuedAhead: 0,
+      busySlots: 1,
+      capacity: 1,
+      activeWorkIds: ["run-cron-active"],
+      queuedAheadWorkIds: [],
+    });
+
+    cronGate.release();
+    await Promise.all([cronRun, hookRun]);
+  });
+
+  test("queue work snapshot reports the effective capacity held by a sibling reservation", async () => {
+    setCommandLaneGroup(GROUP, {
+      budget: 4,
+      members: [CRON, HOOK],
+      reservations: { [HOOK]: 1 },
+    });
+
+    const gates = Array.from({ length: 3 }, () => gate());
+    const cronRuns = gates.map((entry, index) =>
+      enqueueCommandInLane(CRON, async () => await entry.promise, {
+        workId: `run-cron-active-${index}`,
+      }),
+    );
+    const queued = enqueueCommandInLane(CRON, async () => {}, {
+      workId: "run-cron-queued",
+    });
+    await settle();
+
+    expect(getCommandQueueWorkSnapshot().get("run-cron-queued")).toMatchObject({
+      lane: CRON,
+      blockedBy: "sibling-reservation",
+      queuedAhead: 0,
+      busySlots: 3,
+      capacity: 3,
+      activeWorkIds: ["run-cron-active-0", "run-cron-active-1", "run-cron-active-2"],
+      queuedAheadWorkIds: [],
+    });
+
+    for (const entry of gates) {
+      entry.release();
+    }
+    await Promise.all([...cronRuns, queued]);
+  });
+
   test("a reserved lane starts under sibling saturation", async () => {
     setCommandLaneGroup(GROUP, {
       budget: 8,

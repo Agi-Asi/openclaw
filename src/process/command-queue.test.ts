@@ -35,6 +35,7 @@ let enqueueCommandInLane: CommandQueueModule["enqueueCommandInLane"];
 let GatewayDrainingError: CommandQueueModule["GatewayDrainingError"];
 let getActiveTaskCount: CommandQueueModule["getActiveTaskCount"];
 let getCommandLaneSnapshot: CommandQueueModule["getCommandLaneSnapshot"];
+let getCommandQueueWorkSnapshot: CommandQueueModule["getCommandQueueWorkSnapshot"];
 let getQueueSize: CommandQueueModule["getQueueSize"];
 let markGatewayDraining: CommandQueueModule["markGatewayDraining"];
 let resetAllLanes: CommandQueueModule["resetAllLanes"];
@@ -93,6 +94,7 @@ describe("command queue", () => {
       GatewayDrainingError,
       getActiveTaskCount,
       getCommandLaneSnapshot,
+      getCommandQueueWorkSnapshot,
       getQueueSize,
       markGatewayDraining,
       resetAllLanes,
@@ -226,6 +228,63 @@ describe("command queue", () => {
     await blocker;
     await Promise.all([first, second]);
     expect(calls).toEqual(["first", "second"]);
+  });
+
+  it("reports authoritative bounded blockers for queued work", async () => {
+    const blocker = createDeferred();
+    const active = enqueueCommandInLane(
+      CommandLane.Main,
+      async () => {
+        await blocker.promise;
+      },
+      { workId: "run-active" },
+    );
+    const firstQueued = enqueueCommandInLane(CommandLane.Main, async () => {}, {
+      workId: "run-first-queued",
+    });
+    const secondQueued = enqueueCommandInLane(CommandLane.Main, async () => {}, {
+      workId: "run-second-queued",
+    });
+
+    expect(getCommandQueueWorkSnapshot().get("run-second-queued")).toMatchObject({
+      lane: CommandLane.Main,
+      blockedBy: "lane",
+      queuedAhead: 1,
+      busySlots: 1,
+      queuedAheadWorkIds: ["run-first-queued"],
+      activeWorkIds: ["run-active"],
+    });
+
+    blocker.resolve();
+    await Promise.all([active, firstQueued, secondQueued]);
+  });
+
+  it("notifies queued work with its blocked and admitted snapshots", async () => {
+    const blocker = createDeferred();
+    const active = enqueueCommandInLane(
+      CommandLane.Main,
+      async () => {
+        await blocker.promise;
+      },
+      { workId: "run-active" },
+    );
+    let observedBlockedSnapshot = false;
+    let observedAdmission = false;
+    const onQueueStateChange = () => {
+      const wait = getCommandQueueWorkSnapshot().get("run-queued");
+      observedBlockedSnapshot ||=
+        wait?.busySlots === 1 && wait.queuedAhead === 0 && wait.activeWorkIds[0] === "run-active";
+      observedAdmission ||= wait === undefined;
+    };
+    const queued = enqueueCommandInLane(CommandLane.Main, async () => {}, {
+      workId: "run-queued",
+      onQueueStateChange,
+    });
+
+    await vi.waitFor(() => expect(observedBlockedSnapshot).toBe(true));
+    blocker.resolve();
+    await Promise.all([active, queued]);
+    await vi.waitFor(() => expect(observedAdmission).toBe(true));
   });
 
   it("reports queueAhead after priority insertion", async () => {

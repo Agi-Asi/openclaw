@@ -9,6 +9,8 @@ import {
   normalizeTasksRecoveryResult,
   partitionTasks,
   sortTasks,
+  taskActiveSummaryLabel,
+  taskTimingFacts,
 } from "./data.ts";
 import type { TaskSummary } from "./task-summary.ts";
 
@@ -21,6 +23,68 @@ function task(overrides: Partial<TaskSummary> & Pick<TaskSummary, "id" | "status
 }
 
 describe("tasks page data", () => {
+  it("distinguishes waiting, working, and fixed terminal timing", () => {
+    expect(
+      taskTimingFacts(
+        task({
+          id: "waiting",
+          status: "queued",
+          createdAt: 1_000,
+          queueWait: {
+            since: 2_000,
+            queuedAhead: 0,
+            busySlots: 0,
+            capacity: 2,
+            activeBlockers: [],
+            aheadBlockers: [],
+          },
+        }),
+      ),
+    ).toEqual({ kind: "waiting", startMs: 2_000 });
+    expect(
+      taskTimingFacts(
+        task({ id: "working", status: "running", createdAt: 1_000, startedAt: 3_000 }),
+      ),
+    ).toEqual({ kind: "working", startMs: 3_000 });
+    expect(
+      taskTimingFacts(
+        task({
+          id: "worked",
+          status: "completed",
+          createdAt: 1_000,
+          startedAt: 3_000,
+          endedAt: 8_000,
+        }),
+      ),
+    ).toEqual({ kind: "worked", startMs: 3_000, endMs: 8_000 });
+    expect(
+      taskTimingFacts(task({ id: "running-without-start", status: "running", createdAt: 1_000 })),
+    ).toBeNull();
+    expect(
+      taskTimingFacts(
+        task({
+          id: "cancelled-before-start",
+          status: "cancelled",
+          createdAt: 1_000,
+          endedAt: 8_000,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("formats compact active summaries without zero-value arms", () => {
+    expect(taskActiveSummaryLabel([task({ id: "r", status: "running" })])).toBe("1 working");
+    expect(
+      taskActiveSummaryLabel([
+        task({ id: "r", status: "running" }),
+        task({ id: "q1", status: "queued" }),
+        task({ id: "q2", status: "queued" }),
+        task({ id: "q3", status: "queued" }),
+      ]),
+    ).toBe("1 working · 3 waiting");
+    expect(taskActiveSummaryLabel([])).toBeNull();
+  });
+
   it("sorts by updated time descending with an id tiebreak", () => {
     const sorted = sortTasks([
       task({ id: "b", status: "queued", updatedAt: 200 }),
@@ -88,7 +152,12 @@ describe("tasks page data", () => {
     "preserves an equally recent %s snapshot regardless of page order",
     (status) => {
       const terminal = task({ id: "shared", status, updatedAt: 200 });
-      const running = task({ id: "shared", status: "running", updatedAt: 200 });
+      const running = task({
+        id: "shared",
+        status: "running",
+        updatedAt: 200,
+        queueRevision: 9,
+      });
 
       expect(mergeTaskLists([terminal], [running])).toEqual([terminal]);
       expect(mergeTaskLists([running], [terminal])).toEqual([terminal]);
@@ -223,6 +292,73 @@ describe("tasks page data", () => {
       ...running,
       prompt: detail.prompt,
     });
+  });
+
+  it("adopts the newest queue projection independently of durable task progress", () => {
+    const running = task({
+      id: "shared",
+      status: "queued",
+      updatedAt: 200,
+      toolUseCount: 2,
+      queueRevision: 1,
+      queueWait: {
+        since: 100,
+        queuedAhead: 2,
+        busySlots: 1,
+        capacity: 1,
+        activeBlockers: [],
+        aheadBlockers: [],
+      },
+    });
+    const detail = task({
+      id: "shared",
+      status: "queued",
+      updatedAt: 201,
+      toolUseCount: 1,
+      queueRevision: 2,
+      prompt: "Inspect the concurrent task owner",
+    });
+
+    const merged = newestTaskSnapshot(running, detail);
+    expect(merged).toMatchObject({
+      id: "shared",
+      status: "queued",
+      toolUseCount: 2,
+      updatedAt: 201,
+      queueRevision: 2,
+      prompt: detail.prompt,
+    });
+    expect(merged).not.toHaveProperty("queueWait");
+  });
+
+  it("does not compare process-local queue revisions across gateway epochs", () => {
+    const previousGateway = task({
+      id: "shared",
+      status: "queued",
+      updatedAt: 200,
+      queueEpoch: "old-gateway",
+      queueRevision: 50,
+      queueWait: {
+        since: 100,
+        queuedAhead: 3,
+        busySlots: 1,
+        capacity: 1,
+        activeBlockers: [],
+        aheadBlockers: [],
+      },
+    });
+    const restartedGateway = task({
+      id: "shared",
+      status: "running",
+      updatedAt: 200,
+      startedAt: 180,
+      queueEpoch: "new-gateway",
+      queueRevision: 1,
+    });
+
+    expect(newestTaskSnapshot(previousGateway, restartedGateway, "snapshot")).toEqual(
+      restartedGateway,
+    );
   });
 
   it("keeps current terminal output when an equally current detail is stale", () => {

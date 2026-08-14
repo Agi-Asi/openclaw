@@ -18,8 +18,22 @@ import { isAbortError } from "../../infra/abort-signal.js";
 import { clearAgentRunContext } from "../../infra/agent-run-registry.js";
 import { formatErrorMessageWithCode, readErrorName } from "../../infra/errors.js";
 import { defaultRuntime } from "../../runtime.js";
-import { createRunningTaskRun } from "../../tasks/detached-task-runtime.js";
-import { mapAgentRunTerminalOutcomeToTaskStatus } from "../../tasks/task-registry-common.js";
+import {
+  createQueuedTaskRun,
+  findDetachedTaskRunAcrossRuntimes,
+  startTaskRunByRunId,
+} from "../../tasks/detached-task-runtime.js";
+import {
+  getTaskById,
+  markTaskRunningById,
+  publishTaskProjectionById,
+  resolveActiveTaskByRunScope,
+} from "../../tasks/runtime-internal.js";
+import {
+  isActiveTaskStatus,
+  mapAgentRunTerminalOutcomeToTaskStatus,
+} from "../../tasks/task-registry-common.js";
+import type { TaskRecord, TaskRuntime } from "../../tasks/task-registry.types.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
 import {
@@ -128,29 +142,42 @@ export function dispatchAgentRunFromGateway(params: {
     onRecovered?: () => void;
   }) => Promise<boolean> | boolean;
 }) {
-  const shouldTrackTask = params.taskTrackingMode === "cli";
+  const taskSessionKey = params.ingressOpts.sessionKey?.trim();
+  const shouldTrackTask = params.taskTrackingMode === "cli" && Boolean(taskSessionKey);
   let taskTracked = false;
-  if (shouldTrackTask) {
+  let taskStarted = false;
+  let queueTaskId: string | undefined;
+  let queueTaskRuntime: TaskRuntime | undefined;
+  let queueTask: TaskRecord | undefined;
+  let queueTaskOwnedByCore = false;
+  const active = params.context.chatAbortControllers.get(params.runId);
+  const activeOwnsDispatch =
+    active?.controller === params.abortController &&
+    active.kind === "agent" &&
+    active.sessionKey === taskSessionKey;
+  if (shouldTrackTask && taskSessionKey) {
     try {
-      taskTracked = Boolean(
-        createRunningTaskRun({
-          runtime: "cli",
-          sourceId: params.runId,
-          ownerKey: params.ingressOpts.sessionKey,
-          scopeKind: "session",
-          requesterOrigin: normalizeDeliveryContext({
-            channel: params.ingressOpts.channel,
-            to: params.ingressOpts.to,
-            accountId: params.ingressOpts.accountId,
-            threadId: params.ingressOpts.threadId,
-          }),
-          childSessionKey: params.ingressOpts.sessionKey,
-          runId: params.runId,
-          task: params.ingressOpts.message,
-          deliveryStatus: "not_applicable",
-          startedAt: Date.now(),
+      const task = createQueuedTaskRun({
+        runtime: "cli",
+        sourceId: params.runId,
+        ownerKey: taskSessionKey,
+        scopeKind: "session",
+        requesterOrigin: normalizeDeliveryContext({
+          channel: params.ingressOpts.channel,
+          to: params.ingressOpts.to,
+          accountId: params.ingressOpts.accountId,
+          threadId: params.ingressOpts.threadId,
         }),
-      );
+        childSessionKey: taskSessionKey,
+        runId: params.runId,
+        task: params.ingressOpts.message,
+        deliveryStatus: "not_applicable",
+      });
+      queueTaskId = task?.taskId;
+      queueTaskRuntime = task?.runtime;
+      queueTask = task ?? undefined;
+      queueTaskOwnedByCore = Boolean(queueTaskId && getTaskById(queueTaskId));
+      taskTracked = Boolean(queueTaskId);
     } catch (err) {
       // Best-effort only: background task tracking must not block agent runs.
       // Still surface the swallowed error so non-transient tracking failures stay observable.
@@ -158,6 +185,37 @@ export function dispatchAgentRunFromGateway(params: {
         `failed to start tracked agent task ${params.runId}: ${formatForLog(err)}`,
       );
     }
+  } else if (taskSessionKey) {
+    try {
+      const coreTask = resolveActiveTaskByRunScope({
+        runId: params.runId,
+        sessionKey: taskSessionKey,
+      });
+      const task =
+        coreTask ??
+        (activeOwnsDispatch && active
+          ? findDetachedTaskRunAcrossRuntimes({
+              runId: params.runId,
+              sessionKey: taskSessionKey,
+              createdAtOrAfter: active.startedAtMs,
+              createdBefore: Date.now() + 1,
+            })
+          : undefined);
+      if (task && isActiveTaskStatus(task.status)) {
+        queueTaskId = task.taskId;
+        queueTaskRuntime = task.runtime;
+        queueTask = task;
+        queueTaskOwnedByCore = Boolean(getTaskById(task.taskId));
+      }
+    } catch (err) {
+      params.context.logGateway.warn(
+        `failed to attach tracked agent task ${params.runId}: ${formatForLog(err)}`,
+      );
+    }
+  }
+  if (queueTask && activeOwnsDispatch && active) {
+    active.taskId = queueTask.taskId;
+    active.detachedTask = queueTask;
   }
   const settle = async (outcome: {
     terminalOutcome: AgentRunTerminalOutcome;
@@ -180,9 +238,48 @@ export function dispatchAgentRunFromGateway(params: {
     : undefined;
   const runAgent = () =>
     agentCommandFromGatewayIngress(
-      cronCreatorAuthorityCapability
-        ? { ...params.ingressOpts, cronCreatorAuthorityCapability }
-        : params.ingressOpts,
+      {
+        ...params.ingressOpts,
+        ...(cronCreatorAuthorityCapability ? { cronCreatorAuthorityCapability } : {}),
+        ...(queueTaskId
+          ? {
+              queueWorkId: queueTaskId,
+              onExecutionStarted: () => {
+                params.ingressOpts.onExecutionStarted?.();
+                if (!taskSessionKey || !queueTaskRuntime || taskStarted) {
+                  return;
+                }
+                taskStarted = true;
+                try {
+                  const startedAt = Date.now();
+                  if (queueTaskOwnedByCore) {
+                    markTaskRunningById({
+                      taskId: queueTaskId,
+                      startedAt,
+                      lastEventAt: startedAt,
+                    });
+                  } else {
+                    startTaskRunByRunId({
+                      runId: params.runId,
+                      runtime: queueTaskRuntime,
+                      sessionKey: taskSessionKey,
+                      startedAt,
+                      lastEventAt: startedAt,
+                    });
+                  }
+                } catch (err) {
+                  params.context.logGateway.warn(
+                    `failed to mark tracked agent task ${params.runId} running: ${formatForLog(err)}`,
+                  );
+                }
+              },
+              onQueueStateChange: () => {
+                params.ingressOpts.onQueueStateChange?.();
+                publishTaskProjectionById(queueTaskId);
+              },
+            }
+          : {}),
+      },
       defaultRuntime,
       params.context.deps,
       {
@@ -229,9 +326,10 @@ export function dispatchAgentRunFromGateway(params: {
         RESOLVED_GATEWAY_STATUS_BY_TERMINAL_CLASSIFICATION[
           classifyAgentRunTerminalOutcome(terminalOutcome)
         ];
-      if (taskTracked) {
+      if (taskTracked && taskSessionKey) {
         tryFinalizeTrackedAgentTask({
           runId: params.runId,
+          sessionKey: taskSessionKey,
           status: mapAgentRunTerminalOutcomeToTaskStatus(terminalOutcome),
           terminalSummary:
             responseStatus === "timeout"
@@ -309,11 +407,15 @@ export function dispatchAgentRunFromGateway(params: {
         timeoutPhase: stopReason === "restart" ? "gateway_draining" : undefined,
       });
       const responseStatus = projectRejectedGatewayStatus(terminalOutcome);
-      if (taskTracked) {
+      if (taskTracked && taskSessionKey) {
+        const currentTask = queueTaskId ? getTaskById(queueTaskId) : undefined;
+        const preserveCancellationError =
+          aborted && currentTask?.status === "cancelled" && Boolean(currentTask.error?.trim());
         tryFinalizeTrackedAgentTask({
           runId: params.runId,
+          sessionKey: taskSessionKey,
           status: mapAgentRunTerminalOutcomeToTaskStatus(terminalOutcome),
-          error: renderedErr,
+          ...(preserveCancellationError ? {} : { error: renderedErr }),
           terminalSummary: renderedErr,
           log: params.context.logGateway,
         });

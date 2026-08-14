@@ -9,7 +9,14 @@ import type { TaskDetailHost } from "./chat-task-detail-state.ts";
 import { renderTaskDetailPanel } from "./chat-task-detail.ts";
 import type { ChatTranscriptController } from "./chat-transcript-controller.ts";
 
-function backgroundTasks(task: TaskSummary): BackgroundTasksProps {
+function backgroundTasks(
+  task: TaskSummary,
+  options: {
+    tasks?: TaskSummary[];
+    onOpenTaskDetail?: (task: TaskSummary) => void;
+    onNavigateToSession?: (sessionKey: string) => void;
+  } = {},
+): BackgroundTasksProps {
   return {
     sessionKey: "agent:main:main",
     statusRowId: "chat-tasks-status-test",
@@ -19,7 +26,7 @@ function backgroundTasks(task: TaskSummary): BackgroundTasksProps {
     canCancel: false,
     loading: false,
     error: null,
-    tasks: [task],
+    tasks: options.tasks ?? [task],
     subagentActivity: deriveSubagentActivity({
       tasks: [],
       sessionKey: "agent:main:main",
@@ -35,6 +42,8 @@ function backgroundTasks(task: TaskSummary): BackgroundTasksProps {
     onToggleFinished: () => undefined,
     onRefresh: () => undefined,
     onCancel: () => undefined,
+    ...(options.onOpenTaskDetail ? { onOpenTaskDetail: options.onOpenTaskDetail } : {}),
+    ...(options.onNavigateToSession ? { onNavigateToSession: options.onNavigateToSession } : {}),
   };
 }
 
@@ -125,5 +134,116 @@ describe("task detail panel", () => {
     expect(panel?.textContent).toContain("Inspect the current task.");
     expect(panel?.textContent).not.toContain("Loading task transcript");
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it("explains authoritative queue blockers and opens a named blocker", () => {
+    const blocker: TaskSummary = {
+      id: "task-running",
+      taskId: "task-running",
+      status: "running",
+      runtime: "cli",
+      title: "Build release assets",
+      createdAt: 1_000,
+      startedAt: 1_200,
+      updatedAt: 2_000,
+    };
+    const task: TaskSummary = {
+      id: "task-waiting",
+      taskId: "task-waiting",
+      status: "queued",
+      runtime: "subagent",
+      title: "Publish the release",
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      queueWait: {
+        since: 1_500,
+        queuedAhead: 2,
+        busySlots: 3,
+        capacity: 4,
+        activeBlockers: [{ taskId: blocker.id, title: blocker.title ?? "Running task" }],
+        aheadBlockers: [{ taskId: "task-ahead", title: "Run checks" }],
+      },
+    };
+    const onOpenTaskDetail = vi.fn();
+    const host: TaskDetailHost = {
+      sessionKey: "main",
+      client: { request: vi.fn() } as unknown as GatewayBrowserClient,
+      connected: true,
+      hello: null,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+
+    render(
+      html`${renderTaskDetailPanel({
+        backgroundTasks: backgroundTasks(task, {
+          tasks: [task, blocker],
+          onOpenTaskDetail,
+        }),
+        chat: { paneId: "pane-1" } as ChatProps,
+        host,
+        task,
+        transcript: {} as ChatTranscriptController,
+      })}`,
+      container,
+    );
+
+    const panel = container.querySelector("[data-task-detail-panel]");
+    expect(panel?.textContent).toContain("Waiting for");
+    expect(panel?.textContent).toContain("Execution slots occupied · 3/4");
+    expect(panel?.textContent).toContain("Tasks ahead · 2");
+    expect(panel?.textContent).toContain("+2 more");
+    expect(panel?.textContent).toContain("+1 more");
+    panel?.querySelector<HTMLButtonElement>(".chat-task-detail__wait-blocker")?.click();
+    expect(onOpenTaskDetail).toHaveBeenCalledWith(blocker);
+  });
+
+  it("navigates to a cross-session blocker that is not in the scoped task list", () => {
+    const task: TaskSummary = {
+      id: "task-waiting-cross-session",
+      taskId: "task-waiting-cross-session",
+      status: "queued",
+      runtime: "cron",
+      title: "Publish the release",
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      queueWait: {
+        since: 1_500,
+        queuedAhead: 0,
+        busySlots: 1,
+        capacity: 1,
+        activeBlockers: [
+          {
+            taskId: "task-in-another-session",
+            title: "Build release assets",
+            sessionKey: "agent:main:other-session",
+          },
+        ],
+        aheadBlockers: [],
+      },
+    };
+    const onNavigateToSession = vi.fn();
+    const host: TaskDetailHost = {
+      sessionKey: "main",
+      client: { request: vi.fn() } as unknown as GatewayBrowserClient,
+      connected: true,
+      hello: null,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+
+    render(
+      html`${renderTaskDetailPanel({
+        backgroundTasks: backgroundTasks(task, { onNavigateToSession }),
+        chat: { paneId: "pane-1" } as ChatProps,
+        host,
+        task,
+        transcript: {} as ChatTranscriptController,
+      })}`,
+      container,
+    );
+
+    container.querySelector<HTMLButtonElement>(".chat-task-detail__wait-blocker")?.click();
+    expect(onNavigateToSession).toHaveBeenCalledWith("agent:main:other-session");
   });
 });

@@ -40,6 +40,7 @@ export {
   markTaskTerminalById,
   maybeDeliverTaskTerminalUpdate,
   publishTaskRecordAfterAtomicStore,
+  publishTaskProjectionById,
   recordTaskProgressByRunId,
   resolveTaskForLookupToken,
   isParentFlowLinkError,
@@ -47,4 +48,6 @@ export {
   setTaskRunDeliveryStatusByRunId,
   updateTaskNotifyPolicyById,
 } from "./task-registry.js";
+export { markTaskRunningById } from "./task-registry-record-api.js";
+export { resolveActiveTaskByRunScope } from "./task-registry-query.js";
 export type { TaskRecord } from "./task-registry.types.js";

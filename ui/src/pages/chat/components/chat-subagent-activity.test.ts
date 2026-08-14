@@ -133,6 +133,22 @@ describe("subagent activity rows", () => {
     expect(row?.hasAttribute("tabindex")).toBe(false);
   });
 
+  it("presents queued subagents as waiting without a working indicator", () => {
+    const task = makeTask({ id: "waiting-subagent", status: "queued", startedAt: undefined });
+    const subagentActivity = deriveSubagentActivity({
+      tasks: [task],
+      sessionKey: "agent:main:current",
+      terminalObservedAtByTask: new Map(),
+      canonicalizeSessionKey: (sessionKey) => sessionKey ?? "",
+    });
+    const container = renderStatusRow({ tasks: [task], subagentActivity });
+    const row = container.querySelector('[data-subagent-task-id="waiting-subagent"]');
+
+    expect(row?.textContent).toContain("Subagent waiting");
+    expect(row?.querySelector(".chat-reading-indicator")).toBeNull();
+    expect(container.querySelector(".chat-tasks-status")).toBeNull();
+  });
+
   it("filters by requester, runtime, and retention while leaving other work in the aggregate", () => {
     const now = 100_000;
     const current = makeTask({
@@ -193,11 +209,11 @@ describe("subagent activity rows", () => {
     expect(container.textContent).not.toContain("Wrong requester");
     expect(container.textContent).not.toContain("Too old");
     expect(container.querySelector(".chat-tasks-status__link")?.textContent?.trim()).toBe(
-      "1 running task",
+      "1 working",
     );
   });
 
-  it("caps visible rows at five and counts only hidden running work", () => {
+  it("caps visible rows at five and counts hidden working and waiting tasks", () => {
     const running = Array.from({ length: 7 }, (_, index) =>
       makeTask({
         id: `running-${index}`,
@@ -221,9 +237,11 @@ describe("subagent activity rows", () => {
     });
 
     expect(container.querySelectorAll(".chat-subagent-activity__row")).toHaveLength(5);
-    expect(container.querySelector(".chat-subagent-activity__overflow")?.textContent?.trim()).toBe(
-      "+2 more working",
-    );
+    expect(
+      [...container.querySelectorAll(".chat-subagent-activity__overflow")].map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["+2 more working", "+2 more waiting"]);
     expect(container.querySelector(".chat-tasks-status")).toBeNull();
   });
 

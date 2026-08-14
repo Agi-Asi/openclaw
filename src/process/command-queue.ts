@@ -20,6 +20,12 @@ import {
   resolveLaneBlockReason,
   validateCommandLaneGroupSpec,
 } from "./command-queue.capacity-groups.js";
+import { CommandLaneClearedError, CommandLaneTaskTimeoutError } from "./command-queue.errors.js";
+import {
+  acquirePendingCommandAdmissionHoldByWorkIdWithDrain,
+  cancelPendingCommandByWorkId,
+  type PendingCommandAdmissionHold,
+} from "./command-queue.pending-cancellation.js";
 import {
   type ActiveTaskWaiter,
   type CommandLaneTaskMarker,
@@ -29,6 +35,13 @@ import {
   type QueueEntry,
 } from "./command-queue.state.js";
 import type { CommandQueueEnqueueOptions } from "./command-queue.types.js";
+import {
+  affectedQueueStates,
+  affectedQueueStatesForLanes,
+  collectQueueStateCallback,
+  scheduleClearedQueueStateNotifications,
+  scheduleQueueStateNotifications,
+} from "./command-queue.work-snapshot.js";
 import {
   GatewayDrainingError,
   isGatewaySubordinateWorkAdmissionClosed,
@@ -40,61 +53,12 @@ import {
 import { CommandLane } from "./lanes.js";
 export { GatewayDrainingError } from "./gateway-work-admission.js";
 export type { CommandLaneTaskMarker } from "./command-queue.state.js";
-/**
- * Dedicated error type thrown when a queued command is rejected because
- * its lane was cleared.  Callers that fire-and-forget enqueued tasks can
- * catch (or ignore) this specific type to avoid unhandled-rejection noise.
- */
-export class CommandLaneClearedError extends Error {
-  constructor(lane?: string) {
-    super(lane ? `Command lane "${lane}" cleared` : "Command lane cleared");
-    this.name = "CommandLaneClearedError";
-  }
-}
-
-/**
- * Dedicated error type thrown when an active command exceeds its caller-owned
- * lane timeout. The underlying task may still be unwinding, but the lane is
- * released so queued work is not blocked forever.
- */
-class CommandLaneTaskTimeoutError extends Error {
-  constructor(
-    lane: string,
-    details:
-      | { cause: "task-budget"; elapsedMs: number; taskBudgetMs: number }
-      | { cause: "progress-idle"; elapsedMs: number; idleMs: number; taskBudgetMs: number }
-      | { cause: "abort-grace"; elapsedMs: number; graceMs: number; taskBudgetMs: number }
-      | { cause: "release-signal"; elapsedMs: number; taskBudgetMs: number },
-  ) {
-    const message = (() => {
-      switch (details.cause) {
-        case "task-budget":
-          return `elapsed ${details.elapsedMs}ms reached task budget ${details.taskBudgetMs}ms`;
-        case "progress-idle":
-          return `no progress for ${details.idleMs}ms (task budget ${details.taskBudgetMs}ms, elapsed ${details.elapsedMs}ms)`;
-        case "abort-grace":
-          return `abort grace ${details.graceMs}ms elapsed (task budget ${details.taskBudgetMs}ms, elapsed ${details.elapsedMs}ms)`;
-        case "release-signal":
-          return `lane release requested after ${details.elapsedMs}ms (task budget ${details.taskBudgetMs}ms)`;
-        default:
-          throw new TypeError("Unsupported command lane timeout cause");
-      }
-    })();
-    super(`Command lane "${lane}" task timed out: ${message}`);
-    this.name = "CommandLaneTaskTimeoutError";
-  }
-}
-
-export function isCommandLaneTaskTimeoutError(err: unknown, lane?: string): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  if (!(err instanceof CommandLaneTaskTimeoutError || err.name === "CommandLaneTaskTimeoutError")) {
-    return false;
-  }
-  return lane === undefined || err.message.includes(`Command lane "${lane}" task timed out`);
-}
-
+export { CommandLaneClearedError, isCommandLaneTaskTimeoutError } from "./command-queue.errors.js";
+export { getCommandQueueWorkProjection } from "./command-queue.work-snapshot.js";
+export { getCommandQueueWorkSnapshot } from "./command-queue.work-snapshot.js";
+export { cancelPendingCommandByWorkId };
+export type { PendingCommandAdmissionHold };
+export type { CommandQueueWorkProjection, CommandQueueWorkWait } from "./command-queue.types.js";
 // Minimal in-process queue to serialize command executions.
 // Default lane ("main") preserves the existing behavior. Additional lanes allow
 // low-risk parallelism (e.g. cron jobs) without interleaving stdin / logs for
@@ -175,6 +139,7 @@ function getLaneState(lane: string): LaneState {
     lane,
     queue: [],
     activeTaskIds: new Set(),
+    activeWorkIds: new Map(),
     maxConcurrent: 1,
     draining: false,
     generation: 0,
@@ -188,6 +153,7 @@ function completeTask(state: LaneState, taskId: number, taskGeneration: number):
     return false;
   }
   state.activeTaskIds.delete(taskId);
+  state.activeWorkIds.delete(taskId);
   return true;
 }
 
@@ -420,15 +386,18 @@ function drainLane(
     return 0;
   }
   state.draining = true;
+  const admittedEntryCallbacks: Array<() => void> = [];
   let started = 0;
   try {
     while (
       started < maxStarts &&
       state.activeTaskIds.size < state.maxConcurrent &&
       state.queue.length > 0 &&
+      !state.queue[0]?.admissionHold &&
       canAdmitInGroup(lane)
     ) {
       const entry = state.queue.shift() as QueueEntry;
+      collectQueueStateCallback(entry.onQueueStateChange, admittedEntryCallbacks);
       const waitedMs = Date.now() - entry.enqueuedAt;
       const activeBeforeStart = state.activeTaskIds.size;
       const taskId = getQueueState().nextTaskId++;
@@ -437,6 +406,9 @@ function drainLane(
       // synchronously re-enter the queue, and the shared budget must already
       // account for this task when that nested admission is evaluated.
       state.activeTaskIds.add(taskId);
+      if (entry.workId) {
+        state.activeWorkIds.set(taskId, entry.workId);
+      }
       started += 1;
       if (waitedMs >= entry.warnAfterMs) {
         try {
@@ -490,6 +462,7 @@ function drainLane(
     }
   } finally {
     state.draining = false;
+    scheduleQueueStateNotifications(affectedQueueStates(state), admittedEntryCallbacks);
     retireIdleScopedCommandLane(state);
   }
   return started;
@@ -504,6 +477,12 @@ function drainReadyCommandLane(lane: string, completedState?: LaneState): void {
   // task was finishing. Preserve the completion's captured state so its drain
   // cannot retire a newer registry entry that it never owned.
   drainLane(lane, Number.POSITIVE_INFINITY, completedState);
+}
+
+export function acquirePendingCommandAdmissionHoldByWorkId(
+  workId: string,
+): PendingCommandAdmissionHold | undefined {
+  return acquirePendingCommandAdmissionHoldByWorkIdWithDrain(workId, drainLane);
 }
 
 /**
@@ -591,6 +570,7 @@ export function publishLaneConfiguration(config: {
       drainReadyCommandLane(lane);
     }
   }
+  scheduleQueueStateNotifications(affectedQueueStatesForLanes(touched));
 }
 
 export function setCommandLaneConcurrency(lane: string, maxConcurrent: number) {
@@ -601,6 +581,8 @@ export function setCommandLaneConcurrency(lane: string, maxConcurrent: number) {
   state.maxConcurrent = Math.max(minConcurrent, Math.floor(maxConcurrent));
   if (state.maxConcurrent > 0) {
     drainReadyCommandLane(cleaned);
+  } else {
+    scheduleQueueStateNotifications(affectedQueueStates(state));
   }
 }
 
@@ -618,16 +600,20 @@ export function enqueueCommandInLane<T>(
   const warnAfterMs = opts?.warnAfterMs ?? 2_000;
   const state = getLaneState(cleaned);
   return new Promise<T>((resolve, reject) => {
+    const enqueuedAt = Date.now();
     enqueueLaneEntry(state, {
       task: (marker) => runInAsyncContext(runWithGatewayRootWorkReadmission, () => task(marker)),
       resolve: (value) => resolve(value as T),
       reject,
-      enqueuedAt: Date.now(),
+      enqueuedAt,
       sequence: queueState.nextQueueSequence++,
       priority: resolveQueuePriority(opts?.priority),
       warnAfterMs,
       queuedAheadAtEnqueue: 0,
       activeAheadAtEnqueue: 0,
+      workId: opts?.workId?.trim() || undefined,
+      queueWaitStartedAt: opts?.queueWaitStartedAt ?? enqueuedAt,
+      onQueueStateChange: opts?.onQueueStateChange,
       taskTimeoutMs: normalizeTaskTimeoutMs(opts?.taskTimeoutMs),
       taskTimeoutProgressAtMs: opts?.taskTimeoutProgressAtMs,
       taskTimeoutAbortSignal: opts?.taskTimeoutAbortSignal,
@@ -636,7 +622,11 @@ export function enqueueCommandInLane<T>(
       onWait: opts?.onWait,
     });
     logLaneEnqueue(cleaned, getLaneDepth(state));
+    const drainAlreadyInProgress = state.draining;
     drainReadyCommandLane(cleaned);
+    if (drainAlreadyInProgress) {
+      scheduleQueueStateNotifications(affectedQueueStates(state));
+    }
   });
 }
 
@@ -715,10 +705,17 @@ export function clearCommandLane(lane: string = CommandLane.Main) {
   }
   const removed = state.queue.length;
   const pending = state.queue.splice(0);
+  scheduleClearedQueueStateNotifications(state, pending);
   for (const entry of pending) {
     entry.reject(new CommandLaneClearedError(cleaned));
   }
   return removed;
+}
+
+function invalidatePendingAdmissionHolds(state: LaneState): void {
+  for (const entry of state.queue) {
+    delete entry.admissionHold;
+  }
 }
 
 /**
@@ -733,12 +730,15 @@ export function resetCommandLane(lane: string = CommandLane.Main): number {
     return 0;
   }
   const released = state.activeTaskIds.size;
+  invalidatePendingAdmissionHolds(state);
   state.generation += 1;
   state.activeTaskIds.clear();
+  state.activeWorkIds.clear();
   state.draining = false;
   // Clearing activeTaskIds may release multiple shared slots. Re-arbitrate the
   // whole group so the reset lane cannot reclaim them ahead of older siblings.
   drainReadyCommandLane(cleaned);
+  scheduleQueueStateNotifications(affectedQueueStates(state));
   notifyActiveTaskWaiters();
   return released;
 }
@@ -762,8 +762,10 @@ export function resetAllLanes(): void {
   resetGatewayWorkAdmission();
   const lanesToDrain: string[] = [];
   for (const state of queueState.lanes.values()) {
+    invalidatePendingAdmissionHolds(state);
     state.generation += 1;
     state.activeTaskIds.clear();
+    state.activeWorkIds.clear();
     state.draining = false;
     if (state.queue.length > 0) {
       lanesToDrain.push(state.lane);
@@ -773,6 +775,7 @@ export function resetAllLanes(): void {
   for (const lane of lanesToDrain) {
     drainReadyCommandLane(lane);
   }
+  scheduleQueueStateNotifications(queueState.lanes.values());
   notifyActiveTaskWaiters();
 }
 

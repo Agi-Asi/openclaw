@@ -40,6 +40,22 @@ const TaskDiffStatSchema = withSince(
     removed: Type.Integer({ minimum: 0 }),
   }),
 );
+const TaskQueueWaitBlockerSchema = closedObject({
+  taskId: NonEmptyString,
+  title: NonEmptyString,
+  sessionKey: Type.Optional(NonEmptyString),
+});
+const TaskQueueWaitSchema = withSince(
+  "2026.8",
+  closedObject({
+    since: TimestampSchema,
+    queuedAhead: Type.Integer({ minimum: 0 }),
+    busySlots: Type.Integer({ minimum: 0 }),
+    capacity: Type.Integer({ minimum: 0 }),
+    activeBlockers: Type.Array(TaskQueueWaitBlockerSchema, { maxItems: 3 }),
+    aheadBlockers: Type.Array(TaskQueueWaitBlockerSchema, { maxItems: 3 }),
+  }),
+);
 
 /** Public task summary returned by task list/get/cancel responses. */
 export const TaskSummarySchema = closedObject({
@@ -65,6 +81,9 @@ export const TaskSummarySchema = closedObject({
   lastToolName: Type.Optional(Type.String()),
   lastActivity: Type.Optional(withSince("2026.8", Type.String({ maxLength: 200 }))),
   diffStat: Type.Optional(TaskDiffStatSchema),
+  queueEpoch: Type.Optional(withSince("2026.8", Type.String({ minLength: 1 }))),
+  queueRevision: Type.Optional(withSince("2026.8", Type.Integer({ minimum: 0 }))),
+  queueWait: Type.Optional(TaskQueueWaitSchema),
   progressSummary: Type.Optional(Type.String()),
   terminalSummary: Type.Optional(Type.String()),
   error: Type.Optional(Type.String()),

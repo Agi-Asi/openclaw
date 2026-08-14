@@ -10,6 +10,15 @@ type CommandQueueStateShape = {
   activeTaskWaiters?: Set<ActiveTaskWaiterShape>;
   nextTaskId: number;
   nextQueueSequence?: number;
+  workSnapshotEpoch?: string;
+  workSnapshotVersion?: number;
+  workSnapshotCacheVersion?: number;
+  workSnapshotCache?: unknown;
+  workProjectionCache?: unknown;
+  pendingQueueStateCallbacks?: Set<() => void>;
+  pendingQueueStateChangedWorkIds?: Set<string>;
+  pendingQueueStateLanes?: Set<string>;
+  queueStateNotificationScheduled?: boolean;
 };
 
 /** Hard-reset the process-global command queue between isolated tests. */
@@ -33,4 +42,13 @@ export function resetCommandQueueStateForTest(): void {
   }
   state.nextTaskId = 1;
   state.nextQueueSequence = 1;
+  state.workSnapshotEpoch = crypto.randomUUID();
+  state.workSnapshotVersion = 0;
+  state.workSnapshotCacheVersion = -1;
+  state.workSnapshotCache = undefined;
+  state.workProjectionCache = undefined;
+  state.pendingQueueStateCallbacks?.clear();
+  state.pendingQueueStateChangedWorkIds?.clear();
+  state.pendingQueueStateLanes?.clear();
+  state.queueStateNotificationScheduled = false;
 }

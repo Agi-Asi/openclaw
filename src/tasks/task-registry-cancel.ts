@@ -19,6 +19,8 @@ import {
 } from "./task-registry-state.js";
 import type { TaskRecord } from "./task-registry.types.js";
 
+export type TaskCancellationCommitBarrier = () => { ok: true } | { ok: false; reason: string };
+
 function ensureTaskCancellationReady(task: TaskRecord): void {
   const runId = task.runId?.trim();
   const linkedTasks =
@@ -38,6 +40,7 @@ export async function cancelTaskById(params: {
   cfg: OpenClawConfig;
   taskId: string;
   reason?: string;
+  beforeTaskCancellationCommit?: TaskCancellationCommitBarrier;
 }): Promise<{ found: boolean; cancelled: boolean; reason?: string; task?: TaskRecord }> {
   ensureTaskRegistryReady();
   const task = tasks.get(params.taskId.trim());
@@ -223,6 +226,15 @@ export async function cancelTaskById(params: {
           task: cloneTaskRecord(task),
         };
       }
+    }
+    const commitBarrier = params.beforeTaskCancellationCommit?.();
+    if (commitBarrier && !commitBarrier.ok) {
+      return {
+        found: true,
+        cancelled: false,
+        reason: commitBarrier.reason,
+        task: cloneTaskRecord(tasks.get(task.taskId) ?? task),
+      };
     }
     const eventAt = Date.now();
     const current = tasks.get(task.taskId) ?? task;

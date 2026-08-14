@@ -140,10 +140,14 @@ export type AgentCommandOpts = {
   abortSignal?: AbortSignal;
   lane?: string;
   runId?: string;
+  /** Opaque durable-task identity used only for command-queue projections. */
+  queueWorkId?: string;
   /** Immutable gateway lifecycle ownership captured when this run was admitted. */
   lifecycleGeneration?: string;
   /** Called once when the selected runtime actually admits the prompt for execution. */
   onExecutionStarted?: () => void;
+  /** Gateway-owned refresh hook for transient command-queue projection changes. */
+  onQueueStateChange?: () => void;
   extraSystemPrompt?: string;
   /** Bootstrap workspace context injection mode for this run. */
   bootstrapContextMode?: "full" | "lightweight";

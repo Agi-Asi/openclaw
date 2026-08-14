@@ -2582,6 +2582,73 @@ openclaw-chat-session-rail {
   font-size: 12px;
 }
 
+.task-wait {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.task-wait__group {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+}
+
+.task-wait__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.task-wait__blockers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.task-wait__blocker {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.task-wait__blocker:hover {
+  text-decoration-color: currentColor;
+}
+
+.task-wait__blocker:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  .task-wait__blocker {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .list-meta {
   text-align: right;
   color: var(--muted);
@@ -2603,6 +2670,10 @@ openclaw-chat-session-rail {
 
 @container (max-width: 560px) {
   .list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .task-wait {
     grid-template-columns: 1fr;
   }
 

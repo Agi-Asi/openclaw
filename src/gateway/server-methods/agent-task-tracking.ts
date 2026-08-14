@@ -221,6 +221,7 @@ export async function registerPluginSubagentRunFromGateway(params: {
 
 export function tryFinalizeTrackedAgentTask(params: {
   runId: string;
+  sessionKey: string;
   status: GatewayAgentTaskTerminalStatus;
   error?: string;
   terminalSummary?: string;
@@ -230,6 +231,7 @@ export function tryFinalizeTrackedAgentTask(params: {
     finalizeTaskRunByRunId({
       runId: params.runId,
       runtime: "cli",
+      sessionKey: params.sessionKey,
       status: params.status,
       endedAt: Date.now(),
       ...(params.error !== undefined ? { error: params.error } : {}),

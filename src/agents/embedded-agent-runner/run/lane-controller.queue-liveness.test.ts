@@ -14,6 +14,7 @@ import {
 import {
   clearCommandLane,
   getCommandLaneSnapshot,
+  getCommandQueueWorkSnapshot,
   setCommandLaneConcurrency,
 } from "../../../process/command-queue.js";
 import { resetCommandQueueStateForTest } from "../../../process/command-queue.test-support.js";
@@ -76,6 +77,43 @@ afterEach(() => {
 });
 
 describe("queued embedded run context liveness", () => {
+  test("preserves one queue wait start across the session and global lanes", async () => {
+    const queuedAt = 1_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(queuedAt);
+    const workId = "nested-lane-work";
+    const { controller } = createRunController({ queueWorkId: workId });
+    setCommandLaneConcurrency(SESSION_LANE, 0);
+    setCommandLaneConcurrency(GLOBAL_LANE, 0);
+    const run = controller.enqueueSession(() =>
+      controller.enqueueGlobal(async () => ({}) as EmbeddedAgentRunResult),
+    );
+
+    try {
+      await waitForQueuedLane(SESSION_LANE);
+      expect(getCommandQueueWorkSnapshot().get(workId)).toMatchObject({
+        lane: SESSION_LANE,
+        since: queuedAt,
+      });
+
+      clock.mockReturnValue(2_000);
+      setCommandLaneConcurrency(SESSION_LANE, 1);
+      await waitForQueuedLane(GLOBAL_LANE);
+      expect(getCommandQueueWorkSnapshot().get(workId)).toMatchObject({
+        lane: GLOBAL_LANE,
+        since: queuedAt,
+      });
+
+      clock.mockReturnValue(3_000);
+      setCommandLaneConcurrency(GLOBAL_LANE, 1);
+      await run;
+      expect(getCommandQueueWorkSnapshot().has(workId)).toBe(false);
+    } finally {
+      setCommandLaneConcurrency(SESSION_LANE, 1);
+      setCommandLaneConcurrency(GLOBAL_LANE, 1);
+      await run.catch(() => {});
+    }
+  });
+
   test.each([
     { blockedLane: SESSION_LANE, queue: "session" },
     { blockedLane: GLOBAL_LANE, queue: "global" },

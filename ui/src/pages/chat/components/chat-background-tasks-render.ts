@@ -4,7 +4,7 @@ import { icons } from "../../../components/icons.ts";
 import { renderPanelEmptyState } from "../../../components/panel-empty-state.ts";
 import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
-import { isActiveTask, partitionTasks } from "../../../lib/tasks/data.ts";
+import { isActiveTask, partitionTasks, taskActiveSummaryLabel } from "../../../lib/tasks/data.ts";
 import type { TaskSummary } from "../../../lib/tasks/task-summary.ts";
 import { renderTaskRow } from "./chat-background-task-row.ts";
 import type { BackgroundTasksProps } from "./chat-background-tasks.types.ts";
@@ -79,7 +79,7 @@ export function renderBackgroundTasksRail(
     <aside
       id=${`${backgroundTasks.statusRowId}-rail`}
       class="chat-tasks-rail"
-      aria-label=${t("chat.backgroundTasks.label")}
+      aria-label=${t("chat.backgroundTasks.title")}
     >
       ${options.embedded
         ? nothing
@@ -127,9 +127,7 @@ export function renderBackgroundTasksRail(
         ${active.length > 0
           ? html`
               <section class="chat-tasks-rail__section" data-tasks-section="running">
-                <div class="chat-tasks-rail__section-title">
-                  ${t("chat.backgroundTasks.running", { count: String(active.length) })}
-                </div>
+                <div class="chat-tasks-rail__section-title">${taskActiveSummaryLabel(active)}</div>
                 ${renderTaskRows(active, backgroundTasks)}
               </section>
             `

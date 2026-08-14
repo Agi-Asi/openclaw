@@ -139,8 +139,8 @@ stateDiagram-v2
 
 | Status      | What it means                                                               |
 | ----------- | --------------------------------------------------------------------------- |
-| `queued`    | Created, waiting for the agent to start                                     |
-| `running`   | Agent turn is actively executing                                            |
+| `queued`    | Created, waiting for an execution lane to admit the agent turn              |
+| `running`   | The execution lane admitted the agent turn and it is actively executing     |
 | `succeeded` | Completed successfully                                                      |
 | `failed`    | Completed with an error                                                     |
 | `timed_out` | Exceeded the configured timeout                                             |
@@ -148,6 +148,8 @@ stateDiagram-v2
 | `lost`      | The runtime lost authoritative backing state after a 5-minute grace period  |
 
 Transitions happen automatically - agent run lifecycle events (start, end, error) update the task status; you do not manage it manually.
+
+When the owning in-process command queue can identify a queued run, Gateway task summaries include a bounded `queueWait` snapshot. It reports the current number of tasks ahead, occupied and available execution capacity, and task references for the blockers that can be safely identified. Counts remain authoritative even when blocker references are anonymous or truncated. The field disappears as soon as the queue admits the run; terminal tasks never include it.
 
 Execution and result delivery are separate. A subagent task can remain
 `succeeded` while its `deliveryStatus` is `session_queued` or `failed`. The
@@ -226,7 +228,7 @@ openclaw tasks notify <lookup> state_changes
     openclaw tasks cancel <lookup>
     ```
 
-    For ACP and subagent tasks, this kills the child session; ACP and automation cancellations route through the running Gateway (`tasks.cancel`). For CLI-tracked tasks, cancellation is recorded in the task registry (there is no separate child runtime handle). Status transitions to `cancelled` and a delivery notification is sent when applicable.
+    For ACP and subagent tasks, this kills the child session; ACP and automation cancellations route through the running Gateway (`tasks.cancel`). Gateway-backed CLI agent tasks do not use child-session cancellation: the Gateway must still own the exact pending command or live agent controller before it can stop the work and record `cancelled`. If that live ownership is unavailable, cancellation is refused and the active task record is left unchanged. Background `exec` tasks use their process owner instead. A delivery notification is sent after an accepted cancellation when applicable.
 
   </Accordion>
   <Accordion title="tasks retry | dismiss">
@@ -325,7 +327,7 @@ For the full operator ledger, use the CLI: `openclaw tasks list`.
 
 ### Control UI
 
-The web Control UI has a **Tasks** page in the sidebar with live active and recent background tasks. Use it to inspect progress, open linked sessions, refresh the ledger, cancel queued and running tasks, or retry/dismiss a blocked completion delivery. Task detail keeps execution status and delivery status separate and exposes the retained result for copying.
+The web Control UI has a **Tasks** page in the sidebar with live active and recent background tasks. It labels queued time as **Waiting for**, running time as **Working for**, and terminal duration as **Worked for**. When authoritative queue details are available, queued task detail separates occupied execution slots from tasks ahead and links to identifiable blocker tasks. Use the page to inspect progress, open linked sessions, refresh the ledger, cancel queued and running tasks, or retry/dismiss a blocked completion delivery. Task detail keeps execution status and delivery status separate and exposes the retained result for copying.
 
 Chat panes also have a collapsible **Background tasks** rail scoped to the pane's agent, with running work, stop controls, and a finished section. Open it from the activity toggle in the pane header (or the floating activity button in single-pane chat).
 

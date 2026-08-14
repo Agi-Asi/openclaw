@@ -1,5 +1,8 @@
+import { html, nothing, type TemplateResult } from "lit";
+import "../../../components/elapsed-time.ts";
 import { t } from "../../../i18n/index.ts";
-import { isActiveTask, taskStatusLabel } from "../../../lib/tasks/data.ts";
+import { formatDurationCompact } from "../../../lib/format.ts";
+import { isActiveTask, taskStatusLabel, taskTimingFacts } from "../../../lib/tasks/data.ts";
 import type { TaskSummary } from "../../../lib/tasks/task-summary.ts";
 
 export { newestTaskSnapshot } from "../../../lib/tasks/data.ts";
@@ -25,4 +28,19 @@ export function backgroundTaskStatusLabel(task: TaskSummary): string {
   return task.status === "completed"
     ? t("tasksPage.status.completed")
     : t("tasksPage.status.failed");
+}
+
+export function renderBackgroundTaskTiming(task: TaskSummary): TemplateResult | typeof nothing {
+  const timing = taskTimingFacts(task);
+  if (!timing) {
+    return nothing;
+  }
+  if (timing.kind === "worked") {
+    return html`${t("chat.workRun.workedFor", {
+      duration: formatDurationCompact(timing.endMs - timing.startMs) ?? "0s",
+    })}`;
+  }
+  return html`${t(
+      timing.kind === "waiting" ? "tasksPage.activity.waitFor" : "tasksPage.activity.workFor",
+    )} <openclaw-elapsed-time .startMs=${timing.startMs}></openclaw-elapsed-time>`;
 }

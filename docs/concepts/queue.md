@@ -18,6 +18,7 @@ OpenClaw serializes inbound auto-reply runs (all channels) through a tiny in-pro
 - A lane-aware FIFO queue drains each lane with a configurable concurrency cap (default 1 for unconfigured lanes; `main` uses `min(16, max(8, available CPU parallelism))`, and `subagent` defaults to 8).
 - `runEmbeddedAgent` enqueues by **session key** (lane `session:<key>`) to guarantee only one active run per session.
 - Each session run is then queued into a **global lane** (`main` by default) so overall parallelism is capped by `agents.defaults.maxConcurrent`.
+- Gateway task records remain `queued` until the inner execution lane admits the run. While a tracked run waits, task events carry a bounded snapshot of its current position, occupied capacity, and identifiable blockers. The snapshot is event-driven; clients do not poll the queue.
 - When verbose logging is enabled, queued runs emit a short notice if they waited more than ~2s before starting.
 - Typing indicators still fire immediately on enqueue (when supported by the channel) so user experience is unchanged while the run waits its turn.
 

@@ -811,6 +811,7 @@ function createBackgroundTasks(
     subagentActivity: {
       rows: [],
       overflowWorking: 0,
+      overflowWaiting: 0,
       taskIds: new Set<string>(),
       nextExpiryAt: null,
     },
@@ -1843,14 +1844,142 @@ describe("chat composer workbench", () => {
     openSpy.mockRestore();
   });
 
-  it("shows the running-tasks status row after the turn settles, not while working", () => {
+  it("forces the workspace rail to the bottom dock on narrow panes", () => {
+    const container = renderChatView({
+      sessionWorkspace: createSessionWorkspace({
+        narrowLayout: true,
+        onToggleTerminal: vi.fn(),
+        onToggleBrowser: vi.fn(),
+        onOpenDiff: vi.fn(),
+      }),
+    });
+
+    const workbench = container.querySelector(".chat-workbench");
+    expect(workbench?.classList.contains("chat-workbench--dock-bottom")).toBe(true);
+    expect(container.querySelector(".chat-workspace-rail")).not.toBeNull();
+    expect(container.querySelector(".chat-workspace-rail__dock")).toBeNull();
+    expect(container.querySelector(".chat-workspace-rail__grip")).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle terminal"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle browser panel"]')).not.toBeNull();
+    expect(container.querySelector(".chat-session-diff-toggle")).not.toBeNull();
+  });
+
+  it("keeps a preferred bottom workspace below a side-docked Tasks rail", () => {
+    const container = renderChatView({
+      sessionWorkspace: createSessionWorkspace({ dock: "bottom" }),
+      workspaceRail: [820, html`<div class="chat-workspace-rail-resizer"></div>`],
+      backgroundTasks: createBackgroundTasks(),
+      tasksRail: [330, html`<div class="chat-tasks-rail-resizer"></div>`],
+    });
+
+    const workbench = container.querySelector(".chat-workbench");
+    expect(workbench?.classList.contains("chat-workbench--dock-bottom")).toBe(true);
+    expect(workbench?.classList.contains("chat-workbench--workspace-open")).toBe(false);
+    expect(workbench?.classList.contains("chat-workbench--tasks-open")).toBe(true);
+    expect(workbench?.querySelector(".chat-workspace-rail-resizer")).toBeNull();
+    expect(workbench?.querySelector(".chat-tasks-rail-resizer")).not.toBeNull();
+    expect(
+      (workbench as HTMLElement | null)?.style.getPropertyValue("--chat-workspace-rail-width"),
+    ).toBe("820px");
+  });
+
+  it("keeps the pane header in the conversation column while rails span the workbench", () => {
+    const container = renderChatView({
+      header: html`<header class="chat-pane__header">Session</header>`,
+      sessionWorkspace: createSessionWorkspace(),
+      workspaceRail: [344, html`<div class="chat-workspace-rail-resizer"></div>`],
+    });
+
+    const workbench = container.querySelector<HTMLElement>(".chat-workbench");
+    const column = container.querySelector(".chat-main__conversation-column");
+    expect(column?.firstElementChild?.classList.contains("chat-pane__header")).toBe(true);
+    expect(container.querySelector(".chat-workspace-rail")?.contains(column)).toBe(false);
+    expect(workbench?.style.getPropertyValue("--chat-workspace-rail-width")).toBe("344px");
+    expect(workbench?.querySelector(".chat-workspace-rail-resizer")).not.toBeNull();
+  });
+
+  it("moves the background-tasks rail to a bottom strip on narrow panes", () => {
+    const backgroundTasks = createBackgroundTasks();
+
+    const wide = renderChatView({ backgroundTasks });
+    const wideWorkbench = wide.querySelector(".chat-workbench");
+    expect(wideWorkbench?.classList.contains("chat-workbench--tasks-open")).toBe(true);
+    expect(wideWorkbench?.classList.contains("chat-workbench--tasks-dock-bottom")).toBe(false);
+
+    const narrow = renderChatView({ backgroundTasks: { ...backgroundTasks, narrowLayout: true } });
+    const narrowWorkbench = narrow.querySelector(".chat-workbench");
+    expect(narrowWorkbench?.classList.contains("chat-workbench--tasks-open")).toBe(false);
+    expect(narrowWorkbench?.classList.contains("chat-workbench--tasks-dock-bottom")).toBe(true);
+    expect(narrow.querySelector(".chat-tasks-rail")).not.toBeNull();
+  });
+
+  it.each([
+    {
+      expected: "1 working",
+      name: "working",
+      tasks: [
+        {
+          id: "task-working",
+          taskId: "task-working",
+          status: "running" as const,
+          agentId: "main",
+          createdAt: 1_000,
+          startedAt: 1_500,
+        },
+      ],
+    },
+    {
+      expected: "1 waiting",
+      name: "waiting",
+      tasks: [
+        {
+          id: "task-waiting",
+          taskId: "task-waiting",
+          status: "queued" as const,
+          agentId: "main",
+          createdAt: 1_000,
+        },
+      ],
+    },
+    {
+      expected: "1 working · 1 waiting",
+      name: "mixed",
+      tasks: [
+        {
+          id: "task-working",
+          taskId: "task-working",
+          status: "running" as const,
+          agentId: "main",
+          createdAt: 1_000,
+          startedAt: 1_500,
+        },
+        {
+          id: "task-waiting",
+          taskId: "task-waiting",
+          status: "queued" as const,
+          agentId: "main",
+          createdAt: 1_000,
+        },
+      ],
+    },
+  ])("shows the $name task summary after the turn settles", ({ expected, tasks }) => {
+    const backgroundTasks = createBackgroundTasks({ collapsed: true, tasks });
+    const messages = [{ role: "assistant", content: "done", timestamp: 1 }];
+
+    const settled = renderChatView({ messages, backgroundTasks });
+    const row = settled.querySelector(".chat-tasks-status");
+    expect(row).not.toBeNull();
+    expect(row?.querySelector(".chat-tasks-status__link")?.textContent?.trim()).toBe(expected);
+  });
+
+  it("hides the background-task summary while the current run is working", () => {
     const backgroundTasks = createBackgroundTasks({
       collapsed: true,
       tasks: [
         {
-          id: "task-1",
-          taskId: "task-1",
-          status: "running" as const,
+          id: "task-working",
+          taskId: "task-working",
+          status: "running",
           agentId: "main",
           createdAt: 1_000,
           startedAt: 1_500,
@@ -1858,13 +1987,6 @@ describe("chat composer workbench", () => {
       ],
     });
     const messages = [{ role: "assistant", content: "done", timestamp: 1 }];
-
-    const settled = renderChatView({ messages, backgroundTasks });
-    const row = settled.querySelector(".chat-tasks-status");
-    expect(row).not.toBeNull();
-    expect(row?.querySelector(".chat-tasks-status__link")?.textContent?.trim()).toBe(
-      "1 running task",
-    );
 
     // The working claw owns the signal while the run is live.
     const working = renderChatView({ messages, backgroundTasks, canAbort: true });

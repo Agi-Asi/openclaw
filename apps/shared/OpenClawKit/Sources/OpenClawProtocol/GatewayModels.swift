@@ -11221,6 +11221,9 @@ public struct TaskSummary: Codable, Sendable {
     public let lasttoolname: String?
     public let lastactivity: String?
     public let diffstat: [String: AnyCodable]?
+    public let queueepoch: String?
+    public let queuerevision: Int?
+    public let queuewait: [String: AnyCodable]?
     public let progresssummary: String?
     public let terminalsummary: String?
     public let error: String?
@@ -11252,6 +11255,9 @@ public struct TaskSummary: Codable, Sendable {
         lasttoolname: String? = nil,
         lastactivity: String? = nil,
         diffstat: [String: AnyCodable]? = nil,
+        queueepoch: String? = nil,
+        queuerevision: Int? = nil,
+        queuewait: [String: AnyCodable]? = nil,
         progresssummary: String? = nil,
         terminalsummary: String? = nil,
         error: String? = nil,
@@ -11282,6 +11288,9 @@ public struct TaskSummary: Codable, Sendable {
         self.lasttoolname = lasttoolname
         self.lastactivity = lastactivity
         self.diffstat = diffstat
+        self.queueepoch = queueepoch
+        self.queuerevision = queuerevision
+        self.queuewait = queuewait
         self.progresssummary = progresssummary
         self.terminalsummary = terminalsummary
         self.error = error
@@ -11314,6 +11323,9 @@ public struct TaskSummary: Codable, Sendable {
         case lasttoolname = "lastToolName"
         case lastactivity = "lastActivity"
         case diffstat = "diffStat"
+        case queueepoch = "queueEpoch"
+        case queuerevision = "queueRevision"
+        case queuewait = "queueWait"
         case progresssummary = "progressSummary"
         case terminalsummary = "terminalSummary"
         case error

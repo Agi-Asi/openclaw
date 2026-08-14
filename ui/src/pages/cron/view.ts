@@ -184,7 +184,7 @@ const CRON_FIELD_LABEL_KEYS: Record<CronFieldKey, string> = {
   everyAmount: "cron.form.every",
   cronExpr: "cron.form.expression",
   staggerAmount: "cron.form.staggerWindow",
-  payloadText: "cron.form.assistantTaskPrompt",
+  payloadText: "common.prompt",
   payloadModel: "cron.form.model",
   payloadThinking: "cron.form.thinking",
   timeoutSeconds: "cron.form.timeoutSeconds",
@@ -1200,7 +1200,7 @@ function renderPromptSection(
     ? lockedPayloadLabel
     : props.form.payloadKind === "systemEvent"
       ? t("cron.form.mainTimelineMessage")
-      : t("cron.form.assistantTaskPrompt");
+      : t("common.prompt");
   const promptHelp = ctx.payloadLocked
     ? t("cron.form.readOnlyPayloadHelp")
     : props.form.payloadKind === "systemEvent"

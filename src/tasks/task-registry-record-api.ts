@@ -295,8 +295,7 @@ export function createTaskRecord(params: {
   return cloneTaskRecord(record);
 }
 
-export function updateTaskStateByRunId(params: {
-  runId: string;
+type TaskStateUpdateParams = {
   runtime?: TaskRuntime;
   sessionKey?: string;
   childSessionKey?: string | null;
@@ -313,9 +312,20 @@ export function updateTaskStateByRunId(params: {
   detail?: JsonValue;
   eventSummary?: string | null;
   suppressDelivery?: boolean;
-}) {
+};
+
+function updateTaskState(params: TaskStateUpdateParams & { runId?: string; taskId?: string }) {
   ensureTaskRegistryReady();
-  const matches = getTasksByRunScope(params);
+  const directTask = params.taskId ? tasks.get(params.taskId.trim()) : undefined;
+  const matches = directTask
+    ? [directTask]
+    : params.runId
+      ? getTasksByRunScope({
+          runId: params.runId,
+          runtime: params.runtime,
+          sessionKey: params.sessionKey,
+        })
+      : [];
   if (matches.length === 0) {
     return [];
   }
@@ -419,6 +429,10 @@ export function updateTaskStateByRunId(params: {
   return updated;
 }
 
+export function updateTaskStateByRunId(params: TaskStateUpdateParams & { runId: string }) {
+  return updateTaskState(params);
+}
+
 function updateTaskDeliveryByRunId(params: {
   runId: string;
   runtime?: TaskRuntime;
@@ -460,6 +474,25 @@ export function markTaskRunningByRunId(params: {
     progressSummary: params.progressSummary,
     eventSummary: params.eventSummary,
   });
+}
+
+export function markTaskRunningById(params: {
+  taskId: string;
+  startedAt?: number;
+  lastEventAt?: number;
+  progressSummary?: string | null;
+  eventSummary?: string | null;
+}): TaskRecord | null {
+  return (
+    updateTaskState({
+      taskId: params.taskId,
+      status: "running",
+      startedAt: params.startedAt,
+      lastEventAt: params.lastEventAt,
+      progressSummary: params.progressSummary,
+      eventSummary: params.eventSummary,
+    })[0] ?? null
+  );
 }
 
 export function recordTaskProgressByRunId(params: {

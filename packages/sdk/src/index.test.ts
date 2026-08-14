@@ -1,12 +1,18 @@
+import { describe, expect, expectTypeOf, it } from "vitest";
 // OpenClaw SDK tests cover index behavior.
-import { describe, expect, it } from "vitest";
+import type { TaskSummary as ProtocolTaskSummary } from "../../gateway-protocol/src/schema/tasks.js";
 import { EventHub, OpenClaw, normalizeGatewayEvent } from "./index.js";
 import type {
   GatewayEvent,
   GatewayRequestOptions,
   OpenClawEvent,
   OpenClawTransport,
+  TaskSummary,
 } from "./types.js";
+
+expectTypeOf<TaskSummary["queueWait"]>().toEqualTypeOf<ProtocolTaskSummary["queueWait"]>();
+expectTypeOf<TaskSummary["queueEpoch"]>().toEqualTypeOf<ProtocolTaskSummary["queueEpoch"]>();
+expectTypeOf<TaskSummary["queueRevision"]>().toEqualTypeOf<ProtocolTaskSummary["queueRevision"]>();
 
 type RequestCall = {
   method: string;

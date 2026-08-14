@@ -6,6 +6,7 @@ import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import { captureEnv } from "../test-utils/env.js";
 import { SUBAGENT_KILL_TASK_ERROR } from "./detached-task-runtime-contract.js";
 import { getDetachedTaskLifecycleRuntime } from "./detached-task-runtime.js";
+import { cancelDetachedTaskRunByIdCore } from "./task-executor-cancel.runtime.js";
 import {
   cancelFlowById,
   cancelFlowByIdForOwner,
@@ -777,6 +778,132 @@ describe("task-executor", () => {
       });
       expect(cancelled.found).toBe(true);
       expect(cancelled.cancelled).toBe(true);
+    });
+  });
+
+  it("uses core coordinated cancellation when the registered runtime does not own the task", async () => {
+    await withTaskExecutorStateDir(async () => {
+      const task = createRunningTaskRun({
+        runtime: "cli",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:main:main",
+        runId: "run-core-coordinated-cancel",
+        task: "Core Gateway task",
+        deliveryStatus: "not_applicable",
+      });
+      const findTaskRun = vi.fn(() => undefined);
+      const runtimeCancel = vi.fn(async () => ({ found: false, cancelled: false }));
+      setDetachedTaskLifecycleRuntime({
+        ...getDetachedTaskLifecycleRuntime(),
+        findTaskRun,
+        cancelDetachedTaskRunById: runtimeCancel,
+      });
+      const beforeTaskCancellationCommit = vi.fn(() => ({ ok: true as const }));
+
+      const cancelled = await cancelDetachedTaskRunByIdCore({
+        cfg: {} as never,
+        taskId: task.taskId,
+        reason: "operator stopped core task",
+        beforeTaskCancellationCommit,
+      });
+
+      expect(findTaskRun).not.toHaveBeenCalled();
+      expect(runtimeCancel).toHaveBeenCalledWith({
+        cfg: {} as never,
+        taskId: task.taskId,
+        reason: "operator stopped core task",
+      });
+      expect(beforeTaskCancellationCommit).toHaveBeenCalledOnce();
+      expect(cancelled).toMatchObject({
+        found: true,
+        cancelled: true,
+        task: {
+          taskId: task.taskId,
+          status: "cancelled",
+          error: "operator stopped core task",
+        },
+      });
+    });
+  });
+
+  it("commits coordinated cancellation after a custom runtime accepts ownership", async () => {
+    await withTaskExecutorStateDir(async () => {
+      const task = createRunningTaskRun({
+        runtime: "cli",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:main:main",
+        runId: "run-custom-coordinated-refusal",
+        task: "Custom Gateway task",
+        deliveryStatus: "not_applicable",
+      });
+      const findTaskRun = vi.fn(() => task);
+      const runtimeCancel = vi.fn(async () => ({ found: true, cancelled: true }));
+      setDetachedTaskLifecycleRuntime({
+        ...getDetachedTaskLifecycleRuntime(),
+        findTaskRun,
+        cancelDetachedTaskRunById: runtimeCancel,
+      });
+      const beforeTaskCancellationCommit = vi.fn(() => ({ ok: true as const }));
+      const afterRegisteredRuntimeCancellationAccepted = vi.fn();
+
+      const cancelled = await cancelDetachedTaskRunByIdCore({
+        cfg: {} as never,
+        taskId: task.taskId,
+        beforeTaskCancellationCommit,
+        afterRegisteredRuntimeCancellationAccepted,
+      });
+
+      expect(findTaskRun).not.toHaveBeenCalled();
+      expect(runtimeCancel).toHaveBeenCalledWith({
+        cfg: {} as never,
+        taskId: task.taskId,
+      });
+      expect(beforeTaskCancellationCommit).not.toHaveBeenCalled();
+      expect(afterRegisteredRuntimeCancellationAccepted).toHaveBeenCalledOnce();
+      expect(cancelled).toEqual({ found: true, cancelled: true });
+      expect(getTaskById(task.taskId)?.status).toBe("running");
+    });
+  });
+
+  it("uses the registered task-id contract when optional ownership lookup is ambiguous", async () => {
+    await withTaskExecutorStateDir(async () => {
+      const task = createRunningTaskRun({
+        runtime: "cli",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:main:main",
+        runId: "run-ambiguous-coordinated-refusal",
+        task: "Ambiguous Gateway task",
+        deliveryStatus: "not_applicable",
+      });
+      const findTaskRun = vi.fn(() => ({
+        ...task,
+        taskId: `${task.taskId}-different`,
+      }));
+      const runtimeCancel = vi.fn(async () => ({ found: true, cancelled: true }));
+      setDetachedTaskLifecycleRuntime({
+        ...getDetachedTaskLifecycleRuntime(),
+        findTaskRun,
+        cancelDetachedTaskRunById: runtimeCancel,
+      });
+      const beforeTaskCancellationCommit = vi.fn(() => ({ ok: true as const }));
+      const afterRegisteredRuntimeCancellationAccepted = vi.fn();
+
+      const cancelled = await cancelDetachedTaskRunByIdCore({
+        cfg: {} as never,
+        taskId: task.taskId,
+        beforeTaskCancellationCommit,
+        afterRegisteredRuntimeCancellationAccepted,
+      });
+
+      expect(findTaskRun).not.toHaveBeenCalled();
+      expect(runtimeCancel).toHaveBeenCalledOnce();
+      expect(beforeTaskCancellationCommit).not.toHaveBeenCalled();
+      expect(afterRegisteredRuntimeCancellationAccepted).toHaveBeenCalledOnce();
+      expect(cancelled).toEqual({ found: true, cancelled: true });
+      expect(getTaskById(task.taskId)?.status).toBe("running");
     });
   });
 

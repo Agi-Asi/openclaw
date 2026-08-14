@@ -44,6 +44,7 @@ export function createEmbeddedRunLaneController<TParams extends LaneParams>(opti
   const laneTaskAbortController = new AbortController();
   const laneTaskReleaseController = new AbortController();
   let laneTaskProgressAtMs = Date.now();
+  let queueWaitStartedAt: number | undefined;
   let releaseQueuedRunContext: ReturnType<typeof retainQueuedAgentRunContext>;
   let queuedRunAbortSignal: AbortSignal | undefined;
 
@@ -88,15 +89,27 @@ export function createEmbeddedRunLaneController<TParams extends LaneParams>(opti
     );
   const withRunLaneWait = (opts?: CommandQueueEnqueueOptions) => {
     const params = options.getParams();
-    if (!opts?.onWait && !params.onLaneWait) {
-      return opts;
-    }
+    queueWaitStartedAt ??= opts?.queueWaitStartedAt ?? Date.now();
+    const onWait =
+      opts?.onWait || params.onLaneWait
+        ? (waitMs: number, queuedAhead: number) => {
+            opts?.onWait?.(waitMs, queuedAhead);
+            options.getParams().onLaneWait?.({ waitMs, queuedAhead, waiting: true });
+          }
+        : undefined;
+    const onQueueStateChange =
+      opts?.onQueueStateChange || params.onQueueStateChange
+        ? () => {
+            opts?.onQueueStateChange?.();
+            options.getParams().onQueueStateChange?.();
+          }
+        : undefined;
     return {
       ...opts,
-      onWait: (waitMs, queuedAhead) => {
-        opts?.onWait?.(waitMs, queuedAhead);
-        options.getParams().onLaneWait?.({ waitMs, queuedAhead, waiting: true });
-      },
+      ...(params.queueWorkId ? { workId: params.queueWorkId } : {}),
+      queueWaitStartedAt,
+      ...(onWait ? { onWait } : {}),
+      ...(onQueueStateChange ? { onQueueStateChange } : {}),
     } satisfies CommandQueueEnqueueOptions;
   };
   const noteLaneWaitIfBusy = (lane: string) => {

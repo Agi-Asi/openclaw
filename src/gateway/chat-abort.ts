@@ -22,6 +22,7 @@ import {
   type AgentRunDelegatedAuthority,
 } from "../infra/agent-run-registry.js";
 import { jsonUtf8Bytes } from "../infra/json-utf8-bytes.js";
+import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { notifyChatAbortControllerRemoved } from "./chat-abort-lifecycle-internal.js";
 import { resolveChatRunOwnerAgentId } from "./chat-run-owner.js";
 import { projectLiveAssistantBufferedText } from "./live-chat-projector.js";
@@ -40,6 +41,10 @@ const DEFAULT_CHAT_RUN_ABORT_GRACE_MS = 60_000;
 
 export type ChatAbortControllerEntry = {
   controller: AbortController;
+  /** Durable task identity bound after Gateway dispatch creates or attaches its task row. */
+  taskId?: string;
+  /** Exact detached-runtime task returned to the Gateway dispatch that owns this controller. */
+  detachedTask?: TaskRecord;
   sessionId: string;
   sessionKey: string;
   lifecycleGeneration?: string;
@@ -181,6 +186,7 @@ export function resolveAgentRunExpiresAtMs(params: {
 export function registerChatAbortController(params: {
   chatAbortControllers: Map<string, ChatAbortControllerEntry>;
   runId: string;
+  taskId?: string;
   sessionId: string;
   sessionKey?: string | null;
   agentId?: string;
@@ -288,6 +294,7 @@ export function registerChatAbortController(params: {
     params.expiresAtMs === undefined ? undefined : (asDateTimestampMs(params.expiresAtMs) ?? 0);
   const entry: ChatAbortControllerEntry = {
     controller,
+    taskId: params.taskId,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     lifecycleGeneration: params.lifecycleGeneration ?? getAgentEventLifecycleGeneration(),

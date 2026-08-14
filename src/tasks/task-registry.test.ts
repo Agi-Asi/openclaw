@@ -30,7 +30,7 @@ import { withTestDir } from "../test-helpers/temp-dir.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import { CRON_TASK_KIND } from "./cron-task-contract.js";
 import { SUBAGENT_KILL_TASK_ERROR } from "./detached-task-runtime-contract.js";
-import { ensureTaskRuntimeStateReady } from "./runtime-internal.js";
+import { ensureTaskRuntimeStateReady, markTaskRunningById } from "./runtime-internal.js";
 import {
   createTaskFlowForTask as createTaskFlowForTaskOrNull,
   createManagedTaskFlow as createManagedTaskFlowOrNull,
@@ -3719,6 +3719,38 @@ describe("task-registry", () => {
         lastEventAt: 1_699_999_998_500,
       });
       expect(getInspectableTaskAuditSummary().byCode.inconsistent_timestamps).toBe(0);
+    });
+  });
+
+  it("marks only the exact task running when a run id is reused in the same scope", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest();
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(100);
+      const oldTask = createTaskFixture("subagent", {
+        runId: "run-reused-exact-start",
+        childSessionKey: "agent:main:subagent:reused-exact-start",
+        task: "Old task generation",
+        status: "queued",
+        deliveryStatus: "pending",
+      });
+      nowSpy.mockReturnValue(200);
+      const currentTask = createTaskFixture("subagent", {
+        runId: "run-reused-exact-start",
+        childSessionKey: "agent:main:subagent:reused-exact-start",
+        task: "Current task generation",
+        status: "queued",
+        deliveryStatus: "pending",
+      });
+
+      expect(markTaskRunningById({ taskId: currentTask.taskId, startedAt: 300 })).toMatchObject({
+        taskId: currentTask.taskId,
+        status: "running",
+        startedAt: 300,
+      });
+      expect(requireTaskById(oldTask.taskId)).toMatchObject({
+        status: "queued",
+        startedAt: undefined,
+      });
     });
   });
 

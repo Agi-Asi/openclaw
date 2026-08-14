@@ -540,6 +540,7 @@ export function createBackgroundTasksProps(
     narrowLayout?: boolean;
     openTaskId?: string;
     onOpenTaskDetail?: (task: TaskSummary) => void;
+    onNavigateToSession?: (sessionKey: string) => void;
   } = {},
 ): BackgroundTasksProps {
   const state = getBackgroundTasksState(host);
@@ -607,5 +608,6 @@ export function createBackgroundTasksProps(
           opts.onOpenTaskDetail?.(task);
         }
       : undefined,
+    onNavigateToSession: opts.onNavigateToSession,
   };
 }

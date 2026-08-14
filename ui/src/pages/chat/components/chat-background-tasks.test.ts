@@ -688,12 +688,42 @@ describe("background tasks rail rendering", () => {
     const running = container.querySelector('[data-task-id="task-1"]');
     expect(running?.textContent).toContain("12 tool uses");
     expect(running?.textContent).toContain("read");
+    expect(running?.textContent).toContain("Working for");
     expect(running?.querySelector("openclaw-elapsed-time")).not.toBeNull();
 
     const finished = container.querySelector('[data-task-id="task-2"]');
     expect(finished?.textContent).toContain("1 tool use");
-    expect(finished?.textContent).toContain("1m 5s");
+    expect(finished?.textContent).toContain("Worked for 1m 5s");
     expect(finished?.querySelector("openclaw-elapsed-time")).toBeNull();
+  });
+
+  it("uses total queued timing and a mixed active summary", () => {
+    const container = renderTaskRail({
+      tasks: [
+        makeTask({ id: "running" }),
+        makeTask({
+          id: "queued",
+          status: "queued",
+          queueWait: {
+            since: 1_000,
+            queuedAhead: 0,
+            busySlots: 1,
+            capacity: 1,
+            activeBlockers: [],
+            aheadBlockers: [],
+          },
+        }),
+      ],
+    });
+
+    expect(container.querySelector(".chat-tasks-rail__section-title")?.textContent?.trim()).toBe(
+      "1 working · 1 waiting",
+    );
+    const queued = container.querySelector('[data-task-id="queued"]');
+    expect(queued?.textContent).toContain("Waiting for");
+    expect(
+      queued?.querySelector<HTMLElement & { startMs: number }>("openclaw-elapsed-time")?.startMs,
+    ).toBe(1_000);
   });
 
   it("collapses the finished section", () => {
@@ -709,11 +739,11 @@ describe("background tasks rail rendering", () => {
   });
 });
 
-describe("running-tasks status row", () => {
+describe("active-tasks status row", () => {
   const makeAggregateTask = (overrides: Partial<TaskSummary> & { id: string }) =>
     makeTask({ ...overrides, runtime: "cli" });
 
-  it("ticks from the oldest active start and counts only active tasks", () => {
+  it("separates working and waiting tasks in the compact summary", () => {
     const container = renderStatusRow({
       tasks: [
         makeAggregateTask({ id: "t1", startedAt: 9_000 }),
@@ -727,16 +757,13 @@ describe("running-tasks status row", () => {
       ],
     });
 
-    const elapsed = container.querySelector<HTMLElement & { startMs: number | null }>(
-      "openclaw-elapsed-time",
-    );
-    expect(elapsed?.startMs).toBe(4_000);
     expect(
       container.querySelector<HTMLButtonElement>(".chat-tasks-status__link")?.textContent?.trim(),
-    ).toBe("2 running tasks");
+    ).toBe("1 working · 1 waiting");
+    expect(container.querySelector(".chat-tasks-status__time")).toBeNull();
   });
 
-  it("renders count, ticking elapsed time, and opens the collapsed rail", () => {
+  it("renders the working count and opens the collapsed rail", () => {
     const onToggleCollapsed = vi.fn();
     const container = renderStatusRow({
       tasks: [makeAggregateTask({ id: "t1", startedAt: 9_000 })],
@@ -745,12 +772,11 @@ describe("running-tasks status row", () => {
 
     const row = container.querySelector(".chat-tasks-status");
     expect(row).not.toBeNull();
-    expect(row?.querySelector("openclaw-elapsed-time")).not.toBeNull();
     const liveStatus = row?.querySelector('[role="status"]');
-    expect(liveStatus?.textContent?.trim()).toBe("1 running task");
+    expect(liveStatus?.textContent?.trim()).toBe("1 working");
     expect(liveStatus?.querySelector("openclaw-elapsed-time")).toBeNull();
     const link = row?.querySelector<HTMLButtonElement>(".chat-tasks-status__link");
-    expect(link?.textContent?.trim()).toBe("1 running task");
+    expect(link?.textContent?.trim()).toBe("1 working");
     link?.click();
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
@@ -764,7 +790,7 @@ describe("running-tasks status row", () => {
     });
 
     const link = container.querySelector<HTMLButtonElement>(".chat-tasks-status__link");
-    expect(link?.textContent?.trim()).toBe("2 running tasks");
+    expect(link?.textContent?.trim()).toBe("1 working · 1 waiting");
     link?.click();
     expect(onToggleCollapsed).not.toHaveBeenCalled();
   });

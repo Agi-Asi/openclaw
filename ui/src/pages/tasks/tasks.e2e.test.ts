@@ -24,6 +24,7 @@ const runningTask = {
   agentId: "main",
   childSessionKey: "agent:main:subagent:review",
   createdAt: baseTime - 5_000,
+  startedAt: baseTime - 4_000,
   updatedAt: baseTime,
   progressSummary: "Reading subscription paths",
 };
@@ -39,6 +40,25 @@ const queuedTask = {
   sessionKey: "agent:main:cron:cleanup",
   createdAt: baseTime - 10_000,
   updatedAt: baseTime - 1_000,
+  queueWait: {
+    since: baseTime - 10_000,
+    queuedAhead: 1,
+    busySlots: 1,
+    capacity: 2,
+    activeBlockers: [
+      {
+        taskId: runningTask.id,
+        title: runningTask.title,
+        sessionKey: runningTask.childSessionKey,
+      },
+    ],
+    aheadBlockers: [
+      {
+        taskId: "task-ahead",
+        title: "Prepare cleanup inputs",
+      },
+    ],
+  },
 };
 
 const completedTask = {
@@ -49,6 +69,8 @@ const completedTask = {
   status: "completed",
   title: "Generate media index",
   createdAt: baseTime - 30_000,
+  startedAt: baseTime - 29_000,
+  endedAt: baseTime - 20_000,
   updatedAt: baseTime - 20_000,
   terminalSummary: "Index generated",
 };
@@ -300,6 +322,7 @@ suite.define(() => {
     const page = await context.newPage();
     const video = page.video();
     try {
+      await page.clock.setFixedTime(baseTime);
       const gateway = await installMockGateway(page, {
         methodResponses: {
           "tasks.list": {
@@ -351,7 +374,12 @@ suite.define(() => {
       await recent.locator('[data-task-id="task-failed"]').waitFor({ state: "visible" });
       expect(await active.textContent()).toContain("Reading subscription paths");
       expect(await active.textContent()).toContain("Visible only after active pagination");
+      expect(await active.textContent()).toContain("500 working · 1 waiting");
+      expect(await active.textContent()).toContain("Waiting for");
+      expect(await active.textContent()).toContain("Execution slots occupied · 1/2");
+      expect(await active.textContent()).toContain("Tasks ahead · 1");
       expect(await recent.textContent()).toContain("Worker exited");
+      expect(await recent.textContent()).toContain("Worked for 9s");
       const listRequests = await gateway.getRequests("tasks.list");
       expect(
         listRequests.filter(
@@ -376,6 +404,45 @@ suite.define(() => {
       await page.screenshot({
         path: path.join(artifactDir, "01-page-two-sentinel.png"),
       });
+
+      const queued = active.locator('[data-task-id="task-queued"]');
+      const blockerLinks = queued.locator(".task-wait__blocker");
+      for (const viewport of [
+        { name: "desktop", width: 1440, height: 900 },
+        { name: "tablet", width: 768, height: 1024 },
+        { name: "mobile", width: 390, height: 844 },
+      ]) {
+        await page.setViewportSize(viewport);
+        await queued.scrollIntoViewIfNeeded();
+        const minimumTargetSize = viewport.width <= 768 ? 44 : 24;
+        const blockerBounds = await blockerLinks.evaluateAll((elements) =>
+          elements.map((element) => {
+            const bounds = element.getBoundingClientRect();
+            return {
+              height: bounds.height,
+              left: bounds.left,
+              right: bounds.right,
+              width: bounds.width,
+            };
+          }),
+        );
+        expect(blockerBounds.length).toBeGreaterThan(0);
+        for (const bounds of blockerBounds) {
+          expect(bounds.width).toBeGreaterThanOrEqual(minimumTargetSize);
+          expect(bounds.height).toBeGreaterThanOrEqual(minimumTargetSize);
+          expect(bounds.left).toBeGreaterThanOrEqual(0);
+          expect(bounds.right).toBeLessThanOrEqual(viewport.width);
+        }
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          ),
+        ).toBe(true);
+        await page.screenshot({
+          path: path.join(artifactDir, `01-queue-wait-${viewport.name}.png`),
+        });
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
 
       await gateway.emitGatewayEvent("task", {
         action: "upserted",
