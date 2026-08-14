@@ -9,7 +9,10 @@ import {
   logCodeModeDiagnostic,
 } from "../../../logging/code-mode-diagnostic.js";
 import { extractModelCompat } from "../../../plugins/provider-model-compat.js";
-import type { AuthorizedMemoryReadHost, AuthorizedMemoryWriteHost } from "../../../plugins/tool-types.js";
+import type {
+  AuthorizedMemoryReadHost,
+  AuthorizedMemoryWriteHost,
+} from "../../../plugins/tool-types.js";
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
 import { normalizeDeliveryContext } from "../../../utils/delivery-context.shared.js";
@@ -306,6 +309,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
           messageThreadId: attempt.messageThreadId,
           nativeChannelId: attempt.chatId,
           messageActionTurnCapability: attempt.messageActionTurnCapability,
+          memoryPostboxTurnCapability: attempt.memoryPostboxTurnCapability,
           groupId: attempt.groupId,
           groupChannel: attempt.groupChannel,
           groupSpace: attempt.groupSpace,

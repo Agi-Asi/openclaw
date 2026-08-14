@@ -16,7 +16,7 @@
   },
   "kind": "memory",
   "contracts": {
-    "tools": ["intent", "memory_get", "memory_search"]
+    "tools": ["intent", "memory_get", "memory_postbox_deposit", "memory_search"]
   },
   "toolMetadata": {
     "intent": {

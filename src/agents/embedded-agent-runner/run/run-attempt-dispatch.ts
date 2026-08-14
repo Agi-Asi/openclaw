@@ -286,6 +286,7 @@ export async function dispatchEmbeddedRunAttempt(input: {
     messageThreadId: params.messageThreadId,
     conversationToolPolicy: params.conversationToolPolicy,
     messageActionTurnCapability: params.messageActionTurnCapability,
+    memoryPostboxTurnCapability: params.memoryPostboxTurnCapability,
     groupId: params.groupId,
     groupChannel: params.groupChannel,
     groupSpace: params.groupSpace,
