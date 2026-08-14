@@ -202,25 +202,26 @@ function withPatchMemoryFileMutationGuard<T extends PatchMutationOperations>(par
   operations: T;
   guard: MemoryFileMutationGuard | undefined;
 }): T {
-  if (!params.guard) {
+  const guard = params.guard;
+  if (!guard) {
     return params.operations;
   }
   return {
     ...params.operations,
     writeFile: async (filePath, content) => {
-      await params.guard.assertCanMutate(filePath);
+      await guard.assertCanMutate(filePath);
       await params.operations.writeFile(filePath, content);
     },
     createFileExclusive: async (filePath, content) => {
-      await params.guard.assertCanMutate(filePath);
+      await guard.assertCanMutate(filePath);
       return await params.operations.createFileExclusive(filePath, content);
     },
     remove: async (filePath) => {
-      await params.guard.assertCanMutate(filePath);
+      await guard.assertCanMutate(filePath);
       await params.operations.remove(filePath);
     },
     mkdirp: async (dir) => {
-      await params.guard.assertCanMutate(dir);
+      await guard.assertCanMutate(dir);
       await params.operations.mkdirp(dir);
     },
   } as T;

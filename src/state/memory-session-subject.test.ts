@@ -353,7 +353,13 @@ describe("memory session subject", () => {
           sessionId,
           options: agentOptions,
         }),
-      ).toMatchObject({ kind: "current", context: { subject: { kind: "conversation" } } });
+      ).toMatchObject({
+        kind: "current",
+        context: {
+          subject: { kind: "conversation" },
+          conversation: { deliveryTarget: `${chatType}-1` },
+        },
+      });
     },
   );
 

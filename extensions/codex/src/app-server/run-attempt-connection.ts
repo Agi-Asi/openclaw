@@ -51,32 +51,16 @@ import {
 import { getLeasedSharedCodexAppServerClient } from "./shared-client.js";
 import { rotateOversizedCodexAppServerStartupBinding } from "./startup-binding.js";
 
-const CODEX_PROJECT_DOCUMENTS_DISABLED_OVERRIDE = "project_doc_max_bytes=0";
-
-function fenceCodexProjectDocumentsForMemoryIsolation(params: {
-  agentId: string;
-  appServer: ReturnType<typeof resolveCodexBindingAppServerConnection>["appServer"];
-}) {
-  if (!isLegacyMemorySurfaceDisabled(params.agentId)) {
-    return params.appServer;
+function assertCodexMemoryIsolationSupported(agentId: string): void {
+  if (!isLegacyMemorySurfaceDisabled(agentId)) {
+    return;
   }
-  if (params.appServer.start.transport !== "stdio") {
-    // Codex reads project documents while a process initializes. A pre-existing
-    // endpoint cannot receive the startup override, so continuing would reopen
-    // workspace MEMORY.md through project_doc_fallback_filenames.
-    throw new Error(
-      "Codex memory-isolation runs require a local stdio app-server so project documents can be disabled at startup",
-    );
-  }
-  return {
-    ...params.appServer,
-    start: {
-      ...params.appServer.start,
-      // Upstream applies repeated -c values in order; append after operator args
-      // so their local config.toml is never rewritten or allowed to re-enable docs.
-      args: [...params.appServer.start.args, "-c", CODEX_PROJECT_DOCUMENTS_DISABLED_OVERRIDE],
-    },
-  };
+  // Codex retains native filesystem and shell tools in its app-server protocol.
+  // Project-document suppression is not a filesystem boundary, so fail closed
+  // until this runtime can consume the brokered, read-only virtual projection.
+  throw new Error(
+    "Codex is unavailable for this memory-isolated agent: use a brokered OpenClaw coding runtime until Codex supports authorized virtual memory views.",
+  );
 }
 
 export async function prepareCodexAttemptConnection({ params, options }: CodexRunAttemptInput) {
@@ -365,6 +349,7 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     configured: typeof configuredAppServer,
     selection: { modelProvider?: string; model?: string },
   ) => {
+    assertCodexMemoryIsolationSupported(sessionAgentId);
     const session = applySessionPermissionPolicy(configured, selection);
     const trusted = resolveCodexAppServerForModelProvider({
       appServer: session,

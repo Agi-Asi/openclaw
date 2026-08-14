@@ -9,8 +9,10 @@ import {
   logCodeModeDiagnostic,
 } from "../../../logging/code-mode-diagnostic.js";
 import { extractModelCompat } from "../../../plugins/provider-model-compat.js";
+import type { AuthorizedMemoryReadHost } from "../../../plugins/tool-types.js";
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
+import { normalizeDeliveryContext } from "../../../utils/delivery-context.shared.js";
 import { createOpenClawCodingTools } from "../../agent-tools.js";
 import { getChannelAgentToolMeta } from "../../channel-tools.js";
 import type { CodeModeSkill } from "../../code-mode-skills.js";
@@ -19,6 +21,11 @@ import {
   isLocalModelLeanEnabled,
   resolveLocalModelLeanPreserveToolNames,
 } from "../../local-model-lean.js";
+import {
+  createAuthorizedMemoryReadHost,
+  resolveAuthorizedMemoryVirtualFileBroker,
+  type AuthorizedMemoryVirtualFileBroker,
+} from "../../memory-authorized-read-host.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { supportsModelTools } from "../../model-tool-support.js";
 import type { SandboxContext } from "../../sandbox/types.js";
@@ -26,6 +33,7 @@ import {
   resolveSessionPermissionExecMode,
   type PreparedSessionPermissionPolicy,
 } from "../../tool-fs-policy.js";
+import type { ToolFsPolicy } from "../../tool-fs-policy.types.js";
 import { toolPolicyRestrictsTools } from "../../tool-policy.js";
 import { isAgentToolRestartSafe } from "../../tool-replay-safety.js";
 import {
@@ -54,8 +62,10 @@ import type { EmbeddedRunAttemptParams } from "./types.js";
 type OpenClawCodingToolsOptions = NonNullable<Parameters<typeof createOpenClawCodingTools>[0]>;
 type SkillUsagePaths = OpenClawCodingToolsOptions["skillUsagePaths"];
 
-export function prepareEmbeddedAttemptToolBase(params: {
+export async function prepareEmbeddedAttemptToolBase(params: {
   agentDir: string;
+  authorizedMemoryRead?: AuthorizedMemoryReadHost;
+  authorizedMemoryVirtualBroker?: AuthorizedMemoryVirtualFileBroker;
   attempt: EmbeddedRunAttemptParams;
   effectiveCwd: string;
   effectiveWorkspace: string;
@@ -74,6 +84,40 @@ export function prepareEmbeddedAttemptToolBase(params: {
   toolSearchCatalogExecutor: ToolSearchCatalogToolExecutor;
 }) {
   const { attempt } = params;
+  // Admission owns this host. Every model-facing memory path receives the
+  // same already-bound capability; no downstream tool or prompt may mint one.
+  const authorizedMemoryRead =
+    params.authorizedMemoryRead ??
+    createAuthorizedMemoryReadHost({
+      agentId: params.sessionAgentId,
+      sessionKey: params.sandboxSessionKey,
+      sessionId: attempt.sessionId,
+      runId: attempt.runId,
+      deliveryContext: normalizeDeliveryContext({
+        channel: attempt.messageChannel ?? attempt.messageProvider,
+        to: attempt.messageTo ?? attempt.currentMessagingTarget ?? attempt.currentChannelId,
+        accountId: attempt.agentAccountId,
+        threadId: attempt.messageThreadId ?? attempt.currentThreadTs,
+      }),
+      messageChannel: attempt.messageChannel ?? attempt.messageProvider,
+      agentAccountId: attempt.agentAccountId,
+    });
+  const authorizedMemoryVirtualBroker =
+    params.authorizedMemoryVirtualBroker ??
+    (await resolveAuthorizedMemoryVirtualFileBroker(authorizedMemoryRead));
+  const fsPolicy: ToolFsPolicy | undefined = authorizedMemoryRead
+    ? authorizedMemoryVirtualBroker
+      ? Object.freeze({
+          kind: "authorized-memory-view" as const,
+          workspaceOnly: true,
+          viewId: authorizedMemoryVirtualBroker.view.viewId,
+          revision: authorizedMemoryVirtualBroker.view.revision,
+          virtualRoots: Object.freeze(
+            authorizedMemoryVirtualBroker.view.roots.map((root) => root.virtualRoot),
+          ),
+        })
+      : Object.freeze({ kind: "memory-unavailable" as const, workspaceOnly: true })
+    : undefined;
   const forceDirectMessageTool = messageToolOwnsVisibleReply(attempt);
   const toolsAllowWithForcedRuntimeTools = mergeForcedEmbeddedAttemptToolsAllow(
     attempt.toolsAllow,
@@ -281,6 +325,22 @@ export function prepareEmbeddedAttemptToolBase(params: {
           sessionId: attempt.sessionId,
           runId: attempt.runId,
           operationalRunInstance: attempt.admittedRunContext.operationalRunInstance,
+          authorizedMemoryRead,
+          ...(fsPolicy ? { fsPolicy } : {}),
+          ...(authorizedMemoryVirtualBroker
+            ? {
+                authorizedMemoryVirtualRead: {
+                  viewId: authorizedMemoryVirtualBroker.view.viewId,
+                  virtualRoots: authorizedMemoryVirtualBroker.view.roots.map(
+                    (root) => root.virtualRoot,
+                  ),
+                  virtualPaths: authorizedMemoryVirtualBroker.view.files.map(
+                    (file) => file.virtualPath,
+                  ),
+                  readFile: authorizedMemoryVirtualBroker.readFile,
+                },
+              }
+            : {}),
           conversationRecall: attempt.conversationRecall,
           approvalReviewerDeviceId: attempt.approvalReviewerDeviceId,
           oneShotCliRun: attempt.oneShotCliRun,
@@ -401,5 +461,8 @@ export function prepareEmbeddedAttemptToolBase(params: {
     toolSearchTargetTranscriptProjections,
     toolsEnabled,
     toolsRaw,
+    authorizedMemoryRead,
+    authorizedMemoryVirtualBroker,
+    fsPolicy,
   };
 }

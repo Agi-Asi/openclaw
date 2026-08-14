@@ -40,6 +40,11 @@ type MemoryPreoutputExposureLedgerDatabase = {
 
 type MemoryExposureLedgerDiagnostic = "hydrate-failed" | "persist-failed";
 
+export type DurableMemoryRunExposureLookup =
+  | Readonly<{ kind: "absent" }>
+  | Readonly<{ kind: "current"; snapshot: MemoryRunExposureSnapshot }>
+  | Readonly<{ kind: "unavailable" }>;
+
 function logMemoryExposureLedgerDiagnostic(diagnostic: MemoryExposureLedgerDiagnostic): void {
   // Ledger errors can carry SQLite paths or other sensitive runtime details. The read already
   // fails closed, so emit only a stable outcome code for operators and tests.
@@ -53,7 +58,9 @@ function canonicalStrings(values: readonly string[]): string | undefined {
   return JSON.stringify([...new Set(values)].toSorted());
 }
 
-function canonicalAudiences(snapshot: MemoryRunExposureSnapshot): string | undefined {
+function canonicalAudiences(
+  snapshot: Pick<MemoryRunExposureSnapshot, "deliveryAudiences">,
+): string | undefined {
   const audiences = snapshot.deliveryAudiences.map((audience) => ({
     kind: audience.kind,
     id: audience.id,
@@ -121,8 +128,9 @@ function parseCanonicalAudiences(value: string): readonly AudienceRef[] | undefi
         }),
       );
     }
-    const snapshot = { deliveryAudiences: audiences } as MemoryRunExposureSnapshot;
-    return canonicalAudiences(snapshot) === value ? Object.freeze(audiences) : undefined;
+    return canonicalAudiences({ deliveryAudiences: audiences }) === value
+      ? Object.freeze(audiences)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -285,6 +293,32 @@ export function readDurableMemoryRunExposure(params: {
     return readDurableMemoryRunExposureOrThrow(params);
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Reads the ledger's durable tail for a delivery decision.  Absence is distinct from an
+ * unreadable/corrupt ledger: an unexposed run may reply, but a scoped run never guesses.
+ */
+export function readLatestDurableMemoryRunExposure(params: {
+  agentId: string;
+  sessionId: string;
+  runId: string;
+}): DurableMemoryRunExposureLookup {
+  try {
+    const database = openOpenClawAgentDatabase({ agentId: params.agentId });
+    ensureMemoryPreoutputExposureLedgerSchemaInTransaction(database.db);
+    const snapshot = readDurableMemoryRunExposureOrThrow({
+      database,
+      sessionId: params.sessionId,
+      runId: params.runId,
+    });
+    return snapshot
+      ? Object.freeze({ kind: "current", snapshot })
+      : Object.freeze({ kind: "absent" });
+  } catch {
+    logMemoryExposureLedgerDiagnostic("hydrate-failed");
+    return Object.freeze({ kind: "unavailable" });
   }
 }
 

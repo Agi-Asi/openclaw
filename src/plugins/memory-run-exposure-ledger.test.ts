@@ -30,6 +30,7 @@ const {
   hydrateMemoryRunExposureFromLedger,
   persistMemoryRunExposureBeforeContent,
   readDurableMemoryRunExposure,
+  readLatestDurableMemoryRunExposure,
 } = await import("./memory-run-exposure-ledger.js");
 const { clearMemoryRunExposureForTest, prepareMemoryRunExposure } =
   await import("./memory-run-exposure.js");
@@ -75,6 +76,30 @@ function prepare(sessionId: string) {
 }
 
 describe("memory pre-output exposure ledger", () => {
+  it("distinguishes an absent delivery tail from a current durable exposure", () => {
+    expect(
+      readLatestDurableMemoryRunExposure({
+        agentId: "main",
+        sessionId: "session-a",
+        runId: "shared-run-id",
+      }),
+    ).toEqual({ kind: "absent" });
+
+    const snapshot = prepare("session-a");
+    expect(persistMemoryRunExposureBeforeContent(snapshot)).toBe(true);
+
+    expect(
+      readLatestDurableMemoryRunExposure({
+        agentId: "main",
+        sessionId: "session-a",
+        runId: "shared-run-id",
+      }),
+    ).toMatchObject({
+      kind: "current",
+      snapshot: { exposureSetId: snapshot.exposureSetId, revisionNumber: snapshot.revisionNumber },
+    });
+  });
+
   it("commits content-free rows before publication and separates the same raw run across sessions", () => {
     const first = prepare("session-a");
     const second = prepare("session-b");

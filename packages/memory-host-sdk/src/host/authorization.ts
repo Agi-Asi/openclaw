@@ -282,6 +282,39 @@ export type AuthorizedMemoryMount = DeepReadonly<{
   audienceRevision: string;
 }>;
 
+/**
+ * Additive Phase 1D projection contract. A view is an opaque broker handle;
+ * neither artifact locations nor host filesystem roots cross this boundary.
+ */
+export type AuthorizedMemoryVirtualRoot = DeepReadonly<{
+  version: 1;
+  mountHandle: string;
+  virtualRoot: string;
+  access: "read";
+}>;
+
+/**
+ * Opaque, logical file inventory for one authorized virtual view. The paths
+ * are relative to the virtual filesystem only; they never name a plugin,
+ * artifact, store, or host filesystem location.
+ */
+export type AuthorizedMemoryVirtualFile = DeepReadonly<{
+  version: 1;
+  mountHandle: string;
+  virtualPath: string;
+}>;
+
+export type AuthorizedMemoryVirtualView = DeepReadonly<{
+  version: 1;
+  viewId: string;
+  planId: string;
+  contextFingerprint: string;
+  revision: string;
+  roots: readonly AuthorizedMemoryVirtualRoot[];
+  files: readonly AuthorizedMemoryVirtualFile[];
+  expiresAt: string;
+}>;
+
 /** Plugin-issued, revision-bound reference. It is not a bearer grant or a raw path. */
 export type AuthorizedResourceHandle = DeepReadonly<{
   version: 1;

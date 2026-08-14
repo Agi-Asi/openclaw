@@ -6,13 +6,7 @@ import {
 } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareCodexAttemptConnection } from "./run-attempt-connection.js";
-import {
-  createParams,
-  createStartedThreadHarness,
-  runCodexAppServerAttempt,
-  setupRunAttemptTestHooks,
-  tempDir,
-} from "./run-attempt-test-harness.js";
+import { createParams, setupRunAttemptTestHooks, tempDir } from "./run-attempt-test-harness.js";
 import { testCodexAppServerBindingStore } from "./session-binding.test-helpers.js";
 
 setupRunAttemptTestHooks();
@@ -33,8 +27,8 @@ function markAgentMemoryCutOver(agentId: string): void {
     .run();
 }
 
-describe("Codex memory-isolation project-document fence", () => {
-  it("disables native project documents without rewriting local config.toml or sending legacy memory", async () => {
+describe("Codex memory-isolation boundary", () => {
+  it("fails closed before the app-server can receive an unconstrained workspace", async () => {
     const agentId = "codex-project-document-fence";
     vi.stubEnv("OPENCLAW_STATE_DIR", path.join(tempDir, "state"));
     markAgentMemoryCutOver(agentId);
@@ -56,28 +50,16 @@ describe("Codex memory-isolation project-document fence", () => {
     params.agentId = agentId;
     params.agentDir = agentDir;
 
-    const connection = await prepareCodexAttemptConnection({
-      params,
-      options: { bindingStore: testCodexAppServerBindingStore },
-    });
-    expect(connection.appServer.start.args).toEqual(
-      expect.arrayContaining(["-c", "project_doc_max_bytes=0"]),
+    await expect(
+      prepareCodexAttemptConnection({
+        params,
+        options: { bindingStore: testCodexAppServerBindingStore },
+      }),
+    ).rejects.toThrow(
+      "Codex is unavailable for this memory-isolated agent: use a brokered OpenClaw coding runtime until Codex supports authorized virtual memory views.",
     );
     expect(await fs.readFile(configTomlPath, "utf8")).toBe(configToml);
-
-    const harness = createStartedThreadHarness();
-    const run = runCodexAppServerAttempt(params);
-    await harness.waitForMethod("turn/start");
-    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-    await run;
-
-    const modelVisibleTurnPayload = JSON.stringify(
-      harness.requests.filter(
-        (request) => request.method === "thread/start" || request.method === "turn/start",
-      ),
-    );
-    expect(modelVisibleTurnPayload).not.toContain(legacyMemory);
-    expect(modelVisibleTurnPayload).not.toContain(legacyMemoryPath);
+    expect(await fs.readFile(legacyMemoryPath, "utf8")).toBe(legacyMemory);
   });
 
   it("refuses a pre-existing app-server that cannot receive the startup fence", async () => {
@@ -101,6 +83,6 @@ describe("Codex memory-isolation project-document fence", () => {
           pluginConfig: { appServer: { transport: "websocket", url: "ws://127.0.0.1:39175" } },
         },
       }),
-    ).rejects.toThrow("require a local stdio app-server");
+    ).rejects.toThrow("Codex is unavailable for this memory-isolated agent");
   });
 });

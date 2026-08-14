@@ -1,10 +1,12 @@
 import { resolveDefaultAgentId } from "../../agents/agent-scope-config.js";
+import { prepareMemoryEgressAuthorization } from "../../agents/memory-egress-admission.js";
 import { settleProgressVisibilityCallbackResult } from "../../channels/progress-visibility.js";
 import { hasRestartRecoverySourceClaim } from "../../config/sessions/restart-recovery-state.js";
 import { loadSessionEntry, updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import { logVerbose } from "../../globals.js";
 import { measureDiagnosticsTimelineSpan } from "../../infra/diagnostics-timeline.js";
 import { hasOutboundReplyContent } from "../../plugin-sdk/reply-payload.js";
+import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { markReplyPayloadForSourceSuppressionDelivery } from "../reply-payload.js";
 import type { OriginatingChannelType } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
@@ -385,10 +387,52 @@ export async function runReplyAgent(
     requesterSenderUsername: followupRun.run.senderUsername,
     requesterSenderE164: followupRun.run.senderE164,
   });
+  const memoryEgressDeliveryContext = normalizeDeliveryContext({
+    channel:
+      followupRun.originatingChannel ??
+      sessionCtx.OriginatingChannel ??
+      sessionCtx.Surface ??
+      sessionCtx.Provider ??
+      followupRun.run.messageProvider,
+    to:
+      followupRun.originatingTo ??
+      sessionCtx.OriginatingTo ??
+      sessionCtx.To ??
+      sessionCtx.NativeChannelId ??
+      sessionCtx.ChatId,
+    accountId:
+      followupRun.originatingAccountId ?? sessionCtx.AccountId ?? followupRun.run.agentAccountId,
+    threadId:
+      followupRun.originatingThreadId ?? sessionCtx.MessageThreadId ?? sessionCtx.TransportThreadId,
+  });
+  const blockEgressAllowed = () =>
+    prepareMemoryEgressAuthorization({
+      // Streaming, direct blocks, and maintenance notices remain outside the pilot. They must
+      // never inherit final-reply authority just because they share a visible reply callback.
+      capabilityId: "reply.block",
+      runId: runOpts?.runId,
+      agentId: followupRun.run.agentId,
+      sessionId: followupRun.run.sessionId,
+      sessionKey: sessionKey ?? followupRun.run.sessionKey,
+      deliveryContext: memoryEgressDeliveryContext,
+      messageChannel: memoryEgressDeliveryContext?.channel,
+      agentAccountId: memoryEgressDeliveryContext?.accountId,
+    }).allowed;
+  const memoryEgressRunOpts = runOpts?.onBlockReply
+    ? {
+        ...runOpts,
+        onBlockReply: async (...args: Parameters<NonNullable<typeof runOpts.onBlockReply>>) => {
+          if (!blockEgressAllowed()) {
+            return;
+          }
+          return await runOpts.onBlockReply?.(...args);
+        },
+      }
+    : runOpts;
   const compactionNoticeMessageId = sessionCtx.MessageSidFull ?? sessionCtx.MessageSid;
   const sendDirectCompactionNotice = shouldNotifyUserAboutCompaction(cfg)
     ? async (phase: CompactionNoticePhase, text?: string) => {
-        if (!opts?.onBlockReply) {
+        if (!memoryEgressRunOpts?.onBlockReply) {
           return;
         }
         const noticePayload = createCompactionNoticePayload({
@@ -398,14 +442,14 @@ export async function runReplyAgent(
           applyReplyToMode,
         });
         try {
-          await opts.onBlockReply(noticePayload);
+          await memoryEgressRunOpts.onBlockReply(noticePayload);
         } catch (err) {
           logVerbose(`context maintenance notice delivery failed: ${String(err)}`);
         }
       }
     : undefined;
   const blockReplyCoalescing =
-    blockStreamingEnabled && opts?.onBlockReply
+    blockStreamingEnabled && memoryEgressRunOpts?.onBlockReply
       ? resolveEffectiveBlockStreamingConfig({
           cfg,
           provider: sessionCtx.Provider,
@@ -414,9 +458,9 @@ export async function runReplyAgent(
         }).coalescing
       : undefined;
   const blockReplyPipeline =
-    blockStreamingEnabled && opts?.onBlockReply
+    blockStreamingEnabled && memoryEgressRunOpts?.onBlockReply
       ? createBlockReplyPipeline({
-          onBlockReply: opts.onBlockReply,
+          onBlockReply: memoryEgressRunOpts.onBlockReply,
           timeoutMs: blockReplyTimeoutMs,
           coalescing: blockReplyCoalescing,
           buffer: createAudioAsVoiceBuffer({ isAudioPayload }),
@@ -580,7 +624,7 @@ export async function runReplyAgent(
       getActiveSessionEntry: () => activeSessionEntry,
       isHeartbeat,
       isRestartRecoveryArmed,
-      opts: runOpts,
+      opts: memoryEgressRunOpts,
       pendingToolTasks,
       performSessionReset: resetSession,
       queueKey,

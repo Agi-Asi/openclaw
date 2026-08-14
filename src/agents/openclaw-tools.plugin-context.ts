@@ -37,6 +37,8 @@ export type OpenClawPluginToolOptions = {
   modelId?: string;
   /** Stable run identifier used to bind host-owned memory reads to this invocation. */
   runId?: string;
+  /** Prepared at run admission; never re-derived from a plugin tool call. */
+  authorizedMemoryRead?: import("../plugins/tool-types.js").AuthorizedMemoryReadHost;
   requesterSenderId?: string | null;
   senderIsOwner?: boolean;
   conversationReadOrigin?: ConversationReadInvocationOrigin;
@@ -94,7 +96,8 @@ export function resolveOpenClawPluginToolInputs(params: {
   });
   const memoryReadEnforced = sessionAgentId ? isMemoryIsolationCutoverAgent(sessionAgentId) : false;
   const authorizedMemoryRead = memoryReadEnforced
-    ? createAuthorizedMemoryReadHost({
+    ? (options?.authorizedMemoryRead ??
+      createAuthorizedMemoryReadHost({
         agentId: sessionAgentId,
         sessionKey: options?.agentSessionKey,
         sessionId: options?.sessionId,
@@ -102,7 +105,7 @@ export function resolveOpenClawPluginToolInputs(params: {
         deliveryContext,
         messageChannel: options?.agentChannel,
         agentAccountId: options?.agentAccountId,
-      })
+      }))
     : undefined;
 
   return {

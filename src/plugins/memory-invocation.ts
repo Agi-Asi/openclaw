@@ -1,5 +1,6 @@
 import { logWarn } from "../logger.js";
 import type {
+  AuthorizedMemoryVirtualView,
   AuthorizedMemoryPlan,
   AuthorizedMemoryResultEnvelope,
   AuthorizedResourceHandle,
@@ -25,7 +26,10 @@ import {
 } from "./memory-run-exposure-ledger.js";
 import { prepareMemoryRunExposure, publishMemoryRunExposure } from "./memory-run-exposure.js";
 import { resolveSelectedMemoryCapabilityRegistration } from "./memory-state.js";
-import type { MemoryPluginCapability } from "./registry-contribution-types.js";
+import type {
+  MemoryPluginCapability,
+  MemoryPluginVirtualViewProvider,
+} from "./registry-contribution-types.js";
 import { requireActivePluginRegistry } from "./runtime.js";
 
 export type MemoryInvocationUnavailable = Readonly<{
@@ -52,6 +56,10 @@ type InvocationState = Readonly<{
   plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
   authorizationStartedAtMs: number;
   runtime: AdmittedAuthorizedMemoryReadRuntime;
+  /** Bound at admission; registry changes cannot replace this run's provider. */
+  virtualView?: MemoryPluginVirtualViewProvider;
+  /** Canonical broker-issued views for this invocation; caller-shaped lookalikes never authorize reads. */
+  virtualViews: Map<string, AuthorizedMemoryVirtualView>;
   handles: Map<string, AuthorizedResourceHandle>;
   sourcePolicySetIds: Set<string>;
   exposedRevisionHandles: Set<string>;
@@ -59,6 +67,8 @@ type InvocationState = Readonly<{
   egressReceiptIds: Set<string>;
   runExposureRevisions: Set<string>;
 }>;
+
+const VIRTUAL_ROOT_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 const invocationStates = new WeakMap<object, InvocationState>();
 
@@ -272,6 +282,84 @@ function readState(invocation: AuthorizedMemoryReadInvocation): InvocationState 
   return invocationStates.get(invocation);
 }
 
+function canonicalizeAuthorizedVirtualView(params: {
+  view: AuthorizedMemoryVirtualView;
+  context: MemoryContentAccessContext<"read">;
+  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+}): AuthorizedMemoryVirtualView | undefined {
+  const { view, context, plan } = params;
+  const mountHandles = new Set(plan.mounts.map((mount) => mount.mountHandle));
+  const rootNames = new Map<string, string>();
+  const rootHandles = new Set<string>();
+  const virtualPaths = new Set<string>();
+  const expiresAt = Date.parse(view.expiresAt);
+  const valid =
+    view.version === 1 &&
+    view.planId === plan.planId &&
+    view.contextFingerprint === context.contextFingerprint &&
+    typeof view.viewId === "string" &&
+    view.viewId.trim().length > 0 &&
+    typeof view.revision === "string" &&
+    view.revision.trim().length > 0 &&
+    Number.isFinite(expiresAt) &&
+    expiresAt > Date.now() &&
+    view.roots.length > 0 &&
+    view.roots.every((root) => {
+      const normalized = root.virtualRoot.normalize("NFC");
+      const rootKey = normalized.toLocaleLowerCase("en-US");
+      if (
+        root.version !== 1 ||
+        root.access !== "read" ||
+        !mountHandles.has(root.mountHandle) ||
+        !normalized ||
+        !VIRTUAL_ROOT_PATTERN.test(normalized) ||
+        normalized !== root.virtualRoot ||
+        rootNames.has(rootKey) ||
+        rootHandles.has(root.mountHandle)
+      ) {
+        return false;
+      }
+      rootNames.set(rootKey, root.mountHandle);
+      rootHandles.add(root.mountHandle);
+      return true;
+    }) &&
+    view.files.every((file) => {
+      const normalized = file.virtualPath.normalize("NFC");
+      const parts = normalized.split("/");
+      const root = parts[0]!;
+      const pathKey = normalized.toLocaleLowerCase("en-US");
+      return file.version === 1 &&
+        typeof file.mountHandle === "string" &&
+        file.mountHandle.trim().length > 0 &&
+        normalized === file.virtualPath &&
+        parts.length === 2 &&
+        Boolean(root) &&
+        Boolean(parts[1]) &&
+        parts[1] !== "." &&
+        parts[1] !== ".." &&
+        !parts[1]!.includes("\\") &&
+        rootNames.get(root.toLocaleLowerCase("en-US")) === file.mountHandle &&
+        !virtualPaths.has(pathKey)
+        ? (virtualPaths.add(pathKey), true)
+        : false;
+    });
+  if (!valid) {
+    return undefined;
+  }
+  // Keep the exact opaque revision and manifest that the admitted provider issued.
+  // Shallow-freezing provider data would let a later caller retarget a broker read.
+  return Object.freeze({
+    version: 1 as const,
+    viewId: view.viewId,
+    planId: view.planId,
+    contextFingerprint: view.contextFingerprint,
+    revision: view.revision,
+    roots: Object.freeze(view.roots.map((root) => Object.freeze({ ...root }))),
+    files: Object.freeze(view.files.map((file) => Object.freeze({ ...file }))),
+    expiresAt: view.expiresAt,
+  });
+}
+
 /**
  * Creates a process-local, opaque read invocation. No caller can inject a serializable identity,
  * audience, plan, or continuation: all of those come from the trusted context and selected backend.
@@ -311,6 +399,8 @@ export async function createAuthorizedMemoryReadInvocation(params: {
         plan,
         authorizationStartedAtMs,
         runtime: admission.runtime,
+        ...(admission.runtime.virtualView ? { virtualView: admission.runtime.virtualView } : {}),
+        virtualViews: new Map(),
         handles: new Map(),
         sourcePolicySetIds: new Set<string>(),
         exposedRevisionHandles: new Set<string>(),
@@ -322,6 +412,83 @@ export async function createAuthorizedMemoryReadInvocation(params: {
     return invocation;
   } catch {
     logMemoryInvocationDiagnostic("authorization-failed");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+}
+
+/**
+ * Obtains a selected-plugin projection for generic FS and sandbox consumers.
+ * It is deliberately separate from search/read: no tool argument can turn a
+ * host path, artifact locator, or mount handle into a projection request.
+ */
+export async function materializeAuthorizedMemoryVirtualView(params: {
+  invocation: AuthorizedMemoryReadInvocation;
+}): Promise<AuthorizedMemoryVirtualView | MemoryInvocationUnavailable> {
+  const state = readState(params.invocation);
+  const context = state ? readCurrentContext(state) : undefined;
+  if (!state || !context || !state.virtualView) {
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  try {
+    const view = await state.virtualView.materializeAuthorizedVirtualView({
+      context,
+      plan: state.plan,
+    });
+    const canonical = view
+      ? canonicalizeAuthorizedVirtualView({ view, context, plan: state.plan })
+      : undefined;
+    if (!canonical) {
+      return MEMORY_INVOCATION_UNAVAILABLE;
+    }
+    state.virtualViews.set(canonical.viewId, canonical);
+    return canonical;
+  } catch {
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+}
+
+/**
+ * Reads one broker-addressed file from an opaque virtual view. The selected
+ * plugin never gives core a storage path, and the durable exposure receipt is
+ * committed before its content becomes visible to a generic file tool.
+ */
+export async function readAuthorizedMemoryVirtualFile(params: {
+  invocation: AuthorizedMemoryReadInvocation;
+  view: AuthorizedMemoryVirtualView;
+  virtualPath: string;
+}): Promise<MemoryReadResult | MemoryInvocationUnavailable> {
+  const state = readState(params.invocation);
+  const context = state ? readCurrentContext(state) : undefined;
+  if (
+    !state ||
+    !context ||
+    !state.virtualView ||
+    !isCurrentPlan({ context, plan: state.plan, nowMs: Date.now() }) ||
+    state.virtualViews.get(params.view.viewId) !== params.view ||
+    !params.view.files.some((file) => file.virtualPath === params.virtualPath)
+  ) {
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  try {
+    const envelope = await state.virtualView.readAuthorizedVirtualFile({
+      context,
+      plan: state.plan,
+      view: params.view,
+      virtualPath: params.virtualPath,
+    });
+    if (
+      !validateEnvelope({
+        state,
+        context,
+        expectedRevisionHandles: envelope.exposureReceipt.exposedRevisionHandles,
+        envelope,
+      })
+    ) {
+      return MEMORY_INVOCATION_UNAVAILABLE;
+    }
+    recordEnvelopeExposure({ state, context, envelope });
+    return Object.freeze({ ...envelope.value });
+  } catch {
     return MEMORY_INVOCATION_UNAVAILABLE;
   }
 }

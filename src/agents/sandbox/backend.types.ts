@@ -4,6 +4,7 @@
  * Runtime creation and lifecycle cleanup stay behind this backend boundary.
  */
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AuthorizedVirtualProjectionMountPlan } from "./authorized-virtual-projection-mounts.js";
 import type { SandboxBackendHandle } from "./backend-handle.types.js";
 import type { SandboxRegistryEntry } from "./registry.js";
 import type { SandboxConfig } from "./types.js";
@@ -38,6 +39,8 @@ export type CreateSandboxBackendParams = {
   workspaceDir: string;
   agentWorkspaceDir: string;
   skillsWorkspaceDir?: string;
+  /** Per-run core-staged authorized projections; never part of user sandbox config. */
+  authorizedVirtualProjectionMountPlan?: AuthorizedVirtualProjectionMountPlan;
   cfg: SandboxConfig;
   requireCurrentConfig?: boolean;
 };

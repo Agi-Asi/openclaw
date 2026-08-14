@@ -152,6 +152,52 @@ describe("computeSandboxConfigHash", () => {
 
     expect(withoutSkills).not.toBe(withSkills);
   });
+
+  it("changes for an authorized virtual projection view or revision", () => {
+    const shared = {
+      docker: createDockerConfig(),
+      workspaceAccess: "rw" as const,
+      workspaceDir: "/tmp/workspace",
+      agentWorkspaceDir: "/tmp/workspace",
+      mountFormatVersion: SANDBOX_MOUNT_FORMAT_VERSION,
+      createArgsEpoch: SANDBOX_DOCKER_CREATE_ARGS_EPOCH,
+    };
+    const before = computeSandboxConfigHash({
+      ...shared,
+      authorizedVirtualProjectionMounts: [
+        "view:opaque-view",
+        "revision:revision-1",
+        "/memory/private:read:opaque-mount:/tmp/workspace/.openclaw/authorized-memory-projections/p1_a",
+      ],
+    });
+    const changedView = computeSandboxConfigHash({
+      ...shared,
+      authorizedVirtualProjectionMounts: [
+        "view:opaque-view-2",
+        "revision:revision-1",
+        "/memory/private:read:opaque-mount:/tmp/workspace/.openclaw/authorized-memory-projections/p1_a",
+      ],
+    });
+    const changedRevision = computeSandboxConfigHash({
+      ...shared,
+      authorizedVirtualProjectionMounts: [
+        "view:opaque-view",
+        "revision:revision-2",
+        "/memory/private:read:opaque-mount:/tmp/workspace/.openclaw/authorized-memory-projections/p1_a",
+      ],
+    });
+    const changedMount = computeSandboxConfigHash({
+      ...shared,
+      authorizedVirtualProjectionMounts: [
+        "view:opaque-view",
+        "revision:revision-1",
+        "/memory/private:read:opaque-mount-rebound:/tmp/workspace/.openclaw/authorized-memory-projections/p1_a",
+      ],
+    });
+    expect(before).not.toBe(changedView);
+    expect(before).not.toBe(changedRevision);
+    expect(before).not.toBe(changedMount);
+  });
 });
 
 describe("computeSandboxBrowserConfigHash", () => {

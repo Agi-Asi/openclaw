@@ -17,6 +17,8 @@ import { defaultRuntime } from "../../runtime.js";
 import { createLazyRuntimeNamedExport } from "../../shared/lazy-runtime.js";
 import type { SkillEligibilityContext, SkillSnapshot, SkillUsagePath } from "../../skills/types.js";
 import type { ExecPolicyOverrides } from "../exec-defaults.js";
+import type { AuthorizedVirtualProjectionMountPlan } from "./authorized-virtual-projection-mounts.js";
+import type { StagedAuthorizedVirtualProjectionMountPlan } from "./authorized-virtual-projection-staging.js";
 import { getSandboxBackendWorkdirResolver, requireSandboxBackendFactory } from "./backend.js";
 import { ensureSandboxBrowser } from "./browser.js";
 import { resolveSandboxConfigForAgent } from "./config.js";
@@ -194,6 +196,11 @@ type ResolveSandboxContextParams = {
   requireCurrentConfig?: boolean;
   sessionKey?: string;
   skillsSnapshot?: SkillSnapshot;
+  authorizedVirtualProjectionMountPlan?: AuthorizedVirtualProjectionMountPlan;
+  /** Stages one admitted opaque virtual view after the controlled agent root exists. */
+  prepareAuthorizedVirtualProjectionMountPlan?: (params: {
+    agentWorkspaceDir: string;
+  }) => Promise<StagedAuthorizedVirtualProjectionMountPlan | undefined>;
   workspaceDir?: string;
 };
 
@@ -242,107 +249,142 @@ async function resolveProvisionedSandboxContext(
     workspaceDir: params.workspaceDir,
   });
 
-  const docker = await resolveSandboxDockerUser({
-    backend: cfg.backend,
-    docker: cfg.docker,
-    workspaceDir,
-  });
-  const resolvedCfg = docker === cfg.docker ? cfg : { ...cfg, docker };
-
-  const backendFactory = requireSandboxBackendFactory(resolvedCfg.backend);
-  const registeredRuntimeIds = await readRegisteredSandboxRuntimeIds({
-    backendId: resolvedCfg.backend,
-    scopeKey,
-  });
-  const backend = await backendFactory({
-    sessionKey: rawSessionKey,
-    scopeKey,
-    ...(registeredRuntimeIds.length > 0 ? { registeredRuntimeIds } : {}),
-    workspaceDir,
-    agentWorkspaceDir,
-    skillsWorkspaceDir,
-    cfg: resolvedCfg,
-    ...(params.requireCurrentConfig !== undefined
-      ? { requireCurrentConfig: params.requireCurrentConfig }
-      : {}),
-  });
-  await updateRegistry({
-    containerName: backend.runtimeId,
-    backendId: backend.id,
-    runtimeLabel: backend.runtimeLabel,
-    sessionKey: scopeKey,
-    createdAtMs: Date.now(),
-    lastUsedAtMs: Date.now(),
-    image: backend.configLabel ?? resolvedCfg.docker.image,
-    configLabelKind: backend.configLabelKind ?? "Image",
-  });
-
-  const resolvedBrowserConfig = resolvedCfg.browser.enabled
-    ? resolveBrowserConfig(params.config?.browser, params.config)
-    : undefined;
-  const evaluateEnabled =
-    resolvedBrowserConfig?.evaluateEnabled ?? DEFAULT_BROWSER_EVALUATE_ENABLED;
-
-  const bridgeAuth = cfg.browser.enabled
-    ? await (async () => {
-        // Sandbox browser bridge server runs on a loopback TCP port; always wire up
-        // the same auth that loopback browser clients will send (token/password).
-        const cfgForAuth =
-          params.config ?? (await import("../../config/config.js")).getRuntimeConfig();
-        let browserAuth = resolveBrowserControlAuth(cfgForAuth);
-        try {
-          const ensured = await ensureBrowserControlAuth({ cfg: cfgForAuth });
-          browserAuth = ensured.auth;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : JSON.stringify(error);
-          defaultRuntime.error?.(`Sandbox browser auth ensure failed: ${message}`);
-        }
-        return browserAuth;
-      })()
-    : undefined;
-  if (resolvedCfg.browser.enabled && backend.capabilities?.browser !== true) {
-    throw new Error(`Sandbox backend "${backend.id}" does not support browser sandboxes yet.`);
+  // Reject unsupported transports before asking the broker for any private
+  // bytes. Staging first would turn an unavailable SSH/custom backend into a
+  // host-side projection upload attempt.
+  if (
+    (params.prepareAuthorizedVirtualProjectionMountPlan ||
+      params.authorizedVirtualProjectionMountPlan) &&
+    cfg.backend !== "docker" &&
+    cfg.backend !== "podman"
+  ) {
+    throw new Error(
+      `Sandbox backend "${cfg.backend}" does not support authorized memory projections.`,
+    );
   }
-  const browser =
-    resolvedCfg.browser.enabled && backend.capabilities?.browser === true
-      ? await ensureSandboxBrowser({
-          scopeKey,
-          workspaceDir,
-          agentWorkspaceDir,
-          skillsWorkspaceDir,
-          cfg: resolvedCfg,
-          evaluateEnabled,
-          bridgeAuth,
-          ssrfPolicy: resolvedBrowserConfig?.ssrfPolicy,
-        })
-      : null;
 
-  const sandboxContext: SandboxContext = {
-    enabled: true,
-    backendId: backend.id,
-    sessionKey: rawSessionKey,
-    workspaceDir,
-    agentWorkspaceDir,
-    skillsWorkspaceDir,
-    ...(skillsEligibility ? { skillsEligibility } : {}),
-    ...(skillUsagePaths ? { skillUsagePaths } : {}),
-    workspaceAccess: resolvedCfg.workspaceAccess,
-    runtimeId: backend.runtimeId,
-    runtimeLabel: backend.runtimeLabel,
-    containerName: backend.runtimeId,
-    containerWorkdir: backend.workdir,
-    docker: resolvedCfg.docker,
-    tools: resolvedCfg.tools,
-    browserAllowHostControl: resolvedCfg.browser.allowHostControl,
-    browser: browser ?? undefined,
-    backend,
-  };
+  const stagedAuthorizedVirtualProjection =
+    await params.prepareAuthorizedVirtualProjectionMountPlan?.({ agentWorkspaceDir });
+  if (stagedAuthorizedVirtualProjection && params.authorizedVirtualProjectionMountPlan) {
+    await stagedAuthorizedVirtualProjection.dispose();
+    throw new Error("Sandbox received two authorized virtual projection plans.");
+  }
+  const authorizedVirtualProjectionMountPlan =
+    stagedAuthorizedVirtualProjection?.plan ?? params.authorizedVirtualProjectionMountPlan;
 
-  sandboxContext.fsBridge =
-    backend.createFsBridge?.({ sandbox: sandboxContext }) ??
-    createSandboxFsBridge({ sandbox: sandboxContext });
+  return await (async () => {
+    const docker = await resolveSandboxDockerUser({
+      backend: cfg.backend,
+      docker: cfg.docker,
+      workspaceDir,
+    });
+    const resolvedCfg = docker === cfg.docker ? cfg : { ...cfg, docker };
 
-  return sandboxContext;
+    // A projection is a confinement contract, not a generic workspace copy.
+    // Backends must explicitly implement its isolated `/memory` transfer/mount
+    // semantics before core hands them staged bytes.
+    const backendFactory = requireSandboxBackendFactory(resolvedCfg.backend);
+    const registeredRuntimeIds = await readRegisteredSandboxRuntimeIds({
+      backendId: resolvedCfg.backend,
+      scopeKey,
+    });
+    const backend = await backendFactory({
+      sessionKey: rawSessionKey,
+      scopeKey,
+      ...(registeredRuntimeIds.length > 0 ? { registeredRuntimeIds } : {}),
+      workspaceDir,
+      agentWorkspaceDir,
+      skillsWorkspaceDir,
+      ...(authorizedVirtualProjectionMountPlan ? { authorizedVirtualProjectionMountPlan } : {}),
+      cfg: resolvedCfg,
+      ...(params.requireCurrentConfig !== undefined
+        ? { requireCurrentConfig: params.requireCurrentConfig }
+        : {}),
+    });
+    await updateRegistry({
+      containerName: backend.runtimeId,
+      backendId: backend.id,
+      runtimeLabel: backend.runtimeLabel,
+      sessionKey: scopeKey,
+      createdAtMs: Date.now(),
+      lastUsedAtMs: Date.now(),
+      image: backend.configLabel ?? resolvedCfg.docker.image,
+      configLabelKind: backend.configLabelKind ?? "Image",
+    });
+
+    const resolvedBrowserConfig = resolvedCfg.browser.enabled
+      ? resolveBrowserConfig(params.config?.browser, params.config)
+      : undefined;
+    const evaluateEnabled =
+      resolvedBrowserConfig?.evaluateEnabled ?? DEFAULT_BROWSER_EVALUATE_ENABLED;
+
+    const bridgeAuth = cfg.browser.enabled
+      ? await (async () => {
+          // Sandbox browser bridge server runs on a loopback TCP port; always wire up
+          // the same auth that loopback browser clients will send (token/password).
+          const cfgForAuth =
+            params.config ?? (await import("../../config/config.js")).getRuntimeConfig();
+          let browserAuth = resolveBrowserControlAuth(cfgForAuth);
+          try {
+            const ensured = await ensureBrowserControlAuth({ cfg: cfgForAuth });
+            browserAuth = ensured.auth;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : JSON.stringify(error);
+            defaultRuntime.error?.(`Sandbox browser auth ensure failed: ${message}`);
+          }
+          return browserAuth;
+        })()
+      : undefined;
+    if (resolvedCfg.browser.enabled && backend.capabilities?.browser !== true) {
+      throw new Error(`Sandbox backend "${backend.id}" does not support browser sandboxes yet.`);
+    }
+    const browser =
+      resolvedCfg.browser.enabled && backend.capabilities?.browser === true
+        ? await ensureSandboxBrowser({
+            scopeKey,
+            workspaceDir,
+            agentWorkspaceDir,
+            skillsWorkspaceDir,
+            cfg: resolvedCfg,
+            evaluateEnabled,
+            bridgeAuth,
+            ssrfPolicy: resolvedBrowserConfig?.ssrfPolicy,
+          })
+        : null;
+
+    const sandboxContext: SandboxContext = {
+      enabled: true,
+      backendId: backend.id,
+      sessionKey: rawSessionKey,
+      workspaceDir,
+      agentWorkspaceDir,
+      skillsWorkspaceDir,
+      ...(skillsEligibility ? { skillsEligibility } : {}),
+      ...(skillUsagePaths ? { skillUsagePaths } : {}),
+      workspaceAccess: resolvedCfg.workspaceAccess,
+      runtimeId: backend.runtimeId,
+      runtimeLabel: backend.runtimeLabel,
+      containerName: backend.runtimeId,
+      containerWorkdir: backend.workdir,
+      docker: resolvedCfg.docker,
+      tools: resolvedCfg.tools,
+      browserAllowHostControl: resolvedCfg.browser.allowHostControl,
+      browser: browser ?? undefined,
+      ...(stagedAuthorizedVirtualProjection
+        ? { disposeAuthorizedVirtualProjectionMountPlan: stagedAuthorizedVirtualProjection.dispose }
+        : {}),
+      backend,
+    };
+
+    sandboxContext.fsBridge =
+      backend.createFsBridge?.({ sandbox: sandboxContext }) ??
+      createSandboxFsBridge({ sandbox: sandboxContext });
+
+    return sandboxContext;
+  })().catch(async (error) => {
+    await stagedAuthorizedVirtualProjection?.dispose();
+    throw error;
+  });
 }
 
 export async function resolveSandboxContext(params: {
@@ -352,6 +394,10 @@ export async function resolveSandboxContext(params: {
   requireCurrentConfig?: boolean;
   sessionKey?: string;
   skillsSnapshot?: SkillSnapshot;
+  authorizedVirtualProjectionMountPlan?: AuthorizedVirtualProjectionMountPlan;
+  prepareAuthorizedVirtualProjectionMountPlan?: (params: {
+    agentWorkspaceDir: string;
+  }) => Promise<StagedAuthorizedVirtualProjectionMountPlan | undefined>;
   workspaceDir?: string;
 }): Promise<SandboxContext | null> {
   const resolved = resolveSandboxSession(params);

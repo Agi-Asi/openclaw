@@ -9,6 +9,7 @@ import {
   type AuthorizedMemoryRuntime,
   type MemoryAuthorizationCapabilityName,
 } from "../plugin-sdk/memory-authorization.js";
+import type { MemoryPluginVirtualViewProvider } from "./registry-contribution-types.js";
 
 const AUTHORIZED_MEMORY_RUNTIME_METHODS = [
   "authorize",
@@ -31,7 +32,8 @@ const AUTHORIZED_MEMORY_READ_CAPABILITIES = [
 
 export type AdmittedAuthorizedMemoryReadRuntime = Readonly<
   Pick<AuthorizedMemoryRuntime, (typeof AUTHORIZED_MEMORY_READ_METHODS)[number]>
->;
+> &
+  Readonly<{ virtualView?: MemoryPluginVirtualViewProvider }>;
 
 export type MemoryAuthorizationReadAdmission =
   | Readonly<{ ok: true; runtime: AdmittedAuthorizedMemoryReadRuntime }>
@@ -191,6 +193,12 @@ function readCallable(value: unknown, key: string): ((...args: never[]) => unkno
     : undefined;
 }
 
+function readVirtualViewProvider(value: unknown): MemoryPluginVirtualViewProvider | undefined {
+  const materialize = readCallable(value, "materializeAuthorizedVirtualView");
+  const readFile = readCallable(value, "readAuthorizedVirtualFile");
+  return materialize && readFile ? (value as MemoryPluginVirtualViewProvider) : undefined;
+}
+
 /**
  * Enforced callers use this admission result directly. A failed alternate has no legacy runtime
  * in the result, so it cannot silently broaden a scoped read through the old search manager.
@@ -201,6 +209,7 @@ export async function admitMemoryAuthorizationReadRuntime(
   const authorization = readDataProperty(capability, "authorization");
   const runtime = readDataProperty(capability, "runtime");
   const conformance = readDataProperty(capability, "authorizationConformance");
+  const virtualView = readDataProperty(capability, "virtualView");
   const authorizationCapabilities =
     authorization.kind === "data" && isMemoryAuthorizationCapabilities(authorization.value)
       ? authorization.value
@@ -238,6 +247,9 @@ export async function admitMemoryAuthorizationReadRuntime(
       readAuthorized: (readAuthorized as AuthorizedMemoryRuntime["readAuthorized"]).bind(
         runtime.value,
       ),
+      ...(virtualView.kind === "data" && readVirtualViewProvider(virtualView.value)
+        ? { virtualView: readVirtualViewProvider(virtualView.value) }
+        : {}),
     }),
   });
 }

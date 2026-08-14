@@ -60,6 +60,8 @@ export async function runEmbeddedAttempt(
   const runAbortController = new AbortController();
   const {
     agentCoreThinkingLevel,
+    authorizedMemoryRead,
+    authorizedMemoryVirtualBroker,
     defaultAgentId,
     effectiveCwd,
     effectiveFsWorkspaceOnly,
@@ -190,11 +192,13 @@ export async function runEmbeddedAttempt(
     emitDiagnosticRunCompleted = emitCompleted;
     const corePluginToolStages = createEmbeddedRunStageTracker();
     let toolSearchCatalogExecutor: ToolSearchCatalogToolExecutor | undefined;
-    const preparedToolBase = measureEmbeddedAgentPreparationSync(
+    const preparedToolBase = await measureEmbeddedAgentPreparation(
       "attempt.tool-base",
       () =>
         prepareEmbeddedAttemptToolBase({
           agentDir,
+          authorizedMemoryRead,
+          authorizedMemoryVirtualBroker,
           attempt: params,
           effectiveCwd,
           effectiveWorkspace,
@@ -323,6 +327,7 @@ export async function runEmbeddedAttempt(
       () =>
         prepareEmbeddedAttemptSystemPrompt({
           activeContextEngine,
+          authorizedMemoryRead: preparedToolBase.authorizedMemoryRead,
           attempt: params,
           bootstrap: preparedBootstrap,
           capabilityToolNames: toolSearchRunPlan.capabilityToolNames,
@@ -569,6 +574,13 @@ export async function runEmbeddedAttempt(
     } catch (cleanupErr) {
       log.warn(
         `failed to clean up embedded prep resources after early attempt exit: runId=${params.runId} ${String(cleanupErr)}`,
+      );
+    }
+    try {
+      await sandbox?.disposeAuthorizedVirtualProjectionMountPlan?.();
+    } catch (cleanupErr) {
+      log.warn(
+        `failed to remove authorized memory projection staging: runId=${params.runId} ${String(cleanupErr)}`,
       );
     }
     const terminal = projectAgentRunAttemptTerminal(executionState.terminal);

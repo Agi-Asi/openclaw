@@ -45,6 +45,7 @@ import { resolveConversationCapabilityProfile } from "../conversation-capability
 import { formatDateStamp, resolveUserTimezone } from "../date-time.js";
 import { resolveOpenClawReferencePaths } from "../docs-path.js";
 import { resolveHeartbeatPromptForSystemPrompt } from "../heartbeat-system-prompt.js";
+import { createAuthorizedMemoryReadHost } from "../memory-authorized-read-host.js";
 import { prepareAgentMemoryPrompt } from "../memory-prompt-prepare.js";
 import {
   applyAuthHeaderOverride,
@@ -270,6 +271,21 @@ export async function buildPreparedCompactionRuntime(prepared: DirectCompactionP
             sandbox,
             resolvedWorkspace,
           });
+    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+      sessionKey: params.sessionKey,
+      config: params.config,
+      agentId: params.agentId,
+    });
+    // Compaction shares the live run's admission discipline: prepare one host
+    // before tools, then reuse it for the prompt snapshot.
+    const authorizedMemoryRead = createAuthorizedMemoryReadHost({
+      agentId: sessionAgentId,
+      sessionKey: sandboxSessionKey,
+      sessionId: params.sessionId,
+      runId: params.runId,
+      messageChannel: resolvedMessageProvider,
+      agentAccountId: params.agentAccountId,
+    });
     const runtimeCapabilityProfile = resolveConversationCapabilityProfile({
       config: params.config,
       sessionKey: sandboxSessionKey,
@@ -326,6 +342,7 @@ export async function buildPreparedCompactionRuntime(prepared: DirectCompactionP
               : undefined,
           sessionId: params.sessionId,
           runId: params.runId,
+          authorizedMemoryRead,
           oneShotCliRun: params.oneShotCliRun,
           groupId: params.groupId,
           groupChannel: params.groupChannel,
@@ -451,11 +468,6 @@ export async function buildPreparedCompactionRuntime(prepared: DirectCompactionP
             accountId: params.agentAccountId,
           })
         : undefined;
-    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
-      sessionKey: params.sessionKey,
-      config: params.config,
-      agentId: params.agentId,
-    });
     // Resolve channel-specific message actions for system prompt
     const channelActions = runtimeChannel
       ? listChannelSupportedActions(
@@ -560,6 +572,7 @@ export async function buildPreparedCompactionRuntime(prepared: DirectCompactionP
       agentId: runtimeInfo.agentId,
       agentSessionKey: runtimeInfo.sessionKey,
       sandboxed: sandboxInfo?.enabled === true,
+      authorizedMemoryRead,
     });
     // Compaction must build byte-identical prompt sections to live turns, or
     // the compaction run misses the transcript's cached prompt prefix. The

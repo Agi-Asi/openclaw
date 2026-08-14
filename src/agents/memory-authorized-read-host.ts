@@ -1,9 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { MemoryActorEvidence } from "../memory-host-sdk/host/authorization.js";
+import type {
+  AuthorizedMemoryVirtualView,
+  MemoryActorEvidence,
+} from "../memory-host-sdk/host/authorization.js";
 import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import {
   MEMORY_INVOCATION_UNAVAILABLE,
   createAuthorizedMemoryReadInvocation,
+  materializeAuthorizedMemoryVirtualView,
+  readAuthorizedMemoryVirtualFile,
   readAuthorizedMemoryForInvocation,
   searchAuthorizedMemoryForInvocation,
   type AuthorizedMemoryReadInvocation,
@@ -19,6 +24,31 @@ import {
   type CurrentMemorySessionContext,
 } from "../state/memory-session-subject.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
+import { resolveMemoryEgressDeliveryFacts } from "./memory-egress-admission.js";
+
+const authorizedMemoryVirtualBroker: unique symbol = Symbol(
+  "openclaw.authorized-memory-virtual-broker",
+);
+
+/** Core-private bridge for generic filesystem tools; it is absent from plugin contexts. */
+export type AuthorizedMemoryVirtualFileBroker = Readonly<{
+  view: AuthorizedMemoryVirtualView;
+  readFile: (virtualPath: string) => Promise<string | undefined>;
+}>;
+
+type AuthorizedMemoryReadHostWithVirtualBroker = AuthorizedMemoryReadHost &
+  Readonly<{
+    [authorizedMemoryVirtualBroker]: () => Promise<AuthorizedMemoryVirtualFileBroker | undefined>;
+  }>;
+
+export async function resolveAuthorizedMemoryVirtualFileBroker(
+  host: AuthorizedMemoryReadHost | undefined,
+): Promise<AuthorizedMemoryVirtualFileBroker | undefined> {
+  if (!host || !(authorizedMemoryVirtualBroker in host)) {
+    return undefined;
+  }
+  return (host as AuthorizedMemoryReadHostWithVirtualBroker)[authorizedMemoryVirtualBroker]();
+}
 
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("base64url");
@@ -30,48 +60,23 @@ function deliveryFacts(params: {
   messageChannel?: string;
   agentAccountId?: string;
 }) {
-  const { context } = params;
-  const route = {
-    channel: params.deliveryContext?.channel ?? params.messageChannel ?? null,
-    accountId: params.deliveryContext?.accountId ?? params.agentAccountId ?? null,
-    to: params.deliveryContext?.to ?? null,
-    threadId: params.deliveryContext?.threadId ?? null,
-  };
-  if (context.subject.kind === "user") {
-    return {
-      sink: "private" as const,
-      audiences: [{ kind: "user" as const, id: context.subject.principalId }],
-      routeRevision: `mdr1_${hash(route)}`,
+  const facts = resolveMemoryEgressDeliveryFacts({
+    agentId: params.context.agentId,
+    sessionKey: params.context.sessionKey,
+    sessionId: params.context.sessionId,
+    deliveryContext: params.deliveryContext,
+    messageChannel: params.messageChannel,
+    agentAccountId: params.agentAccountId,
+  });
+  return (
+    facts && {
+      sink: facts.sink,
+      audiences: facts.audiences,
+      routeRevision: facts.deliveryRevision,
       egressCapabilityIds: ["reply.final"],
-      egressRegistryRevision: "mer1_reply-final",
-    };
-  }
-  if (context.subject.kind === "conversation") {
-    // The persisted transport identity, not a latest sender, is the only
-    // channel audience accepted by the scoped runtime.
-    if (!context.conversation) {
-      return undefined;
+      egressRegistryRevision: facts.egressRegistryRevision,
     }
-    return {
-      sink: "channel" as const,
-      audiences: [
-        // Scoped stores are addressed to the canonical conversation principal. The transport
-        // conversation id remains routing evidence; using it here would make every channel
-        // store fail the subject-bound view check.
-        { kind: "conversation" as const, id: context.principalId },
-      ],
-      routeRevision: `mdr1_${hash(route)}`,
-      egressCapabilityIds: ["reply.final"],
-      egressRegistryRevision: "mer1_reply-final",
-    };
-  }
-  return {
-    sink: "internal" as const,
-    audiences: [{ kind: "agent" as const, id: context.agentId }],
-    routeRevision: `mdr1_${hash(route)}`,
-    egressCapabilityIds: ["reply.final"],
-    egressRegistryRevision: "mer1_reply-final",
-  };
+  );
 }
 
 /**
@@ -204,6 +209,29 @@ export function createAuthorizedMemoryReadHost(params: {
     | undefined;
   const getInvocation = () =>
     (invocation ??= createAuthorizedMemoryReadInvocation({ context: trusted.context }));
+  let virtualBroker: Promise<AuthorizedMemoryVirtualFileBroker | undefined> | undefined;
+  const getVirtualBroker = () =>
+    (virtualBroker ??= (async () => {
+      const active = await getInvocation();
+      if ("unavailable" in active) {
+        return undefined;
+      }
+      const view = await materializeAuthorizedMemoryVirtualView({ invocation: active });
+      if ("unavailable" in view) {
+        return undefined;
+      }
+      return Object.freeze({
+        view,
+        async readFile(virtualPath) {
+          const result = await readAuthorizedMemoryVirtualFile({
+            invocation: active,
+            view,
+            virtualPath,
+          });
+          return "unavailable" in result ? undefined : result.text;
+        },
+      });
+    })());
   return Object.freeze({
     async search(search) {
       const active = await getInvocation();
@@ -221,5 +249,6 @@ export function createAuthorizedMemoryReadHost(params: {
       const result = await readAuthorizedMemoryForInvocation({ invocation: active, ...read });
       return "unavailable" in result ? MEMORY_INVOCATION_UNAVAILABLE : result;
     },
-  });
+    [authorizedMemoryVirtualBroker]: getVirtualBroker,
+  }) as AuthorizedMemoryReadHost;
 }

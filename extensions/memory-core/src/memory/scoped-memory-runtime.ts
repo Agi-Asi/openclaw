@@ -8,6 +8,7 @@ import type {
   AuthorizedMemorySearchParams,
   AuthorizedMemorySearchResult,
   AuthorizedResourceHandle,
+  AuthorizedMemoryVirtualView,
   MemoryAccessContext,
   MemoryContentAccessContext,
 } from "openclaw/plugin-sdk/memory-authorization";
@@ -40,6 +41,23 @@ type PlanState = Readonly<{
 }>;
 
 const plans = new Map<string, PlanState>();
+type VirtualViewAllocation = Readonly<{
+  planId: string;
+  revision: string;
+  expiresAtMs: number;
+  /** View paths bind the exact revision selected at materialization time. */
+  revisionByVirtualPath: ReadonlyMap<string, string>;
+}>;
+
+const virtualViews = new Map<string, VirtualViewAllocation>();
+
+function pruneExpiredVirtualViews(nowMs = Date.now()): void {
+  for (const [viewId, allocation] of virtualViews) {
+    if (allocation.expiresAtMs <= nowMs) {
+      virtualViews.delete(viewId);
+    }
+  }
+}
 
 function hash(parts: readonly string[]): string {
   return createHash("sha256").update(parts.join("\0")).digest("base64url");
@@ -246,6 +264,128 @@ function readPlan(params: {
     return undefined;
   }
   return state;
+}
+
+function materializeAuthorizedVirtualView(params: {
+  context: MemoryContentAccessContext<"read">;
+  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+}): AuthorizedMemoryVirtualView | undefined {
+  pruneExpiredVirtualViews();
+  const state = readPlan(params);
+  if (!state || state.stores.length !== state.plan.mounts.length) {
+    return undefined;
+  }
+  const revision = `mviewr1_${hash(state.stores.map((store) => store.policyRevisionId))}`;
+  const roots = state.stores.map((_, index) =>
+    Object.freeze({
+      version: 1 as const,
+      mountHandle: state.plan.mounts[index]!.mountHandle,
+      virtualRoot: `projections-${index + 1}`,
+      access: "read" as const,
+    }),
+  );
+  const revisionByVirtualPath = new Map<string, string>();
+  const files = state.stores.flatMap((store, index) => {
+    const root = roots[index]!;
+    const rows = withScopedMemoryDatabase(
+      params.context.agentId,
+      (database) =>
+        database
+          .prepare(
+            `SELECT revision.revision_id
+             FROM memory_resources AS resource
+             JOIN memory_resource_revisions AS revision
+               ON revision.resource_id = resource.resource_id
+             WHERE resource.agent_id = ?
+               AND resource.store_id = ?
+               AND revision.lifecycle_state = 'active'
+               AND (revision.expires_at IS NULL OR revision.expires_at > ?)
+             ORDER BY resource.resource_id`,
+          )
+          .all(params.context.agentId, store.storeId, Date.now()) as Array<{
+          revision_id: string;
+        }>,
+    );
+    return rows.flatMap((row, ordinal) => {
+      const virtualPath = `${root.virtualRoot}/${ordinal + 1}.md`;
+      revisionByVirtualPath.set(virtualPath, row.revision_id);
+      return [
+        Object.freeze({
+          version: 1 as const,
+          mountHandle: root.mountHandle,
+          virtualPath,
+        }),
+      ];
+    });
+  });
+  const view = Object.freeze({
+    version: 1 as const,
+    viewId: `mview1_${randomUUID()}`,
+    planId: state.plan.planId,
+    contextFingerprint: state.contextFingerprint,
+    revision,
+    roots: Object.freeze(roots),
+    files: Object.freeze(files),
+    expiresAt: state.plan.expiresAt,
+  });
+  virtualViews.set(
+    view.viewId,
+    Object.freeze({
+      planId: view.planId,
+      revision: view.revision,
+      expiresAtMs: state.expiresAtMs,
+      revisionByVirtualPath,
+    }),
+  );
+  return view;
+}
+
+function readAuthorizedVirtualFile(params: {
+  context: MemoryContentAccessContext<"read">;
+  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  view: AuthorizedMemoryVirtualView;
+  virtualPath: string;
+}): AuthorizedMemoryResultEnvelope<MemoryReadResult> {
+  pruneExpiredVirtualViews();
+  const state = readPlan(params);
+  const allocation = virtualViews.get(params.view.viewId);
+  const normalized = params.virtualPath.normalize("NFC");
+  const parts = normalized.split("/");
+  const revisionId = allocation?.revisionByVirtualPath.get(normalized);
+  if (
+    !state ||
+    !allocation ||
+    allocation.expiresAtMs <= Date.now() ||
+    allocation.planId !== params.plan.planId ||
+    allocation.revision !== params.view.revision ||
+    params.view.planId !== params.plan.planId ||
+    params.view.contextFingerprint !== params.context.contextFingerprint ||
+    normalized !== params.virtualPath ||
+    parts.length !== 2 ||
+    !revisionId
+  ) {
+    throw new Error("authorized memory virtual view is unavailable");
+  }
+  const snapshot = readBuiltinScopedMemoryRevisionSnapshot({
+    agentId: params.context.agentId,
+    storeIds: state.stores.map((store) => store.storeId),
+    revisionId,
+  });
+  if (!snapshot) {
+    throw new Error("authorized memory virtual view is unavailable");
+  }
+  return createEnvelope({
+    state,
+    context: params.context,
+    value: Object.freeze({
+      text: snapshot.content,
+      path: `memory/${snapshot.logicalLocator}`,
+      from: 1,
+      lines: snapshot.content.split("\n").length,
+    }),
+    revisions: [snapshot.revisionId],
+    sourcePolicySetIds: [`mps1_${snapshot.policyRevisionId}`],
+  });
 }
 
 function createHandle(params: {
@@ -457,6 +597,24 @@ export const builtinScopedMemoryAuthorizedRuntime = Object.freeze(
   builtinScopedMemoryReadRuntime,
 ) as unknown as Pick<AuthorizedMemoryRuntime, "authorize" | "searchAuthorized" | "readAuthorized">;
 
+export const builtinScopedMemoryVirtualView = Object.freeze({
+  async materializeAuthorizedVirtualView(params: {
+    context: MemoryContentAccessContext<"read">;
+    plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  }): Promise<AuthorizedMemoryVirtualView | undefined> {
+    return materializeAuthorizedVirtualView(params);
+  },
+  async readAuthorizedVirtualFile(params: {
+    context: MemoryContentAccessContext<"read">;
+    plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+    view: AuthorizedMemoryVirtualView;
+    virtualPath: string;
+  }): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>> {
+    return readAuthorizedVirtualFile(params);
+  },
+});
+
 export function resetBuiltinScopedMemoryAuthorizedRuntimeForTest(): void {
   plans.clear();
+  virtualViews.clear();
 }

@@ -3,8 +3,9 @@ import {
   readNonBlankString,
   readNonBlankString as normalizeTtsSupplementSpokenText,
 } from "@openclaw/normalization-core/string-coerce";
-import type { OutboundLocation } from "../channels/location.js";
 /** Reply payload contracts and metadata helpers shared by dispatch and channel renderers. */
+import type { MemoryEgressPayloadAuthorization } from "../agents/memory-egress-admission.js";
+import type { OutboundLocation } from "../channels/location.js";
 import type { ReplyToMode } from "../config/types.base.js";
 import type {
   InteractiveReply,
@@ -302,6 +303,8 @@ export type ReplyPayloadMetadata = {
   heartbeatTerminalToolFailure?: {
     toolName: string;
   };
+  /** Queue-time memory egress authority for a final reply; never serialized to a channel. */
+  memoryEgressAuthorization?: MemoryEgressPayloadAuthorization;
 };
 
 const replyPayloadMetadata = new WeakMap<object, ReplyPayloadMetadata>();

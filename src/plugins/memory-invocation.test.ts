@@ -36,6 +36,8 @@ vi.mock("../logger.js", () => ({
 const {
   MEMORY_INVOCATION_UNAVAILABLE,
   createAuthorizedMemoryReadInvocation,
+  materializeAuthorizedMemoryVirtualView,
+  readAuthorizedMemoryVirtualFile,
   readAuthorizedMemoryForInvocation,
   readAuthorizedMemoryRunExposure,
   searchAuthorizedMemoryForInvocation,
@@ -685,5 +687,246 @@ describe("authorized memory read invocation", () => {
         { handleId: "handle-2", snippet: "two" },
       ],
     });
+  });
+
+  it("binds virtual reads to the admitted provider and exact manifest members", async () => {
+    const admittedVirtualView = {
+      materializeAuthorizedVirtualView: vi.fn(async () => ({
+        version: 1 as const,
+        viewId: "view-1",
+        planId: "plan-1",
+        contextFingerprint: "fingerprint-1",
+        revision: "revision-1",
+        roots: [
+          {
+            version: 1 as const,
+            mountHandle: "mount-1",
+            virtualRoot: "private",
+            access: "read" as const,
+          },
+        ],
+        files: [{ version: 1 as const, mountHandle: "mount-1", virtualPath: "private/1.md" }],
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      })),
+      readAuthorizedVirtualFile: vi.fn(async () =>
+        createEnvelope({ text: "allowed", path: "memory/private/1.md" }),
+      ),
+    };
+    const plan = {
+      ...createPlan(),
+      mounts: [
+        {
+          version: 1 as const,
+          agentId: "main",
+          mountHandle: "mount-1",
+          capabilities: ["read"] as const,
+          audienceRevision: "audience-1",
+        },
+      ],
+    };
+    const runtime = {
+      authorize: vi.fn().mockResolvedValue(plan),
+      searchAuthorized: vi.fn(),
+      readAuthorized: vi.fn(),
+      virtualView: admittedVirtualView,
+    };
+    mocks.materialize.mockReturnValue(createContext());
+    mocks.admit.mockResolvedValue({ ok: true, runtime });
+
+    const invocation = await createAuthorizedMemoryReadInvocation({ context: {} as never });
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to admit virtual provider");
+    }
+    const view = await materializeAuthorizedMemoryVirtualView({ invocation });
+    if (view === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to materialize virtual view");
+    }
+    await expect(
+      readAuthorizedMemoryVirtualFile({ invocation, view, virtualPath: "private/2.md" }),
+    ).resolves.toBe(MEMORY_INVOCATION_UNAVAILABLE);
+    expect(admittedVirtualView.readAuthorizedVirtualFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed duplicate and case-colliding virtual views before any broker read", async () => {
+    const admittedVirtualView = {
+      materializeAuthorizedVirtualView: vi.fn(async () => ({
+        version: 1 as const,
+        viewId: "view-duplicate",
+        planId: "plan-1",
+        contextFingerprint: "fingerprint-1",
+        revision: "revision-1",
+        roots: [
+          {
+            version: 1 as const,
+            mountHandle: "mount-1",
+            virtualRoot: "private",
+            access: "read" as const,
+          },
+        ],
+        files: [
+          { version: 1 as const, mountHandle: "mount-1", virtualPath: "private/Note.md" },
+          { version: 1 as const, mountHandle: "mount-1", virtualPath: "private/note.md" },
+        ],
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      })),
+      readAuthorizedVirtualFile: vi.fn(),
+    };
+    const runtime = {
+      authorize: vi.fn().mockResolvedValue({
+        ...createPlan(),
+        mounts: [
+          {
+            version: 1 as const,
+            agentId: "main",
+            mountHandle: "mount-1",
+            capabilities: ["read"] as const,
+            audienceRevision: "audience-1",
+          },
+        ],
+      }),
+      searchAuthorized: vi.fn(),
+      readAuthorized: vi.fn(),
+      virtualView: admittedVirtualView,
+    };
+    mocks.materialize.mockReturnValue(createContext());
+    mocks.admit.mockResolvedValue({ ok: true, runtime });
+
+    const invocation = await createAuthorizedMemoryReadInvocation({ context: {} as never });
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to admit virtual provider");
+    }
+    await expect(materializeAuthorizedMemoryVirtualView({ invocation })).resolves.toBe(
+      MEMORY_INVOCATION_UNAVAILABLE,
+    );
+    expect(admittedVirtualView.readAuthorizedVirtualFile).not.toHaveBeenCalled();
+  });
+
+  it("freezes the admitted virtual revision and denies caller-shaped replacement views", async () => {
+    const issuedView = {
+      version: 1 as const,
+      viewId: "view-frozen",
+      planId: "plan-1",
+      contextFingerprint: "fingerprint-1",
+      revision: "revision-1",
+      roots: [
+        {
+          version: 1 as const,
+          mountHandle: "mount-1",
+          virtualRoot: "private",
+          access: "read" as const,
+        },
+      ],
+      files: [{ version: 1 as const, mountHandle: "mount-1", virtualPath: "private/1.md" }],
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const admittedVirtualView = {
+      materializeAuthorizedVirtualView: vi.fn(async () => issuedView),
+      readAuthorizedVirtualFile: vi.fn(async () =>
+        createEnvelope({ text: "allowed", path: "memory/private/1.md" }),
+      ),
+    };
+    const runtime = {
+      authorize: vi.fn().mockResolvedValue({
+        ...createPlan(),
+        mounts: [
+          {
+            version: 1 as const,
+            agentId: "main",
+            mountHandle: "mount-1",
+            capabilities: ["read"] as const,
+            audienceRevision: "audience-1",
+          },
+        ],
+      }),
+      searchAuthorized: vi.fn(),
+      readAuthorized: vi.fn(),
+      virtualView: admittedVirtualView,
+    };
+    mocks.materialize.mockReturnValue(createContext());
+    mocks.admit.mockResolvedValue({ ok: true, runtime });
+
+    const invocation = await createAuthorizedMemoryReadInvocation({ context: {} as never });
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to admit virtual provider");
+    }
+    const view = await materializeAuthorizedMemoryVirtualView({ invocation });
+    if (view === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to materialize virtual view");
+    }
+    issuedView.revision = "replacement-revision";
+    issuedView.files[0]!.virtualPath = "private/replacement.md";
+
+    await expect(
+      readAuthorizedMemoryVirtualFile({ invocation, view, virtualPath: "private/1.md" }),
+    ).resolves.toEqual({ text: "allowed", path: "memory/private/1.md" });
+    await expect(
+      readAuthorizedMemoryVirtualFile({
+        invocation,
+        view: { ...view, revision: "forged-revision" },
+        virtualPath: "private/1.md",
+      }),
+    ).resolves.toBe(MEMORY_INVOCATION_UNAVAILABLE);
+    expect(admittedVirtualView.readAuthorizedVirtualFile).toHaveBeenCalledOnce();
+    expect(admittedVirtualView.readAuthorizedVirtualFile.mock.calls[0]?.[0]).toMatchObject({
+      view: expect.objectContaining({ revision: "revision-1" }),
+      virtualPath: "private/1.md",
+    });
+  });
+
+  it("keeps the admitted virtual provider when the mutable runtime registry object is replaced", async () => {
+    const admitted = {
+      materializeAuthorizedVirtualView: vi.fn(async () => ({
+        version: 1 as const,
+        viewId: "view-admitted",
+        planId: "plan-1",
+        contextFingerprint: "fingerprint-1",
+        revision: "revision-1",
+        roots: [
+          {
+            version: 1 as const,
+            mountHandle: "mount-1",
+            virtualRoot: "private",
+            access: "read" as const,
+          },
+        ],
+        files: [{ version: 1 as const, mountHandle: "mount-1", virtualPath: "private/1.md" }],
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      })),
+      readAuthorizedVirtualFile: vi.fn(),
+    };
+    const replacement = {
+      materializeAuthorizedVirtualView: vi.fn(),
+      readAuthorizedVirtualFile: vi.fn(),
+    };
+    const runtime = {
+      authorize: vi.fn().mockResolvedValue({
+        ...createPlan(),
+        mounts: [
+          {
+            version: 1 as const,
+            agentId: "main",
+            mountHandle: "mount-1",
+            capabilities: ["read"] as const,
+            audienceRevision: "audience-1",
+          },
+        ],
+      }),
+      searchAuthorized: vi.fn(),
+      readAuthorized: vi.fn(),
+      virtualView: admitted,
+    };
+    mocks.materialize.mockReturnValue(createContext());
+    mocks.admit.mockResolvedValue({ ok: true, runtime });
+
+    const invocation = await createAuthorizedMemoryReadInvocation({ context: {} as never });
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to admit virtual provider");
+    }
+    runtime.virtualView = replacement;
+    await expect(materializeAuthorizedMemoryVirtualView({ invocation })).resolves.toMatchObject({
+      viewId: "view-admitted",
+    });
+    expect(admitted.materializeAuthorizedVirtualView).toHaveBeenCalledOnce();
+    expect(replacement.materializeAuthorizedVirtualView).not.toHaveBeenCalled();
   });
 });

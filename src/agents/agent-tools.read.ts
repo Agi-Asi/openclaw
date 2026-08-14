@@ -71,6 +71,14 @@ type OpenClawReadToolOptions = {
   imageSanitization?: ImageSanitizationLimits;
 };
 
+export type AuthorizedMemoryVirtualRead = Readonly<{
+  viewId: string;
+  virtualRoots: readonly string[];
+  /** Exact manifest members admitted with this view, never a root-wide grant. */
+  virtualPaths: readonly string[];
+  readFile: (virtualPath: string) => Promise<string | undefined>;
+}>;
+
 type SkillReadContent = {
   filePath: string;
   readContent?: string;
@@ -956,6 +964,7 @@ export function createHostWorkspaceWriteTool(
   options?: {
     containmentRoot?: string;
     workspaceOnly?: boolean;
+    memoryFileMutationGuard?: MemoryFileMutationGuard;
     memoryWriteProvenance?: MemoryWriteProvenanceObserver;
     createTool?: typeof createWriteTool;
   },
@@ -974,6 +983,7 @@ export function createHostWorkspaceEditTool(
   options?: {
     containmentRoot?: string;
     workspaceOnly?: boolean;
+    memoryFileMutationGuard?: MemoryFileMutationGuard;
     memoryWriteProvenance?: MemoryWriteProvenanceObserver;
     createTool?: typeof createEditTool;
   },
@@ -1072,6 +1082,115 @@ export function wrapReadToolWithSkillContent(
   };
 }
 
+function authorizedMemoryViewPathUnavailable(): Error {
+  // This deliberately names neither a host nor a selected-store path: both are
+  // outside the opaque model-facing view and can disclose controlled state.
+  return new Error("authorized memory view path is unavailable");
+}
+
+/**
+ * Classify a model path at the authorized-memory boundary before any generic
+ * filesystem resolver sees it. An admitted view has no host-path fallback:
+ * only one exact, NFC manifest URI can reach the broker.
+ */
+function parseAuthorizedMemoryViewPath(params: {
+  rawPath: string;
+  view: AuthorizedMemoryVirtualRead;
+}): string {
+  const { rawPath, view } = params;
+  if (!rawPath.startsWith("memory://")) {
+    throw authorizedMemoryViewPathUnavailable();
+  }
+  const suffix = rawPath.slice("memory://".length);
+  const separator = suffix.indexOf("/");
+  const viewId = separator > 0 ? suffix.slice(0, separator) : "";
+  const virtualPath = separator > 0 ? suffix.slice(separator + 1) : "";
+  const parts = virtualPath.split("/");
+  if (
+    viewId !== view.viewId ||
+    !virtualPath ||
+    virtualPath.normalize("NFC") !== virtualPath ||
+    parts.length !== 2 ||
+    !view.virtualRoots.includes(parts[0]!) ||
+    !view.virtualPaths.includes(virtualPath) ||
+    parts.some(
+      (part) =>
+        !part ||
+        part === "." ||
+        part === ".." ||
+        part.includes("\\") ||
+        part.normalize("NFC") !== part,
+    )
+  ) {
+    throw authorizedMemoryViewPathUnavailable();
+  }
+  return virtualPath;
+}
+
+/**
+ * Serve only the admission-prepared memory URI through its broker. This runs
+ * before workspace guards, so controlled aliases and host paths cannot fall
+ * through to generic filesystem resolution.
+ */
+export function wrapReadToolWithAuthorizedMemoryView(
+  tool: AnyAgentTool,
+  view: AuthorizedMemoryVirtualRead,
+  options?: OpenClawReadToolOptions,
+): AnyAgentTool {
+  const contentByVirtualPath = new Map<string, Promise<string>>();
+  const readContent = async (rawPath: string): Promise<string> => {
+    const virtualPath = parseAuthorizedMemoryViewPath({ rawPath, view });
+    let content = contentByVirtualPath.get(virtualPath);
+    if (!content) {
+      content = view.readFile(virtualPath).then((value) => {
+        if (value === undefined) {
+          throw createFsAccessError("ENOENT", rawPath);
+        }
+        return value;
+      });
+      contentByVirtualPath.set(virtualPath, content);
+    }
+    return content;
+  };
+  const virtualBase = createReadTool("/", {
+    operations: {
+      resolvePath: (filePath) => filePath,
+      access: async (filePath) => void (await readContent(filePath)),
+      readFile: async (filePath) => Buffer.from(await readContent(filePath), "utf8"),
+    },
+  }) as unknown as AnyAgentTool;
+  const virtualRead = createOpenClawReadTool(virtualBase, options);
+  return {
+    ...tool,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const record = getToolParamsRecord(args);
+      const rawPath = record?.path;
+      if (typeof rawPath !== "string") {
+        throw authorizedMemoryViewPathUnavailable();
+      }
+      // Parse before virtualRead normalizes or a wrapped generic reader resolves
+      // paths. This rejects raw selected-store roots, traversal, host aliases,
+      // case aliases, and decomposed-Unicode aliases without probing them.
+      parseAuthorizedMemoryViewPath({ rawPath, view });
+      return virtualRead.execute(toolCallId, args, signal, onUpdate);
+    },
+  };
+}
+
+/** Phase 1D views are strictly read-only until the authorized-write lifecycle exists. */
+export function wrapToolAuthorizedMemoryViewMutationDeny(tool: AnyAgentTool): AnyAgentTool {
+  return {
+    ...tool,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const pathValue = getToolParamsRecord(args)?.path;
+      if (typeof pathValue === "string" && pathValue.startsWith("memory:")) {
+        throw new Error("authorized memory views are read-only");
+      }
+      return tool.execute(toolCallId, args, signal, onUpdate);
+    },
+  };
+}
+
 function createSandboxReadOperations(params: SandboxToolParams) {
   return {
     resolvePath: (filePath: string) => {
@@ -1088,6 +1207,13 @@ function createSandboxReadOperations(params: SandboxToolParams) {
     readFile: (absolutePath: string) =>
       params.bridge.readFile({ filePath: absolutePath, cwd: params.root }),
     access: (absolutePath: string) => assertSandboxFileExists(params, absolutePath),
+    resolveFileIdentity: async (absolutePath: string) => {
+      const hostPath = params.bridge.resolvePath({
+        filePath: absolutePath,
+        cwd: params.root,
+      }).hostPath;
+      return hostPath ? await fs.realpath(hostPath) : undefined;
+    },
     detectImageMimeType: async (absolutePath: string, buffer: Buffer) => {
       const mime = await detectMime({ buffer, filePath: absolutePath });
       return mime?.startsWith("image/") ? mime : undefined;
@@ -1363,19 +1489,20 @@ function withMemoryFileMutationGuard<T extends FileMutationOperations>(params: {
   operations: T;
   guard: MemoryFileMutationGuard | undefined;
 }): T {
-  if (!params.guard) {
+  const guard = params.guard;
+  if (!guard) {
     return params.operations;
   }
   return {
     ...params.operations,
     writeFile: async (absolutePath, content) => {
-      await params.guard.assertCanMutate(absolutePath);
+      await guard.assertCanMutate(absolutePath);
       await params.operations.writeFile(absolutePath, content);
     },
     ...(params.operations.mkdir
       ? {
           mkdir: async (dir: string) => {
-            await params.guard.assertCanMutate(dir);
+            await guard.assertCanMutate(dir);
             await params.operations.mkdir?.(dir);
           },
         }

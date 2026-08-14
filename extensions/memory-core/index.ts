@@ -22,7 +22,10 @@ import { buildMemoryFlushPlan } from "./src/flush-plan.js";
 import type { MemoryCoreAcquireLocalService } from "./src/memory/embedding-local-service.js";
 import type { MemoryCoreRuntimeHost } from "./src/memory/runtime-host.js";
 import { builtinScopedMemoryConformanceAdapter } from "./src/memory/scoped-memory-policy.js";
-import { builtinScopedMemoryAuthorizedRuntime } from "./src/memory/scoped-memory-runtime.js";
+import {
+  builtinScopedMemoryAuthorizedRuntime,
+  builtinScopedMemoryVirtualView,
+} from "./src/memory/scoped-memory-runtime.js";
 import { buildPromptSection } from "./src/prompt-section.js";
 import { registerSessionBackfillGatewayMethods } from "./src/session-backfill-gateway.js";
 
@@ -307,6 +310,7 @@ export default definePluginEntry({
       authorization: MEMORY_CORE_AUTHORIZATION_CAPABILITIES,
       // Phase 1B publishes the tested policy adapter; Phase 1C owns admitting it for reads.
       authorizationConformance: builtinScopedMemoryConformanceAdapter,
+      virtualView: builtinScopedMemoryVirtualView,
       promptBuilder: buildPromptSection,
       flushPlanResolver: buildMemoryFlushPlan,
       runtime: memoryRuntime,

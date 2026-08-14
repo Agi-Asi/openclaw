@@ -113,6 +113,8 @@ export type SandboxContext = {
   browserAllowHostControl: boolean;
   browser?: SandboxBrowserContext;
   fsBridge?: SandboxFsBridge;
+  /** Releases the run-scoped core staging directory after the sandbox no longer uses it. */
+  disposeAuthorizedVirtualProjectionMountPlan?: () => Promise<void>;
   backend?: SandboxBackendHandle;
 };
 

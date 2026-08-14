@@ -6,9 +6,14 @@ import type { ContextEngine } from "../context-engine/types.js";
 import type { MemoryAuthorizationConformanceAdapter } from "../memory-host-sdk/host/authorization-conformance.js";
 import type {
   AuthorizedMemoryRuntime,
+  AuthorizedMemoryContentPlan,
+  AuthorizedMemoryResultEnvelope,
+  AuthorizedMemoryVirtualView,
   MemoryAuthorizationCapabilities,
+  MemoryContentAccessContext,
 } from "../memory-host-sdk/host/authorization.js";
 import type { MemorySearchManager, MemorySearchResult } from "../memory-host-sdk/host/types.js";
+import type { MemoryReadResult } from "../memory-host-sdk/host/types.js";
 import type {
   EmbeddingProvider,
   EmbeddingProviderAdapter,
@@ -327,11 +332,31 @@ export type MemoryPluginPublicArtifactsProvider = {
   listArtifacts(params: { cfg: OpenClawConfig }): Promise<MemoryPluginPublicArtifact[]>;
 };
 
+/**
+ * Selected-memory-only virtual projection. The implementation owns artifact
+ * access and returns an opaque, read-only view; core only mounts the returned
+ * projection and never derives paths from resource metadata.
+ */
+export type MemoryPluginVirtualViewProvider = {
+  materializeAuthorizedVirtualView(params: {
+    context: MemoryContentAccessContext<"read">;
+    plan: AuthorizedMemoryContentPlan<"read">;
+  }): Promise<AuthorizedMemoryVirtualView | undefined>;
+  readAuthorizedVirtualFile(params: {
+    context: MemoryContentAccessContext<"read">;
+    plan: AuthorizedMemoryContentPlan<"read">;
+    view: AuthorizedMemoryVirtualView;
+    /** Virtual-only slash-separated path, never a host filesystem path. */
+    virtualPath: string;
+  }): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>>;
+};
+
 export type MemoryPluginCapability = {
   /** Declares the selected backend's authorization support even when it has no runtime. */
   authorization?: MemoryAuthorizationCapabilities;
   /** Plugin-owned pure evaluator; core verifies it before an enforced read admission. */
   authorizationConformance?: MemoryAuthorizationConformanceAdapter;
+  virtualView?: MemoryPluginVirtualViewProvider;
   promptBuilder?: MemoryPromptSectionBuilder;
   flushPlanResolver?: MemoryFlushPlanResolver;
   runtime?: MemoryPluginRuntime;

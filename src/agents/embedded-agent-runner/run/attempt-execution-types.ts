@@ -48,7 +48,7 @@ export type EmbeddedAttemptExecutionPhaseInput = {
     bundleTools: Prepared<typeof prepareEmbeddedAttemptBundleTools>;
     sessionRuntime: Prepared<typeof prepareEmbeddedAttemptSessionRuntime>;
     systemPrompt: Prepared<typeof prepareEmbeddedAttemptSystemPrompt>;
-    toolBase: ReturnType<typeof prepareEmbeddedAttemptToolBase>;
+    toolBase: Awaited<ReturnType<typeof prepareEmbeddedAttemptToolBase>>;
     toolCatalog: ReturnType<typeof prepareEmbeddedAttemptToolCatalog>;
   };
   sessionLock: Pick<

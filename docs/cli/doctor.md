@@ -28,14 +28,14 @@ Related:
 
 Doctor has six postures:
 
-| Posture                   | Command                                      | Behavior                                                                        |
-| ------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------- |
-| Inspect                   | `openclaw doctor` / `openclaw doctor --json` | Advisory checks in human or machine-readable form.                              |
-| Repair                    | `openclaw doctor --fix`                      | Applies supported repairs, using prompts unless non-interactive repair is safe. |
-| Lint                      | `openclaw doctor --lint [--json]`            | Read-only findings with threshold-based exit codes for CI gates.                |
-| Shared SQLite maintenance | `openclaw doctor --state-sqlite compact`     | Explicitly checkpoints, compacts, and verifies the canonical shared state DB.   |
-| Session SQLite migration  | `openclaw doctor --session-sqlite <mode>`    | Inspects, imports, validates, compacts, recovers, or restores session state.    |
-| Memory isolation pilot    | `openclaw doctor --memory-isolation <mode>`  | Reads or changes the durable P1C single-subject shadow-read-only posture.       |
+| Posture                   | Command                                     | Behavior                                                                                                        |
+| ------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Inspect                   | `openclaw doctor`                           | Human-oriented checks and guided prompts.                                                                       |
+| Repair                    | `openclaw doctor --fix`                     | Applies supported repairs, using prompts unless non-interactive repair is safe.                                 |
+| Lint                      | `openclaw doctor --lint`                    | Read-only structured findings for CI, preflight, and review gates.                                              |
+| Shared SQLite maintenance | `openclaw doctor --state-sqlite compact`    | Explicitly checkpoints, compacts, and verifies the canonical shared state DB.                                   |
+| Session SQLite migration  | `openclaw doctor --session-sqlite <mode>`   | Inspects, imports, validates, compacts, recovers, or restores session state.                                    |
+| Memory isolation pilot    | `openclaw doctor --memory-isolation <mode>` | Reads or changes the durable read-only posture, including the constrained P1D execution profile when available. |
 
 Use `openclaw doctor --json` when an operator or script wants the advisory Doctor report as JSON. It exits successfully after producing a report; inspect `ok` and `findings` for health state. Use explicit `openclaw doctor --lint --json` when CI should exit nonzero for findings at the selected severity threshold. Prefer `--fix` when a human operator wants Doctor to edit config or state.
 
@@ -92,7 +92,7 @@ openclaw channels status --probe
 | `--deep`                        | Scan system services for extra gateway installs; report recent Gateway supervisor restart handoffs.                                                                                     |
 | `--lint`                        | Run modernized health checks in read-only mode and emit diagnostic findings.                                                                                                            |
 | `--post-upgrade`                | Run post-upgrade plugin compatibility probes; findings go to stdout; exit code 1 if any error-level finding is present.                                                                 |
-| `--memory-isolation <mode>`     | Read or change the P1C memory-isolation posture: `status`, `shadow-read-only`, or `legacy`.                                                                                             |
+| `--memory-isolation <mode>`     | Read or change the read-only memory-isolation posture: `status`, `shadow-read-only`, or `legacy`.                                                                                       |
 | `--memory-isolation-agent <id>` | With `--memory-isolation`: select one configured agent.                                                                                                                                 |
 | `--state-sqlite <mode>`         | Run explicit shared state SQLite maintenance. The only mode is `compact`.                                                                                                               |
 | `--session-sqlite <mode>`       | Run the targeted session SQLite migration mode: `inspect`, `dry-run`, `import`, `validate`, `compact`, `recover`, or `restore`.                                                         |
@@ -110,7 +110,7 @@ openclaw channels status --probe
 
 ## Memory isolation pilot
 
-`openclaw doctor --memory-isolation shadow-read-only` enables the durable Phase 1C pilot posture for one configured agent. Doctor records a verified, reversible marker in that agent's existing memory-migration store. Gateway processes read this posture once at startup, so restart the Gateway after enabling or returning to `legacy`.
+`openclaw doctor --memory-isolation shadow-read-only` enables the durable read-only memory-isolation posture for one configured agent. Doctor records a verified, reversible marker in that agent's existing memory-migration store. Gateway processes read this posture once at startup, so restart the Gateway after enabling or returning to `legacy`.
 
 ```bash
 openclaw doctor --memory-isolation status --memory-isolation-agent main --json
@@ -118,9 +118,11 @@ openclaw doctor --memory-isolation shadow-read-only --memory-isolation-agent mai
 openclaw gateway restart
 ```
 
-In this posture, legacy content-bearing memory reads and ordinary durable-memory writes are unavailable for the selected agent. It is a verified single-subject, read-only pilot, not a general production cutover.
+In this posture, legacy content-bearing memory reads and ordinary durable-memory writes are unavailable for the selected agent. An admitted Phase 1D virtual view further constrains model tools to `memory_search`, `memory_get`, and brokered `read`. It omits raw host paths, `write`, `edit`, `apply_patch`, `exec`, `process`, channel/message, browser, network, MCP, and other plugin tools. Codex native app-server runs are unavailable for an isolated agent because they cannot consume that brokered view.
 
-The `legacy` mode removes only the reversible P1C marker. It cannot undo a final Phase 6 cutover marker. Shadow mode provides no authorized or virtual raw-path capability and no write path. Generic model-facing filesystem raw-read and exec confinement remain unimplemented P1D work; this command does not claim them. Two-subject sharing also remains unavailable until its later phase is complete.
+The current constrained egress profile permits only the automatic final reply. It rechecks the current recipient binding, route, delivery audience, exposure revision, and registry revision both when queueing and immediately before platform delivery. A changed recipient, route, sink, later exposure, or registry revision suppresses delivery. This is deliberately not a general egress registry and does not authorize model-initiated side effects.
+
+It remains a verified single-subject, read-only posture, not a general production cutover. Do not begin a two-subject pilot until every Phase 1D filesystem, sandbox, exec, egress, and required remote/cross-platform proof is complete. The `legacy` mode removes only the reversible P1C marker. It cannot undo a final Phase 6 cutover marker.
 
 ## Lint mode
 

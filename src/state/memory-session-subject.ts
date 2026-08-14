@@ -57,6 +57,7 @@ export type CurrentMemorySessionContext = Readonly<{
     channel: string;
     accountId: string;
     primaryConversationId: string;
+    deliveryTarget: string;
   }>;
   authorityRevision: string;
   fingerprint: string;
@@ -266,13 +267,14 @@ export function createCurrentMemorySessionContext(params: {
               ss.session_id AS snapshot_session_id, ss.session_key AS snapshot_session_key,
               ss.subject_revision AS snapshot_subject_revision,
               ss.session_identity_revision,
-              sw.channel AS conversation_channel, sw.account_id AS conversation_account_id,
-              sw.primary_conversation_id
+              c.channel AS conversation_channel, c.account_id AS conversation_account_id,
+              sw.primary_conversation_id, c.delivery_target AS conversation_delivery_target
        FROM session_nodes sn
        LEFT JOIN session_memory_subjects ms ON ms.session_key = sn.session_key
        LEFT JOIN session_memory_subject_snapshots ss ON ss.session_id = sn.current_session_id
        LEFT JOIN session_windows sw
          ON sw.session_id = sn.current_session_id AND sw.session_key = sn.session_key
+       LEFT JOIN conversations c ON c.conversation_id = sw.primary_conversation_id
        WHERE sn.session_key = ?`,
     )
     .get(sessionKey) as
@@ -289,6 +291,7 @@ export function createCurrentMemorySessionContext(params: {
         conversation_channel: string | null;
         conversation_account_id: string | null;
         primary_conversation_id: string | null;
+        conversation_delivery_target: string | null;
       }
     | undefined;
   if (
@@ -318,11 +321,13 @@ export function createCurrentMemorySessionContext(params: {
     persisted.subject.kind === "conversation" &&
     row.conversation_channel &&
     row.conversation_account_id &&
-    row.primary_conversation_id
+    row.primary_conversation_id &&
+    row.conversation_delivery_target
       ? Object.freeze({
           channel: row.conversation_channel,
           accountId: row.conversation_account_id,
           primaryConversationId: row.primary_conversation_id,
+          deliveryTarget: row.conversation_delivery_target,
         })
       : undefined;
   if (persisted.subject.kind === "conversation" && !conversation) {

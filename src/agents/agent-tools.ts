@@ -26,6 +26,7 @@ import type {
 import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import { resolveMemoryFlushPlan } from "../plugins/memory-state.js";
 import { appendRuntimePluginToolGrant } from "../plugins/tool-grant-allowlist.js";
+import type { AuthorizedMemoryReadHost } from "../plugins/tool-types.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
 import { GATEWAY_OWNER_ONLY_CORE_TOOLS } from "../security/dangerous-tools.js";
@@ -38,6 +39,7 @@ import type { ToolOutcomeObserver } from "./agent-tools.before-tool-call.js";
 import { finalizeAgentTools } from "./agent-tools.finalize.js";
 import { filterToolsByMessageProvider } from "./agent-tools.message-provider-policy.js";
 import { wrapToolMemoryFlushAppendOnlyWrite } from "./agent-tools.read.js";
+import type { AuthorizedMemoryVirtualRead } from "./agent-tools.read.js";
 import {
   getActiveAgentRingZeroTools,
   mergeAgentRingZeroTools,
@@ -88,8 +90,8 @@ import {
   createWriteTool,
 } from "./sessions/index.js";
 import type { TrustedSubagentCompletionHandoff } from "./subagents/announce/subagent-announce-handoff.js";
-import { resolveToolFsConfig } from "./tool-fs-policy.js";
-import type { PreparedSessionPermissionPolicy } from "./tool-fs-policy.js";
+import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
+import type { PreparedSessionPermissionPolicy, ToolFsPolicy } from "./tool-fs-policy.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { buildDeclaredToolAllowlistContext } from "./tool-policy-declared-context.js";
 import { applyToolPolicyPipeline } from "./tool-policy-pipeline.js";
@@ -120,6 +122,7 @@ import { wrapToolWithGatewayCallerIdentity } from "./tools/gateway-caller-contex
 
 const MEMORY_FLUSH_ALLOWED_TOOL_NAMES = new Set(["read", "write"]);
 const MEMORY_ISOLATION_READ_TOOL_NAMES = new Set(["memory_search", "memory_get"]);
+const AUTHORIZED_MEMORY_VIEW_TOOL_NAMES = new Set(["memory_search", "memory_get", "read"]);
 
 function applyModelProviderToolPolicy(
   toolsInput: AnyAgentTool[],
@@ -208,6 +211,15 @@ type OpenClawCodingToolsOptions = {
   runId?: string;
   /** Exact admitted run instance for lifecycle-bound subprocess capabilities. */
   operationalRunInstance?: OperationalRunInstanceRef;
+  /**
+   * Prepared once at run admission. Plugin tools and prompt preparation must
+   * share this exact host rather than minting authority from routing strings.
+   */
+  authorizedMemoryRead?: AuthorizedMemoryReadHost;
+  /** Admission-prepared closed filesystem policy; never derived from tool input. */
+  fsPolicy?: ToolFsPolicy;
+  /** Core-private opaque broker for the admitted memory view. */
+  authorizedMemoryVirtualRead?: AuthorizedMemoryVirtualRead;
   /** Device-scoped operator session allowed to review approvals initiated by this run. */
   approvalReviewerDeviceId?: string;
   /** Diagnostic trace context for hook/log correlation during this run. */
@@ -509,6 +521,12 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
   const sessionCoreToolPolicy = sessionPermissionPolicy
     ? resolveSessionPermissionCoreToolPolicy(sessionPermissionPolicy)
     : undefined;
+  const fsPolicy =
+    options?.fsPolicy ??
+    createToolFsPolicy({
+      workspaceOnly:
+        isMemoryFlushRun || (sessionCoreToolPolicy?.workspaceOnly ?? fsConfig.workspaceOnly),
+    });
   const sandboxRoot = sandbox?.workspaceDir;
   const sandboxFsBridge = sandbox?.fsBridge;
   const allowWorkspaceWrites = sandbox?.workspaceAccess !== "ro";
@@ -518,6 +536,10 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
   const containmentRoot = sandboxRoot ?? sessionPermissionPolicy?.root ?? codingRoot;
   const memoryFlushWriteRoot = sandboxRoot ?? workspaceRoot;
   const memoryIsolationCutover = Boolean(agentId && isMemoryIsolationCutoverAgent(agentId));
+  if (fsPolicy.kind === "authorized-memory-view" && !options?.authorizedMemoryVirtualRead) {
+    throw new Error("authorized memory view broker is unavailable");
+  }
+  const authorizedMemoryView = fsPolicy.kind === "authorized-memory-view";
   // Flush exposes one append-only target; its fallback records inherited taint after success.
   const memoryWriteProvenance = isMemoryFlushRun
     ? undefined
@@ -542,16 +564,14 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
   // P1C's selected-memory pilot is read-only. Hiding both the shell and its process controller
   // closes the generic durable-write bypass without pretending this is P1D virtual-FS confinement.
   const includeShellTools =
-    includeCoreTools && toolConstructionPlan.includeShellTools && !memoryIsolationCutover;
+    includeCoreTools &&
+    toolConstructionPlan.includeShellTools &&
+    !memoryIsolationCutover &&
+    !authorizedMemoryView;
   const includeOpenClawTools = includeCoreTools && toolConstructionPlan.includeOpenClawTools;
   const includeChannelTools = toolConstructionPlan.includeChannelTools;
   const includePluginTools = toolConstructionPlan.includePluginTools;
-  const workspaceOnly =
-    isMemoryFlushRun || (sessionCoreToolPolicy?.workspaceOnly ?? fsConfig.workspaceOnly === true);
-  const fsPolicy = {
-    workspaceOnly,
-    ...(sessionPermissionPolicy ? { root: sessionPermissionPolicy.root } : {}),
-  };
+  const workspaceOnly = fsPolicy.workspaceOnly;
   const readOnly = sessionCoreToolPolicy?.readOnly ?? false;
   const applyPatchConfig = execConfig.applyPatch;
   // Secure by default: apply_patch is workspace-contained unless explicitly disabled.
@@ -579,7 +599,8 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
     containmentRoot,
     includeBaseCodingTools,
     includeShellTools,
-    workspaceOnly,
+    fsPolicy,
+    authorizedMemoryVirtualRead: options?.authorizedMemoryVirtualRead,
     readOnly,
     sandbox,
     skillsSnapshot: options?.skillsSnapshot,
@@ -587,14 +608,18 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
     imageSanitization,
     memoryWriteProvenance,
     ...(includeBaseCodingTools
-      ? { baseToolNames: createCodingTools(codingRoot).map((tool) => tool.name) }
+      ? {
+          baseToolNames: authorizedMemoryView
+            ? ["read"]
+            : createCodingTools(codingRoot).map((tool) => tool.name),
+        }
       : {}),
     baseToolFactories: {
       createEditTool,
       createReadTool,
       createWriteTool,
     },
-    applyPatchEnabled,
+    applyPatchEnabled: authorizedMemoryView ? false : applyPatchEnabled,
     applyPatchWorkspaceOnly,
     execDefaults: {
       ...execDefaults,
@@ -740,6 +765,7 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
             requireExplicitMessageTarget: options?.requireExplicitMessageTarget,
             disableMessageTool: options?.disableMessageTool || options?.swarmCollector,
             requesterAgentIdOverride: agentId,
+            authorizedMemoryRead: options?.authorizedMemoryRead,
             allowGatewaySubagentBinding: options?.allowGatewaySubagentBinding,
             clientCaps: options?.clientCaps,
             toolBindings: options?.toolBindings,
@@ -952,15 +978,18 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
       !options?.swarmCollector ||
       (tool.name !== "ask_user" && tool.name !== "sessions_send" && tool.name !== "sessions_yield"),
   );
-  // P1C admits only selected-plugin reads. Generic filesystem reads would let a model bypass the
-  // broker's subject and receipt checks, while every other contributor could reopen an egress or
-  // mutation path if this final surface gate moved earlier.
-  const surfaceTools = memoryIsolationCutover
-    ? authorizedTools.filter((tool) => MEMORY_ISOLATION_READ_TOOL_NAMES.has(tool.name))
-    : authorizedTools;
+  // P1C's no-view cutover retains its selected-plugin reads. An admitted P1D
+  // view adds only the broker-bound read tool; every other core/plugin/channel
+  // tool could reopen mutation, process, or egress paths around that broker.
+  const surfaceTools = authorizedMemoryView
+    ? authorizedTools.filter((tool) => AUTHORIZED_MEMORY_VIEW_TOOL_NAMES.has(tool.name))
+    : memoryIsolationCutover
+      ? authorizedTools.filter((tool) => MEMORY_ISOLATION_READ_TOOL_NAMES.has(tool.name))
+      : authorizedTools;
   if (
     swarmStructuredOutputTool &&
     !memoryIsolationCutover &&
+    !authorizedMemoryView &&
     !surfaceTools.some((tool) => tool.name === swarmStructuredOutputTool.name)
   ) {
     // Collector output is a run contract, not an operator-configurable capability.

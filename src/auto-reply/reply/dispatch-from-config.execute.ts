@@ -6,6 +6,7 @@ import { isAskUserPromptPending } from "../../agents/tools/ask-user-tool.js";
 import { normalizeAgentPlanSteps } from "../../channels/streaming.js";
 import { logVerbose } from "../../globals.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
 import { cleanDeferredFinalText } from "../../tts/captioned-final.js";
 import {
   copyReplyPayloadMetadata,
@@ -80,6 +81,12 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
     params.configOverride ? undefined : state.preparedReplyDispatchRuntime,
     state.replyResolver,
   );
+  const resolverConfigOverride =
+    state.preparedReplyDispatchRuntime && !params.configOverride ? undefined : replyConfig;
+  // Cutover egress admits a final only. This is the one shared construction point for every
+  // channel-visible progress callback, so transports cannot bypass the constrained pilot through
+  // streaming drafts, block boundaries, tool updates, or presentation callbacks.
+  const suppressMemoryProgress = isMemoryIsolationCutoverAgent(sessionAgentId);
   let deliberateSilentTerminalReply = false;
   let pendingContinuation = false;
   let didDeliverVisiblePartialReply = false;
@@ -595,6 +602,36 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
                   };
                   return run();
                 },
+                ...(suppressMemoryProgress
+                  ? {
+                      onPartialReply: undefined,
+                      onReasoningStream: undefined,
+                      onReasoningProgress: undefined,
+                      streamReasoningInNonStreamModes: false,
+                      onReasoningEnd: undefined,
+                      onAssistantMessageStart: undefined,
+                      onBlockReplyQueued: undefined,
+                      onBlockReply: undefined,
+                      onToolStart: undefined,
+                      onToolResult: undefined,
+                      onItemEvent: undefined,
+                      onNarrationUpdate: undefined,
+                      onProgressNarratorLifecycle: undefined,
+                      isProgressDraftVisible: undefined,
+                      onVerboseProgressVisibility: undefined,
+                      preserveProgressCallbackStartOrder: false,
+                      progressPreambleEnabled: false,
+                      onPlanUpdate: undefined,
+                      onApprovalEvent: undefined,
+                      onCommandOutput: undefined,
+                      onPatchSummary: undefined,
+                      onCompactionStart: undefined,
+                      onCompactionEnd: undefined,
+                      commentaryProgressEnabled: false,
+                      reasoningPayloadsEnabled: false,
+                      commentaryPayloadsEnabled: false,
+                    }
+                  : {}),
               },
               state.preparedReplyDispatchRuntime && !params.configOverride
                 ? undefined

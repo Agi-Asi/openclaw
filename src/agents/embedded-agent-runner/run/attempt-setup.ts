@@ -35,13 +35,19 @@ import {
   applySkillEnvOverridesFromSnapshot,
 } from "../../../skills/runtime/env-overrides.js";
 import { resolveUserPath } from "../../../utils.js";
+import { normalizeDeliveryContext } from "../../../utils/delivery-context.shared.js";
 import { resolveSessionAgentIds } from "../../agent-scope.js";
 import { isHeartbeatLifecycleRunKind } from "../../bootstrap-mode.js";
 import { resolveCodeModeSkills, type CodeModeSkillReader } from "../../code-mode-skills.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import type { EmbeddedContextFile } from "../../embedded-agent-helpers.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
+import {
+  createAuthorizedMemoryReadHost,
+  resolveAuthorizedMemoryVirtualFileBroker,
+} from "../../memory-authorized-read-host.js";
 import { resolveSandboxContext } from "../../sandbox.js";
+import { stageAuthorizedVirtualProjectionMountPlan } from "../../sandbox/authorized-virtual-projection-staging.js";
 import type { SandboxContext } from "../../sandbox/types.js";
 import type { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
 import { sanitizeToolUseResultPairingForModel } from "../../session-transcript-repair.js";
@@ -104,7 +110,21 @@ type AttemptWorkspaceParams = Pick<
   | "skillWorkshopCollectionReconcile"
   | "skillsSnapshot"
   | "workspaceDir"
->;
+> &
+  Partial<
+    Pick<
+      EmbeddedRunAttemptParams,
+      | "agentAccountId"
+      | "messageChannel"
+      | "messageProvider"
+      | "messageThreadId"
+      | "messageTo"
+      | "currentChannelId"
+      | "currentMessagingTarget"
+      | "currentThreadTs"
+      | "runId"
+    >
+  >;
 
 /** Resolves the shared workspace and sandbox policy used by native and plugin harnesses. */
 export async function resolveAttemptWorkspaceSandbox(params: AttemptWorkspaceParams) {
@@ -112,6 +132,34 @@ export async function resolveAttemptWorkspaceSandbox(params: AttemptWorkspacePar
   await fs.mkdir(resolvedWorkspace, { recursive: true });
   const sandboxSessionKey =
     params.sandboxSessionKey?.trim() || params.sessionKey?.trim() || params.sessionId;
+  const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionKey,
+    config: params.config,
+    agentId: params.agentId,
+  });
+  // Admission owns one host capability for prompt, tools, and sandbox staging.
+  // The staging callback receives only its opaque view and broker reads, never
+  // a plugin artifact root or a routing-derived memory subject.
+  const authorizedMemoryRead = createAuthorizedMemoryReadHost({
+    agentId: sessionAgentId,
+    sessionKey: sandboxSessionKey,
+    sessionId: params.sessionId,
+    runId: params.runId,
+    deliveryContext: normalizeDeliveryContext({
+      channel: params.messageChannel ?? params.messageProvider,
+      to: params.messageTo ?? params.currentMessagingTarget ?? params.currentChannelId,
+      accountId: params.agentAccountId,
+      threadId: params.messageThreadId ?? params.currentThreadTs,
+    }),
+    messageChannel: params.messageChannel ?? params.messageProvider,
+    agentAccountId: params.agentAccountId,
+  });
+  let authorizedMemoryVirtualBroker:
+    | Awaited<ReturnType<typeof resolveAuthorizedMemoryVirtualFileBroker>>
+    | undefined;
+  const resolveVirtualBroker = async () =>
+    (authorizedMemoryVirtualBroker ??=
+      await resolveAuthorizedMemoryVirtualFileBroker(authorizedMemoryRead));
   // Collection review is a host-owned maintenance run with one restricted tool.
   // Sandboxing would hide that tool or redirect it to a disposable workspace.
   const sandbox = params.skillWorkshopCollectionReconcile
@@ -122,42 +170,60 @@ export async function resolveAttemptWorkspaceSandbox(params: AttemptWorkspacePar
         sessionKey: sandboxSessionKey,
         skillsSnapshot: params.skillsSnapshot,
         workspaceDir: resolvedWorkspace,
+        ...(authorizedMemoryRead
+          ? {
+              prepareAuthorizedVirtualProjectionMountPlan: async ({ agentWorkspaceDir }) => {
+                const broker = await resolveVirtualBroker();
+                return broker
+                  ? await stageAuthorizedVirtualProjectionMountPlan({
+                      agentWorkspaceDir,
+                      broker,
+                    })
+                  : undefined;
+              },
+            }
+          : {}),
       });
-  const effectiveWorkspace =
-    sandbox?.enabled && sandbox.workspaceAccess !== "rw" ? sandbox.workspaceDir : resolvedWorkspace;
-  const requestedCwd = params.cwd ? resolveUserPath(params.cwd) : undefined;
-  if (params.permissionMode && !params.sessionRoot) {
-    throw new Error("session permission mode requires a recorded session root");
-  }
-  const sessionPermissionPolicy =
-    params.permissionMode && params.sessionRoot
-      ? { root: params.sessionRoot, mode: params.permissionMode }
-      : undefined;
-  if (sandbox?.enabled && requestedCwd && requestedCwd !== resolvedWorkspace) {
-    throw new Error(
-      "cwd override is not supported for sandboxed embedded agent runs; omit cwd or use the agent workspace as cwd",
-    );
-  }
-  await fs.mkdir(effectiveWorkspace, { recursive: true });
-  const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
-    sessionKey: params.sessionKey,
-    config: params.config,
-    agentId: params.agentId,
-  });
-  return {
-    defaultAgentId,
-    effectiveCwd: sandbox?.enabled ? effectiveWorkspace : (requestedCwd ?? effectiveWorkspace),
-    effectiveFsWorkspaceOnly: resolveAttemptFsWorkspaceOnly({
-      config: params.config,
+  try {
+    await resolveVirtualBroker();
+    const effectiveWorkspace =
+      sandbox?.enabled && sandbox.workspaceAccess !== "rw"
+        ? sandbox.workspaceDir
+        : resolvedWorkspace;
+    const requestedCwd = params.cwd ? resolveUserPath(params.cwd) : undefined;
+    if (params.permissionMode && !params.sessionRoot) {
+      throw new Error("session permission mode requires a recorded session root");
+    }
+    const sessionPermissionPolicy =
+      params.permissionMode && params.sessionRoot
+        ? { root: params.sessionRoot, mode: params.permissionMode }
+        : undefined;
+    if (sandbox?.enabled && requestedCwd && requestedCwd !== resolvedWorkspace) {
+      throw new Error(
+        "cwd override is not supported for sandboxed embedded agent runs; omit cwd or use the agent workspace as cwd",
+      );
+    }
+    await fs.mkdir(effectiveWorkspace, { recursive: true });
+    return {
+      authorizedMemoryRead,
+      authorizedMemoryVirtualBroker,
+      defaultAgentId,
+      effectiveCwd: sandbox?.enabled ? effectiveWorkspace : (requestedCwd ?? effectiveWorkspace),
+      effectiveFsWorkspaceOnly: resolveAttemptFsWorkspaceOnly({
+        config: params.config,
+        sessionAgentId,
+      }),
+      effectiveWorkspace,
+      resolvedWorkspace,
+      sessionPermissionPolicy,
+      sandbox,
+      sandboxSessionKey,
       sessionAgentId,
-    }),
-    effectiveWorkspace,
-    resolvedWorkspace,
-    sessionPermissionPolicy,
-    sandbox,
-    sandboxSessionKey,
-    sessionAgentId,
-  };
+    };
+  } catch (error) {
+    await sandbox?.disposeAuthorizedVirtualProjectionMountPlan?.();
+    throw error;
+  }
 }
 
 export async function prepareEmbeddedAttemptSetup(params: EmbeddedRunAttemptParams) {

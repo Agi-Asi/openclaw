@@ -1039,7 +1039,10 @@ describe("createOpenClawCodingTools", () => {
       config: { tools: { fs: { workspaceOnly: true } } },
     });
 
-    expect(latestCreateOpenClawToolsOptions().fsPolicy).toEqual({ workspaceOnly: true });
+    expect(latestCreateOpenClawToolsOptions().fsPolicy).toEqual({
+      kind: "workspace",
+      workspaceOnly: true,
+    });
   });
 
   it("uses the canonical spawn workspace for follow-up task suggestions", () => {
@@ -2733,6 +2736,33 @@ function extractToolText(result: unknown): string {
 }
 
 describe("createOpenClawCodingTools read behavior", () => {
+  it("exposes only selected-memory reads and broker-bound read for an admitted view", () => {
+    const tools = createOpenClawCodingTools({
+      fsPolicy: {
+        kind: "authorized-memory-view",
+        workspaceOnly: true,
+        viewId: "opaque-view",
+        revision: "revision-1",
+        virtualRoots: ["selected"],
+      },
+      authorizedMemoryVirtualRead: {
+        viewId: "opaque-view",
+        virtualRoots: ["selected"],
+        virtualPaths: ["selected/MEMORY.md"],
+        readFile: async () => "memory",
+      },
+    });
+    const names = toolNameList(tools);
+
+    expect(names).toContain("read");
+    expect(names.every((name) => ["memory_search", "memory_get", "read"].includes(name))).toBe(
+      true,
+    );
+    for (const denied of ["exec", "process", "write", "edit", "apply_patch", "message"]) {
+      expect(names).not.toContain(denied);
+    }
+  });
+
   it("reads exact node skill locators without sending them to the filesystem backend", async () => {
     const locator = "node://node-1/skills/pond/SKILL.md";
     const execute = vi.fn(async () => {

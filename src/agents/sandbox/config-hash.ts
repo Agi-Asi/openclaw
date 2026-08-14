@@ -23,6 +23,7 @@ type SandboxHashInput = {
   mountFormatVersion: number;
   createArgsEpoch: string;
   readOnlyWorkspaceSkillMounts?: readonly string[];
+  authorizedVirtualProjectionMounts?: readonly string[];
 };
 
 type SandboxBrowserHashInput = {

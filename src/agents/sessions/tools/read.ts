@@ -1,5 +1,10 @@
 import { constants } from "node:fs";
-import { access as fsAccess, readdir as fsReaddir, stat as fsStat } from "node:fs/promises";
+import {
+  access as fsAccess,
+  readdir as fsReaddir,
+  realpath as fsRealpath,
+  stat as fsStat,
+} from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -188,6 +193,12 @@ export interface ReadOperations {
   readFile: (absolutePath: string) => Promise<Buffer>;
   /** Check if file is readable (throw if not) */
   access: (absolutePath: string) => Promise<void>;
+  /**
+   * Return a backend-proven file identity for a successful fallback candidate.
+   * Backends without identity proof must omit this so distinct spellings remain
+   * ambiguous instead of being silently collapsed.
+   */
+  resolveFileIdentity?: (absolutePath: string) => Promise<string | undefined>;
   /** Detect image MIME type, return null or undefined for non-images */
   detectImageMimeType?: (
     absolutePath: string,
@@ -200,6 +211,7 @@ const defaultReadOperations: ReadOperations = {
   decodeText: ({ buffer }) => decodeWindowsTextFileBuffer({ buffer }),
   readFile: async (filePath) => (await readRegularFile({ filePath })).buffer,
   access: assertLocalReadableFile,
+  resolveFileIdentity: async (filePath) => await fsRealpath(filePath),
 };
 
 async function detectReadImageMimeType(
@@ -331,11 +343,16 @@ async function resolveReadToolPath(
       throw error;
     }
 
-    const matches: string[] = [];
+    const matches: Array<{ path: string; identity?: string }> = [];
     for (const candidate of getReadPathVariants(absolutePath)) {
       try {
         await ops.access(candidate);
-        matches.push(candidate);
+        const identity = await ops.resolveFileIdentity?.(candidate);
+        // APFS can resolve NFC/NFD spellings to one entry. Keep the fallback
+        // conservative for remote backends, but collapse only proven aliases.
+        if (!identity || !matches.some((match) => match.identity === identity)) {
+          matches.push({ path: candidate, identity });
+        }
       } catch (candidateError) {
         if (!hasErrnoCode(candidateError, "ENOENT") && !hasErrnoCode(candidateError, "ENOTDIR")) {
           throw candidateError;
@@ -345,15 +362,15 @@ async function resolveReadToolPath(
 
     if (matches.length > 1) {
       throw new Error(
-        `Read path is ambiguous: ${basename(absolutePath)} matches ${matches.map((match) => basename(match)).join(", ")}.`,
+        `Read path is ambiguous: ${basename(absolutePath)} matches ${matches.map((match) => basename(match.path)).join(", ")}.`,
         { cause: error },
       );
     }
     const match = matches[0];
     if (match !== undefined) {
       return {
-        absolutePath: match,
-        note: `[Resolved filename: ${basename(absolutePath)} -> ${basename(match)}.]`,
+        absolutePath: match.path,
+        note: `[Resolved filename: ${basename(absolutePath)} -> ${basename(match.path)}.]`,
       };
     }
 

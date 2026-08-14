@@ -9,6 +9,7 @@ import {
 } from "../channels/message-access/memory-identity-admission.js";
 import { generateSecureUuid } from "../infra/secure-random.js";
 import { normalizeAccountId } from "../routing/account-id.js";
+import { safeEqualSecret } from "../security/secret-equal.js";
 import { MEMORY_IDENTITY_SCHEMA_SQL } from "./memory-identity-schema.js";
 import {
   openOpenClawStateDatabase,
@@ -779,6 +780,49 @@ export function recheckMemoryIdentityBinding(params: {
     return { kind: "merge-head-mismatch" };
   }
   return { kind: "current", binding: toBinding(row) };
+}
+
+/**
+ * Recheck a direct-recipient route against the binding's retained sender proof.
+ * The route keeps its raw target at the transport boundary; this helper reduces
+ * it to the same scoped HMAC before comparison so callers cannot recover IDs.
+ */
+export function recheckMemoryIdentityBindingRecipient(params: {
+  bindingId: string;
+  channel: string;
+  accountId: string;
+  recipientId: string;
+  options?: OpenClawStateDatabaseOptions;
+}): MemoryIdentityBindingCheck {
+  const current = recheckMemoryIdentityBinding({
+    bindingId: params.bindingId,
+    options: params.options,
+  });
+  if (current.kind !== "current") {
+    return current;
+  }
+  const channel = requireText(params.channel, "channel").toLowerCase();
+  const accountId = normalizeAccountId(requireText(params.accountId, "accountId"));
+  if (current.binding.channel !== channel || current.binding.accountId !== accountId) {
+    return { kind: "unbound" };
+  }
+  const options = params.options ?? {};
+  ensureMemoryIdentitySchema(options);
+  const database = openOpenClawStateDatabase(options);
+  const row = database.db
+    .prepare(
+      "SELECT sender_lookup_hmac FROM memory_identity_bindings WHERE binding_id = ? AND revoked_at IS NULL",
+    )
+    .get(current.binding.bindingId) as { sender_lookup_hmac: string } | undefined;
+  const recipientLookup = lookupHmac(
+    database.db,
+    channel,
+    accountId,
+    requireText(params.recipientId, "recipientId"),
+  );
+  return row && safeEqualSecret(row.sender_lookup_hmac, recipientLookup)
+    ? current
+    : { kind: "unbound" };
 }
 
 /**

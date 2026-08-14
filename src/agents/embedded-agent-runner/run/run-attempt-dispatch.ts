@@ -8,9 +8,7 @@ import { applyAuthHeaderOverride, applyLocalNoAuthHeaderOverride } from "../../m
 import { appendProgressCardSystemPrompt } from "../../progress-card-system-prompt.js";
 import type { AgentRunSessionTarget } from "../../run-session-target.js";
 import type { AgentRuntimePlan } from "../../runtime-plan/types.js";
-import { resolveSandboxContext } from "../../sandbox/context.js";
 import { resolveSessionPermissionExecMode } from "../../session-permission-exec-mode.js";
-import { resolveSessionPlacementSandbox } from "../../session-placement-admission.js";
 import { createToolTerminalObserver } from "../../tool-terminal-outcome.js";
 import {
   createAdmittedGatewayToolCallerIdentity,
@@ -197,27 +195,38 @@ export async function dispatchEmbeddedRunAttempt(input: {
     modelMaxTokens: runtime.model.maxTokens,
     userTurnTranscriptRecorder: params.userTurnTranscriptRecorder,
   });
-  const promptMedia = control.pluginHarnessOwnsTransport
-    ? await (async () => {
-        const workspace = await resolveAttemptWorkspaceSandbox({
+  let pluginWorkspace: Awaited<ReturnType<typeof resolveAttemptWorkspaceSandbox>> | undefined;
+  let promptMedia: {
+    images: typeof params.images;
+    imageOrder: typeof params.imageOrder;
+    media: typeof params.media;
+  };
+  try {
+    pluginWorkspace = control.pluginHarnessOwnsTransport
+      ? await resolveAttemptWorkspaceSandbox({
           ...params,
           cwd: undefined,
           sessionId: runtime.sessionId,
           sessionKey: runtime.sessionKey,
           workspaceDir: runtime.workspaceDir,
-        });
-        return await prepareEmbeddedAttemptPromptExecution({
+        })
+      : undefined;
+    promptMedia = pluginWorkspace
+      ? await prepareEmbeddedAttemptPromptExecution({
           attempt: { ...params, model: runtime.model },
-          mediaOwnerAgentId: workspace.sessionAgentId,
-          effectiveFsWorkspaceOnly: workspace.effectiveFsWorkspaceOnly,
-          effectiveWorkspace: workspace.effectiveWorkspace,
+          mediaOwnerAgentId: pluginWorkspace.sessionAgentId,
+          effectiveFsWorkspaceOnly: pluginWorkspace.effectiveFsWorkspaceOnly,
+          effectiveWorkspace: pluginWorkspace.effectiveWorkspace,
           prompt: "",
-          sandbox: workspace.sandbox,
+          sandbox: pluginWorkspace.sandbox,
           skipPromptSubmission: false,
           pluginHarness: true,
-        });
-      })()
-    : { images: params.images, imageOrder: params.imageOrder, media: params.media };
+        })
+      : { images: params.images, imageOrder: params.imageOrder, media: params.media };
+  } catch (error) {
+    await pluginWorkspace?.sandbox?.disposeAuthorizedVirtualProjectionMountPlan?.();
+    throw error;
+  }
   // Plugin harnesses own their tool materialization, so the host cannot attest
   // a message tool. Finalize conservatively instead of leaking phantom guidance.
   const pluginHarnessPrompt =
@@ -228,20 +237,7 @@ export async function dispatchEmbeddedRunAttempt(input: {
           finalize: params.finalizePromptForResolvedTools,
         })
       : undefined;
-  const pluginSandbox = control.pluginHarnessOwnsTransport
-    ? ((await resolveSessionPlacementSandbox({
-        agentId: runtime.agentId,
-        config: params.config,
-        sessionId: runtime.sessionId,
-        sessionKey: runtime.sessionKey,
-        workspaceDir: runtime.workspaceDir,
-      })) ??
-      (await resolveSandboxContext({
-        config: params.config,
-        sessionKey: params.sandboxSessionKey ?? runtime.sessionKey ?? runtime.sessionId,
-        workspaceDir: runtime.workspaceDir,
-      })))
-    : undefined;
+  const pluginSandbox = pluginWorkspace?.sandbox;
   if (!params.admittedRunContext) {
     throw new Error("embedded attempt reached dispatch without an admitted run context");
   }
@@ -528,11 +524,12 @@ export async function dispatchEmbeddedRunAttempt(input: {
     .catch((err: unknown): never => {
       throw control.getPostCompactionAbortError() ?? err;
     })
-    .finally(() => {
+    .finally(async () => {
       clearAttemptTimeoutRelease();
       stopLaneProgressHeartbeat();
       parentAbortSignal?.removeEventListener?.("abort", relayParentAbort);
       control.clearPostCompactionAbortController(attemptAbortController);
+      await pluginSandbox?.disposeAuthorizedVirtualProjectionMountPlan?.();
     });
 
   const postCompactionAbortError = control.getPostCompactionAbortError();

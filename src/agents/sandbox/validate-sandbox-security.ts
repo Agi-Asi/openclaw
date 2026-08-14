@@ -62,6 +62,8 @@ type ValidateBindMountsOptions = {
   allowedSourceRoots?: string[];
   allowSourcesOutsideAllowedRoots?: boolean;
   allowReservedContainerTargets?: boolean;
+  /** Core-created mounts must pass the same source/root validation as user binds. */
+  managedReadOnlyBinds?: readonly string[];
 };
 
 type ValidateNetworkModeOptions = {
@@ -324,14 +326,26 @@ function validateBindMounts(
   binds: string[] | undefined,
   options?: ValidateBindMountsOptions,
 ): void {
-  if (!binds?.length) {
+  const configuredBinds = binds ?? [];
+  const managedBinds = options?.managedReadOnlyBinds ?? [];
+  if (configuredBinds.length === 0 && managedBinds.length === 0) {
     return;
+  }
+
+  for (const bind of managedBinds) {
+    const parsed = splitSandboxBindSpec(bind);
+    const modes = new Set(parsed?.options.split(",").filter(Boolean) ?? []);
+    if (!parsed || !modes.has("ro") || !modes.has("z") || modes.has("rw")) {
+      throw new Error(
+        `Sandbox security: managed projection bind "${bind}" must be physically read-only with SELinux sharing.`,
+      );
+    }
   }
 
   const allowedRoots = normalizeAllowedRoots(options?.allowedSourceRoots);
   const blockedHostPaths = getBlockedHostPaths();
 
-  for (const rawBind of binds) {
+  for (const rawBind of [...configuredBinds, ...managedBinds]) {
     const bind = rawBind.trim();
     if (!bind) {
       continue;

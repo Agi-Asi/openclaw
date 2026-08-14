@@ -119,6 +119,8 @@ export function createApplyPatchTool(
     root?: string;
     sandbox?: SandboxApplyPatchConfig;
     workspaceOnly?: boolean;
+    /** Opaque Phase 1D view identity; its files are never mutable here. */
+    memoryViewId?: string;
     memoryFileMutationGuard?: MemoryFileMutationGuard;
     memoryWriteProvenance?: MemoryWriteProvenanceObserver;
   } = {},
@@ -142,6 +144,9 @@ export function createApplyPatchTool(
       }
       if (signal?.aborted) {
         throw createAbortError("Aborted");
+      }
+      if (options.memoryViewId && /\*\*\* (?:Add|Delete|Update) File: memory:/u.test(input)) {
+        throw new Error("authorized memory views are read-only");
       }
 
       const result = await applyPatch(input, {

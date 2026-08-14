@@ -59,6 +59,7 @@ async function createContainerSandboxBackend(
     workspaceDir: params.workspaceDir,
     agentWorkspaceDir: params.agentWorkspaceDir,
     skillsWorkspaceDir: params.skillsWorkspaceDir,
+    authorizedVirtualProjectionMountPlan: params.authorizedVirtualProjectionMountPlan,
     cfg: params.cfg,
     ...(params.requireCurrentConfig !== undefined
       ? { requireCurrentConfig: params.requireCurrentConfig }

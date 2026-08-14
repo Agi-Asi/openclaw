@@ -365,6 +365,22 @@ describe("validateBindMounts", () => {
       }),
     ).toBeUndefined();
   });
+
+  it("requires core-managed projection mounts to stay physically read-only", () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "openclaw-sbx-managed-projection-"));
+    expect(() =>
+      validateSandboxSecurity({
+        allowedSourceRoots: [projectRoot],
+        managedReadOnlyBinds: [`${projectRoot}:/memory/private:rw,z`],
+      }),
+    ).toThrow(/must be physically read-only/);
+    expect(
+      validateSandboxSecurity({
+        allowedSourceRoots: [projectRoot],
+        managedReadOnlyBinds: [`${projectRoot}:/memory/private:ro,z`],
+      }),
+    ).toBeUndefined();
+  });
 });
 
 function normalizePathForSnapshot(input: string): string {

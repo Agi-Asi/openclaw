@@ -9,6 +9,9 @@ import type { EmbeddedRunAttemptParams } from "./types.js";
 
 const resolveProviderRuntimePluginHandle = vi.hoisted(() => vi.fn());
 const resolveSandboxContext = vi.hoisted(() => vi.fn(async () => null));
+const createAuthorizedMemoryReadHost = vi.hoisted(() => vi.fn());
+const resolveAuthorizedMemoryVirtualFileBroker = vi.hoisted(() => vi.fn());
+const stageAuthorizedVirtualProjectionMountPlan = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../plugins/provider-hook-runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../plugins/provider-hook-runtime.js")>()),
@@ -16,6 +19,15 @@ vi.mock("../../../plugins/provider-hook-runtime.js", async (importOriginal) => (
 }));
 
 vi.mock("../../sandbox.js", () => ({ resolveSandboxContext }));
+
+vi.mock("../../memory-authorized-read-host.js", () => ({
+  createAuthorizedMemoryReadHost,
+  resolveAuthorizedMemoryVirtualFileBroker,
+}));
+
+vi.mock("../../sandbox/authorized-virtual-projection-staging.js", () => ({
+  stageAuthorizedVirtualProjectionMountPlan,
+}));
 
 import {
   installEmbeddedAttemptContextGuards,
@@ -31,6 +43,11 @@ describe("prepareEmbeddedAttemptSetup", () => {
   beforeEach(() => {
     resolveProviderRuntimePluginHandle.mockReset();
     resolveSandboxContext.mockClear();
+    createAuthorizedMemoryReadHost.mockReset();
+    createAuthorizedMemoryReadHost.mockReturnValue(undefined);
+    resolveAuthorizedMemoryVirtualFileBroker.mockReset();
+    resolveAuthorizedMemoryVirtualFileBroker.mockResolvedValue(undefined);
+    stageAuthorizedVirtualProjectionMountPlan.mockReset();
   });
 
   it("prepares the default and session agent identities together", async () => {
@@ -267,5 +284,83 @@ describe("prepareEmbeddedAttemptSkills", () => {
       await fs.rm(agentWorkspace, { recursive: true, force: true });
       await fs.rm(executionWorkspace, { recursive: true, force: true });
     }
+  });
+
+  it("uses one admission-bound host and broker when a sandbox stages a projection", async () => {
+    const sandboxRoot = path.join(os.tmpdir(), "openclaw-attempt-setup-projection-sandbox");
+    const host = {} as never;
+    const broker = {
+      view: { viewId: "view-1", roots: [], files: [], revision: "revision-1" },
+      readFile: vi.fn(),
+    } as never;
+    const dispose = vi.fn(async () => {});
+    const staged = {
+      plan: { version: 1, viewId: "view-1", revision: "revision-1", mounts: [] },
+      dispose,
+    };
+    createAuthorizedMemoryReadHost.mockReturnValue(host);
+    resolveAuthorizedMemoryVirtualFileBroker.mockResolvedValue(broker);
+    stageAuthorizedVirtualProjectionMountPlan.mockResolvedValue(staged);
+    resolveSandboxContext.mockImplementation(async (input) => {
+      await input.prepareAuthorizedVirtualProjectionMountPlan?.({
+        agentWorkspaceDir: path.join(sandboxRoot, "agent"),
+      });
+      return {
+        enabled: true,
+        workspaceAccess: "ro",
+        workspaceDir: path.join(sandboxRoot, "workspace"),
+        disposeAuthorizedVirtualProjectionMountPlan: dispose,
+      };
+    });
+
+    const setup = await resolveAttemptWorkspaceSandbox({
+      agentId: "main",
+      config: {},
+      messageChannel: "telegram",
+      messageTo: "dm:alice",
+      runId: "run-1",
+      sessionId: "session-1",
+      sessionKey: "agent:main:telegram:direct:alice",
+      workspaceDir: path.join(os.tmpdir(), "openclaw-attempt-setup-projection"),
+    });
+
+    expect(createAuthorizedMemoryReadHost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "main",
+        runId: "run-1",
+        sessionId: "session-1",
+        sessionKey: "agent:main:telegram:direct:alice",
+      }),
+    );
+    expect(resolveAuthorizedMemoryVirtualFileBroker).toHaveBeenCalledWith(host);
+    expect(stageAuthorizedVirtualProjectionMountPlan).toHaveBeenCalledWith({
+      agentWorkspaceDir: path.join(sandboxRoot, "agent"),
+      broker,
+    });
+    expect(setup.authorizedMemoryRead).toBe(host);
+    expect(setup.authorizedMemoryVirtualBroker).toBe(broker);
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("disposes post-provisioning native projection staging when setup later rejects", async () => {
+    const dispose = vi.fn(async () => {});
+    resolveSandboxContext.mockResolvedValue({
+      enabled: true,
+      workspaceAccess: "ro",
+      workspaceDir: "/sandbox/workspace",
+      disposeAuthorizedVirtualProjectionMountPlan: dispose,
+    });
+
+    await expect(
+      resolveAttemptWorkspaceSandbox({
+        agentId: "main",
+        config: {},
+        cwd: path.join(os.tmpdir(), "other-cwd"),
+        sessionId: "session-1",
+        sessionKey: "agent:main:telegram:direct:alice",
+        workspaceDir: path.join(os.tmpdir(), "openclaw-attempt-setup-native-dispose"),
+      }),
+    ).rejects.toThrow(/cwd override is not supported/);
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });

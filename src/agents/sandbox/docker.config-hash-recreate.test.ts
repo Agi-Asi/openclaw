@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import { resolveAuthorizedVirtualProjectionSourcePath } from "./authorized-virtual-projection-mounts.js";
 import {
   computeSandboxConfigHash,
   SANDBOX_DOCKER_EXPLICIT_ENV_POLICY_EPOCH,
@@ -26,6 +27,7 @@ const spawnState = vi.hoisted(() => ({
   inspectRunning: true,
   inspectError: "",
   labelHash: "",
+  labelAuthorizedMemoryProjection: "",
   podmanInfo: "true\tfalse\t\t5.0.0\n",
   podmanConnections: "[]\n",
   podmanMachines: "[]\n",
@@ -115,6 +117,12 @@ async function spawnDockerProcess(commandAndArgs: string[]) {
     } else {
       stdout = `${spawnState.labelHash}\n`;
     }
+  } else if (
+    args[0] === "inspect" &&
+    args[1] === "-f" &&
+    args[2]?.includes('index .Config.Labels "openclaw.authorizedMemoryProjection"')
+  ) {
+    stdout = `${spawnState.labelAuthorizedMemoryProjection}\n`;
   } else if (command === "podman" && args[0] === "info") {
     stdout = spawnState.podmanInfo;
   } else if (command === "podman" && args[0] === "system") {
@@ -137,6 +145,11 @@ async function spawnDockerProcess(commandAndArgs: string[]) {
         args
           .find((arg) => arg.startsWith("openclaw.configHash="))
           ?.slice("openclaw.configHash=".length) ?? "";
+      spawnState.labelAuthorizedMemoryProjection = args.includes(
+        "openclaw.authorizedMemoryProjection=1",
+      )
+        ? "1"
+        : "";
     }
   } else if (args[0] === "start") {
     spawnState.inspectRunning = true;
@@ -262,6 +275,7 @@ describe("ensureSandboxContainer config-hash recreation", () => {
     spawnState.inspectRunning = true;
     spawnState.inspectError = "";
     spawnState.labelHash = "";
+    spawnState.labelAuthorizedMemoryProjection = "";
     spawnState.podmanInfo = "true\tfalse\t\t5.0.0\n";
     spawnState.podmanConnections = "[]\n";
     spawnState.podmanMachines = "[]\n";
@@ -383,6 +397,240 @@ describe("ensureSandboxContainer config-hash recreation", () => {
     const registryUpdate = registryMocks.updateRegistry.mock.calls.at(-1)?.[0];
     expect(registryUpdate?.containerName).toBe("oc-test-shared");
     expect(registryUpdate?.configHash).toBe(newHash);
+  });
+
+  it("mounts only a core projection read-only and recreates when its view revision changes", async () => {
+    const workspaceDir = tempDirs.make("openclaw-docker-projection-");
+    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    const sourcePath = resolveAuthorizedVirtualProjectionSourcePath({
+      agentWorkspaceDir: workspaceDir,
+      viewId: "opaque-view",
+      revision: "revision-1",
+      stagingId: "stage-1",
+      mountHandle: "opaque-mount",
+    });
+    fs.mkdirSync(sourcePath, { recursive: true });
+    const resolvedSourcePath = fs.realpathSync(sourcePath);
+    const firstPlan = {
+      version: 1 as const,
+      viewId: "opaque-view",
+      revision: "revision-1",
+      stagingId: "stage-1",
+      mounts: [
+        {
+          mountHandle: "opaque-mount",
+          virtualRoot: "private",
+          sourcePath,
+          access: "read" as const,
+        },
+      ],
+    };
+    spawnState.containerExists = false;
+    spawnState.inspectRunning = false;
+    registryMocks.readRegistryEntry.mockResolvedValue({
+      containerName: "oc-test-shared",
+      sessionKey: "shared",
+      createdAtMs: 1,
+      lastUsedAtMs: 0,
+      image: cfg.docker.image,
+    });
+
+    await ensureSandboxContainer({
+      scopeKey: "shared",
+      workspaceDir,
+      agentWorkspaceDir: workspaceDir,
+      cfg,
+      authorizedVirtualProjectionMountPlan: firstPlan,
+    });
+    const firstCreate = spawnState.calls.find((call) => call.args[0] === "create");
+    expect(firstCreate).toBeDefined();
+    expect(collectDockerFlagValues(firstCreate!.args, "-v")).toContain(
+      `${resolvedSourcePath}:/memory/private:ro,z`,
+    );
+
+    spawnState.calls.length = 0;
+    const secondSourcePath = resolveAuthorizedVirtualProjectionSourcePath({
+      agentWorkspaceDir: workspaceDir,
+      viewId: "opaque-view",
+      revision: "revision-2",
+      stagingId: "stage-2",
+      mountHandle: "opaque-mount",
+    });
+    fs.mkdirSync(secondSourcePath, { recursive: true });
+    await ensureSandboxContainer({
+      scopeKey: "shared",
+      workspaceDir,
+      agentWorkspaceDir: workspaceDir,
+      cfg,
+      authorizedVirtualProjectionMountPlan: {
+        ...firstPlan,
+        revision: "revision-2",
+        stagingId: "stage-2",
+        mounts: [{ ...firstPlan.mounts[0]!, sourcePath: secondSourcePath }],
+      },
+    });
+
+    expect(spawnState.calls.some((call) => call.args[0] === "rm")).toBe(true);
+    expect(spawnState.calls.some((call) => call.args[0] === "create")).toBe(true);
+  });
+
+  it.each(["rw", "ro", "none"] as const)(
+    "keeps private projection staging out of ordinary %s workspace binds",
+    async (workspaceAccess) => {
+      const workspaceDir = tempDirs.make(`openclaw-docker-projection-${workspaceAccess}-`);
+      const cfg = createSandboxConfig(
+        [],
+        [`${workspaceDir}:/workspace:${workspaceAccess === "rw" ? "rw" : "ro"}`],
+        workspaceAccess,
+      );
+      const sourcePath = resolveAuthorizedVirtualProjectionSourcePath({
+        agentWorkspaceDir: workspaceDir,
+        viewId: `opaque-view-${workspaceAccess}`,
+        revision: "revision-1",
+        stagingId: "stage-1",
+        mountHandle: "opaque-mount",
+      });
+      fs.mkdirSync(sourcePath, { recursive: true });
+      const resolvedSourcePath = fs.realpathSync(sourcePath);
+      spawnState.containerExists = false;
+      spawnState.inspectRunning = false;
+      registryMocks.readRegistryEntry.mockResolvedValue(null);
+
+      await ensureSandboxContainer({
+        scopeKey: "shared",
+        workspaceDir,
+        agentWorkspaceDir: workspaceDir,
+        cfg,
+        authorizedVirtualProjectionMountPlan: {
+          version: 1,
+          viewId: `opaque-view-${workspaceAccess}`,
+          revision: "revision-1",
+          stagingId: "stage-1",
+          mounts: [
+            {
+              mountHandle: "opaque-mount",
+              virtualRoot: "private",
+              sourcePath,
+              access: "read",
+            },
+          ],
+        },
+      });
+
+      const create = spawnState.calls.find((call) => call.args[0] === "create");
+      if (!create) {
+        throw new Error("expected sandbox container creation");
+      }
+      const binds = collectDockerFlagValues(create.args, "-v");
+      expect(path.relative(workspaceDir, sourcePath).startsWith("..")).toBe(true);
+      expect(binds.filter((bind) => bind.startsWith(`${resolvedSourcePath}:`))).toEqual([
+        `${resolvedSourcePath}:/memory/private:ro,z`,
+      ]);
+      expect(binds).not.toContain(`${sourcePath}:/workspace:rw`);
+      expect(binds).not.toContain(`${sourcePath}:/workspace:ro`);
+    },
+  );
+
+  it("recreates a hot container even when the next projection has the same view and revision", async () => {
+    const workspaceDir = tempDirs.make("openclaw-docker-projection-hot-");
+    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    const sourcePath = resolveAuthorizedVirtualProjectionSourcePath({
+      agentWorkspaceDir: workspaceDir,
+      viewId: "opaque-view",
+      revision: "revision-1",
+      stagingId: "stage-1",
+      mountHandle: "opaque-mount",
+    });
+    fs.mkdirSync(sourcePath, { recursive: true });
+    const plan = {
+      version: 1 as const,
+      viewId: "opaque-view",
+      revision: "revision-1",
+      stagingId: "stage-1",
+      mounts: [
+        {
+          mountHandle: "opaque-mount",
+          virtualRoot: "private",
+          sourcePath,
+          access: "read" as const,
+        },
+      ],
+    };
+    spawnState.containerExists = false;
+    spawnState.inspectRunning = false;
+    registryMocks.readRegistryEntry.mockResolvedValue(null);
+    await ensureSandboxContainer({
+      scopeKey: "shared",
+      workspaceDir,
+      agentWorkspaceDir: workspaceDir,
+      cfg,
+      authorizedVirtualProjectionMountPlan: plan,
+    });
+
+    spawnState.calls.length = 0;
+    await ensureSandboxContainer({
+      scopeKey: "shared",
+      workspaceDir,
+      agentWorkspaceDir: workspaceDir,
+      cfg,
+      // The first attempt has already removed this staged source. Docker keeps
+      // its old bind inode, so an equal mount hash must still not reuse it.
+      authorizedVirtualProjectionMountPlan: plan,
+    });
+    expect(spawnState.calls.some((call) => call.args[0] === "rm")).toBe(true);
+    expect(spawnState.calls.some((call) => call.args[0] === "create")).toBe(true);
+  });
+
+  it("recreates a hot projected container before an unprojected run", async () => {
+    const workspaceDir = tempDirs.make("openclaw-docker-projection-to-none-");
+    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    const sourcePath = resolveAuthorizedVirtualProjectionSourcePath({
+      agentWorkspaceDir: workspaceDir,
+      viewId: "opaque-view",
+      revision: "revision-1",
+      stagingId: "stage-1",
+      mountHandle: "opaque-mount",
+    });
+    fs.mkdirSync(sourcePath, { recursive: true });
+    const plan = {
+      version: 1 as const,
+      viewId: "opaque-view",
+      revision: "revision-1",
+      stagingId: "stage-1",
+      mounts: [
+        {
+          mountHandle: "opaque-mount",
+          virtualRoot: "private",
+          sourcePath,
+          access: "read" as const,
+        },
+      ],
+    };
+    spawnState.containerExists = false;
+    spawnState.inspectRunning = false;
+    registryMocks.readRegistryEntry.mockResolvedValue(null);
+    await ensureSandboxContainer({
+      scopeKey: "shared",
+      workspaceDir,
+      agentWorkspaceDir: workspaceDir,
+      cfg,
+      authorizedVirtualProjectionMountPlan: plan,
+    });
+
+    spawnState.calls.length = 0;
+    await ensureSandboxContainer({
+      scopeKey: "shared",
+      workspaceDir,
+      agentWorkspaceDir: workspaceDir,
+      cfg,
+    });
+
+    expect(spawnState.calls.some((call) => call.args[0] === "rm")).toBe(true);
+    const replacement = spawnState.calls.find((call) => call.args[0] === "create");
+    expect(replacement).toBeDefined();
+    expect(collectDockerFlagValues(replacement!.args, "-v")).not.toContain(
+      `${sourcePath}:/memory/private:ro,z`,
+    );
   });
 
   it("recreates a cold container when the shared Docker create-args epoch changes", async () => {

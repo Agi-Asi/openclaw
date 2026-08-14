@@ -10,6 +10,7 @@ import { generateSecureUuid } from "../infra/secure-random.js";
 import {
   adminLinkAdmittedMemoryIdentity as linkAdmittedMemoryIdentity,
   recheckMemoryIdentityBinding,
+  recheckMemoryIdentityBindingRecipient,
   resolveMemoryIdentityBindingFromAdmission,
 } from "./memory-identity.js";
 import {
@@ -121,6 +122,44 @@ describe("memory identity binding", () => {
         options: { env },
       }),
     ).toEqual({ kind: "expired" });
+  });
+
+  it("attests a direct delivery target without exposing the persisted sender identity", () => {
+    const { env, profileId } = fixture();
+    const binding = adminLinkAdmittedMemoryIdentity({
+      admission: admitted("telegram", "default", "sender-recipient"),
+      authenticatedOperatorProfileId: profileId,
+      authenticatedOperatorScopes: ["operator.admin"],
+      options: { env },
+    });
+
+    expect(
+      recheckMemoryIdentityBindingRecipient({
+        bindingId: binding.bindingId,
+        channel: "telegram",
+        accountId: "default",
+        recipientId: "sender-recipient",
+        options: { env },
+      }),
+    ).toMatchObject({ kind: "current", binding: { bindingId: binding.bindingId } });
+    expect(
+      recheckMemoryIdentityBindingRecipient({
+        bindingId: binding.bindingId,
+        channel: "telegram",
+        accountId: "default",
+        recipientId: "another-recipient",
+        options: { env },
+      }),
+    ).toEqual({ kind: "unbound" });
+    expect(
+      recheckMemoryIdentityBindingRecipient({
+        bindingId: binding.bindingId,
+        channel: "discord",
+        accountId: "default",
+        recipientId: "sender-recipient",
+        options: { env },
+      }),
+    ).toEqual({ kind: "unbound" });
   });
 
   it("fails closed when a damaged shared database contains conflicting active bindings", () => {

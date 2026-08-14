@@ -335,6 +335,35 @@ describe("read tool", () => {
     ).rejects.toThrow(/ambiguous.*d'accord\.txt.*d\u2019accord\.txt/i);
   });
 
+  it("keeps fallback spellings ambiguous when a remote backend cannot prove identity", async () => {
+    const requested = "/workspace/d\u2018accord.txt";
+    const straight = "/workspace/d'accord.txt";
+    const curly = "/workspace/d\u2019accord.txt";
+    const tool = createReadToolDefinition("/workspace", {
+      operations: {
+        access: async (filePath) => {
+          if (filePath === requested) {
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          }
+          if (filePath !== straight && filePath !== curly) {
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          }
+        },
+        readFile: async () => Buffer.from("remote"),
+      },
+    });
+
+    await expect(
+      tool.execute(
+        "call-remote-unicode",
+        { path: "d\u2018accord.txt" },
+        undefined,
+        undefined,
+        {} as never,
+      ),
+    ).rejects.toThrow(/Read path is ambiguous/);
+  });
+
   it("suggests a close filename without reading it", async () => {
     const tempDir = tempDirs.make("openclaw-read-suggestion-");
     await fs.writeFile(path.join(tempDir, "AGENTS.md"), "instructions");

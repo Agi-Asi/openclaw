@@ -4,13 +4,20 @@ import path from "node:path";
 import type { MemoryContentAccessContext } from "openclaw/plugin-sdk/memory-authorization";
 import { closeOpenClawAgentDatabasesForTest } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAuthorizedMemoryReadHost } from "../../../../src/agents/memory-authorized-read-host.js";
+import {
+  createAuthorizedMemoryReadHost,
+  resolveAuthorizedMemoryVirtualFileBroker,
+} from "../../../../src/agents/memory-authorized-read-host.js";
+import { prepareMemoryEgressAuthorization } from "../../../../src/agents/memory-egress-admission.js";
+import { createReplyDispatcher } from "../../../../src/auto-reply/reply/reply-dispatcher.js";
+import { buildTestCtx } from "../../../../src/auto-reply/reply/test-ctx.js";
 import {
   consumeAdmittedChannelMemoryIdentityFromContext,
   createChannelMemoryIdentityAdmission,
 } from "../../../../src/channels/message-access/memory-identity-admission.js";
 import { admitMemoryAuthorizationReadRuntime } from "../../../../src/plugins/memory-authorization-runtime.js";
 import { resetMemoryIsolationCutoverForTest } from "../../../../src/plugins/memory-cutover.js";
+import { readLatestDurableMemoryRunExposure } from "../../../../src/plugins/memory-run-exposure-ledger.js";
 import { createEmptyPluginRegistry } from "../../../../src/plugins/registry-empty.js";
 import {
   resetPluginRuntimeStateForTest,
@@ -19,8 +26,12 @@ import {
 import {
   adminLinkAdmittedMemoryIdentity,
   ensureMemoryOperationalPrincipal,
+  revokeMemoryIdentityBinding,
 } from "../../../../src/state/memory-identity.js";
-import { admitInboundMemorySessionContext } from "../../../../src/state/memory-session-subject.js";
+import {
+  admitInboundMemorySessionContext,
+  createCurrentMemorySessionContext,
+} from "../../../../src/state/memory-session-subject.js";
 import { openOpenClawAgentDatabase } from "../../../../src/state/openclaw-agent-db.js";
 import { ensureProfileForEmail } from "../../../../src/state/user-profiles.js";
 import { MEMORY_CORE_AUTHORIZATION_CAPABILITIES } from "../authorization.js";
@@ -28,9 +39,18 @@ import { builtinScopedMemoryConformanceAdapter } from "./scoped-memory-policy.js
 import { createBuiltinScopedMemoryResource } from "./scoped-memory-resources.js";
 import {
   builtinScopedMemoryAuthorizedRuntime,
+  builtinScopedMemoryVirtualView,
   resetBuiltinScopedMemoryAuthorizedRuntimeForTest,
 } from "./scoped-memory-runtime.js";
 import { createBuiltinScopedMemoryStore } from "./scoped-memory-store.js";
+
+const dispatchReplyFromConfig = vi.hoisted(() => vi.fn());
+
+vi.mock("../../../../src/auto-reply/reply/dispatch-from-config.js", () => ({
+  dispatchReplyFromConfig,
+}));
+
+const { dispatchInboundMessage } = await import("../../../../src/auto-reply/dispatch.js");
 
 describe("builtin scoped authorized runtime", () => {
   let stateDir = "";
@@ -41,6 +61,7 @@ describe("builtin scoped authorized runtime", () => {
   });
 
   afterEach(() => {
+    dispatchReplyFromConfig.mockReset();
     resetBuiltinScopedMemoryAuthorizedRuntimeForTest();
     resetMemoryIsolationCutoverForTest();
     resetPluginRuntimeStateForTest();
@@ -70,6 +91,7 @@ describe("builtin scoped authorized runtime", () => {
       capability: {
         authorization: MEMORY_CORE_AUTHORIZATION_CAPABILITIES,
         authorizationConformance: builtinScopedMemoryConformanceAdapter,
+        virtualView: builtinScopedMemoryVirtualView,
         runtime: builtinScopedMemoryAuthorizedRuntime,
       },
     });
@@ -327,8 +349,16 @@ describe("builtin scoped authorized runtime", () => {
       }),
     ).resolves.toMatchObject({ ok: true });
 
-    const aliceHost = createAuthorizedMemoryReadHost({ agentId: "main", ...aliceSession });
-    const bobHost = createAuthorizedMemoryReadHost({ agentId: "main", ...bobSession });
+    const aliceHost = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...aliceSession,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+    });
+    const bobHost = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...bobSession,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "bob" },
+    });
     if (!aliceHost || !bobHost) {
       throw new Error("fixture failed to build an authorized memory host");
     }
@@ -355,6 +385,157 @@ describe("builtin scoped authorized runtime", () => {
       unavailable: true,
       error: "memory unavailable",
     });
+  });
+
+  it("invalidates materialized virtual views after binding revocation and plan expiry", async () => {
+    const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
+    const alicePrincipalId = createVerifiedDirectSession({ name: "alice", ...session });
+    createPrivateResource(alicePrincipalId, "ALICE_VIRTUAL_VIEW_CONTENT");
+    markCutOver();
+    installBuiltinSelectedRuntime();
+
+    const host = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...session,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+    });
+    if (!host) {
+      throw new Error("fixture failed to build an authorized memory host");
+    }
+    const broker = await resolveAuthorizedMemoryVirtualFileBroker(host);
+    const virtualPath = broker?.view.files[0]?.virtualPath;
+    if (!broker || !virtualPath) {
+      throw new Error("fixture failed to materialize an authorized virtual view");
+    }
+    await expect(broker.readFile(virtualPath)).resolves.toBe("ALICE_VIRTUAL_VIEW_CONTENT");
+
+    const sessionContext = createCurrentMemorySessionContext({
+      ...session,
+      options: { agentId: "main" },
+    });
+    if (sessionContext.kind !== "current" || !sessionContext.context.bindingId) {
+      throw new Error("fixture failed to retain the direct identity binding");
+    }
+    expect(revokeMemoryIdentityBinding({ bindingId: sessionContext.context.bindingId })).toBe(true);
+    await expect(broker.readFile(virtualPath)).resolves.toBeUndefined();
+
+    // A fresh view starts with a live binding, then must become unusable once
+    // its plan lease expires even though the broker object is still retained.
+    const freshSession = { sessionKey: "agent:main:direct:bob", sessionId: "bob-session" };
+    const bobPrincipalId = createVerifiedDirectSession({ name: "bob", ...freshSession });
+    createPrivateResource(bobPrincipalId, "BOB_EXPIRED_VIRTUAL_VIEW_CONTENT");
+    const freshHost = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...freshSession,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "bob" },
+    });
+    const freshBroker = freshHost && (await resolveAuthorizedMemoryVirtualFileBroker(freshHost));
+    const freshPath = freshBroker?.view.files[0]?.virtualPath;
+    if (!freshBroker || !freshPath) {
+      throw new Error("fixture failed to materialize an expiring authorized virtual view");
+    }
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(60_001);
+      await expect(freshBroker.readFile(freshPath)).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("delivers an exposed direct-memory result only through the attested final-reply gate", async () => {
+    const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
+    const runId = "authorized-memory-final-reply";
+    const alicePrincipalId = createVerifiedDirectSession({ name: "alice", ...session });
+    createPrivateResource(alicePrincipalId, "ALICE_FINAL_REPLY_AUTHORIZED_CONTENT");
+    markCutOver();
+    installBuiltinSelectedRuntime();
+
+    const host = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...session,
+      runId,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+    });
+    if (!host) {
+      throw new Error("fixture failed to build an authorized memory host");
+    }
+    const read = await host.search({ query: "ALICE_FINAL_REPLY_AUTHORIZED_CONTENT", limit: 1 });
+    if (!("results" in read) || !read.results[0]) {
+      throw new Error("fixture failed to expose the authorized direct-memory result");
+    }
+    expect(
+      readLatestDurableMemoryRunExposure({ agentId: "main", sessionId: session.sessionId, runId }),
+    ).toMatchObject({
+      kind: "current",
+      snapshot: {
+        exposedResourceRevisions: [expect.any(String)],
+        egressReceiptIds: [expect.any(String)],
+        deliveryAudiences: [{ kind: "user", id: alicePrincipalId }],
+      },
+    });
+    expect(
+      prepareMemoryEgressAuthorization({
+        capabilityId: "reply.final",
+        agentId: "main",
+        ...session,
+        runId,
+        deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+      }),
+    ).toMatchObject({ allowed: true, authorization: { exposure: expect.any(Object) } });
+
+    const delivered = vi.fn(async () => undefined);
+    const dispatcher = createReplyDispatcher({ deliver: delivered });
+    dispatchReplyFromConfig.mockImplementation(async ({ dispatcher: activeDispatcher }) => {
+      expect(activeDispatcher.sendFinalReply({ text: read.results[0]!.snippet })).toBe(true);
+      return { queuedFinal: true, counts: { tool: 0, block: 0, final: 1 } };
+    });
+    await dispatchInboundMessage({
+      ctx: buildTestCtx({
+        AgentId: "main",
+        SessionId: session.sessionId,
+        SessionKey: session.sessionKey,
+        Surface: "telegram",
+        OriginatingChannel: "telegram",
+        OriginatingTo: "alice",
+        AccountId: "default",
+      }),
+      cfg: {} as never,
+      dispatcher,
+      replyOptions: { runId },
+      outboundHooks: "disabled",
+    });
+    await dispatcher.waitForIdle();
+    expect(delivered).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "ALICE_FINAL_REPLY_AUTHORIZED_CONTENT" }),
+      expect.anything(),
+    );
+
+    const reboundDelivered = vi.fn(async () => undefined);
+    const reboundDispatcher = createReplyDispatcher({ deliver: reboundDelivered });
+    dispatchReplyFromConfig.mockImplementation(async ({ ctx, dispatcher: activeDispatcher }) => {
+      activeDispatcher.sendFinalReply({ text: read.results[0]!.snippet });
+      ctx.OriginatingTo = "mallory";
+      return { queuedFinal: true, counts: { tool: 0, block: 0, final: 1 } };
+    });
+    await dispatchInboundMessage({
+      ctx: buildTestCtx({
+        AgentId: "main",
+        SessionId: session.sessionId,
+        SessionKey: session.sessionKey,
+        Surface: "telegram",
+        OriginatingChannel: "telegram",
+        OriginatingTo: "alice",
+        AccountId: "default",
+      }),
+      cfg: {} as never,
+      dispatcher: reboundDispatcher,
+      replyOptions: { runId },
+      outboundHooks: "disabled",
+    });
+    await reboundDispatcher.waitForIdle();
+    expect(reboundDelivered).not.toHaveBeenCalled();
+    expect(reboundDispatcher.getCancelledCounts?.().final).toBe(1);
   });
 
   it("mounts only channel and explicitly addressed copies for a group actor", async () => {
@@ -439,7 +620,11 @@ describe("builtin scoped authorized runtime", () => {
     markCutOver();
     installBuiltinSelectedRuntime();
 
-    const host = createAuthorizedMemoryReadHost({ agentId: "main", ...session });
+    const host = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...session,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "group-target" },
+    });
     if (!host) {
       throw new Error("fixture failed to build a group memory host");
     }

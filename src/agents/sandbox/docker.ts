@@ -6,6 +6,14 @@ import { markOpenClawExecEnv } from "../../infra/openclaw-exec-env.js";
  */
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { KeyedAsyncQueue } from "../../plugin-sdk/keyed-async-queue.js";
+import {
+  appendAuthorizedVirtualProjectionMountArgs,
+  assertNoBindsCollideWithAuthorizedVirtualProjectionMounts,
+  formatAuthorizedVirtualProjectionMountHashState,
+  resolveAuthorizedVirtualProjectionMountPlan,
+  type AuthorizedVirtualProjectionMountPlan,
+  type ResolvedAuthorizedVirtualProjectionMount,
+} from "./authorized-virtual-projection-mounts.js";
 import { computeSandboxConfigHash } from "./config-hash.js";
 import { DEFAULT_SANDBOX_IMAGE, SANDBOX_DOCKER_CREATE_ARGS_EPOCH } from "./constants.js";
 import {
@@ -74,6 +82,31 @@ export async function execDockerRaw(
   return await execContainerRaw(DOCKER_SANDBOX_ENGINE, args, opts);
 }
 
+import {
+  appendAuthorizedVirtualProjectionMountArgs,
+  assertNoBindsCollideWithAuthorizedVirtualProjectionMounts,
+  formatAuthorizedVirtualProjectionMountHashState,
+  resolveAuthorizedVirtualProjectionMountPlan,
+  type AuthorizedVirtualProjectionMountPlan,
+  type ResolvedAuthorizedVirtualProjectionMount,
+} from "./authorized-virtual-projection-mounts.js";
+import { computeSandboxConfigHash } from "./config-hash.js";
+import { DEFAULT_SANDBOX_IMAGE, SANDBOX_DOCKER_CREATE_ARGS_EPOCH } from "./constants.js";
+import { handleHotSandboxConfigMismatch } from "./current-config.js";
+import { readRegistryEntry, removeRegistryEntry, updateRegistry } from "./registry.js";
+import { buildSandboxContainerName, slugifySessionKey } from "./shared.js";
+import type { SandboxConfig, SandboxDockerConfig, SandboxWorkspaceAccess } from "./types.js";
+import { validateSandboxSecurity } from "./validate-sandbox-security.js";
+import {
+  appendReadOnlyWorkspaceSkillMountArgs,
+  appendWorkspaceMountArgs,
+  filterBindsConflictingWithProtectedMounts,
+  formatReadOnlyWorkspaceSkillMountHashState,
+  resolveReadOnlyWorkspaceSkillMounts,
+  resolveProtectedSkillMountContainerPaths,
+  SANDBOX_MOUNT_FORMAT_VERSION,
+  type ReadOnlyWorkspaceSkillMount,
+} from "./workspace-mounts.js";
 const log = createSubsystemLogger("docker");
 
 const HOT_CONTAINER_WINDOW_MS = 5 * 60 * 1000;
@@ -329,6 +362,8 @@ export function buildSandboxCreateArgs(params: {
   allowSourcesOutsideAllowedRoots?: boolean;
   allowReservedContainerTargets?: boolean;
   allowContainerNamespaceJoin?: boolean;
+  /** Core-managed projection binds validated with, but emitted after, normal config binds. */
+  managedReadOnlyBinds?: readonly string[];
 }) {
   // Runtime security validation: blocks dangerous bind mounts, network modes, and profiles.
   validateSandboxSecurity({
@@ -343,6 +378,7 @@ export function buildSandboxCreateArgs(params: {
     dangerouslyAllowContainerNamespaceJoin:
       params.allowContainerNamespaceJoin ??
       params.cfg.dangerouslyAllowContainerNamespaceJoin === true,
+    managedReadOnlyBinds: params.managedReadOnlyBinds,
   });
 
   const createdAtMs = params.createdAtMs ?? Date.now();
@@ -464,6 +500,7 @@ async function createSandboxContainer(params: {
   scopeKey: string;
   configHash?: string;
   readOnlyWorkspaceSkillMounts: readonly ReadOnlyWorkspaceSkillMount[];
+  authorizedVirtualProjectionMounts: readonly ResolvedAuthorizedVirtualProjectionMount[];
   podmanRuntimeInfo?: PodmanSandboxRuntimeInfo;
 }) {
   const { engine, name, cfg, workspaceDir, scopeKey } = params;
@@ -488,8 +525,18 @@ async function createSandboxContainer(params: {
     scopeKey,
     configHash: params.configHash,
     includeBinds: false,
-    bindSourceRoots: [workspaceDir, params.agentWorkspaceDir],
+    bindSourceRoots: [
+      workspaceDir,
+      params.agentWorkspaceDir,
+      ...params.authorizedVirtualProjectionMounts.map((mount) => mount.sourcePath),
+    ],
+    managedReadOnlyBinds: params.authorizedVirtualProjectionMounts.map(
+      (mount) => `${mount.sourcePath}:${mount.containerPath}:ro,z`,
+    ),
   });
+  if (params.authorizedVirtualProjectionMounts.length > 0) {
+    args.push("--label", "openclaw.authorizedMemoryProjection=1");
+  }
   if (podmanPolicy) {
     args.push(...podmanPolicy.extraCreateArgs);
   }
@@ -503,6 +550,10 @@ async function createSandboxContainer(params: {
     workspaceAccess: params.workspaceAccess,
     readOnlyWorkspaceSkillMounts: params.readOnlyWorkspaceSkillMounts,
     includeReadOnlyWorkspaceSkillMounts: false,
+  });
+  appendAuthorizedVirtualProjectionMountArgs({
+    args,
+    mounts: params.authorizedVirtualProjectionMounts,
   });
   // Protected skill overlays are authoritative. Remove exact destination
   // collisions before Docker or Podman sees duplicate mount arguments.
@@ -541,6 +592,15 @@ async function readContainerConfigHash(
   return await readContainerLabel(engine, containerName, "openclaw.configHash");
 }
 
+async function hasAuthorizedMemoryProjection(
+  engine: SandboxContainerEngine,
+  containerName: string,
+): Promise<boolean> {
+  return (
+    (await readContainerLabel(engine, containerName, "openclaw.authorizedMemoryProjection")) === "1"
+  );
+}
+
 type EnsureSandboxContainerParams = {
   engine?: SandboxContainerEngine;
   podmanTarget?: SandboxContainerEngineTarget;
@@ -548,6 +608,7 @@ type EnsureSandboxContainerParams = {
   workspaceDir: string;
   agentWorkspaceDir: string;
   skillsWorkspaceDir?: string;
+  authorizedVirtualProjectionMountPlan?: AuthorizedVirtualProjectionMountPlan;
   cfg: SandboxConfig;
   requireCurrentConfig?: boolean;
 };
@@ -615,6 +676,14 @@ async function ensureSandboxContainerLifecycle(
     workdir: params.cfg.docker.workdir,
     workspaceAccess: params.cfg.workspaceAccess,
   });
+  const authorizedVirtualProjectionMounts = resolveAuthorizedVirtualProjectionMountPlan({
+    agentWorkspaceDir: params.agentWorkspaceDir,
+    plan: params.authorizedVirtualProjectionMountPlan,
+  });
+  assertNoBindsCollideWithAuthorizedVirtualProjectionMounts({
+    binds: params.cfg.docker.binds,
+    mounts: authorizedVirtualProjectionMounts,
+  });
   const genericConfigHash = computeSandboxConfigHash({
     docker: params.cfg.docker,
     dockerEnvPolicyEpoch: resolveDockerEnvPolicyEpoch(params.cfg.docker.env),
@@ -626,6 +695,14 @@ async function ensureSandboxContainerLifecycle(
     readOnlyWorkspaceSkillMounts: formatReadOnlyWorkspaceSkillMountHashState(
       readOnlyWorkspaceSkillMounts,
     ),
+    ...(params.authorizedVirtualProjectionMountPlan
+      ? {
+          authorizedVirtualProjectionMounts: formatAuthorizedVirtualProjectionMountHashState(
+            params.authorizedVirtualProjectionMountPlan,
+            authorizedVirtualProjectionMounts,
+          ),
+        }
+      : {}),
   });
   const expectedHash =
     engine.id === "podman"
@@ -648,24 +725,41 @@ async function ensureSandboxContainerLifecycle(
       currentHash = registryEntry?.configHash ?? null;
     }
     hashMismatch = !currentHash || currentHash !== expectedHash;
-    if (hashMismatch) {
-      const lastUsedAtMs = registryEntry?.lastUsedAtMs;
-      const isHot =
-        running &&
-        (typeof lastUsedAtMs !== "number" || now - lastUsedAtMs < HOT_CONTAINER_WINDOW_MS);
-      if (isHot) {
-        handleHotSandboxConfigMismatch({
-          containerName,
-          scope: params.cfg.scope,
-          sessionKey: params.scopeKey,
-          ...(params.requireCurrentConfig !== undefined
-            ? { requireCurrentConfig: params.requireCurrentConfig }
-            : {}),
-        });
-      } else {
+    const hasAuthorizedProjectionPlan = params.authorizedVirtualProjectionMountPlan !== undefined;
+    if (hasAuthorizedProjectionPlan || hashMismatch) {
+      // Attempt cleanup removes staged projection directories. A hot container
+      // retains its old bind inode even when the next plan hashes identically,
+      // so every projection-bearing run must recreate before it can read bytes.
+      if (hasAuthorizedProjectionPlan) {
         await execContainer(engine, ["rm", "-f", containerName], { allowFailure: true });
         hasContainer = false;
         running = false;
+      } else {
+        const hasProjection = await hasAuthorizedMemoryProjection(engine, containerName);
+        // An unprojected run must also remove an older projection mount rather
+        // than reusing its staged bytes as a normal hot workspace container.
+        if (hasProjection) {
+          await execContainer(engine, ["rm", "-f", containerName], { allowFailure: true });
+          hasContainer = false;
+          running = false;
+        } else {
+          const lastUsedAtMs = registryEntry?.lastUsedAtMs;
+          const isHot =
+            running &&
+            (typeof lastUsedAtMs !== "number" || now - lastUsedAtMs < HOT_CONTAINER_WINDOW_MS);
+          if (isHot) {
+            handleHotSandboxConfigMismatch({
+              containerName,
+              scope: params.cfg.scope,
+              sessionKey: params.scopeKey,
+              requireCurrentConfig: params.requireCurrentConfig,
+            });
+          } else {
+            await execContainer(engine, ["rm", "-f", containerName], { allowFailure: true });
+            hasContainer = false;
+            running = false;
+          }
+        }
       }
     }
   }
@@ -682,6 +776,7 @@ async function ensureSandboxContainerLifecycle(
       scopeKey: params.scopeKey,
       configHash: expectedHash,
       readOnlyWorkspaceSkillMounts,
+      authorizedVirtualProjectionMounts,
       podmanRuntimeInfo,
     });
   } else if (!running) {
