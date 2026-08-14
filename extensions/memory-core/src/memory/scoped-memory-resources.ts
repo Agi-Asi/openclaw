@@ -143,6 +143,131 @@ function removeArtifact(pathname: string): void {
   } catch {}
 }
 
+type RevisionPolicyRequirement = Readonly<{
+  policyId: string;
+  expectedRevisionId: string;
+  expectedRevocationEpoch: number;
+}>;
+
+function readRevisionPolicyRequirements(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  revisionId: string;
+}): readonly RevisionPolicyRequirement[] {
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  return Object.freeze(
+    executeSqliteQuerySync(
+      params.database,
+      db
+        .selectFrom("memory_revision_policy_requirements")
+        .select(["policy_id", "expected_revision_id", "expected_revocation_epoch"])
+        .where("revision_id", "=", params.revisionId)
+        .orderBy("policy_id"),
+    ).rows.map((row) =>
+      Object.freeze({
+        policyId: row.policy_id,
+        expectedRevisionId: row.expected_revision_id,
+        expectedRevocationEpoch: row.expected_revocation_epoch,
+      }),
+    ),
+  );
+}
+
+/** Requirements and parent revisions are checked for every future exposure, not only at write time. */
+function isRevisionLineageCurrent(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  revisionId: string;
+  visited: Set<string>;
+}): boolean {
+  if (params.visited.has(params.revisionId)) {
+    return false;
+  }
+  params.visited.add(params.revisionId);
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  const requirements = readRevisionPolicyRequirements(params);
+  if (requirements.length === 0) {
+    return false;
+  }
+  for (const requirement of requirements) {
+    const current = executeSqliteQueryTakeFirstSync(
+      params.database,
+      db
+        .selectFrom("memory_policies as policy")
+        .innerJoin(
+          "memory_policy_revisions as revision",
+          "revision.revision_id",
+          "policy.current_revision_id",
+        )
+        .select([
+          "policy.current_revision_id",
+          "policy.revocation_epoch",
+          "policy.lifecycle_state as policy_lifecycle_state",
+          "revision.lifecycle_state as revision_lifecycle_state",
+        ])
+        .where("policy.policy_id", "=", requirement.policyId),
+    );
+    if (
+      !current ||
+      current.policy_lifecycle_state !== "active" ||
+      current.revision_lifecycle_state !== "active" ||
+      current.current_revision_id !== requirement.expectedRevisionId ||
+      current.revocation_epoch !== requirement.expectedRevocationEpoch
+    ) {
+      return false;
+    }
+  }
+  const parents = executeSqliteQuerySync(
+    params.database,
+    db
+      .selectFrom("memory_lineage_edges")
+      .select(["parent_kind", "parent_id"])
+      .where("child_revision_id", "=", params.revisionId)
+      .orderBy("parent_kind")
+      .orderBy("parent_id"),
+  ).rows;
+  for (const parent of parents) {
+    if (parent.parent_kind === "transcript-policy-set") {
+      // Transcript sources materialize their stable policy requirements and every exposed resource
+      // parent on the child revision. Those checks above and below are the durable invalidation path.
+      continue;
+    }
+    // Other Phase 2C producers add their own immutable parent types. A resource parent is already
+    // selectable today, so it must recurse rather than merely checking its direct lifecycle row.
+    if (parent.parent_kind !== "resource-revision") {
+      return false;
+    }
+    const revision = executeSqliteQueryTakeFirstSync(
+      params.database,
+      db
+        .selectFrom("memory_resource_revisions")
+        .select("lifecycle_state")
+        .where("revision_id", "=", parent.parent_id),
+    );
+    if (
+      revision?.lifecycle_state !== "active" ||
+      !isRevisionLineageCurrent({
+        database: params.database,
+        revisionId: parent.parent_id,
+        visited: params.visited,
+      })
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Recovery paths use the same recursive check as normal reads before activating a pending revision. */
+export function isBuiltinScopedMemoryRevisionLineageCurrent(params: {
+  agentId: string;
+  revisionId: string;
+}): boolean {
+  const agentId = normalizeAgentId(params.agentId);
+  const revisionId = normalizeScopedMemoryRequiredText(params.revisionId, "revisionId");
+  return withScopedMemoryDatabase(agentId, (database) =>
+    isRevisionLineageCurrent({ database, revisionId, visited: new Set() }),
+  );
+}
+
 /**
  * Resolve a revision only while its immutable catalog evidence is current.
  * The Phase 1C runtime supplies the authorized store view; this foundation
@@ -220,6 +345,7 @@ export function readBuiltinScopedMemoryRevisionSnapshot(params: {
       revision.current_policy_revocation_epoch !== revision.revocation_epoch ||
       revision.source_policy_set_id !==
         createScopedMemorySourcePolicySetId(revision.current_revision_id) ||
+      !isRevisionLineageCurrent({ database, revisionId, visited: new Set() }) ||
       (revision.expires_at !== null && revision.expires_at <= nowMs)
     ) {
       return undefined;
@@ -324,6 +450,7 @@ function createRevision(params: {
             )
             .select([
               "resource.resource_id",
+              "policy.policy_id",
               "policy.current_revision_id",
               "policy.revocation_epoch",
               "policy_revision.revision_number",
@@ -377,6 +504,17 @@ function createRevision(params: {
             created_at: params.nowMs,
             activated_at: params.lifecycleState === "active" ? params.nowMs : null,
             retired_at: null,
+          }),
+        );
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_revision_policy_requirements").values({
+            revision_id: revisionId,
+            policy_id: current.policy_id,
+            expected_revision_id: current.current_revision_id,
+            expected_revocation_epoch: current.revocation_epoch,
+            requirement_kind: "output-policy",
+            created_at: params.nowMs,
           }),
         );
         const chunks = chunkScopedMemoryMarkdown(content);

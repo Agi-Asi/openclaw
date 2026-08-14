@@ -5,9 +5,12 @@ import type {
   AudienceRef,
   AuthorizedMemoryMutation,
   AuthorizedMemoryPlan,
+  AuthorizedTranscriptDerivationSource,
   AuthorizedMemoryReadParams,
   AuthorizedMemoryResultEnvelope,
   AuthorizedMemoryRuntime,
+  AuthorizedSealedCompactionArtifact,
+  AuthorizedSealedCompactionStageParams,
   AuthorizedMemorySearchParams,
   AuthorizedMemorySearchResult,
   AuthorizedMemoryStatus,
@@ -38,6 +41,7 @@ import {
 } from "./scoped-memory-db.js";
 import { evaluateBuiltinScopedMemoryPolicy } from "./scoped-memory-policy.js";
 import {
+  isBuiltinScopedMemoryRevisionLineageCurrent,
   readBuiltinScopedMemoryRevisionSnapshot,
   resolveBuiltinScopedMemoryArtifactPath,
 } from "./scoped-memory-resources.js";
@@ -234,6 +238,8 @@ function createPlan(context: MemoryAccessContext): PlanState {
           capabilities: Object.freeze(
             context.operation === "read"
               ? (["retrieve", "read"] as const)
+              : context.operation === "derive"
+                ? (["retrieve", "read", "derive"] as const)
               : ([context.operation] as const),
           ),
           audienceRevision: store.audienceRevision,
@@ -530,6 +536,27 @@ type MutableScopedRevision = Readonly<{
   contentBytes: number;
 }>;
 
+type DerivationSource = Readonly<{
+  revisionId: string;
+  policyRevisionId: string;
+  audience: AudienceRef;
+  policyRequirements: readonly Readonly<{
+    policyId: string;
+    expectedRevisionId: string;
+    expectedRevocationEpoch: number;
+  }>[];
+}>;
+
+type TranscriptDerivationSource = Readonly<{
+  sourcePolicySetId: string;
+  sourceRevisionIds: readonly string[];
+  policyRequirements: readonly Readonly<{
+    policyId: string;
+    expectedRevisionId: string;
+    expectedRevocationEpoch: number;
+  }>[];
+}>;
+
 function contentHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -671,11 +698,22 @@ function defaultAudience(context: MemoryAccessContext): AudienceRef | undefined 
   }
 }
 
+function sameAudience(left: AudienceRef, right: AudienceRef): boolean {
+  return left.kind === right.kind && left.id === right.id;
+}
+
 function selectWriteStore(params: {
   database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
   agentId: string;
   state: PlanState;
-}): { storeId: string; pathKey: string; policyRevisionId: string; policyRevocationEpoch: number } {
+}): {
+  storeId: string;
+  pathKey: string;
+  policyId: string;
+  policyRevisionId: string;
+  policyRevocationEpoch: number;
+  audience: AudienceRef;
+} {
   const audience = defaultAudience(params.state.context);
   if (!audience) {
     throw new Error("authorized memory mutation is unavailable");
@@ -689,7 +727,10 @@ function selectWriteStore(params: {
       .innerJoin("memory_policies as policy", "policy.policy_id", "store.policy_id")
       .select([
         "store.store_id",
+        "store.audience_kind",
+        "store.audience_id",
         "root.path_key",
+        "policy.policy_id",
         "policy.current_revision_id",
         "policy.revocation_epoch",
       ])
@@ -708,9 +749,270 @@ function selectWriteStore(params: {
   return {
     storeId: row.store_id,
     pathKey: row.path_key,
+    policyId: row.policy_id,
     policyRevisionId: row.current_revision_id,
     policyRevocationEpoch: row.revocation_epoch,
+    audience: { kind: row.audience_kind, id: row.audience_id },
   };
+}
+
+/** A derive mutation can only retain exact same-audience sources; mixed sets are denied, not widened. */
+function resolveDerivationSources(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  agentId: string;
+  state: PlanState;
+  targetAudience: AudienceRef;
+  sourceHandles: readonly AuthorizedResourceHandle[];
+  sourcePolicySetId: string;
+}): readonly DerivationSource[] {
+  if (params.sourceHandles.length === 0 || !params.sourcePolicySetId.trim()) {
+    throw new Error("authorized memory derivation is unavailable");
+  }
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  const sources: DerivationSource[] = [];
+  for (const handle of params.sourceHandles) {
+    const stored = params.state.handles.get(handle.handleId);
+    if (
+      !stored ||
+      stored.planId !== params.state.plan.planId ||
+      stored.contextFingerprint !== params.state.contextFingerprint ||
+      stored.resourceRevision !== handle.resourceRevision ||
+      stored.policyRevision !== handle.policyRevision ||
+      stored.expiresAt !== handle.expiresAt
+    ) {
+      throw new Error("authorized memory derivation is unavailable");
+    }
+    const snapshot = readBuiltinScopedMemoryRevisionSnapshot({
+      agentId: params.agentId,
+      storeIds: params.state.stores.map((store) => store.storeId),
+      revisionId: stored.resourceRevision,
+    });
+    if (!snapshot || snapshot.policyRevisionId !== stored.policyRevision) {
+      throw new Error("authorized memory derivation is unavailable");
+    }
+    const source = executeSqliteQueryTakeFirstSync(
+      params.database,
+      db
+        .selectFrom("memory_resource_revisions as revision")
+        .innerJoin("memory_resources as resource", "resource.resource_id", "revision.resource_id")
+        .innerJoin("memory_stores as store", "store.store_id", "resource.store_id")
+        .select(["store.audience_kind", "store.audience_id"])
+        .where("revision.revision_id", "=", stored.resourceRevision)
+        .where("resource.agent_id", "=", params.agentId),
+    );
+    const audience = source && { kind: source.audience_kind, id: source.audience_id };
+    if (!audience || !sameAudience(audience, params.targetAudience)) {
+      throw new Error("authorized memory derivation has no representable audience");
+    }
+    const policyRequirements = executeSqliteQuerySync(
+      params.database,
+      db
+        .selectFrom("memory_revision_policy_requirements")
+        .select(["policy_id", "expected_revision_id", "expected_revocation_epoch"])
+        .where("revision_id", "=", stored.resourceRevision)
+        .orderBy("policy_id"),
+    ).rows.map((requirement) =>
+      Object.freeze({
+        policyId: requirement.policy_id,
+        expectedRevisionId: requirement.expected_revision_id,
+        expectedRevocationEpoch: requirement.expected_revocation_epoch,
+      }),
+    );
+    if (policyRequirements.length === 0) {
+      throw new Error("authorized memory derivation is unavailable");
+    }
+    sources.push(
+      Object.freeze({
+        revisionId: stored.resourceRevision,
+        policyRevisionId: snapshot.policyRevisionId,
+        audience,
+        policyRequirements: Object.freeze(policyRequirements),
+      }),
+    );
+  }
+  if (new Set(sources.map((source) => source.revisionId)).size !== sources.length) {
+    throw new Error("authorized memory derivation is unavailable");
+  }
+  const expectedPolicySetId = `mpset1_${hash(
+    sources.map((source) => `mps1_${source.policyRevisionId}`).toSorted(),
+  )}`;
+  if (params.sourcePolicySetId !== expectedPolicySetId) {
+    throw new Error("authorized memory derivation is unavailable");
+  }
+  return Object.freeze(sources);
+}
+
+/** Transcript companions are an immutable source set, not a mutable session-path permission. */
+function resolveTranscriptDerivationSource(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  source: AuthorizedTranscriptDerivationSource;
+  sourcePolicySetId: string;
+  targetAudience: AudienceRef;
+}): TranscriptDerivationSource {
+  const source = params.source;
+  if (
+    !source ||
+    source.kind !== "transcript" ||
+    source.sourcePolicySetId !== params.sourcePolicySetId ||
+    !source.sessionId.trim() ||
+    source.eventSeqs.length === 0
+  ) {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  const eventSeqs = [...source.eventSeqs];
+  if (
+    eventSeqs.some((eventSeq) => !Number.isSafeInteger(eventSeq) || eventSeq < 0) ||
+    new Set(eventSeqs).size !== eventSeqs.length ||
+    eventSeqs.some((eventSeq, index) => index > 0 && eventSeqs[index - 1]! >= eventSeq)
+  ) {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  let audiences: unknown;
+  try {
+    audiences = JSON.parse(source.deliveryAudiencesJson);
+  } catch {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  if (
+    !Array.isArray(audiences) ||
+    audiences.length !== 1 ||
+    typeof audiences[0] !== "object" ||
+    audiences[0] === null ||
+    (audiences[0] as AudienceRef).kind !== params.targetAudience.kind ||
+    (audiences[0] as AudienceRef).id !== params.targetAudience.id
+  ) {
+    throw new Error("authorized memory derivation has no representable audience");
+  }
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  const subject = executeSqliteQueryTakeFirstSync(
+    params.database,
+    db
+      .selectFrom("session_memory_subject_snapshots")
+      .select(["session_identity_revision", "subject_revision"])
+      .where("session_id", "=", source.sessionId)
+      .limit(1),
+  );
+  if (!subject) {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  const events = executeSqliteQuerySync(
+    params.database,
+    db
+      .selectFrom("transcript_events as event")
+      .innerJoin("transcript_event_memory_policies as policy", (join) =>
+        join
+          .onRef("policy.session_id", "=", "event.session_id")
+          .onRef("policy.event_seq", "=", "event.seq"),
+      )
+      .innerJoin("transcript_event_memory_policy_details as detail", (join) =>
+        join
+          .onRef("detail.session_id", "=", "policy.session_id")
+          .onRef("detail.event_seq", "=", "policy.event_seq"),
+      )
+      .select([
+        "event.seq",
+        "policy.delivery_audiences_json",
+        "policy.run_exposure_set_id",
+        "policy.session_identity_revision",
+        "policy.subject_revision",
+      ])
+      .where("event.session_id", "=", source.sessionId)
+      .where("event.seq", "in", eventSeqs)
+      .where("policy.authorization_status", "=", "authorized")
+      .where("policy.source_policy_set_id", "=", source.sourcePolicySetId)
+      .where("policy.delivery_audiences_json", "=", source.deliveryAudiencesJson)
+      .where("detail.retention_state", "=", "retained")
+      .where("detail.normalized_audience_intersection_json", "=", source.deliveryAudiencesJson)
+      .where("detail.finalized_delivery_audiences_json", "=", source.deliveryAudiencesJson)
+      .orderBy("event.seq"),
+  ).rows;
+  if (
+    events.length !== eventSeqs.length ||
+    events.some(
+      (event, index) =>
+        event.seq !== eventSeqs[index] ||
+        event.run_exposure_set_id === null ||
+        event.session_identity_revision !== subject.session_identity_revision ||
+        event.subject_revision !== subject.subject_revision,
+    )
+  ) {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  const requirements = executeSqliteQuerySync(
+    params.database,
+    db
+      .selectFrom("memory_policy_set_members")
+      .select(["policy_id", "expected_revision_id", "expected_revocation_epoch", "retention_state"])
+      .where("policy_set_id", "=", source.sourcePolicySetId)
+      .orderBy("policy_id"),
+  ).rows;
+  if (requirements.length === 0 || requirements.some((requirement) => requirement.retention_state !== "retained")) {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  for (const requirement of requirements) {
+    const current = executeSqliteQueryTakeFirstSync(
+      params.database,
+      db
+        .selectFrom("memory_policies as policy")
+        .innerJoin(
+          "memory_policy_revisions as revision",
+          "revision.revision_id",
+          "policy.current_revision_id",
+        )
+        .select(["policy.lifecycle_state", "policy.revocation_epoch", "revision.lifecycle_state as revision_state"])
+        .where("policy.policy_id", "=", requirement.policy_id)
+        .where("policy.current_revision_id", "=", requirement.expected_revision_id)
+        .where("policy.revocation_epoch", "=", requirement.expected_revocation_epoch)
+        .limit(1),
+    );
+    if (current?.lifecycle_state !== "active" || current.revision_state !== "active") {
+      throw new Error("authorized transcript derivation is unavailable");
+    }
+  }
+  const exposureSetIds = [...new Set(events.map((event) => event.run_exposure_set_id!))];
+  const exposures = executeSqliteQuerySync(
+    params.database,
+    db
+      .selectFrom("memory_run_exposure_resources as exposure")
+      .innerJoin(
+        "memory_resource_revisions as revision",
+        "revision.revision_id",
+        "exposure.resource_revision_id",
+      )
+      .select([
+        "exposure.exposure_set_id",
+        "exposure.resource_revision_id",
+        "revision.expires_at",
+        "revision.lifecycle_state",
+      ])
+      .where("exposure.exposure_set_id", "in", exposureSetIds),
+  ).rows;
+  const nowMs = Date.now();
+  if (
+    exposureSetIds.some((exposureSetId) => !exposures.some((row) => row.exposure_set_id === exposureSetId)) ||
+    exposures.some(
+      (exposure) =>
+        exposure.lifecycle_state !== "active" ||
+        (exposure.expires_at !== null && exposure.expires_at <= nowMs),
+    )
+  ) {
+    throw new Error("authorized transcript derivation is unavailable");
+  }
+  return Object.freeze({
+    sourcePolicySetId: source.sourcePolicySetId,
+    sourceRevisionIds: Object.freeze(
+      [...new Set(exposures.map((exposure) => exposure.resource_revision_id))].toSorted(),
+    ),
+    policyRequirements: Object.freeze(
+      requirements.map((requirement) =>
+        Object.freeze({
+          policyId: requirement.policy_id,
+          expectedRevisionId: requirement.expected_revision_id,
+          expectedRevocationEpoch: requirement.expected_revocation_epoch,
+        }),
+      ),
+    ),
+  });
 }
 
 function resolveWriteTarget(params: {
@@ -1005,6 +1307,9 @@ function recoverPendingWrites(agentId: string): void {
         });
         continue;
       }
+      // The recovery transaction closes over this value. Keep the validated
+      // revision immutable so it cannot become an absent intent reference.
+      const revisionId = intent.pending_revision_id;
       const directory = path.join(resolveScopedMemoryArtifactBase(databasePath), intent.path_key);
       const known = knownByDirectory.get(directory) ?? new Set<string>();
       known.add(intent.final_locator);
@@ -1052,7 +1357,7 @@ function recoverPendingWrites(agentId: string): void {
         quarantineWriteIntent({
           database,
           intentId: intent.intent_id,
-          revisionId: intent.pending_revision_id,
+          revisionId,
           nowMs: Date.now(),
           reasonCode: "recovery-artifact-mismatch",
         });
@@ -1083,7 +1388,7 @@ function recoverPendingWrites(agentId: string): void {
                 "policy.current_revision_id",
                 "policy.revocation_epoch",
               ])
-              .where("revision.revision_id", "=", intent.pending_revision_id)
+              .where("revision.revision_id", "=", revisionId)
               .where("resource.agent_id", "=", agentId)
               .where("store.lifecycle_state", "=", "active")
               .where("policy.lifecycle_state", "=", "active"),
@@ -1091,7 +1396,11 @@ function recoverPendingWrites(agentId: string): void {
           if (
             !revision ||
             revision.policy_revision_id !== revision.current_revision_id ||
-            revision.policy_revocation_epoch !== revision.revocation_epoch
+            revision.policy_revocation_epoch !== revision.revocation_epoch ||
+            !isBuiltinScopedMemoryRevisionLineageCurrent({
+              agentId,
+              revisionId,
+            })
           ) {
             policyChanged = true;
             requireExactlyOneAffected(
@@ -1100,7 +1409,7 @@ function recoverPendingWrites(agentId: string): void {
                 db
                   .updateTable("memory_resource_revisions")
                   .set({ lifecycle_state: "quarantined", retired_at: Date.now() })
-                  .where("revision_id", "=", intent.pending_revision_id)
+                  .where("revision_id", "=", revisionId)
                   .where("lifecycle_state", "=", "pending"),
               ),
               "recovery policy quarantine revision",
@@ -1136,7 +1445,7 @@ function recoverPendingWrites(agentId: string): void {
               db
                 .updateTable("memory_resource_revisions")
                 .set({ lifecycle_state: "active", activated_at: Date.now() })
-                .where("revision_id", "=", intent.pending_revision_id)
+                .where("revision_id", "=", revisionId)
                 .where("lifecycle_state", "=", "pending"),
             ),
             "recovery activation revision",
@@ -1174,7 +1483,7 @@ function recoverPendingWrites(agentId: string): void {
         indexRecoveredRevision({
           database,
           intentId: intent.intent_id,
-          revisionId: intent.pending_revision_id,
+          revisionId,
           content,
           nowMs: Date.now(),
         });
@@ -1233,6 +1542,30 @@ async function writeAuthorizedMutation(params: {
   const result = withScopedMemoryDatabase(agentId, (database, databasePath) => {
     const store = selectWriteStore({ database, agentId, state });
     const db = getNodeSqliteKysely<ScopedMemoryDatabase>(database);
+    const derivationSources =
+      params.mutation.kind === "derive" && "sourceHandles" in params.mutation
+        ? resolveDerivationSources({
+            database,
+            agentId,
+            state,
+            targetAudience: store.audience,
+            sourceHandles: params.mutation.sourceHandles,
+            sourcePolicySetId: params.mutation.sourcePolicySetId,
+          })
+        : [];
+    const transcriptDerivationSource =
+      params.mutation.kind === "derive" && "transcriptSource" in params.mutation
+        ? resolveTranscriptDerivationSource({
+            database,
+            source: params.mutation.transcriptSource,
+            sourcePolicySetId: params.mutation.sourcePolicySetId,
+            targetAudience: store.audience,
+          })
+        : undefined;
+    const transcriptDerivationPurpose =
+      params.mutation.kind === "derive" && "transcriptSource" in params.mutation
+        ? params.mutation.derivationPurpose
+        : undefined;
     const existing =
       "target" in params.mutation
         ? resolveWriteTarget({
@@ -1505,6 +1838,90 @@ async function writeAuthorizedMutation(params: {
         );
         executeSqliteQuerySync(
           database,
+          db
+            .insertInto("memory_revision_policy_requirements")
+            .values({
+              revision_id: revisionId,
+              policy_id: store.policyId,
+              expected_revision_id: store.policyRevisionId,
+              expected_revocation_epoch: store.policyRevocationEpoch,
+              requirement_kind: "output-policy",
+              created_at: nowMs,
+            }),
+        );
+        for (const source of derivationSources) {
+          for (const requirement of source.policyRequirements) {
+            executeSqliteQuerySync(
+              database,
+              db
+                .insertInto("memory_revision_policy_requirements")
+                .values({
+                  revision_id: revisionId,
+                  policy_id: requirement.policyId,
+                  expected_revision_id: requirement.expectedRevisionId,
+                  expected_revocation_epoch: requirement.expectedRevocationEpoch,
+                  requirement_kind: "source-policy",
+                  created_at: nowMs,
+                })
+                .onConflict((conflict) => conflict.columns(["revision_id", "policy_id"]).doNothing()),
+            );
+          }
+          executeSqliteQuerySync(
+            database,
+            db.insertInto("memory_lineage_edges").values({
+              child_revision_id: revisionId,
+              parent_kind: "resource-revision",
+              parent_id: source.revisionId,
+              relation_kind: "derived-from",
+              created_at: nowMs,
+            }),
+          );
+        }
+        if (transcriptDerivationSource && transcriptDerivationPurpose) {
+          for (const requirement of transcriptDerivationSource.policyRequirements) {
+            executeSqliteQuerySync(
+              database,
+              db
+                .insertInto("memory_revision_policy_requirements")
+                .values({
+                  revision_id: revisionId,
+                  policy_id: requirement.policyId,
+                  expected_revision_id: requirement.expectedRevisionId,
+                  expected_revocation_epoch: requirement.expectedRevocationEpoch,
+                  requirement_kind: "source-policy",
+                  created_at: nowMs,
+                })
+                .onConflict((conflict) => conflict.columns(["revision_id", "policy_id"]).doNothing()),
+            );
+          }
+          for (const sourceRevisionId of transcriptDerivationSource.sourceRevisionIds) {
+            executeSqliteQuerySync(
+              database,
+              db.insertInto("memory_lineage_edges").values({
+                child_revision_id: revisionId,
+                parent_kind: "resource-revision",
+                parent_id: sourceRevisionId,
+                relation_kind: "derived-from",
+                created_at: nowMs,
+              }),
+            );
+          }
+          executeSqliteQuerySync(
+            database,
+            db.insertInto("memory_lineage_edges").values({
+              child_revision_id: revisionId,
+              parent_kind: "transcript-policy-set",
+              parent_id: transcriptDerivationSource.sourcePolicySetId,
+              relation_kind:
+                transcriptDerivationPurpose === "compaction"
+                  ? "compacted-from"
+                  : "flushed-from",
+              created_at: nowMs,
+            }),
+          );
+        }
+        executeSqliteQuerySync(
+          database,
           db.insertInto("memory_write_intents").values({
             intent_id: intentId,
             idempotency_key: params.mutation.idempotencyKey,
@@ -1576,6 +1993,29 @@ async function writeAuthorizedMutation(params: {
         currentStore.policyRevocationEpoch !== store.policyRevocationEpoch
       ) {
         throw new Error("authorized memory mutation is unavailable");
+      }
+      if (params.mutation.kind === "derive") {
+        // The model work and artifact rename already happened; this final synchronous reread is
+        // the authority boundary that prevents a revoke or parent tombstone from activating it.
+        if ("sourceHandles" in params.mutation) {
+          resolveDerivationSources({
+            database,
+            agentId,
+            state,
+            targetAudience: currentStore.audience,
+            sourceHandles: params.mutation.sourceHandles,
+            sourcePolicySetId: params.mutation.sourcePolicySetId,
+          });
+        } else if ("transcriptSource" in params.mutation) {
+          resolveTranscriptDerivationSource({
+            database,
+            source: params.mutation.transcriptSource,
+            sourcePolicySetId: params.mutation.sourcePolicySetId,
+            targetAudience: currentStore.audience,
+          });
+        } else {
+          throw new Error("authorized memory derivation is unavailable");
+        }
       }
       if (existing) {
         executeSqliteQuerySync(
@@ -1669,6 +2109,263 @@ async function writeAuthorizedMutation(params: {
   return result;
 }
 
+/**
+ * Files are finalized before the core transaction starts. A crash before commit
+ * leaves only an uncatalogued artifact, which recovery quarantines; a committed
+ * revision never needs a filesystem operation to become readable.
+ */
+async function stageSealedCompaction(
+  params: AuthorizedSealedCompactionStageParams,
+): Promise<AuthorizedSealedCompactionArtifact> {
+  if (!params.content.trim()) {
+    throw new Error("sealed compaction content is unavailable");
+  }
+  const state = readPlan({ context: params.context, plan: params.plan });
+  if (!state || state.expiresAtMs <= Date.now()) {
+    throw new Error("sealed compaction authorization is unavailable");
+  }
+  const agentId = params.context.agentId;
+  return withScopedMemoryDatabase(agentId, (database, databasePath) => {
+    const store = selectWriteStore({ database, agentId, state });
+    const source = resolveTranscriptDerivationSource({
+      database,
+      source: params.transcriptSource,
+      sourcePolicySetId: params.transcriptSource.sourcePolicySetId,
+      targetAudience: store.audience,
+    });
+    const revisionId = randomUUID();
+    const resourceId = randomUUID();
+    const intentId = randomUUID();
+    const finalLocator = `r1_${revisionId}.md`;
+    const stageLocator = `scst1_${intentId}.tmp`;
+    const directory = path.join(resolveScopedMemoryArtifactBase(databasePath), store.pathKey);
+    const finalPath = resolveBuiltinScopedMemoryArtifactPath({
+      databasePath,
+      pathKey: store.pathKey,
+      artifactLocator: finalLocator,
+    });
+    const stagePath = path.join(directory, stageLocator);
+    const hash = contentHash(params.content);
+    const bytes = Buffer.byteLength(params.content);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const descriptor = fs.openSync(stagePath, "wx", 0o600);
+    try {
+      fs.writeFileSync(descriptor, params.content, "utf8");
+      fs.fchmodSync(descriptor, 0o600);
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    syncDirectory(directory);
+    fs.renameSync(stagePath, finalPath);
+    syncDirectory(directory);
+    const verified = readVerifiedFile({
+      pathname: finalPath,
+      contentHash: hash,
+      contentBytes: bytes,
+    });
+    if (verified === undefined) {
+      throw new Error("sealed compaction artifact is unavailable");
+    }
+    return Object.freeze({
+      resourceRevisionId: revisionId,
+      commitInTransaction({ database: transactionDatabase, compactionPolicyId, eventSeq }) {
+        if (state.expiresAtMs <= Date.now()) {
+          throw new Error("sealed compaction authorization is unavailable");
+        }
+        const currentStore = selectWriteStore({
+          database: transactionDatabase,
+          agentId,
+          state,
+        });
+        if (
+          currentStore.storeId !== store.storeId ||
+          currentStore.policyRevisionId !== store.policyRevisionId ||
+          currentStore.policyRevocationEpoch !== store.policyRevocationEpoch
+        ) {
+          throw new Error("sealed compaction authorization is unavailable");
+        }
+        const currentSource = resolveTranscriptDerivationSource({
+          database: transactionDatabase,
+          source: params.transcriptSource,
+          sourcePolicySetId: params.transcriptSource.sourcePolicySetId,
+          targetAudience: currentStore.audience,
+        });
+        if (
+          currentSource.sourcePolicySetId !== source.sourcePolicySetId ||
+          currentSource.sourceRevisionIds.length !== source.sourceRevisionIds.length ||
+          currentSource.sourceRevisionIds.some(
+            (revision, index) => revision !== source.sourceRevisionIds[index],
+          )
+        ) {
+          throw new Error("sealed compaction source is unavailable");
+        }
+        const db = getNodeSqliteKysely<ScopedMemoryDatabase>(transactionDatabase);
+        const nowMs = Date.now();
+        executeSqliteQuerySync(
+          transactionDatabase,
+          db.insertInto("memory_resources").values({
+            resource_id: resourceId,
+            agent_id: agentId,
+            store_id: store.storeId,
+            logical_locator: `memory/${revisionId}.md`,
+            source: "memory",
+            created_at: nowMs,
+          }),
+        );
+        executeSqliteQuerySync(
+          transactionDatabase,
+          db.insertInto("memory_resource_revisions").values({
+            revision_id: revisionId,
+            resource_id: resourceId,
+            revision_number: 1,
+            artifact_locator: finalLocator,
+            content_hash: hash,
+            content_bytes: bytes,
+            policy_revision_id: store.policyRevisionId,
+            policy_revocation_epoch: store.policyRevocationEpoch,
+            source_policy_set_id: createScopedMemorySourcePolicySetId(store.policyRevisionId),
+            lifecycle_state: "active",
+            actor_kind:
+              params.context.actor.kind === "principal"
+                ? params.context.actor.actorKind
+                : "unattributed",
+            actor_id:
+              params.context.actor.kind === "principal" ? params.context.actor.principalId : null,
+            expires_at: null,
+            created_at: nowMs,
+            activated_at: nowMs,
+            retired_at: null,
+          }),
+        );
+        executeSqliteQuerySync(
+          transactionDatabase,
+          db.insertInto("memory_revision_policy_requirements").values({
+            revision_id: revisionId,
+            policy_id: store.policyId,
+            expected_revision_id: store.policyRevisionId,
+            expected_revocation_epoch: store.policyRevocationEpoch,
+            requirement_kind: "output-policy",
+            created_at: nowMs,
+          }),
+        );
+        for (const requirement of source.policyRequirements) {
+          executeSqliteQuerySync(
+            transactionDatabase,
+            db
+              .insertInto("memory_revision_policy_requirements")
+              .values({
+                revision_id: revisionId,
+                policy_id: requirement.policyId,
+                expected_revision_id: requirement.expectedRevisionId,
+                expected_revocation_epoch: requirement.expectedRevocationEpoch,
+                requirement_kind: "source-policy",
+                created_at: nowMs,
+              })
+              .onConflict((conflict) =>
+                conflict.columns(["revision_id", "policy_id"]).doNothing(),
+              ),
+          );
+        }
+        const lineage = [
+          ...source.sourceRevisionIds.map((parentId) => ({
+            parent_kind: "resource-revision" as const,
+            parent_id: parentId,
+            relation_kind: "derived-from" as const,
+          })),
+          {
+            parent_kind: "transcript-policy-set" as const,
+            parent_id: source.sourcePolicySetId,
+            relation_kind: "compacted-from" as const,
+          },
+          {
+            parent_kind: "compaction-policy" as const,
+            parent_id: compactionPolicyId,
+            relation_kind: "compacted-from" as const,
+          },
+        ];
+        for (const parent of lineage) {
+          executeSqliteQuerySync(
+            transactionDatabase,
+            db.insertInto("memory_lineage_edges").values({
+              child_revision_id: revisionId,
+              ...parent,
+              created_at: nowMs,
+            }),
+          );
+        }
+        const chunks = chunkContent(verified);
+        if (chunks.length > 0) {
+          executeSqliteQuerySync(
+            transactionDatabase,
+            db.insertInto("memory_scoped_chunks").values(
+              chunks.map((chunk) => ({
+                chunk_id: randomUUID(),
+                revision_id: revisionId,
+                chunk_ordinal: chunk.ordinal,
+                start_line: chunk.startLine,
+                end_line: chunk.endLine,
+                text: chunk.text,
+                content_hash: contentHash(chunk.text),
+                model: "builtin-markdown-v1",
+                updated_at: nowMs,
+              })),
+            ),
+          );
+        }
+        executeSqliteQuerySync(
+          transactionDatabase,
+          db.insertInto("memory_write_intents").values({
+            intent_id: intentId,
+            idempotency_key: `sealed-compaction:${compactionPolicyId}`,
+            mutation_id: compactionPolicyId,
+            agent_id: agentId,
+            request_id: params.context.requestId,
+            run_id: params.context.runId,
+            context_fingerprint: params.context.contextFingerprint,
+            plan_id: params.plan.planId,
+            mutation_kind: "derive",
+            store_id: store.storeId,
+            resource_id: resourceId,
+            pending_revision_id: revisionId,
+            staged_locator: stageLocator,
+            final_locator: finalLocator,
+            content_hash: hash,
+            content_bytes: bytes,
+            state: "active",
+            created_at: nowMs,
+            updated_at: nowMs,
+            activated_at: nowMs,
+            indexed_at: nowMs,
+          }),
+        );
+        executeSqliteQuerySync(
+          transactionDatabase,
+          db.insertInto("memory_audit_outbox").values({
+            event_id: randomUUID(),
+            intent_id: intentId,
+            agent_id: agentId,
+            request_id: params.context.requestId,
+            run_id: params.context.runId,
+            actor_ref: auditActorRef(params.context),
+            subject_ref: auditSubjectRef(params.context),
+            operation: params.context.operation,
+            resource_revision_id: revisionId,
+            content_hash: hash,
+            decision: "committed",
+            reason_code: `sealed-compaction:${eventSeq}`,
+            state: "pending",
+            attempts: 0,
+            created_at: nowMs,
+            updated_at: nowMs,
+            delivered_at: null,
+          }),
+        );
+      },
+    });
+  });
+}
+
 const builtinScopedMemoryRuntime = {
   async authorize(context: MemoryAccessContext): Promise<AuthorizedMemoryPlan> {
     recoverPendingWrites(context.agentId);
@@ -1679,9 +2376,9 @@ const builtinScopedMemoryRuntime = {
   },
 
   async searchAuthorized(
-    params: AuthorizedMemorySearchParams<"read">,
+    params: AuthorizedMemorySearchParams<"read"> | AuthorizedMemorySearchParams<"derive">,
   ): Promise<AuthorizedMemoryResultEnvelope<readonly AuthorizedMemorySearchResult[]>> {
-    if (params.context.operation !== "read") {
+    if (params.context.operation !== "read" && params.context.operation !== "derive") {
       throw new Error("authorized memory search is unavailable");
     }
     const state = readPlan(params);
@@ -1738,9 +2435,9 @@ const builtinScopedMemoryRuntime = {
   },
 
   async readAuthorized(
-    params: AuthorizedMemoryReadParams<"read">,
+    params: AuthorizedMemoryReadParams<"read"> | AuthorizedMemoryReadParams<"derive">,
   ): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>> {
-    if (params.context.operation !== "read") {
+    if (params.context.operation !== "read" && params.context.operation !== "derive") {
       throw new Error("authorized memory read is unavailable");
     }
     const state = readPlan(params);
@@ -1795,6 +2492,10 @@ const builtinScopedMemoryRuntime = {
       throw new Error("authorized memory reclassification is unavailable");
     }
     return await writeAuthorizedMutation(params);
+  },
+
+  async stageSealedCompaction(params: AuthorizedSealedCompactionStageParams) {
+    return await stageSealedCompaction(params);
   },
 
   async importAuthorized(params: {

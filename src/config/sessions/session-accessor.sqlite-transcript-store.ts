@@ -43,17 +43,42 @@ import { startSessionTranscriptIndexReconcile } from "./session-transcript-recon
 import { createSessionTranscriptHeader } from "./transcript-header.js";
 import { resolveVisibleTranscriptAppendParentId } from "./transcript-visible-events.js";
 
+type TranscriptEventAppendOptions = {
+  allowStoredAlias?: boolean;
+  dedupeByMessageIdempotency?: boolean;
+  onProjectionReconcileNeeded?: () => void;
+  scheduleProjectionReconcile?: boolean;
+  touchMutation?: boolean;
+};
+
+type InternalTranscriptEventAppendOptions = TranscriptEventAppendOptions & {
+  inheritedMemoryPolicy?: PreservedTranscriptMemoryPolicy;
+};
+
 export function appendTranscriptEventInTransaction(
   database: OpenClawAgentDatabase,
   scope: ResolvedTranscriptScope,
   event: TranscriptEvent,
-  options: {
-    allowStoredAlias?: boolean;
-    dedupeByMessageIdempotency?: boolean;
-    onProjectionReconcileNeeded?: () => void;
-    scheduleProjectionReconcile?: boolean;
-    touchMutation?: boolean;
-  } = {},
+  options: TranscriptEventAppendOptions = {},
+): boolean {
+  return appendTranscriptEventInternal(database, scope, event, options);
+}
+
+/** Only sealed compaction may bind a newly appended output to its read source. */
+export function appendSealedCompactionTranscriptEventInTransaction(
+  database: OpenClawAgentDatabase,
+  scope: ResolvedTranscriptScope,
+  event: TranscriptEvent,
+  inheritedMemoryPolicy: PreservedTranscriptMemoryPolicy,
+): boolean {
+  return appendTranscriptEventInternal(database, scope, event, { inheritedMemoryPolicy });
+}
+
+function appendTranscriptEventInternal(
+  database: OpenClawAgentDatabase,
+  scope: ResolvedTranscriptScope,
+  event: TranscriptEvent,
+  options: InternalTranscriptEventAppendOptions = {},
 ): boolean {
   const persistedEvent = canonicalizeTranscriptEventMedia(event);
   const db = getSessionKysely(database.db);
@@ -93,6 +118,7 @@ export function appendTranscriptEventInTransaction(
     sessionKey: scope.sessionKey,
     eventSeq: seq,
     createdAt,
+    ...(options.inheritedMemoryPolicy ? { inherited: options.inheritedMemoryPolicy } : {}),
   });
   if (options.touchMutation !== false) {
     touchTranscriptMutationInTransaction(database, scope.sessionId);

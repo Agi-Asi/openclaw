@@ -131,6 +131,7 @@ export async function loadSubagentSpawnModuleForTest(params: {
   callGatewayMock: MockFn;
   dispatchGatewayMethodInProcessMock?: MockFn;
   hasInProcessGatewayContextMock?: MockFn;
+  isMemoryIsolationCutoverAgent?: (agentId: string) => boolean;
   getRuntimeConfig?: () => Record<string, unknown>;
   loadSessionStoreMock?: MockFn;
   loadPreparedModelCatalogMock?: MockFn;
@@ -220,6 +221,8 @@ export async function loadSubagentSpawnModuleForTest(params: {
     dispatchGatewayMethodInProcess: (...args: unknown[]) =>
       params.dispatchGatewayMethodInProcessMock?.(...args),
     hasInProcessGatewayContext: () => Boolean(params.hasInProcessGatewayContextMock?.()),
+    isMemoryIsolationCutoverAgent: (agentId: string) =>
+      params.isMemoryIsolationCutoverAgent?.(agentId) ?? false,
     buildSubagentSystemPrompt: () => "system-prompt",
     forkSessionEntryFromParent:
       params.forkSessionEntryFromParentMock ??

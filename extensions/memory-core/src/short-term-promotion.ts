@@ -1,5 +1,6 @@
 // Stable public surface for short-term promotion behavior.
 import { expectDefined } from "openclaw/plugin-sdk/expect-runtime";
+import { isPromotionAuthorizedViewBlocked } from "./dreaming-consolidation-candidates.js";
 import { readPhaseSignalStore, readStore } from "./short-term-promotion-store.js";
 import {
   DEFAULT_PROMOTION_MIN_RECALL_COUNT,
@@ -136,6 +137,9 @@ export async function rankShortTermPromotionCandidates(
     if (!includePromoted && entry.promotedAt) {
       continue;
     }
+    if (isPromotionAuthorizedViewBlocked(entry)) {
+      continue;
+    }
     const recallCount = Math.max(0, Math.floor(entry.recallCount ?? 0));
     const dailyCount = Math.max(0, Math.floor(entry.dailyCount ?? 0));
     const groundedCount = Math.max(0, Math.floor(entry.groundedCount ?? 0));
@@ -217,6 +221,7 @@ export async function rankShortTermPromotionCandidates(
         conceptual,
       },
       provenance: entry.provenance,
+      authorizedView: entry.authorizedView,
     });
   }
 

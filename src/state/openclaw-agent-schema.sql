@@ -790,6 +790,63 @@ BEGIN
   SELECT RAISE(ABORT, 'tombstoned memory resource revisions cannot be reactivated');
 END;
 
+-- A derived revision records every stable policy that must still be current before it can be
+-- exposed. Missing requirements are a durable deny, never a reason to infer access from content.
+CREATE TABLE IF NOT EXISTS memory_revision_policy_requirements (
+  revision_id TEXT NOT NULL,
+  policy_id TEXT NOT NULL,
+  expected_revision_id TEXT NOT NULL,
+  expected_revocation_epoch INTEGER NOT NULL CHECK (expected_revocation_epoch >= 0),
+  requirement_kind TEXT NOT NULL CHECK (requirement_kind IN ('output-policy', 'source-policy')),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (revision_id, policy_id),
+  FOREIGN KEY (revision_id) REFERENCES memory_resource_revisions(revision_id) ON DELETE RESTRICT,
+  FOREIGN KEY (policy_id) REFERENCES memory_policies(policy_id) ON DELETE RESTRICT,
+  FOREIGN KEY (expected_revision_id) REFERENCES memory_policy_revisions(revision_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_memory_revision_policy_requirements_policy
+  ON memory_revision_policy_requirements(policy_id, expected_revision_id, expected_revocation_epoch);
+
+CREATE TRIGGER IF NOT EXISTS memory_revision_policy_requirements_no_update
+BEFORE UPDATE ON memory_revision_policy_requirements
+BEGIN
+  SELECT RAISE(ABORT, 'memory revision policy requirements are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_revision_policy_requirements_no_delete
+BEFORE DELETE ON memory_revision_policy_requirements
+BEGIN
+  SELECT RAISE(ABORT, 'memory revision policy requirements cannot be deleted');
+END;
+
+-- Parent revisions are immutable derivation facts. Readers traverse resource parents rather than
+-- maintaining a mutable descendant cache, so an ancestor tombstone takes effect immediately.
+CREATE TABLE IF NOT EXISTS memory_lineage_edges (
+  child_revision_id TEXT NOT NULL,
+  parent_kind TEXT NOT NULL CHECK (parent_kind IN ('resource-revision', 'transcript-policy-set', 'compaction-policy', 'checkpoint', 'export', 'child-artifact')),
+  parent_id TEXT NOT NULL,
+  relation_kind TEXT NOT NULL CHECK (relation_kind IN ('derived-from', 'compacted-from', 'flushed-from', 'dreamed-from', 'promoted-from', 'exported-from', 'child-produced')),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (child_revision_id, parent_kind, parent_id, relation_kind),
+  FOREIGN KEY (child_revision_id) REFERENCES memory_resource_revisions(revision_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_memory_lineage_edges_parent
+  ON memory_lineage_edges(parent_kind, parent_id, child_revision_id);
+
+CREATE TRIGGER IF NOT EXISTS memory_lineage_edges_no_update
+BEFORE UPDATE ON memory_lineage_edges
+BEGIN
+  SELECT RAISE(ABORT, 'memory lineage edges are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_lineage_edges_no_delete
+BEFORE DELETE ON memory_lineage_edges
+BEGIN
+  SELECT RAISE(ABORT, 'memory lineage edges cannot be deleted');
+END;
+
 CREATE TABLE IF NOT EXISTS memory_resource_subjects (
   revision_id TEXT NOT NULL,
   subject_kind TEXT NOT NULL CHECK (subject_kind IN ('person', 'project', 'conversation', 'topic')),
@@ -1266,6 +1323,36 @@ CREATE TRIGGER IF NOT EXISTS memory_compaction_policies_no_delete
 BEFORE DELETE ON memory_compaction_policies
 BEGIN
   SELECT RAISE(ABORT, 'memory compaction policies cannot be deleted');
+END;
+
+-- A compaction policy names the complete transcript source set, not merely its
+-- common policy set. Transcript rows may later be reset or archived, so this
+-- immutable provenance deliberately has no foreign key to mutable event rows.
+CREATE TABLE IF NOT EXISTS memory_compaction_policy_sources (
+  compaction_policy_id TEXT NOT NULL,
+  source_session_id TEXT NOT NULL,
+  source_event_seq INTEGER NOT NULL CHECK (source_event_seq >= 0),
+  source_policy_set_id TEXT NOT NULL,
+  delivery_audiences_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (compaction_policy_id, source_session_id, source_event_seq),
+  FOREIGN KEY (compaction_policy_id) REFERENCES memory_compaction_policies(compaction_policy_id) ON DELETE RESTRICT,
+  FOREIGN KEY (source_policy_set_id) REFERENCES memory_policy_sets(policy_set_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_memory_compaction_policy_sources_source
+  ON memory_compaction_policy_sources(source_session_id, source_event_seq, compaction_policy_id);
+
+CREATE TRIGGER IF NOT EXISTS memory_compaction_policy_sources_no_update
+BEFORE UPDATE ON memory_compaction_policy_sources
+BEGIN
+  SELECT RAISE(ABORT, 'memory compaction policy sources are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_compaction_policy_sources_no_delete
+BEFORE DELETE ON memory_compaction_policy_sources
+BEGIN
+  SELECT RAISE(ABORT, 'memory compaction policy sources cannot be deleted');
 END;
 
 CREATE TABLE IF NOT EXISTS standing_intents (

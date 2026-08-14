@@ -297,6 +297,7 @@ export async function admitMemoryAuthorizationRuntime(
     return Object.freeze({ ok: false, reasonCode: "backend-nonconforming" });
   }
   const source = runtime.value;
+  const stageSealedCompaction = readCallable(source, "stageSealedCompaction");
   return Object.freeze({
     ok: true,
     runtime: Object.freeze({
@@ -310,6 +311,13 @@ export async function admitMemoryAuthorizationRuntime(
       writeAuthorized: (methods.writeAuthorized as AuthorizedMemoryRuntime["writeAuthorized"]).bind(
         source,
       ),
+      ...(stageSealedCompaction
+        ? {
+            stageSealedCompaction: (
+              stageSealedCompaction as NonNullable<AuthorizedMemoryRuntime["stageSealedCompaction"]>
+            ).bind(source),
+          }
+        : {}),
       importAuthorized: (
         methods.importAuthorized as AuthorizedMemoryRuntime["importAuthorized"]
       ).bind(source),

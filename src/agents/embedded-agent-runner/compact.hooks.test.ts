@@ -18,6 +18,7 @@ import {
   getCurrentPluginMetadataSnapshotMock,
   applyExtraParamsToAgentMock,
   applyAgentCompactionSettingsFromConfigMock,
+  admitAuthorizedMemoryDerivationMock,
   buildEmbeddedExtensionFactoriesMock,
   buildAgentRuntimePlanMock,
   buildEmbeddedSystemPromptMock,
@@ -51,6 +52,8 @@ import {
   resolveSandboxContextMock,
   resolveSessionAgentIdMock,
   resolveSessionAgentIdsMock,
+  readAuthorizedTranscriptDerivationMock,
+  prepareAuthorizedSealedCompactionHostMock,
   rotateTranscriptAfterCompactionMock,
   runCliAgentMock,
   selectAgentHarnessForPreparedModelProvidersMock,
@@ -59,10 +62,18 @@ import {
   resetCompactHooksHarnessMocks,
   resetCompactSessionStateMocks,
   sessionAbortCompactionMock,
+  sessionApplyDeferredCompactionMock,
   sessionAutomaticCompactionMock,
+  sessionDeferredCompactionMock,
+  sessionDiscardDeferredCompactionMock,
   sessionMessages,
   sessionCompactImpl,
   sessionManualCompactionMock,
+  sealedCompactionCommitMock,
+  sealedCompactionStageMock,
+  commitSealedSqliteTranscriptCompactionMock,
+  createAuthorizedMemoryDerivationHostMock,
+  isMemoryIsolationCutoverAgentMock,
   triggerInternalHookMock,
 } from "./compact.hooks.harness.js";
 import {
@@ -346,6 +357,112 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       details: { ok: true },
     });
     resetCompactSessionStateMocks();
+  });
+
+  it("rechecks transcript derivation after opening the native session before summarizing", async () => {
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(true);
+    admitAuthorizedMemoryDerivationMock.mockResolvedValue(true);
+    createAuthorizedMemoryDerivationHostMock.mockReturnValue(undefined);
+    prepareAuthorizedSealedCompactionHostMock.mockResolvedValue({
+      source: {
+        kind: "transcript",
+        sessionId: TEST_SESSION_ID,
+        eventSeqs: [0, 1],
+        sourcePolicySetId: "policy-set-1",
+        deliveryAudiencesJson: '[{"kind":"user","id":"alice"}]',
+      },
+      stage: sealedCompactionStageMock,
+    });
+    readAuthorizedTranscriptDerivationMock
+      .mockReturnValueOnce({
+        eventSeqs: [0, 1],
+        sourcePolicySetId: "policy-set-1",
+        deliveryAudiencesJson: '[{"kind":"user","id":"alice"}]',
+      })
+      // A revocation or a new pending event after preparation must stop before
+      // native compaction turns transcript content into a prompt.
+      .mockReturnValueOnce(undefined);
+
+    const result = await compactEmbeddedAgentSessionDirect({
+      ...wrappedCompactionArgs(),
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      compacted: false,
+      reason: expect.stringContaining("transcript derivation authorization unavailable"),
+    });
+    expect(readAuthorizedTranscriptDerivationMock).toHaveBeenCalledTimes(2);
+    expect(sessionCompactImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not route an authorized cutover transcript through the legacy compaction writer", async () => {
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(true);
+    admitAuthorizedMemoryDerivationMock.mockResolvedValue(true);
+    createAuthorizedMemoryDerivationHostMock.mockReturnValue(undefined);
+    readAuthorizedTranscriptDerivationMock.mockReturnValue({
+      eventSeqs: [0, 1],
+      sourcePolicySetId: "policy-set-1",
+      deliveryAudiencesJson: '[{"kind":"user","id":"alice"}]',
+    });
+
+    const result = await compactEmbeddedAgentSessionDirect({
+      ...wrappedCompactionArgs(),
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      compacted: false,
+      reason: expect.stringContaining("sealed compaction authorization unavailable"),
+    });
+    expect(readAuthorizedTranscriptDerivationMock).toHaveBeenCalledTimes(1);
+    expect(sessionCompactImpl).not.toHaveBeenCalled();
+  });
+
+  it("stages and commits a cutover summary before applying its in-memory compaction", async () => {
+    const source = {
+      eventSeqs: [0, 1],
+      sourcePolicySetId: "policy-set-1",
+      deliveryAudiencesJson: '[{"kind":"user","id":"alice"}]',
+    };
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(true);
+    admitAuthorizedMemoryDerivationMock.mockResolvedValue(true);
+    readAuthorizedTranscriptDerivationMock.mockReturnValue(source);
+    prepareAuthorizedSealedCompactionHostMock.mockResolvedValue({
+      source: { kind: "transcript", sessionId: TEST_SESSION_ID, ...source },
+      stage: sealedCompactionStageMock,
+    });
+
+    const result = await compactEmbeddedAgentSessionDirect({
+      ...wrappedCompactionArgs(),
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    expect(result).toMatchObject({ ok: true, compacted: true });
+    expect(sessionDeferredCompactionMock).toHaveBeenCalledOnce();
+    expect(sessionManualCompactionMock).not.toHaveBeenCalled();
+    expect(sessionAutomaticCompactionMock).not.toHaveBeenCalled();
+    expect(sealedCompactionStageMock).toHaveBeenCalledWith("summary");
+    expect(commitSealedSqliteTranscriptCompactionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({ id: "sealed-compaction-entry", summary: "summary" }),
+        source,
+        checkpoint: expect.objectContaining({
+          preCompaction: expect.objectContaining({ entryId: "entry-1" }),
+          postCompaction: expect.objectContaining({ entryId: "sealed-compaction-entry" }),
+        }),
+      }),
+    );
+    expect(sealedCompactionCommitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ compactionPolicyId: expect.any(String), eventSeq: 7 }),
+    );
+    expect(sessionApplyDeferredCompactionMock).toHaveBeenCalledOnce();
+    expect(sessionDiscardDeferredCompactionMock).not.toHaveBeenCalled();
   });
 
   it("returns a summaryless xAI manual endpoint result", async () => {

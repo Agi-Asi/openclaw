@@ -41,6 +41,12 @@ export const contextEngineCompactMock: Mock<() => Promise<CompactResult>> = vi.f
   result: { summary: "engine-summary", tokensBefore: 120, tokensAfter: 50 },
 }));
 
+export const isMemoryIsolationCutoverAgentMock = vi.fn(() => false);
+export const readAuthorizedTranscriptDerivationMock = vi.fn(() => undefined);
+export const admitAuthorizedMemoryDerivationMock = vi.fn(async () => true);
+export const createAuthorizedMemoryDerivationHostMock = vi.fn(() => undefined);
+export const prepareAuthorizedSealedCompactionHostMock = vi.fn(async () => undefined);
+
 export const hookRunner = {
   hasHooks: vi.fn<(hookName?: string) => boolean>(),
   runBeforeCompaction: vi.fn(async () => undefined),
@@ -80,6 +86,34 @@ export const sessionAutomaticCompactionMock = vi.fn();
 export const attemptServerEndpointCompactionMock: Mock<(_params?: unknown) => Promise<unknown>> =
   vi.fn(async () => undefined);
 export const triggerInternalHookMock: Mock<(event?: unknown) => void> = vi.fn();
+export const sessionDeferredCompactionMock = vi.fn();
+export const sessionApplyDeferredCompactionMock = vi.fn();
+export const sessionDiscardDeferredCompactionMock = vi.fn();
+export const sealedCompactionStageMock = vi.fn();
+export const sealedCompactionCommitMock = vi.fn();
+export const commitSealedSqliteTranscriptCompactionMock = vi.fn();
+
+type SealedTranscriptCommitInput = {
+  compactionPolicyId: string;
+  source: {
+    eventSeqs: readonly number[];
+    sourcePolicySetId: string;
+    deliveryAudiencesJson: string;
+  };
+  commitDerivedState: (params: {
+    database: { db: unknown };
+    compactionPolicy: {
+      compactionPolicyId: string;
+      sessionId: string;
+      sourcePolicySetId: string;
+      deliveryAudiencesJson: string;
+      eventSeqs: readonly number[];
+      retentionState: "retained";
+      createdAt: number;
+    };
+    eventSeq: number;
+  }) => void;
+};
 const sanitizeSessionHistoryMock = vi.fn(
   async (params: { messages: unknown[] }) => params.messages,
 );
@@ -176,6 +210,31 @@ function createMockCompactionSession() {
       sessionAutomaticCompactionMock();
       session.messages.splice(1);
       return await sessionCompactImpl();
+    }),
+    compactDeferred: vi.fn(async () => {
+      sessionDeferredCompactionMock();
+      const result = await sessionCompactImpl();
+      return {
+        entry: {
+          type: "compaction",
+          id: "sealed-compaction-entry",
+          parentId: "entry-1",
+          timestamp: new Date(1).toISOString(),
+          summary: result.summary,
+          firstKeptEntryId: result.firstKeptEntryId,
+          tokensBefore: result.tokensBefore,
+          details: result.details,
+        },
+        fromExtension: false,
+        result,
+      };
+    }),
+    applyDeferredCompaction: vi.fn(async () => {
+      sessionApplyDeferredCompactionMock();
+      session.messages.splice(1);
+    }),
+    discardDeferredCompaction: vi.fn((error: unknown) => {
+      sessionDiscardDeferredCompactionMock(error);
     }),
     setActiveToolsByName: vi.fn(),
     setBaseSystemPrompt: vi.fn((systemPrompt: string) => {
@@ -493,6 +552,34 @@ export function resetCompactSessionStateMocks(): void {
   sessionAbortCompactionMock.mockReset();
   sessionManualCompactionMock.mockReset();
   sessionAutomaticCompactionMock.mockReset();
+  sessionDeferredCompactionMock.mockReset();
+  sessionApplyDeferredCompactionMock.mockReset();
+  sessionDiscardDeferredCompactionMock.mockReset();
+  sealedCompactionStageMock.mockReset();
+  sealedCompactionCommitMock.mockReset();
+  commitSealedSqliteTranscriptCompactionMock.mockReset();
+  sealedCompactionStageMock.mockResolvedValue({
+    resourceRevisionId: "sealed-resource-revision",
+    commitInTransaction: sealedCompactionCommitMock,
+  });
+  commitSealedSqliteTranscriptCompactionMock.mockImplementation(
+    async (input: SealedTranscriptCommitInput) => {
+      input.commitDerivedState({
+        database: { db: {} },
+        compactionPolicy: {
+          compactionPolicyId: input.compactionPolicyId,
+          sessionId: "session-1",
+          sourcePolicySetId: input.source.sourcePolicySetId,
+          deliveryAudiencesJson: input.source.deliveryAudiencesJson,
+          eventSeqs: input.source.eventSeqs,
+          retentionState: "retained",
+          createdAt: 1,
+        },
+        eventSeq: 7,
+      });
+      return { compactionPolicy: { compactionPolicyId: input.compactionPolicyId }, eventSeq: 7 };
+    },
+  );
   attemptServerEndpointCompactionMock.mockReset();
   attemptServerEndpointCompactionMock.mockResolvedValue(undefined);
   resolveEffectiveCompactionModeMock.mockReset();
@@ -576,6 +663,16 @@ export function resetCompactHooksHarnessMocks(): void {
   hookRunner.runBeforeCompaction.mockResolvedValue(undefined);
   hookRunner.runAfterCompaction.mockReset();
   hookRunner.runAfterCompaction.mockResolvedValue(undefined);
+  isMemoryIsolationCutoverAgentMock.mockReset();
+  isMemoryIsolationCutoverAgentMock.mockReturnValue(false);
+  readAuthorizedTranscriptDerivationMock.mockReset();
+  readAuthorizedTranscriptDerivationMock.mockReturnValue(undefined);
+  admitAuthorizedMemoryDerivationMock.mockReset();
+  admitAuthorizedMemoryDerivationMock.mockResolvedValue(true);
+  createAuthorizedMemoryDerivationHostMock.mockReset();
+  createAuthorizedMemoryDerivationHostMock.mockReturnValue(undefined);
+  prepareAuthorizedSealedCompactionHostMock.mockReset();
+  prepareAuthorizedSealedCompactionHostMock.mockResolvedValue(undefined);
 
   acquireAgentRunPreparedModelRuntimeMock.mockClear();
   resolveDefaultAgentDirMock.mockReset();
@@ -670,6 +767,37 @@ export async function loadCompactHooksHarness(): Promise<{
     initializeGlobalHookRunner: vi.fn(),
     resetGlobalHookRunner: vi.fn(),
     runGlobalGatewayStopSafely: vi.fn(async () => undefined),
+  }));
+
+  vi.doMock("../../plugins/memory-cutover.js", () => ({
+    isMemoryIsolationCutoverAgent: isMemoryIsolationCutoverAgentMock,
+  }));
+
+  vi.doMock("../../config/sessions/session-transcript-memory-policy.js", () => ({
+    readAuthorizedTranscriptDerivation: readAuthorizedTranscriptDerivationMock,
+  }));
+
+  vi.doMock("../../config/sessions/session-accessor.sqlite-transcript-write.js", () => ({
+    commitSealedSqliteTranscriptCompaction: commitSealedSqliteTranscriptCompactionMock,
+  }));
+
+  vi.doMock("../memory-authorized-read-host.js", () => ({
+    admitAuthorizedMemoryDerivation: admitAuthorizedMemoryDerivationMock,
+    createAuthorizedMemoryDerivationHost: createAuthorizedMemoryDerivationHostMock,
+    createAuthorizedMemoryReadHost: vi.fn(() => undefined),
+    prepareAuthorizedSealedCompactionHost: prepareAuthorizedSealedCompactionHostMock,
+  }));
+
+  vi.doMock("./compaction-checkpoint.js", () => ({
+    compactionCheckpointStore: {
+      captureSnapshot: vi.fn(async () => ({
+        sessionId: "session-1",
+        leafId: "entry-1",
+        entryId: "entry-1",
+      })),
+      cleanupSnapshot: vi.fn(async () => undefined),
+    },
+    persistCompactionCheckpoint: vi.fn(async () => true),
   }));
 
   vi.doMock("../../plugins/current-plugin-metadata-snapshot.js", () => ({

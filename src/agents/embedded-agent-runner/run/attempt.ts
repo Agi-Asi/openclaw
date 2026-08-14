@@ -198,6 +198,7 @@ export async function runEmbeddedAttempt(
         prepareEmbeddedAttemptToolBase({
           agentDir,
           authorizedMemoryRead,
+          authorizedMemoryWrite: params.authorizedMemoryWrite,
           authorizedMemoryVirtualBroker,
           attempt: params,
           effectiveCwd,

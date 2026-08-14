@@ -2,8 +2,15 @@
  * Executes compaction while owning the transcript lock, session lifecycle,
  * hooks, checkpoint, and optional successor transcript rotation.
  */
+import { randomUUID } from "node:crypto";
+import { SESSION_TOTAL_TOKENS_VERSION } from "../../config/sessions.js";
 import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
-import type { CapturedCompactionCheckpointSnapshot } from "../../gateway/session-compaction-checkpoints.js";
+import { commitSealedSqliteTranscriptCompaction } from "../../config/sessions/session-accessor.sqlite-transcript-write.js";
+import { readAuthorizedTranscriptDerivation } from "../../config/sessions/session-transcript-memory-policy.js";
+import {
+  resolveSessionCompactionCheckpointReason,
+  type CapturedCompactionCheckpointSnapshot,
+} from "../../gateway/session-compaction-checkpoints.js";
 import { resolveDiagnosticModelContentCapturePolicy } from "../../infra/diagnostic-llm-content.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
@@ -14,6 +21,8 @@ import {
 } from "../../logging/diagnostic-run-activity.js";
 import { getCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-snapshot.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
+import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import {
   consumeCompactionSafeguardCancelReason,
   setCompactionSafeguardCancelReason,
@@ -101,6 +110,7 @@ export async function executePreparedCompactionSession(runtime: PreparedCompacti
     effectiveTools,
     allowedToolNames,
     buildSystemPromptText,
+    authorizedSealedCompaction,
     resolvedMessageProvider,
     sessionAgentId,
   } = runtime;
@@ -136,6 +146,20 @@ export async function executePreparedCompactionSession(runtime: PreparedCompacti
             : undefined,
         allowedToolNames,
       });
+      // Preparation admits this source, but a revoke or transcript append can
+      // race it. Re-read after opening the session and before prompt assembly.
+      if (
+        isMemoryIsolationCutoverAgent(sessionAgentId) &&
+        !readAuthorizedTranscriptDerivation(
+          openOpenClawAgentDatabase({ agentId: sessionAgentId }).db,
+          sessionTarget.sessionId,
+        )
+      ) {
+        throw new Error("compaction transcript derivation authorization unavailable");
+      }
+      if (isMemoryIsolationCutoverAgent(sessionAgentId) && !authorizedSealedCompaction) {
+        throw new Error("scoped compaction derived commit unavailable");
+      }
       checkpointSnapshot = await compactionCheckpointStore.captureSnapshot({
         sessionManager,
         sessionFile: params.sessionFile,
@@ -411,45 +435,65 @@ export async function executePreparedCompactionSession(runtime: PreparedCompacti
           }
 
           const compactStartedAt = Date.now();
-          const serverResult = await attemptServerEndpointCompaction({
-            trigger,
-            streamFn: session.agent.streamFn,
-            model: effectiveModel,
-            context: { systemPrompt: systemPromptText, messages: session.messages },
-            sessionManager,
-            extraParams: effectiveExtraParams,
-            customInstructions: params.customInstructions,
-            requestOptions: {
-              apiKey: transportApiKey,
-              sessionId: params.sessionId,
-              authProfileId: runtimePlan.auth.forwardedAuthProfileId,
-              timeoutMs: compactionTimeoutMs,
-              signal: params.abortSignal,
-            },
-          });
           const activeSession = session;
-          const clientResult = serverResult
-            ? undefined
-            : await compactWithSafetyTimeout(
-                () => {
-                  setCompactionSafeguardCancelReason(compactionSessionManager, undefined);
-                  return resolveEffectiveCompactionMode(params.config) === "default" &&
-                    trigger !== "manual"
-                    ? activeSession[agentSessionAutomaticCompaction](params.customInstructions)
-                    : activeSession.compact(params.customInstructions);
-                },
+          const cutoverCompaction = isMemoryIsolationCutoverAgent(sessionAgentId);
+          const deferred = cutoverCompaction
+            ? await compactWithSafetyTimeout(
+                () =>
+                  activeSession.compactDeferred(
+                    params.customInstructions,
+                    resolveEffectiveCompactionMode(params.config) === "default" &&
+                      trigger !== "manual"
+                      ? "retry-invalid-once"
+                      : "none",
+                  ),
                 compactionTimeoutMs,
                 {
                   abortSignal: params.abortSignal,
-                  onCancel: () => {
-                    activeSession.abortCompaction();
-                  },
+                  onCancel: () => activeSession.abortCompaction(),
                 },
-              );
+              )
+            : undefined;
+          const serverResult = cutoverCompaction
+            ? undefined
+            : await attemptServerEndpointCompaction({
+                trigger,
+                streamFn: session.agent.streamFn,
+                model: effectiveModel,
+                context: { systemPrompt: systemPromptText, messages: session.messages },
+                sessionManager,
+                extraParams: effectiveExtraParams,
+                customInstructions: params.customInstructions,
+                requestOptions: {
+                  apiKey: transportApiKey,
+                  sessionId: params.sessionId,
+                  authProfileId: runtimePlan.auth.forwardedAuthProfileId,
+                  timeoutMs: compactionTimeoutMs,
+                  signal: params.abortSignal,
+                },
+              });
+          const clientResult = deferred
+            ? deferred.result
+            : serverResult
+              ? undefined
+              : await compactWithSafetyTimeout(
+                  () => {
+                    setCompactionSafeguardCancelReason(compactionSessionManager, undefined);
+                    return resolveEffectiveCompactionMode(params.config) === "default" &&
+                      trigger !== "manual"
+                      ? activeSession[agentSessionAutomaticCompaction](params.customInstructions)
+                      : activeSession.compact(params.customInstructions);
+                  },
+                  compactionTimeoutMs,
+                  {
+                    abortSignal: params.abortSignal,
+                    onCancel: () => activeSession.abortCompaction(),
+                  },
+                );
           const effectiveFirstKeptEntryId = clientResult?.firstKeptEntryId;
           const tokensBefore = serverResult?.usage.input_tokens ?? clientResult!.tokensBefore;
           // Estimate tokens after compaction by summing token estimates for remaining messages
-          const tokensAfter =
+          let tokensAfter =
             serverResult?.usage.output_tokens ??
             estimateTokensAfterCompaction({
               messagesAfter: session.messages,
@@ -463,6 +507,64 @@ export async function executePreparedCompactionSession(runtime: PreparedCompacti
             ...sessionTarget,
             sessionId: params.sessionId,
           });
+          if (deferred && authorizedSealedCompaction) {
+            try {
+              if (!checkpointSnapshot) {
+                throw new Error("sealed compaction checkpoint is unavailable");
+              }
+              const staged = await authorizedSealedCompaction.stage(clientResult.summary);
+              if ("unavailable" in staged) {
+                throw new Error("scoped compaction derived commit unavailable");
+              }
+              const compactionPolicyId = randomUUID();
+              await commitSealedSqliteTranscriptCompaction({
+                scope: sessionTarget,
+                event: deferred.entry,
+                compactionPolicyId,
+                source: {
+                  eventSeqs: authorizedSealedCompaction.source.eventSeqs,
+                  sourcePolicySetId: authorizedSealedCompaction.source.sourcePolicySetId,
+                  deliveryAudiencesJson: authorizedSealedCompaction.source.deliveryAudiencesJson,
+                },
+                checkpoint: {
+                  checkpointId: randomUUID(),
+                  sessionKey: sessionTarget.sessionKey,
+                  sessionId: params.sessionId,
+                  createdAt: compactStartedAt,
+                  reason: resolveSessionCompactionCheckpointReason({ trigger: params.trigger }),
+                  tokensVersion: SESSION_TOTAL_TOKENS_VERSION,
+                  tokensBefore: observedTokenCount ?? clientResult.tokensBefore,
+                  tokensAfter,
+                  summary: clientResult.summary,
+                  firstKeptEntryId: effectiveFirstKeptEntryId,
+                  preCompaction: {
+                    sessionId: checkpointSnapshot.sessionId,
+                    leafId: checkpointSnapshot.leafId,
+                    ...(checkpointSnapshot.entryId ? { entryId: checkpointSnapshot.entryId } : {}),
+                  },
+                  postCompaction: { sessionId: params.sessionId, entryId: deferred.entry.id },
+                },
+                commitDerivedState({ database, eventSeq }) {
+                  staged.commitInTransaction({
+                    database: database.db,
+                    compactionPolicyId,
+                    eventSeq,
+                  });
+                },
+              });
+              await activeSession.applyDeferredCompaction(deferred);
+              tokensAfter = estimateTokensAfterCompaction({
+                messagesAfter: session.messages,
+                observedTokenCount,
+                fullSessionTokensBefore: limitedTranscriptTokensBefore ?? 0,
+                estimateTokensFn: estimateTokens,
+              });
+              checkpointSnapshotRetained = true;
+            } catch (error) {
+              activeSession.discardDeferredCompaction(error);
+              throw error;
+            }
+          }
           await runPostCompactionSideEffects({
             config: params.config,
             sessionKey: params.sessionKey,
@@ -470,7 +572,7 @@ export async function executePreparedCompactionSession(runtime: PreparedCompacti
             agentId: sessionAgentId,
             sessionFile: activeSessionFile,
           });
-          if (clientResult) {
+          if (clientResult && !deferred) {
             checkpointSnapshotRetained = await persistCompactionCheckpoint({
               config: params.config,
               sessionKey: params.sessionKey,

@@ -1,4 +1,5 @@
 import {
+  loadTranscriptEventsSync,
   readActiveTranscriptEntryAnchor,
   type TranscriptEntryAnchor,
 } from "../../config/sessions/session-accessor.js";
@@ -33,10 +34,13 @@ import type {
   ThinkingLevelChangeEntry,
 } from "./session-manager-types.js";
 
+/** Internal-only: callers cannot bypass persistence through public append options. */
+type AppendEntryOptions = AppendPersistenceOptions & Readonly<{ alreadyPersisted?: boolean }>;
+
 export class SessionManagerEntries extends SessionManagerPersistence {
   protected appendEntry(
     entry: SessionEntry,
-    options?: AppendPersistenceOptions,
+    options?: AppendEntryOptions,
   ): TranscriptEntryAnchor | undefined {
     // oxlint-disable-next-line unicorn/prefer-structured-clone -- Match the persisted JSON/toJSON shape exactly.
     const canonicalEntry = JSON.parse(JSON.stringify(entry)) as SessionEntry;
@@ -47,10 +51,15 @@ export class SessionManagerEntries extends SessionManagerPersistence {
       !this.pendingDeliberateAppend &&
       this.appendMode !== "side" &&
       !isSessionTranscriptSideAppendEntry(canonicalEntry);
-    const persistenceResult = this.persist(canonicalEntry, {
-      ...options,
-      ...(activeBranchAppend ? { appendIntent: "active-branch" } : {}),
-    });
+    if (options?.alreadyPersisted && !this.persistenceTarget) {
+      throw new Error("A pre-persisted session entry requires a transcript target");
+    }
+    const persistenceResult = options?.alreadyPersisted
+      ? undefined
+      : this.persist(canonicalEntry, {
+          ...options,
+          ...(activeBranchAppend ? { appendIntent: "active-branch" } : {}),
+        });
     if (persistenceResult && typeof persistenceResult === "object") {
       if (persistenceResult.adoptedMessageId) {
         this.reloadPersistedTranscript();
@@ -195,14 +204,14 @@ export class SessionManagerEntries extends SessionManagerPersistence {
     return entry.id;
   }
 
-  appendCompaction(
+  createCompactionEntry(
     summary: string,
     firstKeptEntryId: string,
     tokensBefore: number,
     details?: unknown,
     fromHook?: boolean,
-  ): string {
-    const entry: CompactionEntry = {
+  ): CompactionEntry {
+    return Object.freeze({
       type: "compaction",
       id: generateSessionEntryId(this.byId),
       parentId: this.appendParentId,
@@ -212,7 +221,44 @@ export class SessionManagerEntries extends SessionManagerPersistence {
       tokensBefore,
       details,
       fromHook,
-    };
+    });
+  }
+
+  /** Apply a compaction after the transcript owner committed the exact entry atomically. */
+  applyPersistedCompaction(entry: CompactionEntry): string {
+    if (entry.parentId !== this.appendParentId || this.byId.has(entry.id)) {
+      throw new Error("Pre-persisted compaction no longer matches the active transcript leaf");
+    }
+    const persisted = this.persistenceTarget
+      ? loadTranscriptEventsSync(this.persistenceTarget).some(
+          (candidate) =>
+            isIndexedSessionEntry(candidate) && JSON.stringify(candidate) === JSON.stringify(entry),
+        )
+      : false;
+    if (!persisted) {
+      throw new Error("Pre-persisted compaction was not committed to the transcript");
+    }
+    this.appendEntry(entry, {
+      alreadyPersisted: true,
+      invalidateSerializedPrefixCache: entry.fromHook === true || entry.details !== undefined,
+    });
+    return entry.id;
+  }
+
+  appendCompaction(
+    summary: string,
+    firstKeptEntryId: string,
+    tokensBefore: number,
+    details?: unknown,
+    fromHook?: boolean,
+  ): string {
+    const entry = this.createCompactionEntry(
+      summary,
+      firstKeptEntryId,
+      tokensBefore,
+      details,
+      fromHook,
+    );
     this.appendEntry(entry, {
       invalidateSerializedPrefixCache: fromHook === true || details !== undefined,
     });

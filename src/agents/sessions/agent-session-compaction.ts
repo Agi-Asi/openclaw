@@ -22,8 +22,18 @@ import type { SettingsManager } from "./settings-manager.js";
 
 type CompactionReason = "manual" | "threshold" | "overflow";
 type SummaryOutputPolicy = "none" | "retry-invalid-once";
+export type DeferredSessionCompaction = Readonly<{
+  entry: CompactionEntry;
+  fromExtension: boolean;
+  result: CompactionResult;
+}>;
 type CompactionWorkOutcome =
-  | { status: "completed"; result: CompactionResult; tokensAfter: number }
+  | {
+      status: "completed";
+      result: CompactionResult;
+      tokensAfter: number;
+      deferred?: DeferredSessionCompaction;
+    }
   | { status: "aborted" }
   | { status: "skipped"; reason: string };
 
@@ -49,21 +59,83 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
    */
   async compact(customInstructions?: string): Promise<CompactionResult> {
     return await this.runWithSessionWriteSettlement(
-      async () => await this.compactWithSessionWriteSettlement(customInstructions, "none"),
+      async () => (await this.compactWithSessionWriteSettlement(customInstructions, "none")).result,
     );
   }
 
   async [agentSessionAutomaticCompaction](customInstructions?: string): Promise<CompactionResult> {
     return await this.runWithSessionWriteSettlement(
       async () =>
-        await this.compactWithSessionWriteSettlement(customInstructions, "retry-invalid-once"),
+        (await this.compactWithSessionWriteSettlement(customInstructions, "retry-invalid-once"))
+          .result,
     );
+  }
+
+  /**
+   * Produces a summary without publishing it. The caller must durably commit
+   * this exact entry before applying it to the in-memory session.
+   */
+  async compactDeferred(
+    customInstructions?: string,
+    summaryOutputPolicy: SummaryOutputPolicy = "none",
+  ): Promise<DeferredSessionCompaction> {
+    return await this.runWithSessionWriteSettlement(async () => {
+      const outcome = await this.compactWithSessionWriteSettlement(
+        customInstructions,
+        summaryOutputPolicy,
+        true,
+      );
+      if (!outcome.deferred) {
+        throw new Error("Deferred compaction entry is unavailable");
+      }
+      return outcome.deferred;
+    });
+  }
+
+  /** Apply only an entry committed by the sealed transcript owner. */
+  async applyDeferredCompaction(params: DeferredSessionCompaction): Promise<void> {
+    this.sessionManager.applyPersistedCompaction(params.entry);
+    const sessionContext = this.sessionManager.buildSessionContext();
+    // Compaction replaces the request prefix, invalidating retained usage and thinking signatures.
+    // Keep the deferred path replay-safe just like the direct append path.
+    this.agent.state.messages = sanitizeCompactionReplayMessages(sessionContext.messages);
+    if (this.currentExtensionRunner) {
+      await this.currentExtensionRunner.emit({
+        type: "session_compact",
+        compactionEntry: params.entry,
+        fromExtension: params.fromExtension,
+      });
+    }
+    const tokensAfter = estimateContextTokens(this.agent.state.messages).tokens;
+    this.emit({
+      type: "compaction_end",
+      reason: "manual",
+      outcome: {
+        status: "completed",
+        tokensBefore: params.result.tokensBefore,
+        tokensAfter,
+        willRetry: false,
+      },
+    });
+  }
+
+  /** The sealed owner calls this if staging or durable commit fails. */
+  discardDeferredCompaction(error: unknown): void {
+    this.emit({
+      type: "compaction_end",
+      reason: "manual",
+      outcome: {
+        status: "failed",
+        reason: `Compaction failed: ${compactionErrorMessage(error, "Compaction failed")}`,
+      },
+    });
   }
 
   private async compactWithSessionWriteSettlement(
     customInstructions?: string,
     summaryOutputPolicy: SummaryOutputPolicy = "none",
-  ): Promise<CompactionResult> {
+    deferPersistence = false,
+  ): Promise<Extract<CompactionWorkOutcome, { status: "completed" }>> {
     this.disconnectFromAgent();
     await this.abort();
     const abortController = new AbortController();
@@ -80,6 +152,7 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
           summaryOutputPolicy,
           settings,
           signal: abortController.signal,
+          deferPersistence,
         });
       } catch (error) {
         const message = compactionErrorMessage(error, "Compaction failed");
@@ -103,17 +176,19 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
         throw new Error("Compaction cancelled");
       }
 
-      this.emit({
-        type: "compaction_end",
-        reason: "manual",
-        outcome: {
-          status: "completed",
-          tokensBefore: outcome.result.tokensBefore,
-          tokensAfter: outcome.tokensAfter,
-          willRetry: false,
-        },
-      });
-      return outcome.result;
+      if (!deferPersistence) {
+        this.emit({
+          type: "compaction_end",
+          reason: "manual",
+          outcome: {
+            status: "completed",
+            tokensBefore: outcome.result.tokensBefore,
+            tokensAfter: outcome.tokensAfter,
+            willRetry: false,
+          },
+        });
+      }
+      return outcome;
     } finally {
       if (this.compactionAbortController === abortController) {
         this.compactionAbortController = undefined;
@@ -143,6 +218,7 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
     customInstructions?: string;
     mode: "manual" | "auto";
     summaryOutputPolicy: SummaryOutputPolicy;
+    deferPersistence?: boolean;
   }): Promise<CompactionWorkOutcome> {
     const isManual = options.mode === "manual";
     if (!this.model) {
@@ -245,6 +321,21 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
       ...compactionResult,
       summary: capCompactionSummary(compactionResult.summary),
     };
+
+    if (options.deferPersistence) {
+      const entry = this.sessionManager.createCompactionEntry(
+        compactionResult.summary,
+        compactionResult.firstKeptEntryId,
+        compactionResult.tokensBefore,
+        compactionResult.details,
+      );
+      return {
+        status: "completed",
+        result: compactionResult,
+        tokensAfter: estimateContextTokens(this.agent.state.messages).tokens,
+        deferred: Object.freeze({ entry, fromExtension, result: compactionResult }),
+      };
+    }
 
     this.sessionManager.appendCompaction(
       compactionResult.summary,

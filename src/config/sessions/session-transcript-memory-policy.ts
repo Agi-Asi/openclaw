@@ -18,6 +18,7 @@ type TranscriptMemoryPolicyDatabase = Pick<
   | "memory_policy_revisions"
   | "memory_policy_set_members"
   | "memory_policy_sets"
+  | "memory_compaction_policies"
   | "memory_resource_revisions"
   | "memory_run_exposure_resources"
   | "memory_run_exposures"
@@ -71,6 +72,24 @@ export type TranscriptMemoryPolicyTransitionKind =
   | "rewind"
   | "switch"
   | "checkpoint";
+
+/** The complete, currently authorized transcript source set for one derivation. */
+export type AuthorizedTranscriptDerivation = Readonly<{
+  eventSeqs: readonly number[];
+  sourcePolicySetId: string;
+  deliveryAudiencesJson: string;
+}>;
+
+/** Immutable policy evidence for one sealed compaction output. */
+export type SealedCompactionMemoryPolicy = Readonly<{
+  compactionPolicyId: string;
+  sessionId: string;
+  sourcePolicySetId: string;
+  deliveryAudiencesJson: string;
+  eventSeqs: readonly number[];
+  retentionState: "retained";
+  createdAt: number;
+}>;
 
 const enforcementByDatabase = new WeakMap<DatabaseSync, boolean>();
 
@@ -1037,6 +1056,234 @@ export function readAuthorizedTranscriptEventSeqs(
   } catch {
     return new Set();
   }
+}
+
+/**
+ * Compaction is a derivation, so native session history cannot be treated as an implicit source.
+ * A mixed source set must be partitioned by its owner; this generic path denies it rather than
+ * letting a model phrase its way into a broader summary.
+ */
+export function readAuthorizedTranscriptDerivation(
+  db: DatabaseSync,
+  sessionId: string,
+): AuthorizedTranscriptDerivation | undefined {
+  if (!isTranscriptMemoryPolicyEnforcedInDatabase(db)) {
+    return undefined;
+  }
+  try {
+    const policy = policyDatabase(db);
+    const eventRows = executeSqliteQuerySync(
+      db,
+      policy
+        .selectFrom("transcript_events")
+        .select("seq")
+        .where("session_id", "=", sessionId)
+        .orderBy("seq"),
+    ).rows;
+    if (eventRows.length === 0) {
+      return undefined;
+    }
+    const readable = readAuthorizedTranscriptEventSeqs(db, sessionId);
+    if (
+      !readable ||
+      readable.size !== eventRows.length ||
+      eventRows.some((event) => !readable.has(event.seq))
+    ) {
+      return undefined;
+    }
+    const rows = executeSqliteQuerySync(
+      db,
+      policy
+        .selectFrom("transcript_event_memory_policies as policy")
+        .innerJoin("transcript_event_memory_policy_details as detail", (join) =>
+          join
+            .onRef("detail.session_id", "=", "policy.session_id")
+            .onRef("detail.event_seq", "=", "policy.event_seq"),
+        )
+        .select([
+          "policy.event_seq",
+          "policy.source_policy_set_id",
+          "policy.delivery_audiences_json",
+        ])
+        .where("policy.session_id", "=", sessionId)
+        .where("policy.authorization_status", "=", "authorized")
+        .where("detail.retention_state", "=", "retained")
+        .orderBy("policy.event_seq"),
+    ).rows;
+    if (
+      rows.length !== eventRows.length ||
+      rows.some(
+        (row) =>
+          !readable.has(row.event_seq) ||
+          row.source_policy_set_id === null ||
+          row.delivery_audiences_json === null,
+      )
+    ) {
+      return undefined;
+    }
+    const sourcePolicySetIds = new Set(rows.map((row) => row.source_policy_set_id));
+    const deliveryAudiences = new Set(rows.map((row) => row.delivery_audiences_json));
+    if (sourcePolicySetIds.size !== 1 || deliveryAudiences.size !== 1) {
+      return undefined;
+    }
+    const sourcePolicySetId = rows[0]?.source_policy_set_id;
+    const deliveryAudiencesJson = rows[0]?.delivery_audiences_json;
+    if (!sourcePolicySetId || !deliveryAudiencesJson) {
+      return undefined;
+    }
+    return Object.freeze({
+      eventSeqs: Object.freeze(eventRows.map((event) => event.seq)),
+      sourcePolicySetId,
+      deliveryAudiencesJson,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Stores only a source set which is still the complete authorized transcript.
+ * The caller owns the surrounding transaction that also appends the summary,
+ * checkpoint, resource revision, and lineage; standalone policy rows would
+ * otherwise make an interrupted compaction look durable.
+ */
+export function persistSealedCompactionMemoryPolicyInTransaction(params: {
+  db: DatabaseSync;
+  compactionPolicyId: string;
+  sessionId: string;
+  source: AuthorizedTranscriptDerivation;
+  createdAt?: number;
+}): SealedCompactionMemoryPolicy {
+  if (!params.db.isTransaction) {
+    throw new Error("sealed compaction policy requires an active transaction");
+  }
+  const compactionPolicyId = params.compactionPolicyId.trim();
+  const sessionId = params.sessionId.trim();
+  if (!compactionPolicyId || !sessionId) {
+    throw new Error("sealed compaction policy is unavailable");
+  }
+  const current = readAuthorizedTranscriptDerivation(params.db, sessionId);
+  const source = params.source;
+  if (
+    !current ||
+    current.sourcePolicySetId !== source.sourcePolicySetId ||
+    current.deliveryAudiencesJson !== source.deliveryAudiencesJson ||
+    current.eventSeqs.length !== source.eventSeqs.length ||
+    current.eventSeqs.some((eventSeq, index) => eventSeq !== source.eventSeqs[index])
+  ) {
+    throw new Error("sealed compaction source policy is unavailable");
+  }
+  const createdAt = params.createdAt ?? Date.now();
+  const db = policyDatabase(params.db);
+  const existing = executeSqliteQueryTakeFirstSync(
+    params.db,
+    db
+      .selectFrom("memory_compaction_policies")
+      .select(["session_id", "source_policy_set_id", "retention_state", "created_at"])
+      .where("compaction_policy_id", "=", compactionPolicyId),
+  );
+  if (existing) {
+    const persistedSources = executeSqliteQuerySync(
+      params.db,
+      db
+        .selectFrom("memory_compaction_policy_sources")
+        .select([
+          "source_event_seq",
+          "source_policy_set_id",
+          "source_session_id",
+          "delivery_audiences_json",
+        ])
+        .where("compaction_policy_id", "=", compactionPolicyId)
+        .orderBy("source_event_seq"),
+    ).rows;
+    if (
+      existing.session_id !== sessionId ||
+      existing.source_policy_set_id !== source.sourcePolicySetId ||
+      existing.retention_state !== "retained" ||
+      persistedSources.length !== source.eventSeqs.length ||
+      persistedSources.some(
+        (persistedSource, index) =>
+          persistedSource.source_session_id !== sessionId ||
+          persistedSource.source_event_seq !== source.eventSeqs[index] ||
+          persistedSource.source_policy_set_id !== source.sourcePolicySetId ||
+          persistedSource.delivery_audiences_json !== source.deliveryAudiencesJson,
+      )
+    ) {
+      throw new Error("sealed compaction policy idempotency conflict");
+    }
+    return Object.freeze({
+      compactionPolicyId,
+      sessionId,
+      sourcePolicySetId: source.sourcePolicySetId,
+      deliveryAudiencesJson: source.deliveryAudiencesJson,
+      eventSeqs: Object.freeze([...source.eventSeqs]),
+      retentionState: "retained",
+      createdAt: existing.created_at,
+    });
+  }
+  executeSqliteQuerySync(
+    params.db,
+    db.insertInto("memory_compaction_policies").values({
+      compaction_policy_id: compactionPolicyId,
+      session_id: sessionId,
+      source_policy_set_id: source.sourcePolicySetId,
+      retention_state: "retained",
+      created_at: createdAt,
+    }),
+  );
+  for (const eventSeq of source.eventSeqs) {
+    executeSqliteQuerySync(
+      params.db,
+      db.insertInto("memory_compaction_policy_sources").values({
+        compaction_policy_id: compactionPolicyId,
+        source_session_id: sessionId,
+        source_event_seq: eventSeq,
+        source_policy_set_id: source.sourcePolicySetId,
+        delivery_audiences_json: source.deliveryAudiencesJson,
+        created_at: createdAt,
+      }),
+    );
+  }
+  return Object.freeze({
+    compactionPolicyId,
+    sessionId,
+    sourcePolicySetId: source.sourcePolicySetId,
+    deliveryAudiencesJson: source.deliveryAudiencesJson,
+    eventSeqs: Object.freeze([...source.eventSeqs]),
+    retentionState: "retained",
+    createdAt,
+  });
+}
+
+/**
+ * The output event must inherit proof from an event the compactor actually
+ * read. A writer fence is only permission to commit; it is not source proof.
+ */
+export function readSealedCompactionOutputMemoryPolicyInTransaction(params: {
+  database: OpenClawAgentDatabase;
+  sessionId: string;
+  source: AuthorizedTranscriptDerivation;
+}): PreservedTranscriptMemoryPolicy | undefined {
+  const current = readAuthorizedTranscriptDerivation(params.database.db, params.sessionId);
+  if (
+    !current ||
+    current.sourcePolicySetId !== params.source.sourcePolicySetId ||
+    current.deliveryAudiencesJson !== params.source.deliveryAudiencesJson ||
+    current.eventSeqs.length !== params.source.eventSeqs.length ||
+    current.eventSeqs.some((eventSeq, index) => eventSeq !== params.source.eventSeqs[index])
+  ) {
+    return undefined;
+  }
+  const firstEventSeq = params.source.eventSeqs[0];
+  return [...readPreservedTranscriptMemoryPoliciesInTransaction(params.database, params.sessionId).values()]
+    .flat()
+    .find(
+      (policy) =>
+        policy.eventSeq === firstEventSeq &&
+        policy.sourcePolicySetId === params.source.sourcePolicySetId &&
+        policy.deliveryAudiencesJson === params.source.deliveryAudiencesJson &&
+        policy.retentionState === "retained",
+    );
 }
 
 export function resetTranscriptMemoryPolicyForTest(db: DatabaseSync): void {

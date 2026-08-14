@@ -275,6 +275,7 @@ export async function dispatchEmbeddedRunAttempt(input: {
     sandboxSessionKey: params.sandboxSessionKey,
     trigger: params.trigger,
     memoryFlushWritePath: params.memoryFlushWritePath,
+    authorizedMemoryWrite: params.authorizedMemoryWrite,
     messageChannel: params.messageChannel,
     messageProvider: params.messageProvider,
     clientCaps: params.clientCaps,

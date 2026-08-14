@@ -196,6 +196,16 @@ export function resolveIsolatedHeartbeatSessionKey(params: {
   };
 }
 
+/**
+ * Memory-isolated heartbeats are autonomous service work, not a fork of the
+ * session that supplied their delivery route. Keep the identity stable per
+ * agent so repeated wakes retain service-only state without inheriting a
+ * human session's transcript or subject.
+ */
+export function resolveMemoryIsolatedHeartbeatSessionKey(agentId: string): string {
+  return toAgentStoreSessionKey({ agentId, requestKey: "service:heartbeat" });
+}
+
 export function resolveStaleHeartbeatIsolatedSessionKey(params: {
   sessionKey: string;
   isolatedSessionKey: string;

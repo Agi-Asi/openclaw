@@ -17,6 +17,7 @@ describe("sessions_spawn context modes", () => {
   const forkSessionEntryFromParentMock = vi.fn();
   const forkSessionFromParentMock = vi.fn();
   const ensureContextEnginesInitializedMock = vi.fn();
+  const isMemoryIsolationCutoverAgentMock = vi.fn();
   const resolveContextEngineMock = vi.fn();
   let spawnSubagentDirect: Awaited<
     ReturnType<typeof loadSubagentSpawnModuleForTest>
@@ -30,6 +31,7 @@ describe("sessions_spawn context modes", () => {
       forkSessionEntryFromParentMock,
       forkSessionFromParentMock,
       ensureContextEnginesInitializedMock,
+      isMemoryIsolationCutoverAgent: isMemoryIsolationCutoverAgentMock,
       resolveContextEngineMock,
       sessionStorePath: storePath,
     }));
@@ -42,8 +44,10 @@ describe("sessions_spawn context modes", () => {
     forkSessionEntryFromParentMock.mockReset();
     forkSessionFromParentMock.mockReset();
     ensureContextEnginesInitializedMock.mockReset();
+    isMemoryIsolationCutoverAgentMock.mockReset();
     resolveContextEngineMock.mockReset();
     setupAcceptedSubagentGatewayMock(callGatewayMock);
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(false);
     resolveContextEngineMock.mockResolvedValue({});
   });
 
@@ -222,6 +226,21 @@ describe("sessions_spawn context modes", () => {
     expect(prepareContext.parentSessionId).toBe("parent-session-id");
     expect(prepareContext.childSessionId).toBe("forked-session-id");
     expect(prepareContext.childSessionFile).toBe("/tmp/forked-session.jsonl");
+  });
+
+  it("does not fork raw parent context while memory isolation is active", async () => {
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(true);
+    usePersistentStoreMock({
+      main: { sessionId: "parent-session-id", updatedAt: 1 },
+    });
+
+    const result = await spawnSubagentDirect(
+      { task: "inspect the current thread", context: "fork" },
+      { agentSessionKey: "main" },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(forkSessionEntryFromParentMock).not.toHaveBeenCalled();
   });
 
   it("keeps the default spawn context isolated", async () => {

@@ -165,6 +165,15 @@ export interface MemoryCompactionPolicies {
   source_policy_set_id: string;
 }
 
+export interface MemoryCompactionPolicySources {
+  compaction_policy_id: string;
+  created_at: number;
+  delivery_audiences_json: string;
+  source_event_seq: number;
+  source_policy_set_id: string;
+  source_session_id: string;
+}
+
 export interface MemoryEmbeddingCache {
   dims: number | null;
   embedding: string;
@@ -299,6 +308,23 @@ export interface MemoryPolicySets {
   member_policy_set_ids_json: string;
   memory_policy_revision: string;
   policy_set_id: string;
+}
+
+export interface MemoryRevisionPolicyRequirements {
+  created_at: number;
+  expected_revision_id: string;
+  expected_revocation_epoch: number;
+  policy_id: string;
+  requirement_kind: string;
+  revision_id: string;
+}
+
+export interface MemoryLineageEdges {
+  child_revision_id: string;
+  created_at: number;
+  parent_id: string;
+  parent_kind: string;
+  relation_kind: string;
 }
 
 export interface MemoryPreoutputExposureLedger {
@@ -849,6 +875,7 @@ export interface DB {
   heartbeat_outcomes: HeartbeatOutcomes;
   memory_audit_outbox: MemoryAuditOutbox;
   memory_compaction_policies: MemoryCompactionPolicies;
+  memory_compaction_policy_sources: MemoryCompactionPolicySources;
   memory_embedding_cache: MemoryEmbeddingCache;
   memory_index_chunk_provenance: MemoryIndexChunkProvenance;
   memory_index_chunk_recall_metadata: MemoryIndexChunkRecallMetadata;
@@ -863,6 +890,8 @@ export interface DB {
   memory_policy_revisions: MemoryPolicyRevisions;
   memory_policy_set_members: MemoryPolicySetMembers;
   memory_policy_sets: MemoryPolicySets;
+  memory_revision_policy_requirements: MemoryRevisionPolicyRequirements;
+  memory_lineage_edges: MemoryLineageEdges;
   memory_preoutput_exposure_authorization_facts: MemoryPreoutputExposureAuthorizationFacts;
   memory_preoutput_exposure_ledger: MemoryPreoutputExposureLedger;
   memory_resource_revisions: MemoryResourceRevisions;

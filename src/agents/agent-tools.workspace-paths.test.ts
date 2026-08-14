@@ -126,6 +126,45 @@ describe("workspace path resolution", () => {
     });
   });
 
+  it("uses memory_remember instead of a workspace write for a cut-over memory flush", async () => {
+    await withTempDir("openclaw-memory-flush-cutover-state-", async (stateDir) => {
+      const originalStateDir = process.env.OPENCLAW_STATE_DIR;
+      process.env.OPENCLAW_STATE_DIR = stateDir;
+      try {
+        const database = openOpenClawAgentDatabase({ agentId: "main" });
+        database.db
+          .prepare(
+            `INSERT INTO memory_migrations
+              (migration_id, source_kind, source_hash, phase, classification_json, plan_hash,
+               verified_at, cutover_at, updated_at)
+             VALUES ('memory-cutover-flush-tools', 'test', 'test-source', 'cutover', '{}',
+                     'test-plan', 1, 1, 1)`,
+          )
+          .run();
+        resetMemoryIsolationCutoverForTest();
+        vi.mocked(createOpenClawTools).mockImplementationOnce(() => [
+          { name: "memory_remember" } as never,
+        ]);
+
+        expect(
+          createOpenClawCodingTools({
+            agentId: "main",
+            trigger: "memory",
+            memoryFlushWritePath: "memory/2026-07-29.md",
+          }).map((tool) => tool.name),
+        ).toEqual(["memory_remember"]);
+      } finally {
+        closeOpenClawAgentDatabasesForTest();
+        resetMemoryIsolationCutoverForTest();
+        if (originalStateDir === undefined) {
+          delete process.env.OPENCLAW_STATE_DIR;
+        } else {
+          process.env.OPENCLAW_STATE_DIR = originalStateDir;
+        }
+      }
+    });
+  });
+
   it("preserves legacy memory-file writes for intentionally unscoped tool construction", async () => {
     await withTempDir("openclaw-unscoped-ws-", async (workspaceDir) => {
       const tools = createOpenClawCodingTools({ workspaceDir });

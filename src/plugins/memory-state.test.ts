@@ -462,6 +462,17 @@ describe("memory plugin state", () => {
     expect(resolveMemoryFlushPlan({})?.relativePath).toBe("memory/same-owner.md");
   });
 
+  it("keeps the flush plan available for a cut-over agent", () => {
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(true);
+    registerMemoryCapability("memory-core", {
+      flushPlanResolver: () => createMemoryFlushPlan("memory/authorized.md"),
+    });
+
+    expect(resolveMemoryFlushPlan({ agentId: "main" })?.relativePath).toBe(
+      "memory/authorized.md",
+    );
+  });
+
   it("passes citations mode through to the prompt builder", () => {
     registerTestMemoryPromptBuilder(({ citationsMode }) => [
       `citations: ${citationsMode ?? "default"}`,

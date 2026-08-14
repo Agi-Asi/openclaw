@@ -47,6 +47,7 @@ type SessionSqliteDatabase = Pick<
   | "transcript_rewrite_watermarks"
   | "trajectory_runtime_events"
   | "transcript_event_identities"
+  | "transcript_event_memory_policies"
   | "transcript_events"
 > & {
   sqlite_schema: { name: string | null; type: string };

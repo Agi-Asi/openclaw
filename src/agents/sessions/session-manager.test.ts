@@ -8,6 +8,7 @@ import {
   parseSqliteSessionFileMarker,
 } from "../../config/sessions/legacy-sqlite-marker.js";
 import {
+  appendTranscriptEvent,
   appendTranscriptMessage,
   loadSessionEntry,
   loadTranscriptEvents,
@@ -34,6 +35,36 @@ function openMarker(marker: string, sessionKey: string, cwd: string): SessionMan
 }
 
 describe("SessionManager.open", () => {
+  it("applies a compaction entry only after its transaction owner persisted it", async () => {
+    const dir = tempDirs.make("openclaw-session-manager-");
+    const storePath = path.join(dir, "sessions.json");
+    const sessionId = "sealed-compaction-session";
+    const sessionKey = "agent:main:dashboard:sealed-compaction";
+    const scope = { agentId: "main", sessionId, sessionKey, storePath };
+    await upsertSessionEntry(scope, { sessionId, updatedAt: 1 });
+    await appendTranscriptMessage(scope, {
+      cwd: dir,
+      eventId: "source-message",
+      message: { role: "user", content: "retain this" },
+    });
+    const sessionManager = SessionManager.open(scope, dir);
+    const entry = sessionManager.createCompactionEntry("sealed summary", "source-message", 42);
+
+    expect(() => sessionManager.applyPersistedCompaction(entry)).toThrow(
+      "Pre-persisted compaction was not committed to the transcript",
+    );
+    await appendTranscriptEvent(scope, entry);
+    expect(sessionManager.applyPersistedCompaction(entry)).toBe(entry.id);
+    await expect(loadTranscriptEvents(scope)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: entry.id, summary: "sealed summary", type: "compaction" }),
+      ]),
+    );
+    expect(sessionManager.getEntries()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: entry.id, type: "compaction" })]),
+    );
+  });
+
   it("opens SQLite markers without creating marker-named files and persists assistant replies", async () => {
     const dir = tempDirs.make("openclaw-session-manager-");
     const storePath = path.join(dir, "sessions.json");

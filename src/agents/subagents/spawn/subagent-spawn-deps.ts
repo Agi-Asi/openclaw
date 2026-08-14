@@ -7,6 +7,7 @@ import {
   getGlobalHookRunner,
   getRuntimeConfig,
   hasInProcessGatewayContext,
+  isMemoryIsolationCutoverAgent,
   loadPreparedModelCatalog,
   resolveContextEngine,
 } from "./subagent-spawn.runtime.js";
@@ -18,6 +19,7 @@ type SubagentSpawnDeps = {
   getGlobalHookRunner: () => SubagentLifecycleHookRunner | null;
   getRuntimeConfig: typeof getRuntimeConfig;
   hasInProcessGatewayContext: typeof hasInProcessGatewayContext;
+  isMemoryIsolationCutoverAgent: typeof isMemoryIsolationCutoverAgent;
   ensureContextEnginesInitialized: typeof ensureContextEnginesInitialized;
   loadPreparedModelCatalog: typeof loadPreparedModelCatalog;
   resolveContextEngine: typeof resolveContextEngine;
@@ -30,6 +32,7 @@ const defaultSubagentSpawnDeps: SubagentSpawnDeps = {
   getGlobalHookRunner,
   getRuntimeConfig,
   hasInProcessGatewayContext,
+  isMemoryIsolationCutoverAgent,
   ensureContextEnginesInitialized,
   loadPreparedModelCatalog,
   resolveContextEngine,

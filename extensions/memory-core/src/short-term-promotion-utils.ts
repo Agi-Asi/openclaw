@@ -7,6 +7,7 @@ import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
 import { deriveConceptTags, MAX_CONCEPT_TAGS } from "./concept-vocabulary.js";
 import type {
   PromotionWeights,
+  ShortTermPromotionAuthorizedView,
   ShortTermRecallEntry,
   ShortTermRecallStore,
 } from "./short-term-promotion-types.js";
@@ -39,6 +40,29 @@ const DEFAULT_PROMOTION_WEIGHTS: PromotionWeights = {
   consolidation: 0.1,
   conceptual: 0.06,
 };
+
+export function normalizeShortTermPromotionAuthorizedView(
+  value: unknown,
+): ShortTermPromotionAuthorizedView | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const storeId = typeof record.storeId === "string" ? record.storeId.trim() : "";
+  const viewId = typeof record.viewId === "string" ? record.viewId.trim() : "";
+  const resourceRevision =
+    typeof record.resourceRevision === "string" ? record.resourceRevision.trim() : "";
+  const lifecycle = record.lifecycle;
+  if (
+    !storeId ||
+    !viewId ||
+    !resourceRevision ||
+    (lifecycle !== "active" && lifecycle !== "postbox" && lifecycle !== "quarantine")
+  ) {
+    return undefined;
+  }
+  return { storeId, viewId, resourceRevision, lifecycle };
+}
 
 export function clampScore(value: number): number {
   if (!Number.isFinite(value)) {
@@ -406,6 +430,10 @@ export function normalizeShortTermRecallStore(raw: unknown, nowIso: string): Sho
               : {}),
           }
         : undefined;
+      const authorizedView = normalizeShortTermPromotionAuthorizedView(entry.authorizedView);
+      if (entry.authorizedView !== undefined && !authorizedView) {
+        continue;
+      }
 
       const normalizedKey =
         key || buildEntryKey({ path: entryPath, startLine, endLine, source, claimHash });
@@ -427,6 +455,7 @@ export function normalizeShortTermRecallStore(raw: unknown, nowIso: string): Sho
         recallDays: recallDays.slice(-MAX_RECALL_DAYS),
         conceptTags,
         ...(provenance ? { provenance } : {}),
+        ...(authorizedView ? { authorizedView } : {}),
         ...(claimHash ? { claimHash } : {}),
         ...(projectKey ? { projectKey } : {}),
         ...(promotedAt ? { promotedAt } : {}),

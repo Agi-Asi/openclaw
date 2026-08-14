@@ -1,18 +1,24 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AuthorizedMemoryVirtualView,
+  AuthorizedSealedCompactionArtifact,
+  AuthorizedTranscriptDerivationSource,
+  AuthorizedTranscriptDerivationPurpose,
   MemoryAccessContext,
   MemoryActorEvidence,
 } from "../memory-host-sdk/host/authorization.js";
+import { readAuthorizedTranscriptDerivation } from "../config/sessions/session-transcript-memory-policy.js";
 import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import {
   MEMORY_INVOCATION_UNAVAILABLE,
+  createAuthorizedMemoryDeriveInvocation,
   createAuthorizedMemoryReadInvocation,
   createAuthorizedMemoryWriteInvocation,
   materializeAuthorizedMemoryVirtualView,
   readAuthorizedMemoryVirtualFile,
   readAuthorizedMemoryForInvocation,
   searchAuthorizedMemoryForInvocation,
+  stageAuthorizedMemorySealedCompactionForInvocation,
   writeAuthorizedMemoryForInvocation,
   type AuthorizedMemoryReadInvocation,
 } from "../plugins/memory-invocation.js";
@@ -27,6 +33,7 @@ import {
   createCurrentMemorySessionContext,
   type CurrentMemorySessionContext,
 } from "../state/memory-session-subject.js";
+import { openOpenClawAgentDatabase } from "../state/openclaw-agent-db.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { resolveMemoryEgressDeliveryFacts } from "./memory-egress-admission.js";
 
@@ -38,6 +45,12 @@ const authorizedMemoryVirtualBroker: unique symbol = Symbol(
 export type AuthorizedMemoryVirtualFileBroker = Readonly<{
   view: AuthorizedMemoryVirtualView;
   readFile: (virtualPath: string) => Promise<string | undefined>;
+}>;
+
+/** Core-private sealed compaction capability; plugins never receive this host. */
+export type AuthorizedSealedCompactionHost = Readonly<{
+  source: AuthorizedTranscriptDerivationSource;
+  stage: (content: string) => Promise<AuthorizedSealedCompactionArtifact | typeof MEMORY_INVOCATION_UNAVAILABLE>;
 }>;
 
 type AuthorizedMemoryReadHostWithVirtualBroker = AuthorizedMemoryReadHost &
@@ -220,10 +233,11 @@ function createTrustedMemoryHostContext(
  * Builds the sole tool-facing read handle for a cut-over run. Session identity and delivery facts
  * are reread from their owners; sender IDs, `toolsBySender`, and paths never name a memory subject.
  */
-export function createAuthorizedMemoryReadHost(
+function createAuthorizedMemoryContentHost(
   params: AuthorizedMemoryHostParams,
+  operation: "read" | "derive",
 ): AuthorizedMemoryReadHost | undefined {
-  const trusted = createTrustedMemoryHostContext({ ...params, operation: "read" });
+  const trusted = createTrustedMemoryHostContext({ ...params, operation });
   if (!trusted) {
     return undefined;
   }
@@ -231,7 +245,10 @@ export function createAuthorizedMemoryReadHost(
     | Promise<AuthorizedMemoryReadInvocation | typeof MEMORY_INVOCATION_UNAVAILABLE>
     | undefined;
   const getInvocation = () =>
-    (invocation ??= createAuthorizedMemoryReadInvocation({ context: trusted }));
+    (invocation ??=
+      operation === "derive"
+        ? createAuthorizedMemoryDeriveInvocation({ context: trusted })
+        : createAuthorizedMemoryReadInvocation({ context: trusted }));
   let virtualBroker: Promise<AuthorizedMemoryVirtualFileBroker | undefined> | undefined;
   const getVirtualBroker = () =>
     (virtualBroker ??= (async () => {
@@ -274,6 +291,130 @@ export function createAuthorizedMemoryReadHost(
     },
     [authorizedMemoryVirtualBroker]: getVirtualBroker,
   }) as AuthorizedMemoryReadHost;
+}
+
+export function createAuthorizedMemoryReadHost(
+  params: AuthorizedMemoryHostParams,
+): AuthorizedMemoryReadHost | undefined {
+  return createAuthorizedMemoryContentHost(params, "read");
+}
+
+/**
+ * Builds a content host whose every source read is authorized as a derivation. A caller cannot
+ * turn an admitted derive plan into a weaker read plan after the source reaches model context.
+ */
+export function createAuthorizedMemoryDerivationHost(
+  params: AuthorizedMemoryHostParams,
+): AuthorizedMemoryReadHost | undefined {
+  return createAuthorizedMemoryContentHost(params, "derive");
+}
+
+/**
+ * Rechecks the separate derive capability before a runtime can place memory-derived
+ * material in a model context. Read admission alone intentionally never implies this.
+ */
+export async function admitAuthorizedMemoryDerivation(
+  params: AuthorizedMemoryHostParams,
+): Promise<boolean> {
+  const trusted = createTrustedMemoryHostContext({ ...params, operation: "derive" });
+  if (!trusted) {
+    return false;
+  }
+  const invocation = await createAuthorizedMemoryDeriveInvocation({ context: trusted });
+  return !("unavailable" in invocation);
+}
+
+/**
+ * Admits one transcript-backed mutation before the flush model sees history.
+ * The opaque source stays host-owned; neither the model nor a plugin tool can
+ * substitute a session, event list, policy set, or delivery audience.
+ */
+export async function prepareAuthorizedTranscriptDerivationHost(
+  params: AuthorizedMemoryHostParams & Readonly<{ derivationPurpose?: AuthorizedTranscriptDerivationPurpose }>,
+): Promise<AuthorizedMemoryWriteHost | undefined> {
+  const sessionId = params.sessionId?.trim();
+  const trusted = createTrustedMemoryHostContext({ ...params, operation: "derive" });
+  if (!trusted || !sessionId) {
+    return undefined;
+  }
+  const transcriptSource = readAuthorizedTranscriptDerivation(
+    openOpenClawAgentDatabase({ agentId: params.agentId }).db,
+    sessionId,
+  );
+  if (!transcriptSource) {
+    return undefined;
+  }
+  const invocation = await createAuthorizedMemoryWriteInvocation({ context: trusted });
+  if ("unavailable" in invocation) {
+    return undefined;
+  }
+  return Object.freeze({
+    async remember({ content, contentType = "markdown" }) {
+      const result = await writeAuthorizedMemoryForInvocation({
+        invocation,
+        mutation: {
+          version: 1,
+          kind: "derive",
+          derivationPurpose: params.derivationPurpose ?? "flush",
+          mutationId: randomUUID(),
+          idempotencyKey: randomUUID(),
+          content,
+          contentType,
+          sourcePolicySetId: transcriptSource.sourcePolicySetId,
+          transcriptSource: {
+            kind: "transcript",
+            sessionId,
+            eventSeqs: transcriptSource.eventSeqs,
+            sourcePolicySetId: transcriptSource.sourcePolicySetId,
+            deliveryAudiencesJson: transcriptSource.deliveryAudiencesJson,
+          },
+        },
+      });
+      return "unavailable" in result ? MEMORY_INVOCATION_UNAVAILABLE : result;
+    },
+  });
+}
+
+/**
+ * Captures the exact transcript source before model work. The returned staging
+ * capability has no caller-selectable session, policy, audience, or store.
+ */
+export async function prepareAuthorizedSealedCompactionHost(
+  params: AuthorizedMemoryHostParams,
+): Promise<AuthorizedSealedCompactionHost | undefined> {
+  const sessionId = params.sessionId?.trim();
+  const trusted = createTrustedMemoryHostContext({ ...params, operation: "derive" });
+  if (!trusted || !sessionId) {
+    return undefined;
+  }
+  const transcriptSource = readAuthorizedTranscriptDerivation(
+    openOpenClawAgentDatabase({ agentId: params.agentId }).db,
+    sessionId,
+  );
+  if (!transcriptSource) {
+    return undefined;
+  }
+  const invocation = await createAuthorizedMemoryWriteInvocation({ context: trusted });
+  if ("unavailable" in invocation) {
+    return undefined;
+  }
+  const sealedSource = Object.freeze({
+      kind: "transcript",
+      sessionId,
+      eventSeqs: transcriptSource.eventSeqs,
+      sourcePolicySetId: transcriptSource.sourcePolicySetId,
+      deliveryAudiencesJson: transcriptSource.deliveryAudiencesJson,
+    });
+  return Object.freeze({
+    source: sealedSource,
+    async stage(content) {
+      return await stageAuthorizedMemorySealedCompactionForInvocation({
+        invocation,
+        content,
+        transcriptSource: sealedSource,
+      });
+    },
+  });
 }
 
 /**

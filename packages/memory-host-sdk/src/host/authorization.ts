@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import type { MemoryReadResult, MemorySearchResult, MemorySource } from "./types.js";
 
 /** Version shared by every serializable multiplayer-memory authorization shape. */
@@ -404,6 +405,43 @@ type AuthorizedMemoryContentMutation = Readonly<{
   contentType: "markdown" | "text" | "json";
 }>;
 
+/**
+ * Opaque transcript provenance prepared by core before a derivation model sees
+ * the transcript. The selected runtime validates the durable companion rows;
+ * tool arguments never choose this source.
+ */
+export type AuthorizedTranscriptDerivationSource = Readonly<{
+  kind: "transcript";
+  sessionId: string;
+  eventSeqs: readonly number[];
+  sourcePolicySetId: string;
+  deliveryAudiencesJson: string;
+}>;
+
+/** The immutable transcript-policy edge names the durable artifact it produced. */
+export type AuthorizedTranscriptDerivationPurpose = "flush" | "compaction";
+
+/**
+ * A staged sealed artifact is intentionally opaque to core. The selected
+ * memory runtime owns its bytes and catalog rows; core owns the surrounding
+ * transcript/checkpoint transaction and supplies the same SQLite connection.
+ */
+export type AuthorizedSealedCompactionArtifact = Readonly<{
+  resourceRevisionId: string;
+  commitInTransaction(params: Readonly<{
+    database: DatabaseSync;
+    compactionPolicyId: string;
+    eventSeq: number;
+  }>): void;
+}>;
+
+export type AuthorizedSealedCompactionStageParams = Readonly<{
+  context: MemoryAccessContext & Readonly<{ operation: "derive" }>;
+  plan: AuthorizedMemoryPlan & Readonly<{ operation: "derive" }>;
+  content: string;
+  transcriptSource: AuthorizedTranscriptDerivationSource;
+}>;
+
 export type AuthorizedMemoryMutation =
   | (AuthorizedMemoryContentMutation &
       Readonly<{
@@ -422,9 +460,18 @@ export type AuthorizedMemoryMutation =
   | (AuthorizedMemoryContentMutation &
       Readonly<{
         kind: "derive";
-        sourceHandles: readonly AuthorizedResourceHandle[];
-        sourcePolicySetId: string;
-      }>)
+        derivationPurpose: AuthorizedTranscriptDerivationPurpose;
+      }> &
+      (
+        | Readonly<{
+            sourceHandles: readonly AuthorizedResourceHandle[];
+            sourcePolicySetId: string;
+          }>
+        | Readonly<{
+            transcriptSource: AuthorizedTranscriptDerivationSource;
+            sourcePolicySetId: string;
+          }>
+      ))
   | (AuthorizedMemoryContentMutation &
       Readonly<{
         kind: "project" | "publish";
@@ -555,6 +602,13 @@ export interface AuthorizedMemoryRuntime {
     params: AuthorizedMemoryReadParams<"derive">,
   ): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>>;
   writeAuthorized(params: AuthorizedMemoryWriteParams): Promise<MemoryWriteResult>;
+  /**
+   * Optional because only a runtime that can commit its catalog against core's
+   * transaction may support cutover compaction. Absence is a fail-closed deny.
+   */
+  stageSealedCompaction?(
+    params: AuthorizedSealedCompactionStageParams,
+  ): Promise<AuthorizedSealedCompactionArtifact>;
   importAuthorized(
     params: AuthorizedMemoryOperationParams<"import"> &
       Readonly<{

@@ -15,6 +15,7 @@ import type {
   ContextEngineSessionTarget,
 } from "../../context-engine/types.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
 import {
   enqueueCommandInLane,
   GatewayDrainingError,
@@ -33,6 +34,7 @@ import {
   updateTaskNotifyPolicyForOwner,
 } from "../../tasks/task-owner-access.js";
 import { findActiveSessionTask } from "../session-async-task-status.js";
+import { resolveSessionAgentIds } from "../agent-scope.js";
 import { SessionManager } from "../sessions/index.js";
 import { resolveContextEngineCapabilities } from "./context-engine-capabilities.js";
 import { log } from "./logger.js";
@@ -557,6 +559,22 @@ export async function runContextEngineMaintenance(
 ): Promise<ContextEngineMaintenanceResult | undefined> {
   const contextEngine = params.contextEngine;
   if (typeof contextEngine?.maintain !== "function") {
+    return undefined;
+  }
+
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionTarget?.sessionKey ?? params.sessionKey,
+    config: params.config,
+    agentId: params.sessionTarget?.agentId ?? params.agentId,
+  });
+  // An owning engine can compact during routine maintenance. Its current plugin
+  // contract has no opaque derive plan, so cutover sessions must not let that
+  // background path assemble transcript content outside the authorized host.
+  if (contextEngine.info.ownsCompaction === true && isMemoryIsolationCutoverAgent(sessionAgentId)) {
+    log.warn("skipping context-engine maintenance without memory derivation authority", {
+      reason: params.reason,
+      sessionId: params.sessionId,
+    });
     return undefined;
   }
 

@@ -18,6 +18,7 @@ import type {
 import type { CapturedCompactionCheckpointSnapshot } from "../../gateway/session-compaction-checkpoints.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import { requireActivePluginRegistry } from "../../plugins/runtime.js";
 import { withPluginRuntimeGenerationScope } from "../../plugins/runtime/generation-scope.js";
@@ -443,6 +444,22 @@ async function compactResolvedContextEngine(
     ...params,
     missingSessionKey: "resolve-existing",
   });
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: runtimeTarget.sessionKey,
+    config: params.config,
+    agentId: runtimeTarget.agentId,
+  });
+  // Context engines own their prompt assembly and can invoke a model without the
+  // prepared native-compaction host. Until their public contract carries an opaque
+  // derive plan, letting one compact a cutover transcript would launder raw history.
+  if (contextEngine.info.ownsCompaction === true && isMemoryIsolationCutoverAgent(sessionAgentId)) {
+    return {
+      ok: false,
+      compacted: false,
+      reason: "memory derivation authorization unavailable for context-engine compaction",
+      failure: { reason: "memory_derivation_unavailable" },
+    };
+  }
   const lockedHarnessRuntime =
     params.modelSelectionLocked === true
       ? normalizeOptionalAgentRuntimeId(params.agentHarnessId)

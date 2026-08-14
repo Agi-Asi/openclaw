@@ -3,6 +3,7 @@ import { resolveThreadBindingSpawnPolicy } from "../../../channels/thread-bindin
 import type { SessionEntry } from "../../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { SubagentSpawnPreparation } from "../../../context-engine/types.js";
+import { resolveSubagentMemoryContextMode } from "../../memory-autonomous-run-policy.js";
 import { summarizeSpawnError } from "../../spawn-pipeline.js";
 import { getSubagentSpawnDeps } from "./subagent-spawn-deps.js";
 import { resolveGatewaySessionStoreTarget } from "./subagent-spawn.runtime.js";
@@ -34,8 +35,24 @@ export async function prepareSubagentSessionContext(params: {
   requesterInternalKey: string;
   childSessionKey: string;
 }): Promise<PreparedSpawnContext> {
-  if (params.contextMode === "isolated") {
-    return { status: "ok", mode: "isolated" };
+  const contextMode = resolveSubagentMemoryContextMode({
+    requested: params.contextMode,
+    memoryIsolationActive: getSubagentSpawnDeps().isMemoryIsolationCutoverAgent(
+      params.requesterAgentId,
+    ),
+  });
+  if (contextMode === "isolated") {
+    // A fork copies raw transcript rows before a child has an independently
+    // admitted memory view. Under cutover the empty intersection is the only
+    // safe default until an opaque delegation capability is issued.
+    return params.contextMode === "fork"
+      ? {
+          status: "ok",
+          mode: "isolated",
+          forkFallbackNote:
+            "context=\"fork\" is unavailable while memory isolation is active; starting with isolated context instead.",
+        }
+      : { status: "ok", mode: "isolated" };
   }
   const childTarget = resolveGatewaySessionStoreTarget({
     cfg: params.cfg,

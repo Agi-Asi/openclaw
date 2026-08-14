@@ -2,14 +2,18 @@ import { logWarn } from "../logger.js";
 import type {
   AuthorizedMemoryVirtualView,
   AuthorizedMemoryMutation,
+  AuthorizedMemoryContentPlan,
   AuthorizedMemoryPlan,
   AuthorizedMemoryResultEnvelope,
   AuthorizedResourceHandle,
   AudienceRef,
+  MemoryContentAccessOperation,
   MemoryContentAccessContext,
   MemoryAccessContext,
   MemoryWriteResult,
   AuthorizedMemoryRuntime,
+  AuthorizedSealedCompactionArtifact,
+  AuthorizedTranscriptDerivationSource,
 } from "../memory-host-sdk/host/authorization.js";
 import type {
   MemoryReadResult,
@@ -67,8 +71,8 @@ export type AuthorizedMemoryWriteInvocation = Readonly<{
 
 type InvocationState = Readonly<{
   trustedContext: TrustedMemoryAccessContext;
-  context: MemoryContentAccessContext<"read">;
-  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  context: MemoryContentAccessContext;
+  plan: AuthorizedMemoryPlan & Readonly<{ operation: MemoryContentAccessOperation }>;
   authorizationStartedAtMs: number;
   runtime: AdmittedAuthorizedMemoryReadRuntime;
   /** Bound at admission; registry changes cannot replace this run's provider. */
@@ -82,6 +86,12 @@ type InvocationState = Readonly<{
   egressReceiptIds: Set<string>;
   runExposureRevisions: Set<string>;
 }>;
+
+type ReadInvocationState = Omit<InvocationState, "context" | "plan"> &
+  Readonly<{
+    context: MemoryContentAccessContext<"read">;
+    plan: AuthorizedMemoryContentPlan<"read">;
+  }>;
 
 const VIRTUAL_ROOT_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
@@ -163,13 +173,14 @@ function readCurrentWriteContext(state: WriteInvocationState): MemoryAccessConte
 
 function readCurrentContext(
   state: InvocationState,
-): MemoryContentAccessContext<"read"> | undefined {
+): MemoryContentAccessContext | undefined {
   const current = materializeTrustedMemoryAccessContext(state.trustedContext);
-  if (!current || current.operation !== "read") {
+  if (!current || (current.operation !== "read" && current.operation !== "derive")) {
     return undefined;
   }
-  const readContext = current as MemoryContentAccessContext<"read">;
+  const readContext = current as MemoryContentAccessContext;
   if (
+    readContext.operation !== state.context.operation ||
     readContext.contextFingerprint !== state.context.contextFingerprint ||
     readContext.runId !== state.context.runId ||
     readContext.agentId !== state.context.agentId ||
@@ -185,9 +196,19 @@ function readCurrentContext(
   return readContext;
 }
 
+function isReadContentContext(
+  context: MemoryContentAccessContext,
+): context is MemoryContentAccessContext<"read"> {
+  return context.operation === "read";
+}
+
+function isReadInvocationState(state: InvocationState): state is ReadInvocationState {
+  return state.context.operation === "read" && state.plan.operation === "read";
+}
+
 function validateEnvelope<T>(params: {
   state: InvocationState;
-  context: MemoryContentAccessContext<"read">;
+  context: MemoryContentAccessContext;
   expectedRevisionHandles: readonly string[];
   envelope: AuthorizedMemoryResultEnvelope<T>;
 }): boolean {
@@ -254,7 +275,7 @@ function mergeEnvelope(
 
 function readTranscriptExposure(params: {
   state: InvocationState;
-  context: MemoryContentAccessContext<"read">;
+  context: MemoryContentAccessContext;
   pendingEnvelope?: AuthorizedMemoryResultEnvelope<unknown>;
 }) {
   const { state, context, pendingEnvelope } = params;
@@ -298,7 +319,7 @@ function readTranscriptExposure(params: {
  */
 function recordEnvelopeExposure(params: {
   state: InvocationState;
-  context: MemoryContentAccessContext<"read">;
+  context: MemoryContentAccessContext;
   envelope: AuthorizedMemoryResultEnvelope<unknown>;
 }): void {
   if (
@@ -329,8 +350,8 @@ function readState(invocation: AuthorizedMemoryReadInvocation): InvocationState 
 
 function canonicalizeAuthorizedVirtualView(params: {
   view: AuthorizedMemoryVirtualView;
-  context: MemoryContentAccessContext<"read">;
-  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  context: MemoryContentAccessContext;
+  plan: AuthorizedMemoryPlan & Readonly<{ operation: MemoryContentAccessOperation }>;
 }): AuthorizedMemoryVirtualView | undefined {
   const { view, context, plan } = params;
   const mountHandles = new Set(plan.mounts.map((mount) => mount.mountHandle));
@@ -409,16 +430,17 @@ function canonicalizeAuthorizedVirtualView(params: {
  * Creates a process-local, opaque read invocation. No caller can inject a serializable identity,
  * audience, plan, or continuation: all of those come from the trusted context and selected backend.
  */
-export async function createAuthorizedMemoryReadInvocation(params: {
+async function createAuthorizedMemoryContentInvocation(params: {
   context: TrustedMemoryAccessContext;
   capability?: MemoryPluginCapability;
+  operation: MemoryContentAccessOperation;
 }): Promise<AuthorizedMemoryReadInvocation | MemoryInvocationUnavailable> {
   const materialized = materializeTrustedMemoryAccessContext(params.context);
-  if (!materialized || materialized.operation !== "read") {
+  if (!materialized || materialized.operation !== params.operation) {
     logMemoryInvocationDiagnostic("materialization-rejected");
     return MEMORY_INVOCATION_UNAVAILABLE;
   }
-  const context = materialized as MemoryContentAccessContext<"read">;
+  const context = materialized as MemoryContentAccessContext;
   const capability =
     params.capability ??
     resolveSelectedMemoryCapabilityRegistration(requireActivePluginRegistry())?.capability;
@@ -430,7 +452,7 @@ export async function createAuthorizedMemoryReadInvocation(params: {
   try {
     const authorizationStartedAtMs = Date.now();
     const plan = (await admission.runtime.authorize(context)) as AuthorizedMemoryPlan &
-      Readonly<{ operation: "read" }>;
+      Readonly<{ operation: MemoryContentAccessOperation }>;
     if (!isCurrentPlan({ context, plan, nowMs: Date.now() })) {
       logMemoryInvocationDiagnostic("invalid-plan");
       return MEMORY_INVOCATION_UNAVAILABLE;
@@ -459,6 +481,24 @@ export async function createAuthorizedMemoryReadInvocation(params: {
     logMemoryInvocationDiagnostic("authorization-failed");
     return MEMORY_INVOCATION_UNAVAILABLE;
   }
+}
+
+export async function createAuthorizedMemoryReadInvocation(params: {
+  context: TrustedMemoryAccessContext;
+  capability?: MemoryPluginCapability;
+}): Promise<AuthorizedMemoryReadInvocation | MemoryInvocationUnavailable> {
+  return await createAuthorizedMemoryContentInvocation({ ...params, operation: "read" });
+}
+
+/**
+ * Creates an opaque content invocation for a derivation. Its content operations use the derive
+ * plan end to end, rather than checking derive once and then falling back to a read-only view.
+ */
+export async function createAuthorizedMemoryDeriveInvocation(params: {
+  context: TrustedMemoryAccessContext;
+  capability?: MemoryPluginCapability;
+}): Promise<AuthorizedMemoryReadInvocation | MemoryInvocationUnavailable> {
+  return await createAuthorizedMemoryContentInvocation({ ...params, operation: "derive" });
 }
 
 /**
@@ -531,6 +571,40 @@ export async function writeAuthorizedMemoryForInvocation(params: {
 }
 
 /**
+ * Stages bytes before the caller opens its transaction. The returned closure is
+ * the only route that may insert the selected runtime's revision/catalog rows
+ * into the core-owned sealed compaction transaction.
+ */
+export async function stageAuthorizedMemorySealedCompactionForInvocation(params: {
+  invocation: AuthorizedMemoryWriteInvocation;
+  content: string;
+  transcriptSource: AuthorizedTranscriptDerivationSource;
+}): Promise<AuthorizedSealedCompactionArtifact | MemoryInvocationUnavailable> {
+  const state = writeInvocationStates.get(params.invocation);
+  const context = state ? readCurrentWriteContext(state) : undefined;
+  if (
+    !state ||
+    !context ||
+    context.operation !== "derive" ||
+    !state.runtime.stageSealedCompaction ||
+    !isCurrentPlan({ context, plan: state.plan, nowMs: Date.now() })
+  ) {
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  try {
+    return await state.runtime.stageSealedCompaction({
+      context,
+      plan: state.plan as AuthorizedMemoryPlan & Readonly<{ operation: "derive" }>,
+      content: params.content,
+      transcriptSource: params.transcriptSource,
+    });
+  } catch {
+    logMemoryInvocationDiagnostic("authorization-failed");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+}
+
+/**
  * Obtains a selected-plugin projection for generic FS and sandbox consumers.
  * It is deliberately separate from search/read: no tool argument can turn a
  * host path, artifact locator, or mount handle into a projection request.
@@ -540,7 +614,15 @@ export async function materializeAuthorizedMemoryVirtualView(params: {
 }): Promise<AuthorizedMemoryVirtualView | MemoryInvocationUnavailable> {
   const state = readState(params.invocation);
   const context = state ? readCurrentContext(state) : undefined;
-  if (!state || !context || !state.virtualView) {
+  // Derivations may expose source bytes only to their dedicated content path. A generic virtual
+  // filesystem is a read capability, so it must not become an alternate derive transport.
+  if (
+    !state ||
+    !context ||
+    !isReadContentContext(context) ||
+    !isReadInvocationState(state) ||
+    !state.virtualView
+  ) {
     return MEMORY_INVOCATION_UNAVAILABLE;
   }
   try {
@@ -576,6 +658,8 @@ export async function readAuthorizedMemoryVirtualFile(params: {
   if (
     !state ||
     !context ||
+    !isReadContentContext(context) ||
+    !isReadInvocationState(state) ||
     !state.virtualView ||
     !isCurrentPlan({ context, plan: state.plan, nowMs: Date.now() }) ||
     state.virtualViews.get(params.view.viewId) !== params.view ||
@@ -632,7 +716,7 @@ export async function searchAuthorizedMemoryForInvocation(params: {
       ...(params.sources ? { sources: params.sources } : {}),
       limit: Math.max(1, Math.min(100, Math.trunc(params.limit ?? 10))),
       ...(params.signal ? { signal: params.signal } : {}),
-    });
+    } as never);
     const revisionHandles = envelope.value.map((result) => result.resourceHandle.resourceRevision);
     if (
       !validateEnvelope({
@@ -681,7 +765,7 @@ export async function readAuthorizedMemoryForInvocation(params: {
       handle,
       ...(params.from !== undefined ? { from: params.from } : {}),
       ...(params.lines !== undefined ? { lines: params.lines } : {}),
-    });
+    } as never);
     if (
       !validateEnvelope({
         state,

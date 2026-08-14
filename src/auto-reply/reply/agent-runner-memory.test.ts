@@ -55,7 +55,15 @@ const ensureSelectedAgentHarnessPluginMock = vi.fn();
 const ensureMemoryFlushTargetFileMock = vi.fn();
 const registerAgentRunContextMock = vi.fn();
 const clearAgentRunContextMock = vi.fn();
+const memoryHostMocks = vi.hoisted(() => ({
+  prepareAuthorizedTranscriptDerivationHost: vi.fn(),
+}));
 const TEST_MAX_FLUSH_FAILURES = 3;
+
+vi.mock("../../agents/memory-authorized-read-host.js", () => ({
+  prepareAuthorizedTranscriptDerivationHost:
+    memoryHostMocks.prepareAuthorizedTranscriptDerivationHost,
+}));
 
 type MemoryFlushTestParams = Parameters<typeof runMemoryFlushIfNeededRaw>[0] & {
   modelContextTokens?: number;
@@ -241,6 +249,7 @@ type EmbeddedAgentParams = {
   prompt?: string;
   transcriptPrompt?: string;
   memoryFlushWritePath?: string;
+  authorizedMemoryWrite?: unknown;
   silentExpected?: boolean;
   extraSystemPrompt?: string;
   bootstrapPromptWarningSignaturesSeen?: string[];
@@ -451,6 +460,9 @@ describe("runMemoryFlushIfNeeded", () => {
     ensureSelectedAgentHarnessPluginMock.mockReset().mockResolvedValue(undefined);
     registerAgentRunContextMock.mockReset();
     clearAgentRunContextMock.mockReset();
+    memoryHostMocks.prepareAuthorizedTranscriptDerivationHost
+      .mockReset()
+      .mockResolvedValue(undefined);
     incrementCompactionCountMock.mockReset().mockImplementation(async (params) => {
       const sessionKey = String(params.sessionKey ?? "");
       if (!sessionKey || !params.sessionStore?.[sessionKey]) {
@@ -499,7 +511,7 @@ describe("runMemoryFlushIfNeeded", () => {
     await fs.rm(rootDir, { recursive: true, force: true });
   });
 
-  it("does not start or materialize a legacy memory flush for a cut-over agent", async () => {
+  it("does not let a cut-over flush model summarize transcript content without derivation lineage", async () => {
     markAgentCutOver("main");
     const sessionKey = "agent:main:flush-policy";
     const sessionEntry: SessionEntry = {
@@ -536,6 +548,52 @@ describe("runMemoryFlushIfNeeded", () => {
     await expect(fs.access(path.join(rootDir, "memory", "2023-11-14.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("routes a cut-over flush through its admitted transcript mutation without a workspace path", async () => {
+    markAgentCutOver("main");
+    const authorizedMemoryWrite = { remember: vi.fn() };
+    memoryHostMocks.prepareAuthorizedTranscriptDerivationHost.mockResolvedValue(
+      authorizedMemoryWrite,
+    );
+    const sessionKey = "agent:main:authorized-flush";
+    const sessionEntry: SessionEntry = {
+      sessionId: "session",
+      updatedAt: Date.now(),
+      totalTokens: 80_000,
+      totalTokensFresh: true,
+      totalTokensVersion: 1,
+      compactionCount: 1,
+    };
+    const followupRun = createTestFollowupRun();
+    followupRun.run.agentId = "main";
+    followupRun.run.sessionKey = sessionKey;
+    followupRun.run.workspaceDir = rootDir;
+
+    await runMemoryFlushIfNeeded({
+      cfg: { agents: { defaults: { compaction: { memoryFlush: {} } } } },
+      followupRun,
+      sessionCtx: { Provider: "whatsapp" } as unknown as TemplateContext,
+      defaultModel: "anthropic/claude-opus-4-6",
+      agentCfgContextTokens: 100_000,
+      resolvedVerboseLevel: "off",
+      sessionEntry,
+      sessionStore: { [sessionKey]: sessionEntry },
+      sessionKey,
+      storePath: path.join(rootDir, "sessions.json"),
+      isHeartbeat: false,
+      replyOperation: createReplyOperation(),
+    });
+
+    expect(memoryHostMocks.prepareAuthorizedTranscriptDerivationHost).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "main", sessionId: "session" }),
+    );
+    const flushCall = requireEmbeddedAgentCall();
+    expect(flushCall.authorizedMemoryWrite).toBe(authorizedMemoryWrite);
+    expect(flushCall.memoryFlushWritePath).toBeUndefined();
+    expect(flushCall.prompt).toContain("memory_remember");
+    expect(flushCall.extraSystemPrompt).toContain("Never use a workspace file");
+    expect(ensureMemoryFlushTargetFileMock).not.toHaveBeenCalled();
   });
 
   it("runs exactly one auto-reply memory flush turn, rotates, and persists metadata", async () => {

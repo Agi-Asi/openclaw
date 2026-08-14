@@ -2165,6 +2165,167 @@ describe("short-term promotion", () => {
     });
   });
 
+  it("does not combine promotion candidates from different authorized views", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      const notes = [
+        ["2026-04-01", "Personal store promotion candidate."],
+        ["2026-04-02", "Channel store promotion candidate."],
+      ] as const;
+      for (const [date, snippet] of notes) {
+        await writeDailyMemoryNote(workspaceDir, date, [snippet]);
+      }
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "authorized promotion views",
+        results: notes.map(([date, snippet], index) => ({
+          path: `memory/${date}.md`,
+          startLine: 1,
+          endLine: 1,
+          score: 0.92,
+          snippet,
+          source: "memory" as const,
+          authorizedView: {
+            storeId: index === 0 ? "personal-store" : "channel-store",
+            viewId: index === 0 ? "personal-view" : "channel-view",
+            resourceRevision: `revision-${index + 1}`,
+            lifecycle: "active" as const,
+          },
+        })),
+      });
+
+      const ranked = await rankShortTermPromotionCandidates({
+        workspaceDir,
+        minScore: 0,
+        minRecallCount: 0,
+        minUniqueQueries: 0,
+      });
+      expect(ranked).toHaveLength(2);
+
+      const applied = await applyShortTermPromotions({
+        workspaceDir,
+        candidates: ranked,
+        minScore: 0,
+        minRecallCount: 0,
+        minUniqueQueries: 0,
+      });
+      expect(applied.applied).toBe(0);
+      await expectEnoent(fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8"));
+    });
+  });
+
+  it.each(["postbox", "quarantine"] as const)(
+    "does not rank %s content for automatic promotion",
+    async (lifecycle) => {
+      await withTempWorkspace(async (workspaceDir) => {
+        const snippet = `${lifecycle} content must remain review-only.`;
+        await writeDailyMemoryNote(workspaceDir, "2026-04-01", [snippet]);
+        await recordShortTermRecalls({
+          workspaceDir,
+          query: `${lifecycle} promotion`,
+          results: [
+            {
+              path: "memory/2026-04-01.md",
+              startLine: 1,
+              endLine: 1,
+              score: 0.92,
+              snippet,
+              source: "memory",
+              authorizedView: {
+                storeId: "review-store",
+                viewId: "review-view",
+                resourceRevision: "revision-review",
+                lifecycle,
+              },
+            },
+          ],
+        });
+
+        await expect(
+          rankShortTermPromotionCandidates({
+            workspaceDir,
+            minScore: 0,
+            minRecallCount: 0,
+            minUniqueQueries: 0,
+          }),
+        ).resolves.toEqual([]);
+      });
+    },
+  );
+
+  it("requires an immutable source revision and records it beside an authorized promotion", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      const snippet = "Authorized source retains its immutable revision.";
+      await writeDailyMemoryNote(workspaceDir, "2026-04-01", [snippet]);
+      const result = {
+        path: "memory/2026-04-01.md",
+        startLine: 1,
+        endLine: 1,
+        score: 0.92,
+        snippet,
+        source: "memory" as const,
+      };
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "missing immutable revision",
+        results: [
+          {
+            ...result,
+            authorizedView: {
+              storeId: "personal-store",
+              viewId: "personal-view",
+              resourceRevision: "",
+              lifecycle: "active",
+            },
+          },
+        ],
+      });
+      await expect(
+        rankShortTermPromotionCandidates({
+          workspaceDir,
+          minScore: 0,
+          minRecallCount: 0,
+          minUniqueQueries: 0,
+        }),
+      ).resolves.toEqual([]);
+
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "immutable revision",
+        results: [
+          {
+            ...result,
+            authorizedView: {
+              storeId: "personal-store",
+              viewId: "personal-view",
+              resourceRevision: "revision-personal-1",
+              lifecycle: "active",
+            },
+          },
+        ],
+      });
+      const ranked = await rankShortTermPromotionCandidates({
+        workspaceDir,
+        minScore: 0,
+        minRecallCount: 0,
+        minUniqueQueries: 0,
+      });
+      expect(ranked).toHaveLength(1);
+
+      await expect(
+        applyShortTermPromotions({
+          workspaceDir,
+          candidates: ranked,
+          minScore: 0,
+          minRecallCount: 0,
+          minUniqueQueries: 0,
+        }),
+      ).resolves.toMatchObject({ applied: 1 });
+      await expect(fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8")).resolves.toContain(
+        "<!-- authorized-view: store=personal-store view=personal-view revision=revision-personal-1 -->",
+      );
+    });
+  });
+
   it("does not double-prefix promoted snippets that are already markdown bullets", async () => {
     await withTempWorkspace(async (workspaceDir) => {
       await writeDailyMemoryNote(workspaceDir, "2026-04-01", [

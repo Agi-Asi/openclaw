@@ -1,6 +1,7 @@
 /** Session identity and context preparation for isolated cron runs. */
 import { isDeepStrictEqual } from "node:util";
 import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-check.js";
+import { mayInjectAutonomousSourceTranscript } from "../../agents/memory-autonomous-run-policy.js";
 import { findModelInCatalog } from "../../agents/model-catalog-lookup.js";
 import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../../agents/openai-routing.js";
 import { loadAgentRuntimePluginRegistryHandle } from "../../agents/runtime-plugins.js";
@@ -11,6 +12,7 @@ import { resolveSessionWorkStartError } from "../../config/sessions/lifecycle.js
 import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { SourceDeliveryPlan } from "../../infra/outbound/source-delivery-plan.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
 import type { PluginRegistry } from "../../plugins/registry-types.js";
 import { isCronSessionKey, parseAgentSessionKey } from "../../routing/session-key.js";
 import {
@@ -522,6 +524,10 @@ export async function prepareCronRunContext(params: {
     // Current jobs stay detached; a bounded tail preserves context without transcript continuation.
     const currentConversationContext =
       input.job.sessionTarget === "current" &&
+      mayInjectAutonomousSourceTranscript({
+        sessionTarget: input.job.sessionTarget,
+        memoryIsolationActive: isMemoryIsolationCutoverAgent(agentId),
+      }) &&
       agentPayload &&
       sourceSessionKey &&
       sourceSessionEntry

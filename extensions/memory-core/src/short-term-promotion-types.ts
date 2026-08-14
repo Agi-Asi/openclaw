@@ -30,6 +30,18 @@ export type PromotionWeights = {
   conceptual: number;
 };
 
+/**
+ * Opaque authority carried from a scoped read. `resourceRevision` is the
+ * immutable source record; promotion must never treat a workspace path as a
+ * substitute for that provenance.
+ */
+export type ShortTermPromotionAuthorizedView = {
+  storeId: string;
+  viewId: string;
+  resourceRevision: string;
+  lifecycle: "active" | "postbox" | "quarantine";
+};
+
 export type ShortTermRecallEntry = {
   key: string;
   path: string;
@@ -51,6 +63,7 @@ export type ShortTermRecallEntry = {
   projectKey?: string;
   promotedAt?: string;
   provenance?: MemoryEntryProvenance;
+  authorizedView?: ShortTermPromotionAuthorizedView;
 };
 
 export type ShortTermRecallStore = {
@@ -117,6 +130,7 @@ export type PromotionCandidate = {
   conceptTags: string[];
   components: PromotionComponents;
   provenance?: MemoryEntryProvenance;
+  authorizedView?: ShortTermPromotionAuthorizedView;
 };
 
 export type ShortTermAuditIssue = {

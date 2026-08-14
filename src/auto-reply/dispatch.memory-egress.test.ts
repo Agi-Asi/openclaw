@@ -119,6 +119,14 @@ describe("memory egress at final dispatch", () => {
     expect(hoisted.prepareMemoryEgressAuthorization).toHaveBeenCalledWith(
       expect.objectContaining({ capabilityId: "reply.block" }),
     );
+    // The finalized channel context has no authoritative session identity. The
+    // admission owner resolves sessionId/sessionKey from the registered run,
+    // so a stale inbound field cannot retarget memory egress.
+    expect(
+      hoisted.prepareMemoryEgressAuthorization.mock.calls.every(([params]) =>
+        params.sessionId === undefined && params.sessionKey === undefined,
+      ),
+    ).toBe(true);
     expect(delivered).not.toHaveBeenCalled();
     expect(dispatcher.getCancelledCounts?.()).toEqual({ tool: 0, block: 1, final: 1 });
   });

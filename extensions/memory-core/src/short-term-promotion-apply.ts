@@ -15,6 +15,8 @@ import {
   storeMemoryPreimage,
 } from "./dreaming-consolidation-artifacts.js";
 import {
+  hasOnePromotionAuthorizedView,
+  isPromotionAuthorizedViewBlocked,
   isConsolidationCandidateEligible,
   isPromotionOriginBlocked,
 } from "./dreaming-consolidation-candidates.js";
@@ -33,6 +35,7 @@ import {
   writeMemoryContent,
 } from "./short-term-promotion-memory-write.js";
 import {
+  buildPromotionAuthorizedViewAnnotation,
   buildPromotionRecallAnnotations,
   groupPromotionCandidatesByProjectKey,
 } from "./short-term-promotion-metadata.js";
@@ -86,7 +89,7 @@ function buildPromotionSection(
       // rehydrated snippet so ranking, provenance, and dream narratives remain
       // tied to the source entry instead of this presentation budget.
       lines.push(
-        `- ${formatPromotedSnippetForMemory(candidate.snippet, maxPromotedSnippetTokens)} ${metadata} ${buildPromotionRecallAnnotations(candidate)}`,
+        `- ${formatPromotedSnippetForMemory(candidate.snippet, maxPromotedSnippetTokens)} ${metadata} ${buildPromotionRecallAnnotations(candidate)}${buildPromotionAuthorizedViewAnnotation(candidate)}`,
       );
     }
     if (projectGroups.length > 1) {
@@ -165,6 +168,7 @@ function consolidationCandidateFingerprint(candidate: PromotionCandidate): strin
     endLine: candidate.endLine,
     snippet: candidate.snippet,
     provenance: candidate.provenance,
+    authorizedView: candidate.authorizedView,
     projectKey: candidate.projectKey,
   });
 }
@@ -277,6 +281,7 @@ export async function applyShortTermPromotions(
             startLine: entry.startLine,
             endLine: entry.endLine,
             snippet: entry.snippet,
+            ...(entry.authorizedView ? { authorizedView: entry.authorizedView } : {}),
           },
           entry.provenance,
         )
@@ -295,21 +300,23 @@ export async function applyShortTermPromotions(
     // legitimate daily-note candidates stay eligible.
     const reason = isPromotionOriginBlocked(candidate)
       ? `origin filter (${candidate.provenance?.originClass})`
-      : options.consolidation && (!latest || !isConsolidationCandidateEligible(candidate))
-        ? "consolidation origin/session filter"
-        : isContaminatedDreamingSnippet(candidate.snippet)
-          ? "contamination filter"
-          : candidate.promotedAt || latest?.promotedAt
-            ? "already promoted"
-            : candidate.score < minScore
-              ? `score threshold (${candidate.score.toFixed(3)} < ${minScore})`
-              : candidate.signalCount < minRecallCount
-                ? `signal threshold (${candidate.signalCount} < ${minRecallCount})`
-                : queryCount < minUniqueQueries
-                  ? `query threshold (${queryCount} < ${minUniqueQueries})`
-                  : maxAgeDays >= 0 && candidate.ageDays > maxAgeDays
-                    ? `age threshold (${candidate.ageDays.toFixed(1)}d > ${maxAgeDays}d)`
-                    : undefined;
+      : isPromotionAuthorizedViewBlocked(candidate)
+        ? "authorized view filter"
+        : options.consolidation && (!latest || !isConsolidationCandidateEligible(candidate))
+          ? "consolidation origin/session filter"
+          : isContaminatedDreamingSnippet(candidate.snippet)
+            ? "contamination filter"
+            : candidate.promotedAt || latest?.promotedAt
+              ? "already promoted"
+              : candidate.score < minScore
+                ? `score threshold (${candidate.score.toFixed(3)} < ${minScore})`
+                : candidate.signalCount < minRecallCount
+                  ? `signal threshold (${candidate.signalCount} < ${minRecallCount})`
+                  : queryCount < minUniqueQueries
+                    ? `query threshold (${queryCount} < ${minUniqueQueries})`
+                    : maxAgeDays >= 0 && candidate.ageDays > maxAgeDays
+                      ? `age threshold (${candidate.ageDays.toFixed(1)}d > ${maxAgeDays}d)`
+                      : undefined;
     if (reason) {
       rejectionReasons.set(candidate.key, reason);
     }
@@ -319,10 +326,16 @@ export async function applyShortTermPromotions(
   for (const candidate of eligible.slice(limit)) {
     rejectionReasons.set(candidate.key, `selection limit (${limit})`);
   }
+  const selectedInOneAuthorizedView = hasOnePromotionAuthorizedView(selected) ? selected : [];
+  if (selectedInOneAuthorizedView.length === 0 && selected.length > 0) {
+    for (const candidate of selected) {
+      rejectionReasons.set(candidate.key, "authorized view boundary");
+    }
+  }
 
   const rehydratedSelected: PromotionCandidate[] = [];
   const plannedSourceFingerprints = new Map<string, string>();
-  for (const candidate of selected) {
+  for (const candidate of selectedInOneAuthorizedView) {
     const sourceFingerprintBefore = await promotionSourceFingerprint(workspaceDir, candidate);
     const rehydrated = await rehydratePromotionCandidate(workspaceDir, candidate);
     const sourceFingerprintAfter = await promotionSourceFingerprint(workspaceDir, candidate);
@@ -454,6 +467,9 @@ export async function applyShortTermPromotions(
           continue;
         }
         const currentCandidate = withAuthoritativeProvenance(candidate, entry.provenance);
+        if (isPromotionAuthorizedViewBlocked(currentCandidate)) {
+          continue;
+        }
         if (options.consolidation && !isConsolidationCandidateEligible(currentCandidate)) {
           continue;
         }

@@ -1,4 +1,5 @@
 import { err, ok, type Result } from "@openclaw/normalization-core/result";
+import { executeSqliteQueryTakeFirstSync } from "../../infra/kysely-sync.js";
 import {
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
@@ -35,6 +36,8 @@ import {
 } from "./session-accessor.sqlite-read.js";
 import {
   cloneSessionEntry,
+  getSessionKysely,
+  resolveSqliteTranscriptArchiveDirectory,
   resolveSqliteTranscriptScope,
   runExclusiveSqliteSessionWrite,
   toDatabaseOptions,
@@ -46,14 +49,25 @@ import {
   readCommittedTranscriptMessageSequence,
   rememberCommittedTranscriptMessageSequencesInTransaction,
 } from "./session-accessor.sqlite-transcript-sequences.js";
-import { readTranscriptGenerationInTransaction } from "./session-accessor.sqlite-transcript-state.js";
+import {
+  readNextTranscriptSeq,
+  readTranscriptGenerationInTransaction,
+} from "./session-accessor.sqlite-transcript-state.js";
 import {
   appendTranscriptEventInTransaction,
+  appendSealedCompactionTranscriptEventInTransaction,
   replaceSqliteTranscriptEventsInTransaction,
   rewriteSqliteTranscriptEventRowsInTransaction,
 } from "./session-accessor.sqlite-transcript-store.js";
 import type { SessionTranscriptWriteTransactionContext } from "./session-accessor.types.js";
-import { readAuthorizedTranscriptEventSeqs } from "./session-transcript-memory-policy.js";
+import {
+  persistSealedCompactionMemoryPolicyInTransaction,
+  readAuthorizedTranscriptDerivation,
+  readAuthorizedTranscriptEventSeqs,
+  readSealedCompactionOutputMemoryPolicyInTransaction,
+  type AuthorizedTranscriptDerivation,
+  type SealedCompactionMemoryPolicy,
+} from "./session-transcript-memory-policy.js";
 import type {
   SessionTranscriptTurnExpectedState,
   SessionTranscriptTurnLifecyclePatch,
@@ -67,7 +81,7 @@ import {
   SessionTranscriptWriterClaimReboundError,
   withOwnedSessionTranscriptWriterFence,
 } from "./transcript-write-context.js";
-import type { InternalSessionEntry, SessionEntry } from "./types.js";
+import type { InternalSessionEntry, SessionCompactionCheckpoint, SessionEntry } from "./types.js";
 import { mergeSessionEntry } from "./types.js";
 
 // Transcript write owner. Queue coordination surrounds synchronous SQLite commit sections.
@@ -653,6 +667,134 @@ export async function withTranscriptWriteTransaction<T>(
       { operationLabel: "session.transcript.batch" },
     ),
   );
+}
+
+type SealedCompactionCommit = (params: {
+  database: OpenClawAgentDatabase;
+  compactionPolicy: SealedCompactionMemoryPolicy;
+  eventSeq: number;
+}) => unknown;
+
+const MAX_SEALED_COMPACTION_CHECKPOINTS_PER_SESSION = 25;
+
+function persistSealedCompactionCheckpointInTransaction(params: {
+  database: OpenClawAgentDatabase;
+  resolved: ReturnType<typeof resolveSqliteTranscriptScope>;
+  checkpoint: SessionCompactionCheckpoint;
+}): void {
+  if (params.checkpoint.sessionId !== params.resolved.sessionId) {
+    throw new Error("sealed compaction checkpoint is unavailable");
+  }
+  const current = readSessionEntryRow(params.database, params.resolved.sessionKey)?.entry;
+  if (!current || current.sessionId !== params.resolved.sessionId) {
+    throw new Error("sealed compaction checkpoint session is unavailable");
+  }
+  const next = cloneSessionEntry(current);
+  // Cutover checkpoints are SQLite references, so all byte/file planning is
+  // complete before BEGIN. Retain the same bounded metadata history as the
+  // checkpoint owner without doing filesystem work in this transaction.
+  next.compactionCheckpoints = [...(current.compactionCheckpoints ?? []), params.checkpoint].slice(
+    -MAX_SEALED_COMPACTION_CHECKPOINTS_PER_SESSION,
+  );
+  next.updatedAt = Math.max(current.updatedAt ?? 0, params.checkpoint.createdAt);
+  writeSessionEntry(params.database, params.resolved.sessionKey, next, { previousEntry: current });
+}
+
+function sameAuthorizedTranscriptDerivation(
+  left: AuthorizedTranscriptDerivation,
+  right: AuthorizedTranscriptDerivation,
+): boolean {
+  return (
+    left.sourcePolicySetId === right.sourcePolicySetId &&
+    left.deliveryAudiencesJson === right.deliveryAudiencesJson &&
+    left.eventSeqs.length === right.eventSeqs.length &&
+    left.eventSeqs.every((eventSeq, index) => eventSeq === right.eventSeqs[index])
+  );
+}
+
+/**
+ * Commits a compaction event and its derived-state owner in one SQLite transaction.
+ * The artifact owner must stage filesystem bytes before this call and keep its callback
+ * synchronous; a source-policy race or a partial callback rolls back every durable row.
+ */
+export async function commitSealedSqliteTranscriptCompaction(params: {
+  scope: SessionTranscriptWriteScope;
+  event: TranscriptEvent;
+  compactionPolicyId: string;
+  source: AuthorizedTranscriptDerivation;
+  checkpoint?: SessionCompactionCheckpoint;
+  commitDerivedState: SealedCompactionCommit;
+}): Promise<{ compactionPolicy: SealedCompactionMemoryPolicy; eventSeq: number }> {
+  const resolved = resolveSqliteTranscriptScope(params.scope);
+  return await runExclusiveSqliteSessionWrite(resolved, async () => {
+    let result: { compactionPolicy: SealedCompactionMemoryPolicy; eventSeq: number } | undefined;
+    runOpenClawAgentWriteTransaction(
+      (database) => {
+        const currentSource = readAuthorizedTranscriptDerivation(database.db, resolved.sessionId);
+        if (!currentSource || !sameAuthorizedTranscriptDerivation(currentSource, params.source)) {
+          throw new Error("sealed compaction source policy is unavailable");
+        }
+        const compactionPolicy = persistSealedCompactionMemoryPolicyInTransaction({
+          db: database.db,
+          compactionPolicyId: params.compactionPolicyId,
+          sessionId: resolved.sessionId,
+          source: params.source,
+        });
+        const outputPolicy = readSealedCompactionOutputMemoryPolicyInTransaction({
+          database,
+          sessionId: resolved.sessionId,
+          source: params.source,
+        });
+        if (!outputPolicy) {
+          throw new Error("sealed compaction output policy is unavailable");
+        }
+        if (
+          !appendSealedCompactionTranscriptEventInTransaction(
+            database,
+            resolved,
+            params.event,
+            outputPolicy,
+          )
+        ) {
+          throw new Error("sealed compaction transcript event was not appended");
+        }
+        const eventSeq = readNextTranscriptSeq(database, resolved.sessionId) - 1;
+        const eventPolicy = executeSqliteQueryTakeFirstSync(
+          database.db,
+          getSessionKysely(database.db)
+            .selectFrom("transcript_event_memory_policies")
+            .select(["authorization_status", "delivery_audiences_json", "source_policy_set_id"])
+            .where("session_id", "=", resolved.sessionId)
+            .where("event_seq", "=", eventSeq),
+        );
+        if (
+          eventPolicy?.authorization_status !== "authorized" ||
+          eventPolicy.source_policy_set_id !== params.source.sourcePolicySetId ||
+          eventPolicy.delivery_audiences_json !== params.source.deliveryAudiencesJson
+        ) {
+          throw new Error("sealed compaction output policy is unavailable");
+        }
+        if (params.checkpoint) {
+          persistSealedCompactionCheckpointInTransaction({
+            database,
+            resolved,
+            checkpoint: params.checkpoint,
+          });
+        }
+        const commitResult = params.commitDerivedState({ database, compactionPolicy, eventSeq });
+        if (commitResult && typeof (commitResult as PromiseLike<unknown>).then === "function") {
+          throw new Error("sealed compaction derived-state commit must be synchronous");
+        }
+        result = { compactionPolicy, eventSeq };
+      },
+      toDatabaseOptions(resolved),
+      { operationLabel: "session.compaction.sealed" },
+    );
+    if (!result) {
+      throw new Error("sealed compaction transaction did not commit");
+    }
+    return result;
+  });
 }
 
 function isSqliteTranscriptSnapshotUnchanged(

@@ -209,8 +209,6 @@ function installMemoryEgressAdmission(
   const resolveDeliveryFacts = () => resolveCurrentMemoryEgressDeliveryFacts(finalized);
   const memoryRunIdentity = {
     agentId: finalized.AgentId,
-    sessionId: finalized.SessionId,
-    sessionKey: finalized.SessionKey,
   };
   if (
     !appendReplyDispatcherPayloadPrepare(dispatcher, (payload, info) => {

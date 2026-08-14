@@ -25,6 +25,7 @@ import {
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import type { ConversationRecallContext } from "./conversation-recall.types.js";
+import type { AuthorizedMemoryWriteHost } from "../plugins/tool-types.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 import {
@@ -104,6 +105,8 @@ export function createOpenClawTools(
     sandboxBrowserBridgeUrl?: string;
     allowHostBrowserControl?: boolean;
     agentSessionKey?: string;
+    /** Pre-admitted host-owned mutation for a transcript-derived flush. */
+    authorizedMemoryWrite?: AuthorizedMemoryWriteHost;
     toolBindings?: Readonly<Record<string, unknown>>;
     /** Durable store key when it differs from the sandbox/policy session key. */
     runSessionKey?: string;

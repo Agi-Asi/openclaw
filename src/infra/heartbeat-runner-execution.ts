@@ -32,6 +32,7 @@ import {
   loadExactSessionEntry,
   type SessionEntryLifecycleRemoval,
 } from "../config/sessions/session-accessor.js";
+import { buildSessionCreationStamp } from "../config/sessions/session-entry-provenance.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   hasActiveCronJobs,
@@ -42,6 +43,7 @@ import {
 import { resolveCronSession } from "../cron/isolated-agent/session.js";
 import { writeCronJobScratch } from "../cron/scratch-store.js";
 import { resolveCronJobsStorePathFromConfig } from "../cron/store.js";
+import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import {
   getQueueSize,
   isCommandLaneTaskMarkerCurrent,
@@ -70,6 +72,7 @@ import {
   shouldPreflightExecEventWake,
 } from "./heartbeat-runner-prompt.js";
 import {
+  resolveMemoryIsolatedHeartbeatSessionKey,
   resolveHeartbeatSession,
   resolveIsolatedHeartbeatSessionKey,
   resolveStaleHeartbeatIsolatedSessionKey,
@@ -403,7 +406,8 @@ export async function prepareHeartbeatRunStage(wake: ReadyHeartbeatWake) {
   // a new session ID (empty transcript) each run, avoiding the cost of
   // sending the full conversation history (~100K tokens) to the LLM.
   // Delivery routing still uses the main session entry (lastChannel, lastTo).
-  const useIsolatedSession = heartbeat?.isolatedSession === true;
+  const memoryIsolationActive = isMemoryIsolationCutoverAgent(agentId);
+  const useIsolatedSession = heartbeat?.isolatedSession === true || memoryIsolationActive;
   const delivery = await resolveHeartbeatDeliveryTargetWithSessionRoute({
     cfg,
     agentId,
@@ -488,22 +492,32 @@ export async function prepareHeartbeatRunStage(wake: ReadyHeartbeatWake) {
   let runSessionEntry = entry;
   let outboundPolicySessionKey: string | undefined;
   if (useIsolatedSession) {
-    const configuredSession = resolveHeartbeatSession(cfg, agentId, heartbeat);
-    // Collapse only the repeated `:heartbeat` suffixes introduced by wake-triggered
-    // re-entry for heartbeat-created isolated sessions. Real session keys that
-    // happen to end with `:heartbeat` still get a distinct isolated sibling.
-    const { isolatedSessionKey, isolatedBaseSessionKey } = resolveIsolatedHeartbeatSessionKey({
-      agentId,
-      sessionKey,
-      configuredSessionKey: configuredSession.sessionKey,
-      sessionEntry: entry,
-    });
+    // Under memory isolation, old session keys may still select a delivery
+    // target but cannot name the autonomous run or its policy context.
+    const isolatedSession = memoryIsolationActive
+      ? {
+          isolatedSessionKey: resolveMemoryIsolatedHeartbeatSessionKey(agentId),
+          isolatedBaseSessionKey: undefined,
+        }
+      : (() => {
+          const configuredSession = resolveHeartbeatSession(cfg, agentId, heartbeat);
+          return resolveIsolatedHeartbeatSessionKey({
+            agentId,
+            sessionKey,
+            configuredSessionKey: configuredSession.sessionKey,
+            sessionEntry: entry,
+          });
+        })();
+    const { isolatedSessionKey } = isolatedSession;
+    const { isolatedBaseSessionKey } = isolatedSession;
     const isolatedStorePath = resolveSessionStorePathCore(cfg.session?.store, { agentId });
-    const staleIsolatedSessionKey = resolveStaleHeartbeatIsolatedSessionKey({
-      sessionKey,
-      isolatedSessionKey,
-      isolatedBaseSessionKey,
-    });
+    const staleIsolatedSessionKey = isolatedBaseSessionKey
+      ? resolveStaleHeartbeatIsolatedSessionKey({
+          sessionKey,
+          isolatedSessionKey,
+          isolatedBaseSessionKey,
+        })
+      : undefined;
     if (
       isReplyRunActive(isolatedSessionKey) ||
       hasActiveRunForSession(isolatedSessionKey, listActiveEmbeddedRuns)
@@ -551,7 +565,9 @@ export async function prepareHeartbeatRunStage(wake: ReadyHeartbeatWake) {
             });
             const nextEntry = {
               ...cronSession.sessionEntry,
-              heartbeatIsolatedBaseSessionKey: isolatedBaseSessionKey,
+              ...(memoryIsolationActive
+                ? buildSessionCreationStamp({ via: "cron", actor: { type: "system" } })
+                : { heartbeatIsolatedBaseSessionKey: isolatedBaseSessionKey }),
             };
             runSessionEntry = nextEntry;
             return nextEntry;
@@ -567,7 +583,7 @@ export async function prepareHeartbeatRunStage(wake: ReadyHeartbeatWake) {
       });
     }
     runSessionKey = isolatedSessionKey;
-    outboundPolicySessionKey = isolatedBaseSessionKey;
+    outboundPolicySessionKey = memoryIsolationActive ? isolatedSessionKey : isolatedBaseSessionKey;
 
     const actualUseHeartbeatResponseToolPrompt = shouldUseHeartbeatResponseToolPrompt({
       cfg,

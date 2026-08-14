@@ -107,6 +107,83 @@ export type MemoryResourceRevisionRow = {
   retired_at: number | null;
 };
 
+export type MemoryRevisionPolicyRequirementRow = {
+  revision_id: string;
+  policy_id: string;
+  expected_revision_id: string;
+  expected_revocation_epoch: number;
+  requirement_kind: "output-policy" | "source-policy";
+  created_at: number;
+};
+
+export type MemoryLineageEdgeRow = {
+  child_revision_id: string;
+  parent_kind:
+    | "resource-revision"
+    | "transcript-policy-set"
+    | "compaction-policy"
+    | "checkpoint"
+    | "export"
+    | "child-artifact";
+  parent_id: string;
+  relation_kind:
+    | "derived-from"
+    | "compacted-from"
+    | "flushed-from"
+    | "dreamed-from"
+    | "promoted-from"
+    | "exported-from"
+    | "child-produced";
+  created_at: number;
+};
+
+type MemoryPolicySetMemberRow = {
+  policy_set_id: string;
+  policy_id: string;
+  expected_revision_id: string;
+  expected_revocation_epoch: number;
+  audience_intersection_json: string;
+  retention_state: string;
+  created_at: number;
+};
+
+type SessionMemorySubjectSnapshotRow = {
+  session_id: string;
+  session_identity_revision: string;
+  subject_revision: string;
+};
+
+type TranscriptEventMemoryPolicyRow = {
+  session_id: string;
+  event_seq: number;
+  authorization_status: string;
+  source_policy_set_id: string | null;
+  run_exposure_set_id: string | null;
+  delivery_audiences_json: string | null;
+  session_identity_revision: string | null;
+  subject_revision: string | null;
+};
+
+type TranscriptEventMemoryPolicyDetailRow = {
+  session_id: string;
+  event_seq: number;
+  retention_state: string;
+  normalized_audience_intersection_json: string;
+  finalized_delivery_audiences_json: string;
+};
+
+type TranscriptEventRow = {
+  session_id: string;
+  seq: number;
+};
+
+type MemoryRunExposureResourceRow = {
+  exposure_set_id: string;
+  resource_revision_id: string;
+  policy_set_id: string;
+  created_at: number;
+};
+
 export type MemoryResourceSubjectRow = {
   revision_id: string;
   subject_kind: "person" | "project" | "conversation" | "topic";
@@ -203,6 +280,14 @@ export type ScopedMemoryDatabase = {
   memory_policy_entries: MemoryPolicyEntryRow;
   memory_resources: MemoryResourceRow;
   memory_resource_revisions: MemoryResourceRevisionRow;
+  memory_revision_policy_requirements: MemoryRevisionPolicyRequirementRow;
+  memory_lineage_edges: MemoryLineageEdgeRow;
+  memory_policy_set_members: MemoryPolicySetMemberRow;
+  session_memory_subject_snapshots: SessionMemorySubjectSnapshotRow;
+  transcript_event_memory_policies: TranscriptEventMemoryPolicyRow;
+  transcript_event_memory_policy_details: TranscriptEventMemoryPolicyDetailRow;
+  transcript_events: TranscriptEventRow;
+  memory_run_exposure_resources: MemoryRunExposureResourceRow;
   memory_resource_subjects: MemoryResourceSubjectRow;
   memory_scoped_chunks: MemoryScopedChunkRow;
   memory_scoped_chunk_vectors: MemoryScopedChunkVectorRow;

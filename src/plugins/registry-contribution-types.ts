@@ -284,6 +284,7 @@ export type MemoryPluginRuntime = {
   searchAuthorized?: AuthorizedMemoryRuntime["searchAuthorized"];
   readAuthorized?: AuthorizedMemoryRuntime["readAuthorized"];
   writeAuthorized?: AuthorizedMemoryRuntime["writeAuthorized"];
+  stageSealedCompaction?: AuthorizedMemoryRuntime["stageSealedCompaction"];
   importAuthorized?: AuthorizedMemoryRuntime["importAuthorized"];
   syncAuthorized?: AuthorizedMemoryRuntime["syncAuthorized"];
   exportAuthorized?: AuthorizedMemoryRuntime["exportAuthorized"];

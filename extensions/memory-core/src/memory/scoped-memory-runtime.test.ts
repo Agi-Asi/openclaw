@@ -20,9 +20,17 @@ import {
   consumeAdmittedChannelMemoryIdentityFromContext,
   createChannelMemoryIdentityAdmission,
 } from "../../../../src/channels/message-access/memory-identity-admission.js";
+import { appendSqliteTranscriptMessage } from "../../../../src/config/sessions/session-accessor.sqlite-transcript-write.js";
+import { readAuthorizedTranscriptDerivation } from "../../../../src/config/sessions/session-transcript-memory-policy.js";
+import { withOwnedSessionTranscriptWrites } from "../../../../src/config/sessions/transcript-write-context.js";
 import { admitMemoryAuthorizationReadRuntime } from "../../../../src/plugins/memory-authorization-runtime.js";
 import { resetMemoryIsolationCutoverForTest } from "../../../../src/plugins/memory-cutover.js";
-import { readLatestDurableMemoryRunExposure } from "../../../../src/plugins/memory-run-exposure-ledger.js";
+import { registerAgentRunContext, resetAgentRunRegistryForTest } from "../../../../src/infra/agent-run-registry.js";
+import {
+  persistMemoryRunExposureBeforeContentInDatabase,
+  readLatestDurableMemoryRunExposure,
+} from "../../../../src/plugins/memory-run-exposure-ledger.js";
+import { prepareMemoryRunExposure } from "../../../../src/plugins/memory-run-exposure.js";
 import { createEmptyPluginRegistry } from "../../../../src/plugins/registry-empty.js";
 import {
   resetPluginRuntimeStateForTest,
@@ -49,6 +57,7 @@ import { builtinScopedMemoryConformanceAdapter } from "./scoped-memory-policy.js
 import {
   createBuiltinScopedMemoryResource,
   readBuiltinScopedMemoryRevisionSnapshot,
+  setBuiltinScopedMemoryRevisionLifecycle,
 } from "./scoped-memory-resources.js";
 import {
   builtinScopedMemoryAuthorizedRuntime,
@@ -77,6 +86,7 @@ describe("builtin scoped authorized runtime", () => {
     dispatchReplyFromConfig.mockReset();
     resetBuiltinScopedMemoryAuthorizedRuntimeForTest();
     resetMemoryIsolationCutoverForTest();
+    resetAgentRunRegistryForTest();
     resetPluginRuntimeStateForTest();
     closeOpenClawAgentDatabasesForTest();
     closeOpenClawStateDatabaseForTest();
@@ -388,6 +398,20 @@ describe("builtin scoped authorized runtime", () => {
         );
       database
         .prepare(
+          `INSERT INTO memory_revision_policy_requirements
+             (revision_id, policy_id, expected_revision_id, expected_revocation_epoch,
+              requirement_kind, created_at)
+           VALUES (?, ?, ?, ?, 'output-policy', ?)`,
+        )
+        .run(
+          revisionId,
+          row.policy_id,
+          params.policyRevisionId ?? row.current_revision_id,
+          row.revocation_epoch,
+          now,
+        );
+      database
+        .prepare(
           `INSERT INTO memory_write_intents
              (intent_id, idempotency_key, mutation_id, agent_id, request_id, run_id, context_fingerprint,
               plan_id, mutation_kind, store_id, resource_id, pending_revision_id, staged_locator,
@@ -474,6 +498,253 @@ describe("builtin scoped authorized runtime", () => {
         handle: { ...hit.resourceHandle, resourceRevision: "forged" },
       }),
     ).rejects.toThrow("unavailable");
+  });
+
+  it("authorizes compaction sources with derive rather than downgrading them to read", async () => {
+    const principalId = "derive-owner";
+    const store = createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: principalId,
+      authorityKind: "user",
+      authorityOwnerId: principalId,
+      defaultCapabilities: ["retrieve", "read", "derive"],
+      actor: { kind: "human", id: principalId },
+      reason: "derive source fixture",
+    });
+    createBuiltinScopedMemoryResource({
+      agentId: "main",
+      store,
+      logicalLocator: "MEMORY.md",
+      content: "DERIVE_ONLY_SOURCE_SENTINEL",
+      actor: { kind: "human", id: principalId },
+    });
+    const context = {
+      ...createContext(principalId),
+      operation: "derive" as const,
+    } satisfies MemoryContentAccessContext<"derive">;
+    const plan = await builtinScopedMemoryAuthorizedRuntime.authorize(context);
+
+    const searched = await builtinScopedMemoryAuthorizedRuntime.searchAuthorized({
+      context,
+      plan,
+      query: "DERIVE_ONLY_SOURCE_SENTINEL",
+      limit: 10,
+    });
+    expect(searched).toMatchObject({ value: [{ snippet: "DERIVE_ONLY_SOURCE_SENTINEL" }] });
+    const source = searched.value[0];
+    if (!source) {
+      throw new Error("fixture expected a derivation source");
+    }
+    const derived = await builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+      context,
+      plan,
+      mutation: {
+        version: 1,
+        kind: "derive",
+        derivationPurpose: "flush",
+        mutationId: "derive-output",
+        idempotencyKey: "derive-output-request",
+        content: "DERIVED_OUTPUT_SENTINEL",
+        contentType: "markdown",
+        sourceHandles: [source.resourceHandle],
+        sourcePolicySetId: searched.exposureReceipt.sourcePolicySetId,
+      },
+    });
+    const derivedRevisionId = derived.resourceHandle?.resourceRevision;
+    if (!derivedRevisionId) {
+      throw new Error("fixture expected a derived revision");
+    }
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare(
+            "SELECT parent_kind, parent_id, relation_kind FROM memory_lineage_edges WHERE child_revision_id = ?",
+          )
+          .all(derivedRevisionId),
+      ).toEqual([
+        {
+          parent_kind: "resource-revision",
+          parent_id: source.resourceHandle.resourceRevision,
+          relation_kind: "derived-from",
+        },
+      ]);
+      expect(
+        database
+          .prepare(
+            "SELECT count(*) AS count FROM memory_revision_policy_requirements WHERE revision_id = ?",
+          )
+          .get(derivedRevisionId),
+      ).toEqual({ count: 1 });
+    });
+    setBuiltinScopedMemoryRevisionLifecycle({
+      agentId: "main",
+      revisionId: source.resourceHandle.resourceRevision,
+      lifecycleState: "tombstoned",
+    });
+    expect(
+      readBuiltinScopedMemoryRevisionSnapshot({
+        agentId: "main",
+        storeIds: [store.storeId],
+        revisionId: derivedRevisionId,
+      }),
+    ).toBeUndefined();
+    expect(plan.mounts[0]?.capabilities).toEqual(["retrieve", "read", "derive"]);
+  });
+
+  it("records transcript policy-set lineage for an authorized compaction derivation", async () => {
+    const principalId = "compaction-owner";
+    const sourceStore = createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: principalId,
+      authorityKind: "user",
+      authorityOwnerId: principalId,
+      defaultCapabilities: ["retrieve", "read", "derive"],
+      actor: { kind: "human", id: principalId },
+      reason: "compaction transcript fixture",
+    });
+    const source = createBuiltinScopedMemoryResource({
+      agentId: "main",
+      store: sourceStore,
+      logicalLocator: "MEMORY.md",
+      content: "COMPACTION_TRANSCRIPT_SOURCE_SENTINEL",
+      actor: { kind: "human", id: principalId },
+    });
+    const context = {
+      ...createContext(principalId),
+      operation: "derive" as const,
+    } satisfies MemoryContentAccessContext<"derive">;
+    const plan = await builtinScopedMemoryAuthorizedRuntime.authorize(context);
+    const database = openOpenClawAgentDatabase({ agentId: "main" });
+    markCutOver();
+    database.db
+      .prepare(
+        `INSERT INTO session_memory_subjects
+          (session_key, subject_kind, binding_id, principal_id, subject_revision, created_at)
+         VALUES (?, 'user', ?, ?, ?, 1)`,
+      )
+      .run(context.sessionKey, `binding-${principalId}`, principalId, context.subjectRevision);
+    database.db
+      .prepare(
+        `INSERT INTO session_memory_subject_snapshots
+          (session_id, session_key, subject_revision, session_identity_revision, created_at)
+         VALUES (?, ?, ?, ?, 1)`,
+      )
+      .run(
+        context.sessionId,
+        context.sessionKey,
+        context.subjectRevision,
+        context.sessionIdentityRevision,
+      );
+    const exposure = prepareMemoryRunExposure({
+      agentId: context.agentId,
+      sessionId: context.sessionId,
+      sessionKey: context.sessionKey,
+      runId: context.runId,
+      contextFingerprint: context.contextFingerprint,
+      planId: plan.planId,
+      memoryPolicyRevision: plan.memoryPolicyRevision,
+      sourcePolicySetIds: [source.sourcePolicySetId],
+      exposedResourceRevisions: [source.revisionId],
+      exposureReceiptIds: ["compaction-exposure-receipt"],
+      egressReceiptIds: ["compaction-egress-receipt"],
+      deliveryAudiences: context.delivery.audiences,
+      deliveryRevision: context.delivery.deliveryRevision,
+      egressRegistryRevision: context.delivery.egressRegistryRevision,
+      sessionIdentityRevision: context.sessionIdentityRevision,
+      subjectRevision: context.subjectRevision,
+      actorEvidence: {
+        version: 1,
+        kind: "principal",
+        actorKind: "human",
+        principalId,
+        assurance: "gateway-profile",
+        evidenceRevision: `binding-${principalId}`,
+      },
+      delegationSnapshot: { version: 1, kind: "none" },
+      hostFactsRevision: context.hostFactsRevision,
+    });
+    expect(persistMemoryRunExposureBeforeContentInDatabase({ database, snapshot: exposure })).toBe(
+      true,
+    );
+    await withOwnedSessionTranscriptWrites(
+      {
+        sessionTarget: {
+          agentId: context.agentId,
+          expectedWriterRunId: context.runId,
+          sessionId: context.sessionId,
+          sessionKey: context.sessionKey,
+        },
+        withTranscriptWrite: async (run) => await run(),
+      },
+      async () => {
+        await appendSqliteTranscriptMessage(
+          { agentId: context.agentId, sessionId: context.sessionId, sessionKey: context.sessionKey },
+          {
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "COMPACTION_TRANSCRIPT_EVENT_SENTINEL" }],
+            },
+          },
+        );
+      },
+    );
+    const transcript = readAuthorizedTranscriptDerivation(database.db, context.sessionId);
+    if (!transcript) {
+      throw new Error("fixture expected an authorized transcript derivation");
+    }
+
+    const derived = await builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+      context,
+      plan,
+      mutation: {
+        version: 1,
+        kind: "derive",
+        derivationPurpose: "compaction",
+        mutationId: "compaction-derived-output",
+        idempotencyKey: "compaction-derived-output-request",
+        content: "COMPACTION_DERIVED_OUTPUT_SENTINEL",
+        contentType: "markdown",
+        sourcePolicySetId: transcript.sourcePolicySetId,
+        transcriptSource: {
+          kind: "transcript",
+          sessionId: context.sessionId,
+          eventSeqs: transcript.eventSeqs,
+          sourcePolicySetId: transcript.sourcePolicySetId,
+          deliveryAudiencesJson: transcript.deliveryAudiencesJson,
+        },
+      },
+    });
+    const derivedRevisionId = derived.resourceHandle?.resourceRevision;
+    if (!derivedRevisionId) {
+      throw new Error("fixture expected a derived revision");
+    }
+    withScopedMemoryDatabase("main", (scopedDatabase) => {
+      expect(
+        scopedDatabase
+          .prepare(
+            `SELECT parent_kind, parent_id, relation_kind
+               FROM memory_lineage_edges
+              WHERE child_revision_id = ?
+              ORDER BY parent_kind, parent_id, relation_kind`,
+          )
+          .all(derivedRevisionId),
+      ).toEqual([
+        {
+          parent_kind: "resource-revision",
+          parent_id: source.revisionId,
+          relation_kind: "derived-from",
+        },
+        {
+          parent_kind: "transcript-policy-set",
+          parent_id: transcript.sourcePolicySetId,
+          relation_kind: "compacted-from",
+        },
+      ]);
+    });
   });
 
   it("keeps verified private stores isolated through the actual host and selected runtime", async () => {
@@ -599,6 +870,11 @@ describe("builtin scoped authorized runtime", () => {
     createPrivateResource(alicePrincipalId, "ALICE_FINAL_REPLY_AUTHORIZED_CONTENT");
     markCutOver();
     installBuiltinSelectedRuntime();
+    registerAgentRunContext(runId, {
+      agentId: "main",
+      sessionId: session.sessionId,
+      sessionKey: session.sessionKey,
+    });
 
     const host = createAuthorizedMemoryReadHost({
       agentId: "main",

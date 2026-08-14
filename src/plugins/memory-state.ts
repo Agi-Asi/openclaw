@@ -317,9 +317,6 @@ export function resolveMemoryFlushPlan(params: {
   agentId?: string;
   nowMs?: number;
 }): MemoryFlushPlan | null {
-  if (params.agentId && isMemoryIsolationCutoverAgent(params.agentId)) {
-    return null;
-  }
   return getMemoryCapability()?.capability.flushPlanResolver?.(params) ?? null;
 }
 export function getMemoryRuntime(): MemoryPluginRuntime | undefined {

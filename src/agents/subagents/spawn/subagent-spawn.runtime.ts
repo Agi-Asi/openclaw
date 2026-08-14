@@ -4,6 +4,7 @@
  * entire gateway/channel stack.
  */
 export { getRuntimeConfig } from "../../../config/config.js";
+export { isMemoryIsolationCutoverAgent } from "../../../plugins/memory-cutover.js";
 export {
   loadSessionEntryReadOnly as loadSessionEntry,
   upsertSessionEntryCore,

@@ -67,3 +67,16 @@ export function buildPromotionRecallAnnotations(
   const project = projectKey ? ` <!-- project: ${projectKey} -->` : "";
   return `<!-- trigger: ${triggers} --> <!-- importance: ${importance} -->${project}`;
 }
+
+export function buildPromotionAuthorizedViewAnnotation(
+  candidate: Pick<PromotionCandidate, "authorizedView">,
+): string {
+  const view = candidate.authorizedView;
+  if (!view) {
+    return "";
+  }
+  // Keep opaque authority identifiers inert in markdown while recording the
+  // immutable source revision beside the durable promotion.
+  const encode = (value: string) => encodeURIComponent(value);
+  return ` <!-- authorized-view: store=${encode(view.storeId)} view=${encode(view.viewId)} revision=${encode(view.resourceRevision)} -->`;
+}

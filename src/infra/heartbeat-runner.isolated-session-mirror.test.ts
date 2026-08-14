@@ -2,7 +2,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveMainSessionKey } from "../config/sessions.js";
+import { resetMemoryIsolationCutoverForTest } from "../plugins/memory-cutover.js";
+import {
+  closeOpenClawAgentDatabasesForTest,
+  openOpenClawAgentDatabase,
+} from "../state/openclaw-agent-db.js";
 import { runHeartbeatOnce } from "./heartbeat-runner.js";
+import { resolveMemoryIsolatedHeartbeatSessionKey } from "./heartbeat-runner-session.js";
 import { installHeartbeatRunnerTestRuntime } from "./heartbeat-runner.test-harness.js";
 import {
   readSessionStoreForTest,
@@ -24,6 +30,8 @@ installHeartbeatRunnerTestRuntime();
 
 afterEach(() => {
   deliverOutboundPayloadsInternal.mockClear();
+  closeOpenClawAgentDatabasesForTest();
+  resetMemoryIsolationCutoverForTest();
 });
 
 type DeliveryRequest = {
@@ -43,7 +51,11 @@ function latestDeliveryRequest(): DeliveryRequest {
   return request as DeliveryRequest;
 }
 
-function makeIsolatedLastTargetConfig(tmpDir: string, storePath: string): OpenClawConfig {
+function makeIsolatedLastTargetConfig(
+  tmpDir: string,
+  storePath: string,
+  isolatedSession = true,
+): OpenClawConfig {
   return {
     agents: {
       list: [{ id: "main", default: true }],
@@ -52,7 +64,7 @@ function makeIsolatedLastTargetConfig(tmpDir: string, storePath: string): OpenCl
         heartbeat: {
           every: "5m",
           target: "last",
-          isolatedSession: true,
+          isolatedSession,
         },
       },
     },
@@ -158,6 +170,59 @@ describe("runHeartbeatOnce - isolated heartbeat outbound session mirror", () => 
           policyKey: baseSessionKey,
         },
       });
+    });
+  });
+
+  it("uses a system service session under memory isolation instead of the routed user session", async () => {
+    await withTempHeartbeatSandbox(async ({ tmpDir, storePath, replySpy }) => {
+      const cfg = makeIsolatedLastTargetConfig(tmpDir, storePath, false);
+      const baseSessionKey = resolveMainSessionKey(cfg);
+      const serviceSessionKey = resolveMemoryIsolatedHeartbeatSessionKey("main");
+      const nowMs = Date.now();
+      const database = openOpenClawAgentDatabase({ agentId: "main" });
+      database.db
+        .prepare(
+          `INSERT INTO memory_migrations
+            (migration_id, source_kind, source_hash, phase, classification_json, plan_hash,
+             verified_at, cutover_at, updated_at)
+           VALUES ('heartbeat-service-session', 'test', 'test-source', 'cutover', '{}',
+                   'test-plan', 1, 1, 1)`,
+        )
+        .run();
+      resetMemoryIsolationCutoverForTest();
+      await seedHeartbeatScratchForTest({ content: "Check the scheduled service work." });
+      await seedSessionStore(storePath, baseSessionKey, {
+        sessionId: "user-session",
+        updatedAt: nowMs - 1_000,
+        lastChannel: "whatsapp",
+        lastProvider: "whatsapp",
+        lastTo: "+15551234567",
+      });
+      replySpy.mockResolvedValueOnce({ text: "Service work needs attention." });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        deps: {
+          getReplyFromConfig: replySpy,
+          getQueueSize: () => 0,
+          nowMs: () => nowMs,
+        },
+      });
+
+      expect(result.status).toBe("ran");
+      expect(replySpy.mock.calls[0]?.[0]).toMatchObject({ SessionKey: serviceSessionKey });
+      expect(latestDeliveryRequest()).toMatchObject({
+        channel: "whatsapp",
+        to: "+15551234567",
+        session: { key: serviceSessionKey, policyKey: serviceSessionKey },
+      });
+      expect(readSessionStoreForTest(storePath)[serviceSessionKey]).toMatchObject({
+        createdActor: { type: "system" },
+        createdVia: "cron",
+      });
+      expect(readSessionStoreForTest(storePath)[serviceSessionKey]).not.toHaveProperty(
+        "heartbeatIsolatedBaseSessionKey",
+      );
     });
   });
 });

@@ -36,6 +36,7 @@ vi.mock("../logger.js", () => ({
 
 const {
   MEMORY_INVOCATION_UNAVAILABLE,
+  createAuthorizedMemoryDeriveInvocation,
   createAuthorizedMemoryReadInvocation,
   createAuthorizedMemoryWriteInvocation,
   materializeAuthorizedMemoryVirtualView,
@@ -758,6 +759,41 @@ describe("authorized memory read invocation", () => {
       readAuthorizedMemoryVirtualFile({ invocation, view, virtualPath: "private/2.md" }),
     ).resolves.toBe(MEMORY_INVOCATION_UNAVAILABLE);
     expect(admittedVirtualView.readAuthorizedVirtualFile).not.toHaveBeenCalled();
+  });
+
+  it("never materializes a derive invocation through the generic virtual filesystem", async () => {
+    const admittedVirtualView = {
+      materializeAuthorizedVirtualView: vi.fn(),
+      readAuthorizedVirtualFile: vi.fn(),
+    };
+    const context = {
+      ...createContext(),
+      operation: "derive" as const,
+    };
+    const plan = {
+      ...createPlan(),
+      operation: "derive" as const,
+    };
+    mocks.materialize.mockReturnValue(context);
+    mocks.admit.mockResolvedValue({
+      ok: true,
+      runtime: {
+        authorize: vi.fn().mockResolvedValue(plan),
+        searchAuthorized: vi.fn(),
+        readAuthorized: vi.fn(),
+        virtualView: admittedVirtualView,
+      },
+    });
+
+    const invocation = await createAuthorizedMemoryDeriveInvocation({ context: {} as never });
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to admit derive invocation");
+    }
+
+    await expect(materializeAuthorizedMemoryVirtualView({ invocation })).resolves.toBe(
+      MEMORY_INVOCATION_UNAVAILABLE,
+    );
+    expect(admittedVirtualView.materializeAuthorizedVirtualView).not.toHaveBeenCalled();
   });
 
   it("rejects malformed duplicate and case-colliding virtual views before any broker read", async () => {

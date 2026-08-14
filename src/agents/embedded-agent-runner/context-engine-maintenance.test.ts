@@ -35,6 +35,7 @@ const resolveRuntimeTranscriptReadTargetMock = vi.fn(async (scope: Record<string
   sessionKey: scope.sessionKey,
   storePath: scope.storePath ?? "/tmp/default-openclaw.sqlite",
 }));
+const isMemoryIsolationCutoverAgentMock = vi.hoisted(() => vi.fn(() => false));
 let createDeferredTurnMaintenanceAbortSignal: typeof import("./context-engine-maintenance.test-support.js").createDeferredTurnMaintenanceAbortSignal;
 let resetDeferredTurnMaintenanceStateForTest: typeof import("./context-engine-maintenance.test-support.js").resetDeferredTurnMaintenanceStateForTest;
 let waitForDeferredTurnMaintenanceForSession: typeof import("./context-engine-maintenance.js").waitForDeferredTurnMaintenanceForSession;
@@ -101,6 +102,10 @@ function expectSystemEventContaining(sessionKey: string, text: string) {
 
 vi.mock("./context-engine-capabilities.js", () => ({
   resolveContextEngineCapabilities: () => ({ llm: undefined }),
+}));
+
+vi.mock("../../plugins/memory-cutover.js", () => ({
+  isMemoryIsolationCutoverAgent: isMemoryIsolationCutoverAgentMock,
 }));
 
 vi.mock("./transcript-rewrite.js", () => ({
@@ -183,7 +188,36 @@ describe("runContextEngineMaintenance", () => {
     rewriteTranscriptEntriesInSessionManagerMock.mockClear();
     sessionManagerOpenMock.mockClear();
     resolveRuntimeTranscriptReadTargetMock.mockClear();
+    isMemoryIsolationCutoverAgentMock.mockReset();
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(false);
     await loadFreshContextEngineMaintenanceModuleForTest();
+  });
+
+  it("does not let cutover maintenance route transcript content through an owning engine", async () => {
+    isMemoryIsolationCutoverAgentMock.mockReturnValue(true);
+    const maintain = vi.fn(async () => ({
+      changed: true,
+      bytesFreed: 10,
+      rewrittenEntries: 1,
+    }));
+
+    const result = await runContextEngineMaintenance({
+      contextEngine: {
+        info: { id: "test", name: "Test Engine", ownsCompaction: true },
+        ingest: async () => ({ ingested: true }),
+        assemble: async ({ messages }) => ({ messages, estimatedTokens: 0 }),
+        compact: async () => ({ ok: true, compacted: false }),
+        maintain,
+      },
+      agentId: "main",
+      sessionId: "session-1",
+      sessionKey: "agent:main:session-1",
+      sessionFile: "/tmp/session.jsonl",
+      reason: "turn",
+    });
+
+    expect(result).toBeUndefined();
+    expect(maintain).not.toHaveBeenCalled();
   });
 
   it("passes a rewrite-capable runtime context into maintain()", async () => {

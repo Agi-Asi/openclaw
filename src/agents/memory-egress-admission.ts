@@ -128,7 +128,6 @@ export function resolveMemoryEgressDeliveryFacts(params: {
           channel,
           accountId,
           recipientId: to,
-          options: { agentId: params.agentId },
         }).kind === "current"
         ? {
             sink: "private" as const,

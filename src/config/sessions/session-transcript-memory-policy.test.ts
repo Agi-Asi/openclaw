@@ -22,7 +22,7 @@ import {
 } from "../../state/openclaw-agent-db.js";
 import { readSessionTranscriptMessageEvents } from "./session-accessor.sqlite-active-events.js";
 import { materializeSessionStateDeletePlans } from "./session-accessor.sqlite-archive.js";
-import { writeSessionEntry } from "./session-accessor.sqlite-entry-store.js";
+import { readSessionEntryRow, writeSessionEntry } from "./session-accessor.sqlite-entry-store.js";
 import { planSessionStateDeleteIfUnreferenced } from "./session-accessor.sqlite-lifecycle-state.js";
 import {
   loadLatestAssistantText,
@@ -35,8 +35,11 @@ import {
   appendTranscriptMessage,
   replaceTranscriptEvents,
   trimTranscriptForManualCompact,
+  commitSealedSqliteTranscriptCompaction,
 } from "./session-accessor.sqlite-transcript-write.js";
 import {
+  persistSealedCompactionMemoryPolicyInTransaction,
+  readAuthorizedTranscriptDerivation,
   preserveTranscriptMemoryPolicyTransitionInTransaction,
   readAuthorizedTranscriptEventSeqs,
   resetTranscriptMemoryPolicyForTest,
@@ -272,6 +275,311 @@ afterEach(() => {
 });
 
 describe("transcript memory policy companions", () => {
+  it("binds a sealed compaction policy to the exact current transcript source set", async () => {
+    const env = createEnv();
+    const database = markCutOver(env);
+    persistExposure(database, { runId: "sealed-compaction-run" });
+    await appendWithRun({
+      env,
+      runId: "sealed-compaction-run",
+      text: "sealed compaction transcript source",
+    });
+    const source = readAuthorizedTranscriptDerivation(database.db, SESSION_ID);
+    if (!source) {
+      throw new Error("fixture expected an authorized compaction source");
+    }
+    expect(() =>
+      persistSealedCompactionMemoryPolicyInTransaction({
+        db: database.db,
+        compactionPolicyId: "compaction-policy-1",
+        sessionId: SESSION_ID,
+        source,
+      }),
+    ).toThrow("active transaction");
+
+    const persisted = runOpenClawAgentWriteTransaction(
+      (opened) =>
+        persistSealedCompactionMemoryPolicyInTransaction({
+          db: opened.db,
+          compactionPolicyId: "compaction-policy-1",
+          sessionId: SESSION_ID,
+          source,
+          createdAt: 123,
+        }),
+      { agentId: AGENT_ID, env },
+    );
+    expect(persisted).toMatchObject({
+      compactionPolicyId: "compaction-policy-1",
+      sessionId: SESSION_ID,
+      sourcePolicySetId: source.sourcePolicySetId,
+      eventSeqs: source.eventSeqs,
+      createdAt: 123,
+    });
+    expect(
+      database.db
+        .prepare(
+          `SELECT session_id, source_policy_set_id, retention_state, created_at
+             FROM memory_compaction_policies
+            WHERE compaction_policy_id = 'compaction-policy-1'`,
+        )
+        .get(),
+    ).toEqual({
+      session_id: SESSION_ID,
+      source_policy_set_id: source.sourcePolicySetId,
+      retention_state: "retained",
+      created_at: 123,
+    });
+
+    expect(() =>
+      runOpenClawAgentWriteTransaction(
+        (opened) =>
+          persistSealedCompactionMemoryPolicyInTransaction({
+            db: opened.db,
+            compactionPolicyId: "compaction-policy-2",
+            sessionId: SESSION_ID,
+            source: { ...source, eventSeqs: [...source.eventSeqs, 999] },
+          }),
+        { agentId: AGENT_ID, env },
+      ),
+    ).toThrow("source policy is unavailable");
+    expect(
+      database.db.prepare("SELECT count(*) AS count FROM memory_compaction_policies").get(),
+    ).toEqual({ count: 1 });
+  });
+
+  it("atomically commits the authorized compaction event, policy, and derived-state callback", async () => {
+    const env = createEnv();
+    const database = markCutOver(env);
+    writeSessionEntry(database, SESSION_KEY, { sessionId: SESSION_ID, updatedAt: 1 });
+    persistExposure(database, { runId: "sealed-compaction-transaction" });
+    await appendWithRun({
+      env,
+      runId: "sealed-compaction-transaction",
+      text: "sealed transaction source",
+    });
+    const source = readAuthorizedTranscriptDerivation(database.db, SESSION_ID);
+    if (!source) {
+      throw new Error("fixture expected an authorized compaction source");
+    }
+    const sourceCompanion = database.db
+      .prepare(
+        `SELECT policy.run_id, detail.source_event_seq
+           FROM transcript_event_memory_policies AS policy
+           JOIN transcript_event_memory_policy_details AS detail
+             ON detail.session_id = policy.session_id AND detail.event_seq = policy.event_seq
+          WHERE policy.session_id = ? AND policy.event_seq = ?`,
+      )
+      .get(SESSION_ID, source.eventSeqs[0]);
+    let committed: { eventSeq: number; policyId: string } | undefined;
+    const commit = async () =>
+      await withOwnedSessionTranscriptWrites(
+        {
+          sessionTarget: {
+            agentId: AGENT_ID,
+            // The committing writer has no exposure of its own. The output can
+            // be authorized only by inheriting the transcript source it read.
+            expectedWriterRunId: "sealed-compaction-commit",
+            sessionId: SESSION_ID,
+            sessionKey: SESSION_KEY,
+          },
+          withTranscriptWrite: async (run) => await run(),
+        },
+        async () =>
+          await commitSealedSqliteTranscriptCompaction({
+            scope: scope(env),
+            event: {
+              type: "compaction",
+              id: "sealed-compaction-entry",
+              parentId: null,
+              timestamp: new Date(123).toISOString(),
+              summary: "sealed summary",
+              firstKeptEntryId: "source-message",
+              tokensBefore: 42,
+            },
+            compactionPolicyId: "sealed-compaction-policy",
+            source,
+            checkpoint: {
+              checkpointId: "sealed-compaction-checkpoint",
+              sessionKey: SESSION_KEY,
+              sessionId: SESSION_ID,
+              createdAt: 123,
+              reason: "manual",
+              summary: "sealed summary",
+              firstKeptEntryId: "source-message",
+              preCompaction: { sessionId: SESSION_ID, leafId: "source-message" },
+              postCompaction: { sessionId: SESSION_ID, entryId: "sealed-compaction-entry" },
+            },
+            commitDerivedState({ compactionPolicy, eventSeq }) {
+              committed = { eventSeq, policyId: compactionPolicy.compactionPolicyId };
+            },
+          }),
+      );
+
+    await expect(commit()).resolves.toMatchObject({
+      compactionPolicy: { compactionPolicyId: "sealed-compaction-policy" },
+    });
+    expect(committed).toEqual({
+      eventSeq: expect.any(Number),
+      policyId: "sealed-compaction-policy",
+    });
+    expect(
+      readSessionEntryRow(database, SESSION_KEY)?.entry.compactionCheckpoints?.map(
+        (checkpoint) => checkpoint.checkpointId,
+      ),
+    ).toEqual(["sealed-compaction-checkpoint"]);
+    expect(
+      database.db.prepare("SELECT count(*) AS count FROM memory_compaction_policies").get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database.db
+        .prepare(
+          `SELECT source_session_id, source_event_seq, source_policy_set_id, delivery_audiences_json
+             FROM memory_compaction_policy_sources
+            WHERE compaction_policy_id = 'sealed-compaction-policy'`,
+        )
+        .all(),
+    ).toEqual(
+      source.eventSeqs.map((sourceEventSeq) => ({
+        source_session_id: SESSION_ID,
+        source_event_seq: sourceEventSeq,
+        source_policy_set_id: source.sourcePolicySetId,
+        delivery_audiences_json: source.deliveryAudiencesJson,
+      })),
+    );
+    expect(
+      database.db
+        .prepare(
+          `SELECT policy.run_id, detail.source_event_seq
+             FROM transcript_event_memory_policies AS policy
+             JOIN transcript_event_memory_policy_details AS detail
+               ON detail.session_id = policy.session_id AND detail.event_seq = policy.event_seq
+            WHERE policy.session_id = ? AND policy.event_seq = ?`,
+        )
+        .get(SESSION_ID, committed?.eventSeq),
+    ).toEqual(sourceCompanion);
+    expect(
+      loadTranscriptEventsSync(scope(env)).some(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          "id" in event &&
+          event.id === "sealed-compaction-entry",
+      ),
+    ).toBe(true);
+
+    const nextSource = readAuthorizedTranscriptDerivation(database.db, SESSION_ID);
+    if (!nextSource) {
+      throw new Error("fixture expected the committed compaction companion to remain authorized");
+    }
+    await expect(
+      withOwnedSessionTranscriptWrites(
+        {
+          sessionTarget: {
+            agentId: AGENT_ID,
+            expectedWriterRunId: "sealed-compaction-commit",
+            sessionId: SESSION_ID,
+            sessionKey: SESSION_KEY,
+          },
+          withTranscriptWrite: async (run) => await run(),
+        },
+        async () =>
+          await commitSealedSqliteTranscriptCompaction({
+            scope: scope(env),
+            event: {
+              type: "compaction",
+              id: "rolled-back-compaction-entry",
+              parentId: null,
+              timestamp: new Date(124).toISOString(),
+              summary: "must roll back",
+              firstKeptEntryId: "source-message",
+              tokensBefore: 42,
+            },
+            compactionPolicyId: "rolled-back-compaction-policy",
+            source: nextSource,
+            commitDerivedState() {
+              throw new Error("derived state failed");
+            },
+          }),
+      ),
+    ).rejects.toThrow("derived state failed");
+    expect(
+      database.db.prepare("SELECT count(*) AS count FROM memory_compaction_policies").get(),
+    ).toEqual({ count: 1 });
+    expect(
+      loadTranscriptEventsSync(scope(env)).some(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          "id" in event &&
+          event.id === "rolled-back-compaction-entry",
+      ),
+    ).toBe(false);
+
+    writeSessionEntry(database, SESSION_KEY, {
+      sessionId: SESSION_ID,
+      updatedAt: 125,
+      compactionCheckpoints: Array.from({ length: 25 }, (_, index) => ({
+        checkpointId: `retained-checkpoint-${index}`,
+        sessionKey: SESSION_KEY,
+        sessionId: SESSION_ID,
+        createdAt: index,
+        reason: "manual" as const,
+        preCompaction: { sessionId: SESSION_ID, leafId: `pre-${index}` },
+        postCompaction: { sessionId: SESSION_ID, entryId: `post-${index}` },
+      })),
+    });
+    await expect(
+      withOwnedSessionTranscriptWrites(
+        {
+          sessionTarget: {
+            agentId: AGENT_ID,
+            expectedWriterRunId: "sealed-compaction-commit",
+            sessionId: SESSION_ID,
+            sessionKey: SESSION_KEY,
+          },
+          withTranscriptWrite: async (run) => await run(),
+        },
+        async () =>
+          await commitSealedSqliteTranscriptCompaction({
+            scope: scope(env),
+            event: {
+              type: "compaction",
+              id: "checkpoint-cap-compaction-entry",
+              parentId: null,
+              timestamp: new Date(125).toISOString(),
+              summary: "bounded checkpoint summary",
+              firstKeptEntryId: "source-message",
+              tokensBefore: 42,
+            },
+            compactionPolicyId: "checkpoint-cap-compaction-policy",
+            source: nextSource,
+            checkpoint: {
+              checkpointId: "checkpoint-cap-newest",
+              sessionKey: SESSION_KEY,
+              sessionId: SESSION_ID,
+              createdAt: 125,
+              reason: "manual",
+              preCompaction: { sessionId: SESSION_ID, leafId: "source-message" },
+              postCompaction: {
+                sessionId: SESSION_ID,
+                entryId: "checkpoint-cap-compaction-entry",
+              },
+            },
+            commitDerivedState() {},
+          }),
+      ),
+    ).resolves.toBeDefined();
+    expect(readSessionEntryRow(database, SESSION_KEY)?.entry.compactionCheckpoints).toHaveLength(
+      25,
+    );
+    expect(
+      readSessionEntryRow(database, SESSION_KEY)?.entry.compactionCheckpoints?.[0],
+    ).toMatchObject({ checkpointId: "retained-checkpoint-1" });
+    expect(
+      readSessionEntryRow(database, SESSION_KEY)?.entry.compactionCheckpoints?.at(-1),
+    ).toMatchObject({ checkpointId: "checkpoint-cap-newest" });
+  });
+
   it("enforces Doctor shadow-read-only companion persistence for only its bound subject", async () => {
     const env = createEnv();
     const options = { agentId: AGENT_ID, env };
@@ -812,6 +1120,9 @@ describe("transcript memory policy companions", () => {
       expect(companion.source_event_seq).toBeGreaterThanOrEqual(0);
     }
     expect(readAuthorizedTranscriptEventSeqs(database.db, SESSION_ID)?.size).toBe(7);
+    expect(readAuthorizedTranscriptDerivation(database.db, SESSION_ID)).toMatchObject({
+      eventSeqs: [0, 1, 2, 3, 4, 5, 6],
+    });
   });
 
   it("uses the captured trusted actor and token-free delegation rather than reconstructing session facts", async () => {

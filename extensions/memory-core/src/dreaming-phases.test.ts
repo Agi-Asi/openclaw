@@ -23,6 +23,7 @@ import {
   DREAMING_DAILY_PROVENANCE_NAMESPACE,
   writeMemoryCoreWorkspaceEntry,
 } from "./dreaming-state.js";
+import { filterToOnePromotionAuthorizedView } from "./dreaming-consolidation-candidates.js";
 import { previewRemHarness } from "./rem-harness.js";
 import { writeSessionIngestionState } from "./session-ingestion.js";
 import {
@@ -129,6 +130,71 @@ function expectIncludesSubstring(values: readonly string[], expected: string): v
 function expectNotIncludesSubstring(values: readonly string[], expected: string): void {
   expect(values.join("\n")).not.toContain(expected);
 }
+
+function createAuthorizedRecallEntry(params: {
+  key: string;
+  storeId: string;
+  viewId: string;
+  resourceRevision: string;
+  lifecycle?: "active" | "postbox" | "quarantine";
+}): ShortTermRecallEntry {
+  return {
+    key: params.key,
+    path: `memory/${params.key}.md`,
+    startLine: 1,
+    endLine: 1,
+    source: "memory",
+    snippet: `Dreaming source ${params.key}.`,
+    recallCount: 1,
+    dailyCount: 0,
+    groundedCount: 0,
+    totalScore: 0.9,
+    maxScore: 0.9,
+    firstRecalledAt: DREAMING_TEST_BASE_TIME.toISOString(),
+    lastRecalledAt: DREAMING_TEST_BASE_TIME.toISOString(),
+    queryHashes: [params.key],
+    recallDays: [DREAMING_TEST_DAY],
+    conceptTags: [],
+    authorizedView: {
+      storeId: params.storeId,
+      viewId: params.viewId,
+      resourceRevision: params.resourceRevision,
+      lifecycle: params.lifecycle ?? "active",
+    },
+  };
+}
+
+it("keeps dreaming input inside one authorized view", () => {
+  const first = createAuthorizedRecallEntry({
+    key: "first",
+    storeId: "store-a",
+    viewId: "view-a",
+    resourceRevision: "revision-a-1",
+  });
+  const sameView = createAuthorizedRecallEntry({
+    key: "same-view",
+    storeId: "store-a",
+    viewId: "view-a",
+    resourceRevision: "revision-a-2",
+  });
+  const otherView = createAuthorizedRecallEntry({
+    key: "other-view",
+    storeId: "store-b",
+    viewId: "view-b",
+    resourceRevision: "revision-b-1",
+  });
+  const postbox = createAuthorizedRecallEntry({
+    key: "postbox",
+    storeId: "store-a",
+    viewId: "view-a",
+    resourceRevision: "revision-postbox",
+    lifecycle: "postbox",
+  });
+
+  expect(filterToOnePromotionAuthorizedView([first, sameView])).toEqual([first, sameView]);
+  expect(filterToOnePromotionAuthorizedView([first, otherView])).toEqual([]);
+  expect(filterToOnePromotionAuthorizedView([first, postbox])).toEqual([first]);
+});
 
 async function expectPathMissing(targetPath: string): Promise<void> {
   try {

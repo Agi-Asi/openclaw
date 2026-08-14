@@ -433,6 +433,28 @@ describe("AgentSession loop correctness", () => {
     }
   });
 
+  it("produces a sealed compaction entry without publishing it", async () => {
+    const sessionManager = SessionManager.inMemory();
+    appendHistory(
+      sessionManager,
+      createAssistant(testModel, [{ type: "text", text: "short answer" }]),
+    );
+    const settingsManager = SettingsManager.inMemory({
+      compaction: { enabled: true, reserveTokens: 0, keepRecentTokens: 10_000 },
+      retry: { enabled: false },
+    });
+    const { session } = await createTestSession({
+      sessionManager,
+      settingsManager,
+      resourceLoader: createResourceLoader(createCompactionHandlers()),
+    });
+
+    const deferred = await session.compactDeferred();
+
+    expect(deferred.entry).toMatchObject({ type: "compaction", summary: "condensed history" });
+    expect(sessionManager.getBranch().some((entry) => entry.type === "compaction")).toBe(false);
+  });
+
   it("keeps a successful high-usage response and performs threshold maintenance without retry", async () => {
     const settingsManager = createAutoCompactionSettings();
     const compactionEvents: AgentSessionEvent[] = [];

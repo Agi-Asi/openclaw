@@ -306,6 +306,7 @@ function createLazyMemoryRuntime(host: MemoryCoreRuntimeHost): MemoryPluginRunti
     searchAuthorized: builtinScopedMemoryAuthorizedRuntime.searchAuthorized,
     readAuthorized: builtinScopedMemoryAuthorizedRuntime.readAuthorized,
     writeAuthorized: builtinScopedMemoryAuthorizedRuntime.writeAuthorized,
+    stageSealedCompaction: builtinScopedMemoryAuthorizedRuntime.stageSealedCompaction,
     importAuthorized: builtinScopedMemoryAuthorizedRuntime.importAuthorized,
     syncAuthorized: builtinScopedMemoryAuthorizedRuntime.syncAuthorized,
     exportAuthorized: builtinScopedMemoryAuthorizedRuntime.exportAuthorized,

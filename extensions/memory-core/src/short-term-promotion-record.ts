@@ -9,7 +9,11 @@ import { appendMemoryHostEvent } from "openclaw/plugin-sdk/memory-host-events";
 import pLimit from "p-limit";
 import { deriveConceptTags } from "./concept-vocabulary.js";
 import { readStore, withShortTermLock, writeStore } from "./short-term-promotion-store.js";
-import type { ShortTermRecallEntry, ShortTermRecallStore } from "./short-term-promotion-types.js";
+import type {
+  ShortTermPromotionAuthorizedView,
+  ShortTermRecallEntry,
+  ShortTermRecallStore,
+} from "./short-term-promotion-types.js";
 import {
   buildDailyClaimEntryKey,
   buildClaimHash,
@@ -25,6 +29,7 @@ import {
   mergeRecentDistinct,
   normalizeIsoDay,
   normalizeMemoryPath,
+  normalizeShortTermPromotionAuthorizedView,
   normalizeSnippet,
   truncateShortTermSnippet,
 } from "./short-term-promotion-utils.js";
@@ -32,6 +37,21 @@ import { resolveMemoryCoreNowMs, resolveMemoryCoreTimestamp } from "./time.js";
 
 // One recall batch can inspect every retained entry; cap filesystem pressure.
 const SHORT_TERM_SOURCE_FILE_CHECK_CONCURRENCY = 32;
+
+function promotionAuthorityKey(view: ShortTermPromotionAuthorizedView): string {
+  return hashQuery(`${view.storeId}\u0000${view.viewId}\u0000${view.resourceRevision}`);
+}
+
+function samePromotionAuthority(
+  left: ShortTermPromotionAuthorizedView | undefined,
+  right: ShortTermPromotionAuthorizedView | undefined,
+): boolean {
+  return (
+    left?.storeId === right?.storeId &&
+    left?.viewId === right?.viewId &&
+    left?.resourceRevision === right?.resourceRevision
+  );
+}
 
 function mergeRecallProvenance(
   existing: MemoryEntryProvenance | undefined,
@@ -151,7 +171,12 @@ async function updateShortTermRecallStore(
 export async function recordShortTermRecalls(params: {
   workspaceDir?: string;
   query: string;
-  results: Array<MemorySearchResult & { identitySnippet?: string }>;
+  results: Array<
+    MemorySearchResult & {
+      identitySnippet?: string;
+      authorizedView?: ShortTermPromotionAuthorizedView;
+    }
+  >;
   signalType?: "recall" | "daily";
   dedupeByQueryPerDay?: boolean;
   dayBucket?: string;
@@ -196,6 +221,10 @@ export async function recordShortTermRecalls(params: {
     nowIso,
     (store) => {
       for (const result of relevant) {
+        const authorizedView = normalizeShortTermPromotionAuthorizedView(result.authorizedView);
+        if (result.authorizedView !== undefined && !authorizedView) {
+          continue;
+        }
         const normalizedPath = normalizeMemoryPath(result.path);
         const rawSnippet = normalizeSnippet(result.snippet);
         const snippet = truncateShortTermSnippet(rawSnippet);
@@ -220,7 +249,10 @@ export async function recordShortTermRecalls(params: {
                   Math.max(0, Math.floor(entry.recallCount ?? 0)) +
                     Math.max(0, Math.floor(entry.groundedCount ?? 0)) >
                     0 &&
-                  entry.claimHash === claimHash,
+                  entry.claimHash === claimHash &&
+                  // Do not merge evidence from different scoped views or immutable revisions.
+                  // A review state transition keeps the same identity and may update lifecycle.
+                  samePromotionAuthority(entry.authorizedView, authorizedView),
               )
             : undefined;
         // Interactive/grounded writers retain their path-qualified identity. Do
@@ -240,13 +272,18 @@ export async function recordShortTermRecalls(params: {
               })
           : null;
         const baseKey = buildEntryKey(result);
-        const key =
+        const unscopedKey =
           nonDailyEntry?.key ??
           (signalType === "daily" && groundedKey
             ? groundedKey
             : groundedKey && store.entries[groundedKey]
               ? groundedKey
               : baseKey);
+        const key = nonDailyEntry?.key
+          ? nonDailyEntry.key
+          : authorizedView
+            ? `${unscopedKey}:view:${promotionAuthorityKey(authorizedView)}`
+            : unscopedKey;
         const existing = store.entries[key];
         const score = clampScore(result.score);
         const recallDaysBase = existing?.recallDays ?? [];
@@ -307,6 +344,7 @@ export async function recordShortTermRecalls(params: {
           recallDays,
           conceptTags: conceptTags.length > 0 ? conceptTags : (existing?.conceptTags ?? []),
           provenance,
+          ...(authorizedView ? { authorizedView } : {}),
           claimHash,
           ...(projectKey ? { projectKey } : {}),
           ...(existing?.promotedAt ? { promotedAt: existing.promotedAt } : {}),
