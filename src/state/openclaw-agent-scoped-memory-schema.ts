@@ -13,6 +13,8 @@ export const AGENT_SCOPED_MEMORY_TABLES = [
   "memory_resource_subjects",
   "memory_scoped_chunks",
   "memory_scoped_chunk_vectors",
+  "memory_write_intents",
+  "memory_audit_outbox",
   "memory_migrations",
   "memory_policy_sets",
   "memory_run_exposures",

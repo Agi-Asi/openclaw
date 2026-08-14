@@ -1,11 +1,16 @@
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { MemoryContentAccessContext } from "openclaw/plugin-sdk/memory-authorization";
+import type {
+  MemoryAccessContext,
+  MemoryContentAccessContext,
+} from "openclaw/plugin-sdk/memory-authorization";
 import { closeOpenClawAgentDatabasesForTest } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthorizedMemoryReadHost,
+  createAuthorizedMemoryWriteHost,
   resolveAuthorizedMemoryVirtualFileBroker,
 } from "../../../../src/agents/memory-authorized-read-host.js";
 import { prepareMemoryEgressAuthorization } from "../../../../src/agents/memory-egress-admission.js";
@@ -33,10 +38,18 @@ import {
   createCurrentMemorySessionContext,
 } from "../../../../src/state/memory-session-subject.js";
 import { openOpenClawAgentDatabase } from "../../../../src/state/openclaw-agent-db.js";
+import {
+  closeOpenClawStateDatabaseForTest,
+  openOpenClawStateDatabase,
+} from "../../../../src/state/openclaw-state-db.js";
 import { ensureProfileForEmail } from "../../../../src/state/user-profiles.js";
 import { MEMORY_CORE_AUTHORIZATION_CAPABILITIES } from "../authorization.js";
+import { resolveScopedMemoryArtifactBase, withScopedMemoryDatabase } from "./scoped-memory-db.js";
 import { builtinScopedMemoryConformanceAdapter } from "./scoped-memory-policy.js";
-import { createBuiltinScopedMemoryResource } from "./scoped-memory-resources.js";
+import {
+  createBuiltinScopedMemoryResource,
+  readBuiltinScopedMemoryRevisionSnapshot,
+} from "./scoped-memory-resources.js";
 import {
   builtinScopedMemoryAuthorizedRuntime,
   builtinScopedMemoryVirtualView,
@@ -66,6 +79,7 @@ describe("builtin scoped authorized runtime", () => {
     resetMemoryIsolationCutoverForTest();
     resetPluginRuntimeStateForTest();
     closeOpenClawAgentDatabasesForTest();
+    closeOpenClawStateDatabaseForTest();
     vi.unstubAllEnvs();
     fs.rmSync(stateDir, { recursive: true, force: true });
   });
@@ -279,6 +293,141 @@ describe("builtin scoped authorized runtime", () => {
       content,
       actor: { kind: "human", id: principalId },
     });
+  }
+
+  function createWriteRecoveryFixture(params: {
+    principalId: string;
+    content: string;
+    placement: "stage" | "final";
+    policyRevisionId?: string;
+    intentState?: "pending" | "renamed" | "active";
+    revisionLifecycleState?: "pending" | "active";
+  }) {
+    const store = createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: params.principalId,
+      authorityKind: "user",
+      authorityOwnerId: params.principalId,
+      defaultCapabilities: ["retrieve", "read", "append"],
+      actor: { kind: "human", id: params.principalId },
+      reason: "recovery fixture",
+    });
+    const resourceId = randomUUID();
+    const revisionId = randomUUID();
+    const intentId = randomUUID();
+    const finalLocator = `r1_${revisionId}.md`;
+    const stageLocator = `mwst1_${intentId}.tmp`;
+    const now = Date.now();
+    const intentState = params.intentState ?? "pending";
+    const revisionLifecycleState = params.revisionLifecycleState ?? "pending";
+    let directory = "";
+    let activePolicyRevisionId = "";
+    withScopedMemoryDatabase("main", (database, databasePath) => {
+      const row = database
+        .prepare(
+          `SELECT root.path_key, policy.policy_id, policy.current_revision_id, policy.revocation_epoch
+             FROM memory_stores AS store
+             JOIN memory_storage_roots AS root ON root.storage_root_id = store.storage_root_id
+             JOIN memory_policies AS policy ON policy.policy_id = store.policy_id
+            WHERE store.store_id = ?`,
+        )
+        .get(store.storeId) as {
+        path_key: string;
+        policy_id: string;
+        current_revision_id: string;
+        revocation_epoch: number;
+      };
+      activePolicyRevisionId = row.current_revision_id;
+      directory = path.join(resolveScopedMemoryArtifactBase(databasePath), row.path_key);
+      if (params.policyRevisionId && params.policyRevisionId !== row.current_revision_id) {
+        database
+          .prepare(
+            `INSERT INTO memory_policy_revisions
+               (revision_id, policy_id, revision_number, revocation_epoch, lifecycle_state,
+                actor_kind, actor_id, reason, created_at)
+             VALUES (?, ?, 2, ?, 'superseded', 'human', ?, 'recovery policy drift fixture', ?)`,
+          )
+          .run(
+            params.policyRevisionId,
+            row.policy_id,
+            row.revocation_epoch,
+            params.principalId,
+            now,
+          );
+      }
+      database
+        .prepare(
+          `INSERT INTO memory_resources
+             (resource_id, agent_id, store_id, logical_locator, source, created_at)
+           VALUES (?, 'main', ?, ?, 'memory', ?)`,
+        )
+        .run(resourceId, store.storeId, `memory/${revisionId}.md`, now);
+      database
+        .prepare(
+          `INSERT INTO memory_resource_revisions
+             (revision_id, resource_id, revision_number, artifact_locator, content_hash, content_bytes,
+              policy_revision_id, policy_revocation_epoch, source_policy_set_id, lifecycle_state,
+              actor_kind, actor_id, expires_at, created_at, activated_at, retired_at)
+           VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'human', ?, NULL, ?, ?, NULL)`,
+        )
+        .run(
+          revisionId,
+          resourceId,
+          finalLocator,
+          createHash("sha256").update(params.content).digest("hex"),
+          Buffer.byteLength(params.content),
+          params.policyRevisionId ?? row.current_revision_id,
+          row.revocation_epoch,
+          `mps1_${params.policyRevisionId ?? row.current_revision_id}`,
+          revisionLifecycleState,
+          params.principalId,
+          now,
+          revisionLifecycleState === "active" ? now : null,
+        );
+      database
+        .prepare(
+          `INSERT INTO memory_write_intents
+             (intent_id, idempotency_key, mutation_id, agent_id, request_id, run_id, context_fingerprint,
+              plan_id, mutation_kind, store_id, resource_id, pending_revision_id, staged_locator,
+              final_locator, content_hash, content_bytes, state, created_at, updated_at, activated_at, indexed_at)
+           VALUES (?, ?, ?, 'main', 'request-recovery', 'run-recovery', 'context-recovery',
+                   'plan-recovery', 'remember', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          intentId,
+          `idempotency-${intentId}`,
+          `mutation-${intentId}`,
+          store.storeId,
+          resourceId,
+          revisionId,
+          stageLocator,
+          finalLocator,
+          createHash("sha256").update(params.content).digest("hex"),
+          Buffer.byteLength(params.content),
+          intentState,
+          now,
+          now,
+          intentState === "active" ? now : null,
+          null,
+        );
+    });
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(
+      path.join(directory, params.placement === "stage" ? stageLocator : finalLocator),
+      params.content,
+      { mode: 0o600 },
+    );
+    return {
+      activePolicyRevisionId,
+      directory,
+      finalLocator,
+      intentId,
+      revisionId,
+      stageLocator,
+      storeId: store.storeId,
+    };
   }
 
   it("postfilters before result count and issues plan-bound exact-read handles", async () => {
@@ -640,5 +789,456 @@ describe("builtin scoped authorized runtime", () => {
       "GROUP_DENIED_ALICE_PRIVATE_PATH_TITLE_SNIPPET_SCORE_COUNT_CITATION_CURSOR",
     );
     expect(serialized).not.toContain("GROUP_DENIED_OWNER_ROLE_FROM_LATEST_ACTOR");
+  });
+
+  it("selects the subject store itself and commits remember/delete through one durable lifecycle", async () => {
+    const principalId = "writer";
+    createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: principalId,
+      authorityKind: "user",
+      authorityOwnerId: principalId,
+      defaultCapabilities: ["append", "replace", "delete"],
+      actor: { kind: "human", id: principalId },
+      reason: "authorized write fixture",
+    });
+    const appendContext = {
+      ...createContext(principalId),
+      operation: "append" as const,
+    } satisfies MemoryAccessContext;
+    const appendPlan = await builtinScopedMemoryAuthorizedRuntime.authorize(appendContext);
+    const mutation = {
+      version: 1 as const,
+      kind: "remember" as const,
+      mutationId: "remember-1",
+      idempotencyKey: "remember-request-1",
+      content: "durable write sentinel",
+      contentType: "markdown" as const,
+    };
+    await expect(
+      builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+        context: appendContext,
+        plan: appendPlan,
+        mutation: { ...mutation, storeId: "attacker-selected" } as never,
+      }),
+    ).rejects.toThrow("unavailable");
+    const written = await builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+      context: appendContext,
+      plan: appendPlan,
+      mutation,
+    });
+    expect(written).toMatchObject({ status: "committed", resourceHandle: expect.any(Object) });
+    const retried = await builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+      context: appendContext,
+      plan: appendPlan,
+      mutation,
+    });
+    expect(retried.status).toBe("unchanged");
+    const handle = written.resourceHandle;
+    if (!handle) {
+      throw new Error("fixture expected an authorized write handle");
+    }
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare("SELECT lifecycle_state FROM memory_resource_revisions WHERE revision_id = ?")
+          .get(handle.resourceRevision),
+      ).toEqual({ lifecycle_state: "active" });
+      expect(
+        database
+          .prepare("SELECT text FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(handle.resourceRevision),
+      ).toEqual([{ text: "durable write sentinel" }]);
+    });
+    const audit = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: stateDir } });
+    expect(
+      audit.db
+        .prepare(
+          `SELECT operation, decision, content_hash
+             FROM memory_access_audit
+            WHERE resource_revision_id = ?`,
+        )
+        .all(handle.resourceRevision),
+    ).toEqual([
+      {
+        operation: "append",
+        decision: "committed",
+        content_hash: createHash("sha256").update("durable write sentinel").digest("hex"),
+      },
+    ]);
+    // A crash after shared delivery but before the local acknowledgement must be
+    // safe to retry: the sink deduplicates by immutable event id and the outbox
+    // eventually acknowledges the already-delivered event.
+    let eventId = "";
+    withScopedMemoryDatabase("main", (database) => {
+      const event = database
+        .prepare("SELECT event_id FROM memory_audit_outbox WHERE resource_revision_id = ?")
+        .get(handle.resourceRevision) as { event_id: string };
+      eventId = event.event_id;
+      database
+        .prepare(
+          `UPDATE memory_audit_outbox
+              SET state = 'pending', delivered_at = NULL, updated_at = updated_at + 1
+            WHERE event_id = ?`,
+        )
+        .run(eventId);
+    });
+    await builtinScopedMemoryAuthorizedRuntime.authorize(appendContext);
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare("SELECT state, attempts FROM memory_audit_outbox WHERE event_id = ?")
+          .get(eventId),
+      ).toMatchObject({ state: "delivered", attempts: expect.any(Number) });
+    });
+    expect(
+      audit.db
+        .prepare("SELECT count(*) AS count FROM memory_access_audit WHERE event_id = ?")
+        .get(eventId),
+    ).toEqual({ count: 1 });
+    const deleteContext = {
+      ...appendContext,
+      operation: "delete" as const,
+    } satisfies MemoryAccessContext;
+    const deletePlan = await builtinScopedMemoryAuthorizedRuntime.authorize(deleteContext);
+    await builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+      context: deleteContext,
+      plan: deletePlan,
+      mutation: {
+        version: 1,
+        kind: "delete",
+        mutationId: "delete-1",
+        idempotencyKey: "delete-request-1",
+        target: handle,
+      },
+    });
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare("SELECT lifecycle_state FROM memory_resource_revisions WHERE revision_id = ?")
+          .get(handle.resourceRevision),
+      ).toEqual({ lifecycle_state: "tombstoned" });
+      expect(
+        database
+          .prepare("SELECT * FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(handle.resourceRevision),
+      ).toEqual([]);
+    });
+  });
+
+  it("recovers each interrupted write boundary without exposing a pending revision", async () => {
+    const stageOnly = createWriteRecoveryFixture({
+      principalId: "recovery-stage-only",
+      content: "STAGE_ONLY_PENDING_SENTINEL",
+      placement: "stage",
+    });
+    const pendingCommit = createWriteRecoveryFixture({
+      principalId: "recovery-pending-commit",
+      content: "PENDING_COMMIT_SENTINEL",
+      placement: "stage",
+    });
+    const renamed = createWriteRecoveryFixture({
+      principalId: "recovery-renamed",
+      content: "RENAMED_SENTINEL",
+      placement: "final",
+    });
+    const activatedBeforeIndex = createWriteRecoveryFixture({
+      principalId: "recovery-activated",
+      content: "ACTIVATED_INDEX_SENTINEL",
+      placement: "final",
+      intentState: "active",
+      revisionLifecycleState: "active",
+    });
+    expect(
+      readBuiltinScopedMemoryRevisionSnapshot({
+        agentId: "main",
+        storeIds: [pendingCommit.storeId],
+        revisionId: pendingCommit.revisionId,
+      }),
+    ).toBeUndefined();
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare("SELECT * FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(activatedBeforeIndex.revisionId),
+      ).toEqual([]);
+    });
+
+    await builtinScopedMemoryAuthorizedRuntime.authorize({
+      ...createContext("recovery-pending-commit"),
+      operation: "append" as const,
+    });
+
+    expect(fs.existsSync(path.join(stageOnly.directory, stageOnly.stageLocator))).toBe(false);
+    expect(fs.existsSync(path.join(pendingCommit.directory, pendingCommit.finalLocator))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(renamed.directory, renamed.finalLocator))).toBe(true);
+    withScopedMemoryDatabase("main", (database) => {
+      for (const fixture of [pendingCommit, renamed, activatedBeforeIndex]) {
+        expect(
+          database
+            .prepare(
+              `SELECT revision.lifecycle_state, intent.state, intent.indexed_at
+                 FROM memory_resource_revisions AS revision
+                 JOIN memory_write_intents AS intent ON intent.pending_revision_id = revision.revision_id
+                WHERE revision.revision_id = ?`,
+            )
+            .get(fixture.revisionId),
+        ).toMatchObject({
+          lifecycle_state: "active",
+          state: "active",
+          indexed_at: expect.any(Number),
+        });
+        expect(
+          database
+            .prepare("SELECT text FROM memory_scoped_chunks WHERE revision_id = ?")
+            .all(fixture.revisionId),
+        ).toEqual([{ text: expect.stringContaining("SENTINEL") }]);
+      }
+    });
+  });
+
+  it("tombstones before quarantining an artifact whose unlink fails", async () => {
+    const principalId = "tombstone-quarantine";
+    createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: principalId,
+      authorityKind: "user",
+      authorityOwnerId: principalId,
+      defaultCapabilities: ["append", "delete"],
+      actor: { kind: "human", id: principalId },
+      reason: "tombstone quarantine fixture",
+    });
+    const appendContext = {
+      ...createContext(principalId),
+      operation: "append" as const,
+    } satisfies MemoryAccessContext;
+    const appendPlan = await builtinScopedMemoryAuthorizedRuntime.authorize(appendContext);
+    const written = await builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+      context: appendContext,
+      plan: appendPlan,
+      mutation: {
+        version: 1,
+        kind: "remember",
+        mutationId: "tombstone-source",
+        idempotencyKey: "tombstone-source-request",
+        content: "TOMBSTONE_QUARANTINE_SENTINEL",
+        contentType: "markdown",
+      },
+    });
+    if (!written.resourceHandle) {
+      throw new Error("fixture expected an authorized write handle");
+    }
+    const unlinkError = Object.assign(new Error("unlink denied"), { code: "EACCES" });
+    const unlink = vi.spyOn(fs, "unlinkSync").mockImplementationOnce(() => {
+      throw unlinkError;
+    });
+    try {
+      const deleteContext = {
+        ...appendContext,
+        operation: "delete" as const,
+      } satisfies MemoryAccessContext;
+      const deletePlan = await builtinScopedMemoryAuthorizedRuntime.authorize(deleteContext);
+      await expect(
+        builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+          context: deleteContext,
+          plan: deletePlan,
+          mutation: {
+            version: 1,
+            kind: "delete",
+            mutationId: "tombstone-delete",
+            idempotencyKey: "tombstone-delete-request",
+            target: written.resourceHandle,
+          },
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+    } finally {
+      unlink.mockRestore();
+    }
+    withScopedMemoryDatabase("main", (database, databasePath) => {
+      expect(
+        database
+          .prepare("SELECT lifecycle_state FROM memory_resource_revisions WHERE revision_id = ?")
+          .get(written.resourceHandle.resourceRevision),
+      ).toEqual({ lifecycle_state: "tombstoned" });
+      expect(
+        database
+          .prepare("SELECT * FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(written.resourceHandle.resourceRevision),
+      ).toEqual([]);
+      expect(
+        database
+          .prepare("SELECT state FROM memory_write_intents WHERE mutation_id = ?")
+          .get("tombstone-delete"),
+      ).toEqual({ state: "quarantined" });
+      const root = database
+        .prepare(
+          `SELECT root.path_key
+             FROM memory_stores AS store
+             JOIN memory_storage_roots AS root ON root.storage_root_id = store.storage_root_id
+            WHERE store.agent_id = 'main' AND store.audience_id = ?`,
+        )
+        .get(principalId) as { path_key: string };
+      expect(
+        fs.readdirSync(path.join(resolveScopedMemoryArtifactBase(databasePath), ".quarantine")),
+      ).not.toEqual([]);
+      expect(root.path_key).toBeTruthy();
+    });
+  });
+
+  it("reaches the selected lifecycle only through a host-owned subject remember operation", async () => {
+    const session = { sessionKey: "agent:main:direct:alice", sessionId: "writer-session" };
+    const principalId = createVerifiedDirectSession({ name: "alice", ...session });
+    createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: principalId,
+      authorityKind: "user",
+      authorityOwnerId: principalId,
+      defaultCapabilities: ["retrieve", "read", "append"],
+      actor: { kind: "human", id: principalId },
+      reason: "host write fixture",
+    });
+    markCutOver();
+    installBuiltinSelectedRuntime();
+    const host = createAuthorizedMemoryWriteHost({
+      agentId: "main",
+      ...session,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+    });
+    if (!host) {
+      throw new Error("fixture failed to create the authorized memory write host");
+    }
+    await expect(host.remember({ content: "HOST_OWNED_REMEMBER_SENTINEL" })).resolves.toMatchObject(
+      { status: "committed" },
+    );
+    withScopedMemoryDatabase("main", (database) => {
+      expect(database.prepare("SELECT text FROM memory_scoped_chunks").all()).toEqual([
+        { text: "HOST_OWNED_REMEMBER_SENTINEL" },
+      ]);
+    });
+  });
+
+  it("keeps pending content unavailable, recovers a staged revision, and quarantines policy drift", async () => {
+    const staged = createWriteRecoveryFixture({
+      principalId: "recovery-stage",
+      content: "STAGED_RECOVERY_SENTINEL",
+      placement: "stage",
+    });
+    expect(
+      readBuiltinScopedMemoryRevisionSnapshot({
+        agentId: "main",
+        storeIds: [staged.storeId],
+        revisionId: staged.revisionId,
+      }),
+    ).toBeUndefined();
+
+    const recoveryContext = {
+      ...createContext("recovery-stage"),
+      operation: "append" as const,
+    } satisfies MemoryAccessContext;
+    await builtinScopedMemoryAuthorizedRuntime.authorize(recoveryContext);
+    expect(fs.existsSync(path.join(staged.directory, staged.stageLocator))).toBe(false);
+    expect(fs.readFileSync(path.join(staged.directory, staged.finalLocator), "utf8")).toBe(
+      "STAGED_RECOVERY_SENTINEL",
+    );
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare(
+            `SELECT revision.lifecycle_state, intent.state, intent.indexed_at
+               FROM memory_resource_revisions AS revision
+               JOIN memory_write_intents AS intent ON intent.pending_revision_id = revision.revision_id
+              WHERE revision.revision_id = ?`,
+          )
+          .get(staged.revisionId),
+      ).toMatchObject({
+        lifecycle_state: "active",
+        state: "active",
+        indexed_at: expect.any(Number),
+      });
+      expect(
+        database
+          .prepare("SELECT text FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(staged.revisionId),
+      ).toEqual([{ text: "STAGED_RECOVERY_SENTINEL" }]);
+    });
+
+    const policyChanged = createWriteRecoveryFixture({
+      principalId: "recovery-policy",
+      content: "POLICY_DRIFT_SENTINEL",
+      placement: "final",
+      policyRevisionId: "policy-revision-that-is-no-longer-current",
+    });
+    await builtinScopedMemoryAuthorizedRuntime.authorize({
+      ...createContext("recovery-policy"),
+      operation: "append" as const,
+    });
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare(
+            `SELECT revision.lifecycle_state, intent.state
+               FROM memory_resource_revisions AS revision
+               JOIN memory_write_intents AS intent ON intent.pending_revision_id = revision.revision_id
+              WHERE revision.revision_id = ?`,
+          )
+          .get(policyChanged.revisionId),
+      ).toEqual({ lifecycle_state: "quarantined", state: "quarantined" });
+      expect(
+        database
+          .prepare("SELECT * FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(policyChanged.revisionId),
+      ).toEqual([]);
+    });
+    expect(fs.existsSync(path.join(policyChanged.directory, policyChanged.finalLocator))).toBe(
+      false,
+    );
+    expect(
+      fs.readdirSync(path.join(path.dirname(policyChanged.directory), ".quarantine")),
+    ).not.toEqual([]);
+  });
+
+  it("quarantines a staged artifact without a catalog mapping during startup recovery", async () => {
+    const store = createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: "orphaned-stage",
+      authorityKind: "user",
+      authorityOwnerId: "orphaned-stage",
+      defaultCapabilities: ["retrieve", "read", "append"],
+      actor: { kind: "human", id: "orphaned-stage" },
+      reason: "orphan fixture",
+    });
+    let directory = "";
+    withScopedMemoryDatabase("main", (database, databasePath) => {
+      const row = database
+        .prepare(
+          `SELECT root.path_key
+             FROM memory_stores AS store
+             JOIN memory_storage_roots AS root ON root.storage_root_id = store.storage_root_id
+            WHERE store.store_id = ?`,
+        )
+        .get(store.storeId) as { path_key: string };
+      directory = path.join(resolveScopedMemoryArtifactBase(databasePath), row.path_key);
+    });
+    const orphan = path.join(directory, "mwst1_unmapped.tmp");
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(orphan, "ORPHAN_STAGE_SENTINEL", { mode: 0o600 });
+
+    await builtinScopedMemoryAuthorizedRuntime.authorize({
+      ...createContext("orphaned-stage"),
+      operation: "append" as const,
+    });
+
+    expect(fs.existsSync(orphan)).toBe(false);
+    expect(fs.readdirSync(path.join(path.dirname(directory), ".quarantine"))).not.toEqual([]);
   });
 });

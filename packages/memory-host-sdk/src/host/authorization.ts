@@ -407,6 +407,11 @@ type AuthorizedMemoryContentMutation = Readonly<{
 export type AuthorizedMemoryMutation =
   | (AuthorizedMemoryContentMutation &
       Readonly<{
+        /** The runtime chooses the subject-owned destination; callers cannot select a store or owner. */
+        kind: "remember";
+      }>)
+  | (AuthorizedMemoryContentMutation &
+      Readonly<{
         kind: "append" | "replace";
         target: AuthorizedResourceHandle;
       }>)
@@ -427,21 +432,38 @@ export type AuthorizedMemoryMutation =
       }>)
   | Readonly<{
       version: 1;
-      kind: "delete";
+      kind: "delete" | "tombstone" | "admin-reclassify";
       mutationId: string;
       idempotencyKey: string;
       target: AuthorizedResourceHandle;
+    }>
+  | Readonly<{
+      version: 1;
+      kind: "sync";
+      mutationId: string;
+      idempotencyKey: string;
     }>;
 
 /** Narrows a grouped mutation discriminant without losing its operation-specific fields. */
 type AuthorizedMemoryMutationForOperation<Operation extends AuthorizedMemoryMutation["kind"]> =
   AuthorizedMemoryMutation & Readonly<{ kind: Operation }>;
 
+type AuthorizedMemoryOperationForMutation<Kind extends AuthorizedMemoryMutation["kind"]> =
+  Kind extends "remember"
+    ? "append"
+    : Kind extends "tombstone"
+      ? "delete"
+      : Kind extends "admin-reclassify"
+        ? "policy-admin"
+        : Kind;
+
 /** Keep mutation kind, context operation, and plan operation correlated at the SDK boundary. */
 type AuthorizedMemoryWriteParams = {
-  [Operation in AuthorizedMemoryMutation["kind"]]: AuthorizedMemoryOperationParams<Operation> &
+  [Kind in AuthorizedMemoryMutation["kind"]]: AuthorizedMemoryOperationParams<
+    AuthorizedMemoryOperationForMutation<Kind>
+  > &
     Readonly<{
-      mutation: AuthorizedMemoryMutationForOperation<Operation>;
+      mutation: AuthorizedMemoryMutationForOperation<Kind>;
     }>;
 }[AuthorizedMemoryMutation["kind"]];
 

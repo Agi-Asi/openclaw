@@ -46,6 +46,7 @@ export const LAZY_ADDITIVE_STATE_TABLES = [
   "memory_identity_bindings",
   "memory_pairing_identity_receipts",
   "memory_principals",
+  "memory_access_audit",
   "sidebar_sections",
   "skill_workshop_proposal_events",
   "skill_workshop_collection_reviews",
@@ -66,6 +67,7 @@ export const LAZY_ADDITIVE_STATE_INDEXES = [
   "idx_memory_pairing_identity_receipts_pending",
   "idx_memory_principals_lookup",
   "idx_memory_principals_user_profile",
+  "idx_memory_access_audit_agent_time",
 ] as const;
 /** Maximum time one synchronous SQLite call may wait for a lock. */
 export const OPENCLAW_SQLITE_BUSY_TIMEOUT_MS = 5_000;

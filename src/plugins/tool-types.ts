@@ -5,6 +5,7 @@ import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { ConversationReadInvocationOrigin } from "../channels/plugins/conversation-read-origin.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HookEntry } from "../hooks/types.js";
+import type { MemoryWriteResult } from "../memory-host-sdk/host/authorization.js";
 import type {
   MemoryReadResult,
   MemorySearchResult,
@@ -55,6 +56,14 @@ export type AuthorizedMemoryReadHost = Readonly<{
   }) => Promise<MemoryReadResult | AuthorizedMemoryReadUnavailable>;
 }>;
 
+/** Host-owned subject-scoped write capability. It deliberately offers no store, root, or audience input. */
+export type AuthorizedMemoryWriteHost = Readonly<{
+  remember: (params: {
+    content: string;
+    contentType?: "markdown" | "text" | "json";
+  }) => Promise<MemoryWriteResult | AuthorizedMemoryReadUnavailable>;
+}>;
+
 /** Trusted execution context passed to plugin-owned agent tool factories. */
 export type OpenClawPluginToolContext = {
   config?: OpenClawConfig;
@@ -80,6 +89,8 @@ export type OpenClawPluginToolContext = {
   memoryReadEnforced?: true;
   /** Host-owned authorized-read capability for the selected memory runtime. */
   authorizedMemoryRead?: AuthorizedMemoryReadHost;
+  /** Host-owned authorized-write capability for the selected memory runtime. */
+  authorizedMemoryWrite?: AuthorizedMemoryWriteHost;
   /**
    * Runtime-supplied active model metadata for informational use, diagnostics,
    * and plugin-owned policy decisions. This is not a security boundary against

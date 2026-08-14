@@ -7,6 +7,7 @@ import {
 } from "../plugin-sdk/memory-authorization.js";
 import {
   admitMemoryAuthorizationReadRuntime,
+  admitMemoryAuthorizationRuntime,
   inspectMemoryAuthorizationCapability,
 } from "./memory-authorization-runtime.js";
 import { observeMemoryAuthorizationShadowSurface } from "./memory-authorization-shadow.js";
@@ -119,6 +120,32 @@ describe("memory authorization capability inspection", () => {
       runtime: createRuntime(),
     });
     expect(admitted.ok).toBe(true);
+  });
+
+  it("admits writes only with the complete declared and independently conforming runtime", async () => {
+    const runtime = createRuntime();
+    await expect(
+      admitMemoryAuthorizationRuntime({
+        authorization: COMPLETE_MEMORY_AUTHORIZATION_CAPABILITIES,
+        authorizationConformance: referenceMemoryAuthorizationConformanceAdapter,
+        runtime,
+      }),
+    ).resolves.toMatchObject({ ok: true, runtime: expect.any(Object) });
+    await expect(
+      admitMemoryAuthorizationRuntime({
+        authorization: { ...COMPLETE_MEMORY_AUTHORIZATION_CAPABILITIES, scopedWrite: false },
+        authorizationConformance: referenceMemoryAuthorizationConformanceAdapter,
+        runtime,
+      }),
+    ).resolves.toEqual({ ok: false, reasonCode: "backend-nonconforming" });
+    await expect(
+      admitMemoryAuthorizationRuntime({
+        authorization: COMPLETE_MEMORY_AUTHORIZATION_CAPABILITIES,
+        authorizationConformance: {},
+        runtime,
+      }),
+    ).resolves.toEqual({ ok: false, reasonCode: "backend-nonconforming" });
+    expect(runtime.writeAuthorized).not.toHaveBeenCalled();
   });
 
   it("reports all-false and incomplete declarations as nonconforming", () => {

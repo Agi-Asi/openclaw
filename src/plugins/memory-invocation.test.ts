@@ -22,6 +22,7 @@ vi.mock("../state/memory-access-context.js", async (importOriginal) => ({
 
 vi.mock("./memory-authorization-runtime.js", () => ({
   admitMemoryAuthorizationReadRuntime: mocks.admit,
+  admitMemoryAuthorizationRuntime: mocks.admit,
 }));
 
 vi.mock("./memory-run-exposure-ledger.js", () => ({
@@ -36,11 +37,13 @@ vi.mock("../logger.js", () => ({
 const {
   MEMORY_INVOCATION_UNAVAILABLE,
   createAuthorizedMemoryReadInvocation,
+  createAuthorizedMemoryWriteInvocation,
   materializeAuthorizedMemoryVirtualView,
   readAuthorizedMemoryVirtualFile,
   readAuthorizedMemoryForInvocation,
   readAuthorizedMemoryRunExposure,
   searchAuthorizedMemoryForInvocation,
+  writeAuthorizedMemoryForInvocation,
 } = await import("./memory-invocation.js");
 const { clearMemoryRunExposureForTest } = await import("./memory-run-exposure.js");
 
@@ -104,6 +107,14 @@ function createPlan(): AuthorizedMemoryPlan & Readonly<{ operation: "read" }> {
     allowedEgressAudiences: [{ kind: "user", id: "alice" }],
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };
+}
+
+function createWriteContext(): MemoryAccessContext & Readonly<{ operation: "append" }> {
+  return { ...createContext(), operation: "append" };
+}
+
+function createWritePlan(): AuthorizedMemoryPlan & Readonly<{ operation: "append" }> {
+  return { ...createPlan(), operation: "append" };
 }
 
 let receiptSequence = 0;
@@ -286,7 +297,9 @@ describe("authorized memory read invocation", () => {
     };
     const runtime = {
       authorize: vi.fn().mockResolvedValue(createPlan()),
-      searchAuthorized: vi.fn().mockResolvedValue(createEnvelope([result])),
+      // Receipt time is minted by the backend after authorization, not while the
+      // test fixture is assembled before the host admits the invocation.
+      searchAuthorized: vi.fn().mockImplementation(() => createEnvelope([result])),
       readAuthorized: vi.fn(),
     };
     mocks.materialize.mockReturnValue(createContext());
@@ -928,5 +941,86 @@ describe("authorized memory read invocation", () => {
     });
     expect(admitted.materializeAuthorizedVirtualView).toHaveBeenCalledOnce();
     expect(replacement.materializeAuthorizedVirtualView).not.toHaveBeenCalled();
+  });
+});
+
+describe("authorized memory write invocation", () => {
+  afterEach(() => {
+    mocks.admit.mockReset();
+    mocks.materialize.mockReset();
+    mocks.logWarn.mockReset();
+  });
+
+  it("uses only a trusted append context and closed mutation DTO for a selected runtime", async () => {
+    const runtime = {
+      authorize: vi.fn().mockResolvedValue(createWritePlan()),
+      writeAuthorized: vi.fn().mockResolvedValue({
+        version: 1,
+        mutationId: "remember-1",
+        status: "committed",
+        policyRevision: "policy-1",
+        committedAt: new Date().toISOString(),
+      }),
+    };
+    mocks.materialize.mockReturnValue(createWriteContext());
+    mocks.admit.mockResolvedValue({ ok: true, runtime });
+    const invocation = await createAuthorizedMemoryWriteInvocation({ context: {} as never });
+    expect(invocation).not.toBe(MEMORY_INVOCATION_UNAVAILABLE);
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      return;
+    }
+    await expect(
+      writeAuthorizedMemoryForInvocation({
+        invocation,
+        mutation: {
+          version: 1,
+          kind: "remember",
+          mutationId: "remember-1",
+          idempotencyKey: "request-1",
+          content: "host-selected destination",
+          contentType: "markdown",
+        },
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+    expect(runtime.writeAuthorized).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({
+          operation: "append",
+          subject: createWriteContext().subject,
+        }),
+        mutation: expect.not.objectContaining({
+          storeId: expect.anything(),
+          ownerId: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it("fails closed after the trusted write facts are no longer current", async () => {
+    const context = createWriteContext();
+    const runtime = {
+      authorize: vi.fn().mockResolvedValue(createWritePlan()),
+      writeAuthorized: vi.fn(),
+    };
+    mocks.materialize.mockReturnValueOnce(context).mockReturnValueOnce(undefined);
+    mocks.admit.mockResolvedValue({ ok: true, runtime });
+    const invocation = await createAuthorizedMemoryWriteInvocation({ context: {} as never });
+    if (invocation === MEMORY_INVOCATION_UNAVAILABLE) {
+      throw new Error("fixture failed to create a write invocation");
+    }
+    await expect(
+      writeAuthorizedMemoryForInvocation({
+        invocation,
+        mutation: {
+          version: 1,
+          kind: "remember",
+          mutationId: "remember-stale",
+          idempotencyKey: "request-stale",
+          content: "must not write",
+          contentType: "markdown",
+        },
+      }),
+    ).resolves.toBe(MEMORY_INVOCATION_UNAVAILABLE);
+    expect(runtime.writeAuthorized).not.toHaveBeenCalled();
   });
 });

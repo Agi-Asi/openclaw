@@ -1,22 +1,26 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AuthorizedMemoryVirtualView,
+  MemoryAccessContext,
   MemoryActorEvidence,
 } from "../memory-host-sdk/host/authorization.js";
 import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import {
   MEMORY_INVOCATION_UNAVAILABLE,
   createAuthorizedMemoryReadInvocation,
+  createAuthorizedMemoryWriteInvocation,
   materializeAuthorizedMemoryVirtualView,
   readAuthorizedMemoryVirtualFile,
   readAuthorizedMemoryForInvocation,
   searchAuthorizedMemoryForInvocation,
+  writeAuthorizedMemoryForInvocation,
   type AuthorizedMemoryReadInvocation,
 } from "../plugins/memory-invocation.js";
-import type { AuthorizedMemoryReadHost } from "../plugins/tool-types.js";
+import type { AuthorizedMemoryReadHost, AuthorizedMemoryWriteHost } from "../plugins/tool-types.js";
 import {
   captureTrustedMemoryAccessFacts,
   createTrustedMemoryAccessContext,
+  type TrustedMemoryAccessContext,
 } from "../state/memory-access-context.js";
 import { recheckMemoryIdentityBinding } from "../state/memory-identity.js";
 import {
@@ -84,7 +88,7 @@ function deliveryFacts(params: {
  * reread from their owners; sender IDs, `toolsBySender`, paths, and model parameters never name a
  * memory subject or namespace here.
  */
-export function createAuthorizedMemoryReadHost(params: {
+type AuthorizedMemoryHostParams = {
   agentId: string;
   sessionKey?: string;
   sessionId?: string;
@@ -92,7 +96,12 @@ export function createAuthorizedMemoryReadHost(params: {
   deliveryContext?: DeliveryContext;
   messageChannel?: string;
   agentAccountId?: string;
-}): AuthorizedMemoryReadHost | undefined {
+};
+
+/** Reissues identity and delivery evidence for each operation; read authority never implies write. */
+function createTrustedMemoryHostContext(
+  params: AuthorizedMemoryHostParams & Readonly<{ operation: MemoryAccessContext["operation"] }>,
+): TrustedMemoryAccessContext | undefined {
   if (
     !isMemoryIsolationCutoverAgent(params.agentId) ||
     !params.sessionKey?.trim() ||
@@ -188,7 +197,7 @@ export function createAuthorizedMemoryReadHost(params: {
     // keeps a group actor from selecting a role store merely because they sent the latest message.
     verifiedMemberships: [],
     delivery,
-    operation: "read",
+    operation: params.operation,
     hostFactsRevision: `mhf1_${hash({
       session: context.fingerprint,
       delivery: delivery.routeRevision,
@@ -204,11 +213,25 @@ export function createAuthorizedMemoryReadHost(params: {
   if (trusted.kind !== "current") {
     return undefined;
   }
+  return trusted.context;
+}
+
+/**
+ * Builds the sole tool-facing read handle for a cut-over run. Session identity and delivery facts
+ * are reread from their owners; sender IDs, `toolsBySender`, and paths never name a memory subject.
+ */
+export function createAuthorizedMemoryReadHost(
+  params: AuthorizedMemoryHostParams,
+): AuthorizedMemoryReadHost | undefined {
+  const trusted = createTrustedMemoryHostContext({ ...params, operation: "read" });
+  if (!trusted) {
+    return undefined;
+  }
   let invocation:
     | Promise<AuthorizedMemoryReadInvocation | typeof MEMORY_INVOCATION_UNAVAILABLE>
     | undefined;
   const getInvocation = () =>
-    (invocation ??= createAuthorizedMemoryReadInvocation({ context: trusted.context }));
+    (invocation ??= createAuthorizedMemoryReadInvocation({ context: trusted }));
   let virtualBroker: Promise<AuthorizedMemoryVirtualFileBroker | undefined> | undefined;
   const getVirtualBroker = () =>
     (virtualBroker ??= (async () => {
@@ -251,4 +274,37 @@ export function createAuthorizedMemoryReadHost(params: {
     },
     [authorizedMemoryVirtualBroker]: getVirtualBroker,
   }) as AuthorizedMemoryReadHost;
+}
+
+/**
+ * Builds a one-mutation append host for a cut-over run. The model supplies only content; the host
+ * reissues append facts and the selected runtime chooses the subject-owned store and audience.
+ */
+export function createAuthorizedMemoryWriteHost(
+  params: AuthorizedMemoryHostParams,
+): AuthorizedMemoryWriteHost | undefined {
+  const trusted = createTrustedMemoryHostContext({ ...params, operation: "append" });
+  if (!trusted) {
+    return undefined;
+  }
+  return Object.freeze({
+    async remember({ content, contentType = "markdown" }) {
+      const invocation = await createAuthorizedMemoryWriteInvocation({ context: trusted });
+      if ("unavailable" in invocation) {
+        return MEMORY_INVOCATION_UNAVAILABLE;
+      }
+      const result = await writeAuthorizedMemoryForInvocation({
+        invocation,
+        mutation: {
+          version: 1,
+          kind: "remember",
+          mutationId: randomUUID(),
+          idempotencyKey: randomUUID(),
+          content,
+          contentType,
+        },
+      });
+      return "unavailable" in result ? MEMORY_INVOCATION_UNAVAILABLE : result;
+    },
+  });
 }

@@ -1,11 +1,15 @@
 import { logWarn } from "../logger.js";
 import type {
   AuthorizedMemoryVirtualView,
+  AuthorizedMemoryMutation,
   AuthorizedMemoryPlan,
   AuthorizedMemoryResultEnvelope,
   AuthorizedResourceHandle,
   AudienceRef,
   MemoryContentAccessContext,
+  MemoryAccessContext,
+  MemoryWriteResult,
+  AuthorizedMemoryRuntime,
 } from "../memory-host-sdk/host/authorization.js";
 import type {
   MemoryReadResult,
@@ -18,6 +22,7 @@ import {
 } from "../state/memory-access-context.js";
 import {
   admitMemoryAuthorizationReadRuntime,
+  admitMemoryAuthorizationRuntime,
   type AdmittedAuthorizedMemoryReadRuntime,
 } from "./memory-authorization-runtime.js";
 import {
@@ -45,9 +50,15 @@ export const MEMORY_INVOCATION_UNAVAILABLE: MemoryInvocationUnavailable = Object
 });
 
 const memoryReadInvocationBrand: unique symbol = Symbol("openclaw.memory-read-invocation");
+const memoryWriteInvocationBrand: unique symbol = Symbol("openclaw.memory-write-invocation");
 
 export type AuthorizedMemoryReadInvocation = Readonly<{
   readonly [memoryReadInvocationBrand]: true;
+}>;
+
+/** Opaque host-owned write continuation; a caller cannot supply context or a selected runtime. */
+export type AuthorizedMemoryWriteInvocation = Readonly<{
+  readonly [memoryWriteInvocationBrand]: true;
 }>;
 
 type InvocationState = Readonly<{
@@ -71,6 +82,15 @@ type InvocationState = Readonly<{
 const VIRTUAL_ROOT_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 const invocationStates = new WeakMap<object, InvocationState>();
+
+type WriteInvocationState = Readonly<{
+  trustedContext: TrustedMemoryAccessContext;
+  context: MemoryAccessContext;
+  plan: AuthorizedMemoryPlan;
+  runtime: Readonly<AuthorizedMemoryRuntime>;
+}>;
+
+const writeInvocationStates = new WeakMap<object, WriteInvocationState>();
 
 type MemoryInvocationDiagnostic =
   | "admission-rejected"
@@ -96,8 +116,8 @@ function sameAudiences(left: readonly AudienceRef[], right: readonly AudienceRef
 }
 
 function isCurrentPlan(params: {
-  context: MemoryContentAccessContext<"read">;
-  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  context: MemoryAccessContext;
+  plan: AuthorizedMemoryPlan;
   nowMs: number;
 }): boolean {
   const { context, plan } = params;
@@ -115,6 +135,26 @@ function isCurrentPlan(params: {
     Number.isFinite(expiresAt) &&
     expiresAt > params.nowMs
   );
+}
+
+function readCurrentWriteContext(state: WriteInvocationState): MemoryAccessContext | undefined {
+  const current = materializeTrustedMemoryAccessContext(state.trustedContext);
+  if (
+    !current ||
+    current.operation !== state.context.operation ||
+    current.contextFingerprint !== state.context.contextFingerprint ||
+    current.runId !== state.context.runId ||
+    current.agentId !== state.context.agentId ||
+    current.sessionId !== state.context.sessionId ||
+    current.sessionIdentityRevision !== state.context.sessionIdentityRevision ||
+    current.subjectRevision !== state.context.subjectRevision ||
+    current.delivery.deliveryRevision !== state.context.delivery.deliveryRevision ||
+    current.delivery.egressRegistryRevision !== state.context.delivery.egressRegistryRevision ||
+    !sameAudiences(current.delivery.audiences, state.context.delivery.audiences)
+  ) {
+    return undefined;
+  }
+  return current;
 }
 
 function readCurrentContext(
@@ -410,6 +450,75 @@ export async function createAuthorizedMemoryReadInvocation(params: {
       }),
     );
     return invocation;
+  } catch {
+    logMemoryInvocationDiagnostic("authorization-failed");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+}
+
+/**
+ * Creates a process-local write invocation from host-minted facts. This is separate from read
+ * exposure because a write is a resource lifecycle decision, never a continuation of a search hit.
+ */
+export async function createAuthorizedMemoryWriteInvocation(params: {
+  context: TrustedMemoryAccessContext;
+  capability?: MemoryPluginCapability;
+}): Promise<AuthorizedMemoryWriteInvocation | MemoryInvocationUnavailable> {
+  const context = materializeTrustedMemoryAccessContext(params.context);
+  if (!context || context.operation === "read") {
+    logMemoryInvocationDiagnostic("materialization-rejected");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  const capability =
+    params.capability ??
+    resolveSelectedMemoryCapabilityRegistration(requireActivePluginRegistry())?.capability;
+  const admission = await admitMemoryAuthorizationRuntime(capability);
+  if (!admission.ok) {
+    logMemoryInvocationDiagnostic("admission-rejected");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  try {
+    const plan = await admission.runtime.authorize(context);
+    if (!isCurrentPlan({ context, plan, nowMs: Date.now() })) {
+      logMemoryInvocationDiagnostic("invalid-plan");
+      return MEMORY_INVOCATION_UNAVAILABLE;
+    }
+    const invocation = Object.freeze({}) as AuthorizedMemoryWriteInvocation;
+    writeInvocationStates.set(
+      invocation,
+      Object.freeze({
+        trustedContext: params.context,
+        context,
+        plan,
+        runtime: admission.runtime,
+      }),
+    );
+    return invocation;
+  } catch {
+    logMemoryInvocationDiagnostic("authorization-failed");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+}
+
+/**
+ * The host supplies the opaque invocation and mutation identity. Runtime arguments remain limited
+ * to a closed mutation DTO, so content cannot retarget a store, owner, root, or broader audience.
+ */
+export async function writeAuthorizedMemoryForInvocation(params: {
+  invocation: AuthorizedMemoryWriteInvocation;
+  mutation: AuthorizedMemoryMutation;
+}): Promise<MemoryWriteResult | MemoryInvocationUnavailable> {
+  const state = writeInvocationStates.get(params.invocation);
+  const context = state ? readCurrentWriteContext(state) : undefined;
+  if (!state || !context || !isCurrentPlan({ context, plan: state.plan, nowMs: Date.now() })) {
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  try {
+    return await state.runtime.writeAuthorized({
+      context,
+      plan: state.plan,
+      mutation: params.mutation,
+    } as never);
   } catch {
     logMemoryInvocationDiagnostic("authorization-failed");
     return MEMORY_INVOCATION_UNAVAILABLE;

@@ -374,6 +374,27 @@ CREATE INDEX IF NOT EXISTS idx_memory_pairing_identity_receipts_pending
   ON memory_pairing_identity_receipts(channel, account_id, request_identity_hmac, expires_at)
   WHERE consumed_at IS NULL;
 
+-- Redacted shared sink for durable memory decisions. It stores ids and hashes,
+-- never memory content, search terms, sender ids, or raw policy payloads.
+CREATE TABLE IF NOT EXISTS memory_access_audit (
+  event_id TEXT NOT NULL PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  actor_ref TEXT NOT NULL,
+  subject_ref TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('committed', 'quarantined', 'tombstoned')),
+  reason_code TEXT NOT NULL,
+  resource_revision_id TEXT,
+  content_hash TEXT,
+  occurred_at INTEGER NOT NULL,
+  received_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_memory_access_audit_agent_time
+  ON memory_access_audit(agent_id, occurred_at DESC, event_id);
+
 CREATE TABLE IF NOT EXISTS session_state_events (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   dedupe_key TEXT UNIQUE,

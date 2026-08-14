@@ -137,6 +137,52 @@ export type MemoryScopedChunkVectorRow = {
   updated_at: number;
 };
 
+/** A durable write intent exists before its revision can become readable. */
+export type MemoryWriteIntentRow = {
+  intent_id: string;
+  idempotency_key: string;
+  mutation_id: string;
+  agent_id: string;
+  request_id: string;
+  run_id: string;
+  context_fingerprint: string;
+  plan_id: string;
+  mutation_kind: string;
+  store_id: string;
+  resource_id: string | null;
+  pending_revision_id: string | null;
+  staged_locator: string | null;
+  final_locator: string | null;
+  content_hash: string | null;
+  content_bytes: number | null;
+  state: "pending" | "renamed" | "active" | "quarantined" | "tombstoned";
+  created_at: number;
+  updated_at: number;
+  activated_at: number | null;
+  indexed_at: number | null;
+};
+
+/** Local, idempotent audit delivery queue. Memory content is deliberately absent. */
+export type MemoryAuditOutboxRow = {
+  event_id: string;
+  intent_id: string;
+  agent_id: string;
+  request_id: string;
+  run_id: string;
+  actor_ref: string;
+  subject_ref: string;
+  operation: string;
+  resource_revision_id: string | null;
+  content_hash: string | null;
+  decision: "pending" | "committed" | "quarantined" | "tombstoned";
+  reason_code: string;
+  state: "pending" | "delivered";
+  attempts: number;
+  created_at: number;
+  updated_at: number;
+  delivered_at: number | null;
+};
+
 export type MemoryMigrationRow = {
   migration_id: string;
   source_kind: string;
@@ -160,6 +206,8 @@ export type ScopedMemoryDatabase = {
   memory_resource_subjects: MemoryResourceSubjectRow;
   memory_scoped_chunks: MemoryScopedChunkRow;
   memory_scoped_chunk_vectors: MemoryScopedChunkVectorRow;
+  memory_write_intents: MemoryWriteIntentRow;
+  memory_audit_outbox: MemoryAuditOutboxRow;
   memory_migrations: MemoryMigrationRow;
 };
 

@@ -137,6 +137,26 @@ export interface HeartbeatOutcomes {
   wake_source: string | null;
 }
 
+export interface MemoryAuditOutbox {
+  actor_ref: string;
+  agent_id: string;
+  attempts: Generated<number>;
+  content_hash: string | null;
+  created_at: number;
+  decision: string;
+  delivered_at: number | null;
+  event_id: string;
+  intent_id: string;
+  operation: string;
+  reason_code: string;
+  request_id: string;
+  resource_revision_id: string | null;
+  run_id: string;
+  state: string;
+  subject_ref: string;
+  updated_at: number;
+}
+
 export interface MemoryEmbeddingCache {
   dims: number | null;
   embedding: string;
@@ -425,6 +445,30 @@ export interface MemoryStores {
   policy_id: string;
   scope_kind: string;
   storage_root_id: string;
+  store_id: string;
+  updated_at: number;
+}
+
+export interface MemoryWriteIntents {
+  activated_at: number | null;
+  agent_id: string;
+  content_bytes: number | null;
+  content_hash: string | null;
+  context_fingerprint: string;
+  created_at: number;
+  final_locator: string | null;
+  idempotency_key: string;
+  indexed_at: number | null;
+  intent_id: string;
+  mutation_id: string;
+  mutation_kind: string;
+  pending_revision_id: string | null;
+  plan_id: string;
+  request_id: string;
+  resource_id: string | null;
+  run_id: string;
+  staged_locator: string | null;
+  state: string;
   store_id: string;
   updated_at: number;
 }
@@ -742,6 +786,7 @@ export interface DB {
   conversation_deliveries: ConversationDeliveries;
   conversations: Conversations;
   heartbeat_outcomes: HeartbeatOutcomes;
+  memory_audit_outbox: MemoryAuditOutbox;
   memory_embedding_cache: MemoryEmbeddingCache;
   memory_index_chunk_provenance: MemoryIndexChunkProvenance;
   memory_index_chunk_recall_metadata: MemoryIndexChunkRecallMetadata;
@@ -770,6 +815,7 @@ export interface DB {
   memory_scoped_chunks_fts_idx: MemoryScopedChunksFtsIdx;
   memory_storage_roots: MemoryStorageRoots;
   memory_stores: MemoryStores;
+  memory_write_intents: MemoryWriteIntents;
   schema_meta: SchemaMeta;
   session_conversations: SessionConversations;
   session_key_contract: SessionKeyContract;

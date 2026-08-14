@@ -106,6 +106,16 @@ export const MEMORY_AUTHORIZATION_PATH_INVENTORY = Object.freeze([
     "src/plugins/memory-invocation.ts",
   ),
   entry(
+    "subject-memory-remember",
+    "ingress",
+    "core-access-host",
+    "authorized",
+    "src/agents/memory-authorized-read-host.ts",
+    "src/agents/openclaw-tools.plugin-context.ts",
+    "src/plugins/memory-invocation.ts",
+    "extensions/memory-core/src/memory/scoped-memory-runtime.ts",
+  ),
+  entry(
     "session-transcript-search",
     "egress",
     "core-access-host",

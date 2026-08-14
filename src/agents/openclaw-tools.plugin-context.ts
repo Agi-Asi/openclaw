@@ -12,7 +12,10 @@ import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "./agent-scope.js";
 import type { ConversationRecallContext } from "./conversation-recall.types.js";
-import { createAuthorizedMemoryReadHost } from "./memory-authorized-read-host.js";
+import {
+  createAuthorizedMemoryReadHost,
+  createAuthorizedMemoryWriteHost,
+} from "./memory-authorized-read-host.js";
 import { modelKey } from "./model-ref-shared.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
@@ -39,6 +42,8 @@ export type OpenClawPluginToolOptions = {
   runId?: string;
   /** Prepared at run admission; never re-derived from a plugin tool call. */
   authorizedMemoryRead?: import("../plugins/tool-types.js").AuthorizedMemoryReadHost;
+  /** Prepared at run admission; only content can cross this host boundary. */
+  authorizedMemoryWrite?: import("../plugins/tool-types.js").AuthorizedMemoryWriteHost;
   requesterSenderId?: string | null;
   senderIsOwner?: boolean;
   conversationReadOrigin?: ConversationReadInvocationOrigin;
@@ -107,6 +112,18 @@ export function resolveOpenClawPluginToolInputs(params: {
         agentAccountId: options?.agentAccountId,
       }))
     : undefined;
+  const authorizedMemoryWrite = memoryReadEnforced
+    ? (options?.authorizedMemoryWrite ??
+      createAuthorizedMemoryWriteHost({
+        agentId: sessionAgentId,
+        sessionKey: options?.agentSessionKey,
+        sessionId: options?.sessionId,
+        runId: options?.runId,
+        deliveryContext,
+        messageChannel: options?.agentChannel,
+        agentAccountId: options?.agentAccountId,
+      }))
+    : undefined;
 
   return {
     context: {
@@ -124,6 +141,7 @@ export function resolveOpenClawPluginToolInputs(params: {
       conversationRecall: options?.conversationRecall,
       ...(memoryReadEnforced ? { memoryReadEnforced: true as const } : {}),
       ...(authorizedMemoryRead ? { authorizedMemoryRead } : {}),
+      ...(authorizedMemoryWrite ? { authorizedMemoryWrite } : {}),
       activeModel,
       browser: {
         sandboxBridgeUrl: options?.sandboxBrowserBridgeUrl,

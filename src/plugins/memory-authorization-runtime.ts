@@ -39,6 +39,10 @@ export type MemoryAuthorizationReadAdmission =
   | Readonly<{ ok: true; runtime: AdmittedAuthorizedMemoryReadRuntime }>
   | Readonly<{ ok: false; reasonCode: "backend-nonconforming" }>;
 
+export type MemoryAuthorizationRuntimeAdmission =
+  | Readonly<{ ok: true; runtime: Readonly<AuthorizedMemoryRuntime> }>
+  | Readonly<{ ok: false; reasonCode: "backend-nonconforming" }>;
+
 type MemoryAuthorizationCapabilityInspection = Readonly<{
   version: 1;
   capabilityDeclaration: "missing" | "malformed" | "partial" | "complete";
@@ -250,6 +254,74 @@ export async function admitMemoryAuthorizationReadRuntime(
       ...(virtualView.kind === "data" && readVirtualViewProvider(virtualView.value)
         ? { virtualView: readVirtualViewProvider(virtualView.value) }
         : {}),
+    }),
+  });
+}
+
+/**
+ * Admit mutation-capable backends only when every phase-2 operation and the
+ * same independent policy conformance adapter are present. This never falls
+ * back to a legacy manager for an enforced mutation.
+ */
+export async function admitMemoryAuthorizationRuntime(
+  capability: unknown,
+): Promise<MemoryAuthorizationRuntimeAdmission> {
+  const authorization = readDataProperty(capability, "authorization");
+  const runtime = readDataProperty(capability, "runtime");
+  const conformance = readDataProperty(capability, "authorizationConformance");
+  const authorizationCapabilities =
+    authorization.kind === "data" && isMemoryAuthorizationCapabilities(authorization.value)
+      ? authorization.value
+      : undefined;
+  if (
+    runtime.kind !== "data" ||
+    conformance.kind !== "data" ||
+    !authorizationCapabilities ||
+    listMissingMemoryAuthorizationCapabilities(authorizationCapabilities).length > 0 ||
+    !isConformanceAdapter(conformance.value)
+  ) {
+    return Object.freeze({ ok: false, reasonCode: "backend-nonconforming" });
+  }
+  const methods = Object.fromEntries(
+    AUTHORIZED_MEMORY_RUNTIME_METHODS.map((name) => [name, readCallable(runtime.value, name)]),
+  ) as Record<AuthorizedMemoryRuntimeMethodName, ((...args: never[]) => unknown) | undefined>;
+  if (Object.values(methods).some((method) => typeof method !== "function")) {
+    return Object.freeze({ ok: false, reasonCode: "backend-nonconforming" });
+  }
+  try {
+    const report = await runMemoryAuthorizationConformanceSuite(conformance.value);
+    if (!report.ok) {
+      return Object.freeze({ ok: false, reasonCode: "backend-nonconforming" });
+    }
+  } catch {
+    return Object.freeze({ ok: false, reasonCode: "backend-nonconforming" });
+  }
+  const source = runtime.value;
+  return Object.freeze({
+    ok: true,
+    runtime: Object.freeze({
+      authorize: (methods.authorize as AuthorizedMemoryRuntime["authorize"]).bind(source),
+      searchAuthorized: (
+        methods.searchAuthorized as AuthorizedMemoryRuntime["searchAuthorized"]
+      ).bind(source),
+      readAuthorized: (methods.readAuthorized as AuthorizedMemoryRuntime["readAuthorized"]).bind(
+        source,
+      ),
+      writeAuthorized: (methods.writeAuthorized as AuthorizedMemoryRuntime["writeAuthorized"]).bind(
+        source,
+      ),
+      importAuthorized: (
+        methods.importAuthorized as AuthorizedMemoryRuntime["importAuthorized"]
+      ).bind(source),
+      syncAuthorized: (methods.syncAuthorized as AuthorizedMemoryRuntime["syncAuthorized"]).bind(
+        source,
+      ),
+      exportAuthorized: (
+        methods.exportAuthorized as AuthorizedMemoryRuntime["exportAuthorized"]
+      ).bind(source),
+      statusAuthorized: (
+        methods.statusAuthorized as AuthorizedMemoryRuntime["statusAuthorized"]
+      ).bind(source),
     }),
   });
 }

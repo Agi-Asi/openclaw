@@ -42,6 +42,7 @@ type MemoryToolOptions = {
   conversationRecall?: OpenClawPluginToolContext["conversationRecall"];
   memoryReadEnforced?: OpenClawPluginToolContext["memoryReadEnforced"];
   authorizedMemoryRead?: OpenClawPluginToolContext["authorizedMemoryRead"];
+  authorizedMemoryWrite?: OpenClawPluginToolContext["authorizedMemoryWrite"];
   activeProjectKeys?: readonly string[];
   acquireLocalService?: MemoryCoreAcquireLocalService;
 };
@@ -97,6 +98,15 @@ const MemoryGetSchema = {
     corpus: { type: "string", enum: ["memory", "wiki", "all"] },
   },
   required: [],
+  additionalProperties: false,
+} as const satisfies TSchema;
+
+const MemoryRememberSchema = {
+  type: "object",
+  properties: {
+    content: { type: "string" },
+  },
+  required: ["content"],
   additionalProperties: false,
 } as const satisfies TSchema;
 
@@ -161,6 +171,35 @@ function createLazyMemoryGetTool(options: MemoryToolOptions): AnyAgentTool | nul
     parameters: MemoryGetSchema,
     load: (module, loadOptions) => module.createMemoryGetTool(loadOptions),
   });
+}
+
+/** Cut-over agents retain a fact through the host-selected subject store, never a workspace path. */
+function createSubjectMemoryRememberTool(ctx: OpenClawPluginToolContext): AnyAgentTool | null {
+  const authorizedMemoryWrite = ctx.authorizedMemoryWrite;
+  if (!ctx.memoryReadEnforced || !authorizedMemoryWrite) {
+    return null;
+  }
+  return {
+    label: "Remember",
+    name: "memory_remember",
+    description:
+      "Remember a durable fact for the current authorized subject. Supply only the fact to retain; you cannot select a memory file, store, owner, or sharing audience. If unavailable, tell the user memory saving is unavailable.",
+    parameters: MemoryRememberSchema,
+    execute: async (_toolCallId, params) => {
+      const content =
+        params && typeof params === "object" && "content" in params
+          ? (params as { content?: unknown }).content
+          : undefined;
+      if (typeof content !== "string" || !content.trim()) {
+        return jsonResult({ disabled: true, unavailable: true, error: "memory unavailable" });
+      }
+      const result = await authorizedMemoryWrite.remember({ content });
+      if ("unavailable" in result) {
+        return jsonResult(result);
+      }
+      return jsonResult({ status: result.status, policyRevision: result.policyRevision });
+    },
+  };
 }
 
 function createLazyStandingIntentTool(
@@ -255,6 +294,7 @@ function resolveMemoryToolOptions(
     conversationRecall: ctx.conversationRecall,
     memoryReadEnforced: ctx.memoryReadEnforced,
     authorizedMemoryRead: ctx.authorizedMemoryRead,
+    authorizedMemoryWrite: ctx.authorizedMemoryWrite,
     activeProjectKeys: ctx.activeProjectKeys,
     ...(host.acquireLocalService ? { acquireLocalService: host.acquireLocalService } : {}),
   };
@@ -265,6 +305,11 @@ function createLazyMemoryRuntime(host: MemoryCoreRuntimeHost): MemoryPluginRunti
     authorize: builtinScopedMemoryAuthorizedRuntime.authorize,
     searchAuthorized: builtinScopedMemoryAuthorizedRuntime.searchAuthorized,
     readAuthorized: builtinScopedMemoryAuthorizedRuntime.readAuthorized,
+    writeAuthorized: builtinScopedMemoryAuthorizedRuntime.writeAuthorized,
+    importAuthorized: builtinScopedMemoryAuthorizedRuntime.importAuthorized,
+    syncAuthorized: builtinScopedMemoryAuthorizedRuntime.syncAuthorized,
+    exportAuthorized: builtinScopedMemoryAuthorizedRuntime.exportAuthorized,
+    statusAuthorized: builtinScopedMemoryAuthorizedRuntime.statusAuthorized,
     async getMemorySearchManager(params) {
       const { createMemoryRuntime } = await loadRuntimeProviderModule();
       return await createMemoryRuntime(host).getMemorySearchManager(params);
@@ -328,6 +373,10 @@ export default definePluginEntry({
 
     api.registerTool((ctx) => createLazyMemoryGetTool(resolveMemoryToolOptions(ctx, host)), {
       names: ["memory_get"],
+    });
+
+    api.registerTool((ctx) => createSubjectMemoryRememberTool(ctx), {
+      names: ["memory_remember"],
     });
 
     api.registerTool(

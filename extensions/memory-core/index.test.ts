@@ -264,6 +264,31 @@ describe("memory-core plugin runtime registration", () => {
     expect(get?.description).not.toContain("MEMORY.md");
   });
 
+  it("exposes remember only through the cut-over host capability", async () => {
+    const factories = new Map<string, (ctx: never) => unknown>();
+    plugin.register(
+      createTestPluginApi({
+        config: {},
+        runtime: hostRuntime,
+        registerTool(factory, options) {
+          for (const name of options?.names ?? []) {
+            factories.set(name, factory as (ctx: never) => unknown);
+          }
+        },
+      }),
+    );
+    const remember = factories.get("memory_remember");
+    expect(remember?.({ memoryReadEnforced: true } as never)).toBeNull();
+    const host = { remember: vi.fn(async () => ({ status: "committed", policyRevision: "p1" })) };
+    const tool = remember?.({ memoryReadEnforced: true, authorizedMemoryWrite: host } as never) as {
+      execute: (id: string, params: unknown) => Promise<{ details?: unknown }>;
+    };
+    await expect(tool.execute("call-1", { content: "durable fact" })).resolves.toMatchObject({
+      details: { status: "committed", policyRevision: "p1" },
+    });
+    expect(host.remember).toHaveBeenCalledWith({ content: "durable fact" });
+  });
+
   it("keeps memory manager initialization demand-driven", () => {
     plugin.register(
       createTestPluginApi({

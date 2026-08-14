@@ -1,12 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type {
   AudienceRef,
+  AuthorizedMemoryMutation,
   AuthorizedMemoryPlan,
   AuthorizedMemoryReadParams,
   AuthorizedMemoryResultEnvelope,
   AuthorizedMemoryRuntime,
   AuthorizedMemorySearchParams,
   AuthorizedMemorySearchResult,
+  AuthorizedMemoryStatus,
+  MemoryExportResult,
+  MemorySyncResult,
+  MemoryWriteResult,
   AuthorizedResourceHandle,
   AuthorizedMemoryVirtualView,
   MemoryAccessContext,
@@ -16,10 +23,25 @@ import type {
   MemoryReadResult,
   MemorySource,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+import {
+  executeSqliteQuerySync,
+  executeSqliteQueryTakeFirstSync,
+  getNodeSqliteKysely,
+  runSqliteImmediateTransactionSync,
+  writeMemoryAccessAudit,
+} from "openclaw/plugin-sdk/sqlite-runtime";
 import { readScopedMemoryFtsCandidatePage } from "./scoped-memory-candidates.js";
-import { withScopedMemoryDatabase } from "./scoped-memory-db.js";
+import {
+  resolveScopedMemoryArtifactBase,
+  type ScopedMemoryDatabase,
+  withScopedMemoryDatabase,
+} from "./scoped-memory-db.js";
 import { evaluateBuiltinScopedMemoryPolicy } from "./scoped-memory-policy.js";
-import { readBuiltinScopedMemoryRevisionSnapshot } from "./scoped-memory-resources.js";
+import {
+  readBuiltinScopedMemoryRevisionSnapshot,
+  resolveBuiltinScopedMemoryArtifactPath,
+} from "./scoped-memory-resources.js";
+import { createScopedMemorySourcePolicySetId } from "./scoped-memory-store.js";
 
 const PLAN_TTL_MS = 60_000;
 const MAXIMUM_CANDIDATES_PER_RESULT = 12;
@@ -32,9 +54,9 @@ type AuthorizedStore = Readonly<{
 
 type PlanState = Readonly<{
   contextFingerprint: string;
-  context: MemoryContentAccessContext<"read">;
+  context: MemoryAccessContext;
   expiresAtMs: number;
-  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  plan: AuthorizedMemoryPlan;
   stores: readonly AuthorizedStore[];
   handles: Map<string, AuthorizedResourceHandle>;
   exposureRevision: number;
@@ -107,7 +129,7 @@ function canViewStoreAudience(params: {
 }
 
 function listAuthorizedStores(params: {
-  context: MemoryContentAccessContext<"read">;
+  context: MemoryAccessContext;
   nowMs: number;
 }): readonly AuthorizedStore[] {
   return withScopedMemoryDatabase(params.context.agentId, (database) => {
@@ -152,7 +174,7 @@ function listAuthorizedStores(params: {
           storeId: row.store_id,
           principalIds,
           deliveryAudiences: params.context.delivery.audiences,
-          operation: "read",
+          operation: params.context.operation,
           nowMs: params.nowMs,
         });
         if (!decision.allowed || decision.policyRevisionId !== row.current_revision_id) {
@@ -184,7 +206,7 @@ function deleteExpiredPlans(nowMs: number): void {
   }
 }
 
-function createPlan(context: MemoryContentAccessContext<"read">): PlanState {
+function createPlan(context: MemoryAccessContext): PlanState {
   const nowMs = Date.now();
   deleteExpiredPlans(nowMs);
   const stores = listAuthorizedStores({ context, nowMs });
@@ -202,14 +224,18 @@ function createPlan(context: MemoryContentAccessContext<"read">): PlanState {
     subjectRevision: context.subjectRevision,
     memoryPolicyRevision: policyRevision,
     deliveryRevision: context.delivery.deliveryRevision,
-    operation: "read" as const,
+    operation: context.operation,
     mounts: Object.freeze(
       stores.map((store) =>
         Object.freeze({
           version: 1 as const,
           agentId: context.agentId,
           mountHandle: `mmount1_${randomUUID()}`,
-          capabilities: Object.freeze(["retrieve", "read"] as const),
+          capabilities: Object.freeze(
+            context.operation === "read"
+              ? (["retrieve", "read"] as const)
+              : ([context.operation] as const),
+          ),
           audienceRevision: store.audienceRevision,
         }),
       ),
@@ -217,7 +243,7 @@ function createPlan(context: MemoryContentAccessContext<"read">): PlanState {
     bootstrapResourceHandles: Object.freeze([]),
     allowedEgressAudiences: Object.freeze([...context.delivery.audiences]),
     expiresAt: new Date(expiresAtMs).toISOString(),
-  }) satisfies AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  }) satisfies AuthorizedMemoryPlan;
   return Object.freeze({
     contextFingerprint: context.contextFingerprint,
     context,
@@ -230,8 +256,8 @@ function createPlan(context: MemoryContentAccessContext<"read">): PlanState {
 }
 
 function readPlan(params: {
-  context: MemoryContentAccessContext<"read">;
-  plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  context: MemoryAccessContext;
+  plan: AuthorizedMemoryPlan;
 }): PlanState | undefined {
   const state = plans.get(params.plan.planId);
   const nowMs = Date.now();
@@ -247,6 +273,7 @@ function readPlan(params: {
     state.context.delivery.deliveryRevision !== params.context.delivery.deliveryRevision ||
     state.context.delivery.egressRegistryRevision !==
       params.context.delivery.egressRegistryRevision ||
+    state.context.operation !== params.context.operation ||
     [...state.context.delivery.audiences].map(audienceKey).toSorted().join("\0") !==
       [...params.context.delivery.audiences].map(audienceKey).toSorted().join("\0")
   ) {
@@ -408,7 +435,7 @@ function createHandle(params: {
 
 function createEnvelope<T>(params: {
   state: PlanState;
-  context: MemoryContentAccessContext<"read">;
+  context: MemoryAccessContext;
   value: T;
   revisions: readonly string[];
   sourcePolicySetIds: readonly string[];
@@ -476,14 +503,1177 @@ function toSearchResult(params: {
   });
 }
 
-const builtinScopedMemoryReadRuntime = {
-  async authorize(
-    context: MemoryAccessContext,
-  ): Promise<AuthorizedMemoryPlan & Readonly<{ operation: "read" }>> {
-    if (context.operation !== "read") {
-      throw new Error("builtin scoped memory only supports read authorization in Phase 1C");
+const CALLER_SELECTED_DESTINATION_FIELDS = new Set([
+  "artifactLocator",
+  "audience",
+  "audienceId",
+  "destinationAudience",
+  "destinationHandle",
+  "destinationOwnerId",
+  "destinationStoreId",
+  "logicalLocator",
+  "owner",
+  "ownerId",
+  "path",
+  "placementHandle",
+  "root",
+  "rootId",
+  "store",
+  "storeId",
+]);
+
+type MutableScopedRevision = Readonly<{
+  resourceId: string;
+  revisionId: string;
+  artifactLocator: string;
+  contentHash: string;
+  contentBytes: number;
+}>;
+
+function contentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function auditActorRef(context: MemoryAccessContext): string {
+  const source =
+    context.actor.kind === "principal"
+      ? `${context.actor.actorKind}\0${context.actor.principalId}\0${context.actor.evidenceRevision}`
+      : `unattributed\0${context.actor.transportAuditRef}\0${context.actor.evidenceRevision}`;
+  return `sha256:${contentHash(source)}`;
+}
+
+function auditSubjectRef(context: MemoryAccessContext): string {
+  return `sha256:${contentHash(JSON.stringify(context.subject))}`;
+}
+
+function syncDirectory(directory: string): void {
+  try {
+    const descriptor = fs.openSync(directory, "r");
+    try {
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
     }
-    const state = createPlan(context as MemoryContentAccessContext<"read">);
+  } catch (error) {
+    // Directory fsync is unsupported on Windows. The revision file itself is
+    // always fsynced before rename, which remains the durability boundary.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EINVAL" && code !== "EPERM" && code !== "EISDIR") {
+      throw error;
+    }
+  }
+}
+
+function readVerifiedFile(params: {
+  pathname: string;
+  contentHash: string;
+  contentBytes: number;
+}): string | undefined {
+  try {
+    const content = fs.readFileSync(params.pathname, "utf8");
+    return Buffer.byteLength(content) === params.contentBytes &&
+      contentHash(content) === params.contentHash
+      ? content
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function requireExactlyOneAffected(
+  result: Readonly<{ numAffectedRows?: bigint }>,
+  operation: string,
+): void {
+  if (result.numAffectedRows !== 1n) {
+    throw new Error(`authorized memory ${operation} lost its authoritative row`);
+  }
+}
+
+/** Remove an untrusted artifact from every store root before a later recovery can inspect it. */
+function quarantineArtifact(params: { directory: string; pathname: string }): void {
+  if (!fs.existsSync(params.pathname)) {
+    return;
+  }
+  const quarantine = path.join(path.dirname(params.directory), ".quarantine");
+  fs.mkdirSync(quarantine, { recursive: true, mode: 0o700 });
+  fs.renameSync(params.pathname, path.join(quarantine, `orphan_${randomUUID()}`));
+  syncDirectory(quarantine);
+  syncDirectory(params.directory);
+}
+
+function chunkContent(content: string): readonly {
+  ordinal: number;
+  startLine: number;
+  endLine: number;
+  text: string;
+}[] {
+  const lines = content.replaceAll("\r\n", "\n").split("\n");
+  const chunks: Array<{ ordinal: number; startLine: number; endLine: number; text: string }> = [];
+  for (let start = 0; start < lines.length; start += 48) {
+    const text = lines
+      .slice(start, start + 48)
+      .join("\n")
+      .trim();
+    if (text) {
+      chunks.push({
+        ordinal: chunks.length,
+        startLine: start + 1,
+        endLine: Math.min(lines.length, start + 48),
+        text,
+      });
+    }
+  }
+  return chunks;
+}
+
+function mutationOperation(mutation: AuthorizedMemoryMutation): MemoryAccessContext["operation"] {
+  switch (mutation.kind) {
+    case "remember":
+    case "append":
+      return "append";
+    case "replace":
+      return "replace";
+    case "delete":
+    case "tombstone":
+      return "delete";
+    case "admin-reclassify":
+      return "policy-admin";
+    default:
+      return mutation.kind;
+  }
+}
+
+function assertMutationShape(mutation: AuthorizedMemoryMutation): void {
+  if (
+    Object.keys(mutation).some((key) => CALLER_SELECTED_DESTINATION_FIELDS.has(key)) ||
+    !mutation.mutationId.trim() ||
+    !mutation.idempotencyKey.trim()
+  ) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  if ("content" in mutation && !mutation.content.trim()) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+}
+
+function defaultAudience(context: MemoryAccessContext): AudienceRef | undefined {
+  switch (context.subject.kind) {
+    case "user":
+      return { kind: "user", id: context.subject.principalId };
+    case "conversation":
+      return { kind: "conversation", id: context.subject.conversationPrincipalId };
+    case "service":
+    case "agent":
+    case "system":
+      return { kind: "agent", id: context.agentId };
+    case "ambiguous":
+      return undefined;
+  }
+}
+
+function selectWriteStore(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  agentId: string;
+  state: PlanState;
+}): { storeId: string; pathKey: string; policyRevisionId: string; policyRevocationEpoch: number } {
+  const audience = defaultAudience(params.state.context);
+  if (!audience) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  const row = executeSqliteQueryTakeFirstSync(
+    params.database,
+    db
+      .selectFrom("memory_stores as store")
+      .innerJoin("memory_storage_roots as root", "root.storage_root_id", "store.storage_root_id")
+      .innerJoin("memory_policies as policy", "policy.policy_id", "store.policy_id")
+      .select([
+        "store.store_id",
+        "root.path_key",
+        "policy.current_revision_id",
+        "policy.revocation_epoch",
+      ])
+      .where("store.agent_id", "=", params.agentId)
+      .where("store.audience_kind", "=", audience.kind)
+      .where("store.audience_id", "=", audience.id)
+      .where("store.lifecycle_state", "=", "active")
+      .where("root.backend_kind", "=", "builtin")
+      .where("root.lifecycle_state", "=", "active")
+      .where("policy.lifecycle_state", "=", "active"),
+  );
+  const planned = params.state.stores.find((store) => store.storeId === row?.store_id);
+  if (!row?.path_key || !planned || planned.policyRevisionId !== row.current_revision_id) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  return {
+    storeId: row.store_id,
+    pathKey: row.path_key,
+    policyRevisionId: row.current_revision_id,
+    policyRevocationEpoch: row.revocation_epoch,
+  };
+}
+
+function resolveWriteTarget(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  agentId: string;
+  state: PlanState;
+  storeId: string;
+  target: AuthorizedResourceHandle;
+}): MutableScopedRevision {
+  const sourceState = plans.get(params.target.planId);
+  const stored = sourceState?.handles.get(params.target.handleId);
+  if (
+    !stored ||
+    !sourceState ||
+    sourceState.expiresAtMs <= Date.now() ||
+    sourceState.contextFingerprint !== params.state.contextFingerprint ||
+    sourceState.context.agentId !== params.state.context.agentId ||
+    sourceState.context.sessionId !== params.state.context.sessionId ||
+    stored.contextFingerprint !== params.state.contextFingerprint ||
+    stored.resourceRevision !== params.target.resourceRevision ||
+    stored.policyRevision !== params.target.policyRevision
+  ) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  const row = executeSqliteQueryTakeFirstSync(
+    params.database,
+    db
+      .selectFrom("memory_resource_revisions as revision")
+      .innerJoin("memory_resources as resource", "resource.resource_id", "revision.resource_id")
+      .select([
+        "resource.resource_id",
+        "revision.revision_id",
+        "revision.artifact_locator",
+        "revision.content_hash",
+        "revision.content_bytes",
+      ])
+      .where("resource.agent_id", "=", params.agentId)
+      .where("resource.store_id", "=", params.storeId)
+      .where("revision.revision_id", "=", stored.resourceRevision)
+      .where("revision.lifecycle_state", "=", "active"),
+  );
+  if (!row) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  return {
+    resourceId: row.resource_id,
+    revisionId: row.revision_id,
+    artifactLocator: row.artifact_locator,
+    contentHash: row.content_hash,
+    contentBytes: row.content_bytes,
+  };
+}
+
+function drainMemoryAuditOutbox(agentId: string): void {
+  try {
+    withScopedMemoryDatabase(agentId, (database) => {
+      const db = getNodeSqliteKysely<ScopedMemoryDatabase>(database);
+      const events = executeSqliteQuerySync(
+        database,
+        db
+          .selectFrom("memory_audit_outbox")
+          .selectAll()
+          .where("agent_id", "=", agentId)
+          .where("state", "=", "pending")
+          .orderBy("created_at")
+          .orderBy("event_id")
+          .limit(100),
+      ).rows;
+      for (const event of events) {
+        try {
+          writeMemoryAccessAudit({
+            eventId: event.event_id,
+            agentId: event.agent_id,
+            requestId: event.request_id,
+            runId: event.run_id,
+            actorRef: event.actor_ref,
+            subjectRef: event.subject_ref,
+            operation: event.operation,
+            decision: event.decision === "pending" ? "quarantined" : event.decision,
+            reasonCode: event.reason_code,
+            resourceRevisionId: event.resource_revision_id,
+            contentHash: event.content_hash,
+            occurredAt: event.created_at,
+            receivedAt: Date.now(),
+          });
+          runSqliteImmediateTransactionSync(database, () => {
+            executeSqliteQuerySync(
+              database,
+              db
+                .updateTable("memory_audit_outbox")
+                .set({
+                  state: "delivered",
+                  attempts: event.attempts + 1,
+                  delivered_at: Date.now(),
+                  updated_at: Date.now(),
+                })
+                .where("event_id", "=", event.event_id)
+                .where("state", "=", "pending"),
+            );
+          });
+        } catch {
+          // The local lifecycle is durable already. Audit delivery remains retryable
+          // and must never become a write authorization dependency.
+        }
+      }
+    });
+  } catch {
+    // The next authorized operation retries the persisted outbox.
+  }
+}
+
+function quarantineWriteIntent(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  intentId: string;
+  revisionId: string | null;
+  nowMs: number;
+  reasonCode: string;
+}): void {
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  runSqliteImmediateTransactionSync(params.database, () => {
+    if (params.revisionId) {
+      executeSqliteQuerySync(
+        params.database,
+        db
+          .updateTable("memory_resource_revisions")
+          .set({ lifecycle_state: "quarantined", retired_at: params.nowMs })
+          .where("revision_id", "=", params.revisionId)
+          .where("lifecycle_state", "in", ["pending", "active"]),
+      );
+    }
+    executeSqliteQuerySync(
+      params.database,
+      db
+        .updateTable("memory_write_intents")
+        .set({ state: "quarantined", updated_at: params.nowMs })
+        .where("intent_id", "=", params.intentId)
+        .where("state", "in", ["pending", "renamed", "active", "tombstoned"]),
+    );
+    executeSqliteQuerySync(
+      params.database,
+      db
+        .updateTable("memory_audit_outbox")
+        .set({ decision: "quarantined", reason_code: params.reasonCode, updated_at: params.nowMs })
+        .where("intent_id", "=", params.intentId)
+        .where("state", "=", "pending"),
+    );
+  });
+}
+
+function indexRecoveredRevision(params: {
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  intentId: string;
+  revisionId: string;
+  content: string;
+  nowMs: number;
+}): void {
+  const db = getNodeSqliteKysely<ScopedMemoryDatabase>(params.database);
+  runSqliteImmediateTransactionSync(params.database, () => {
+    const current = executeSqliteQueryTakeFirstSync(
+      params.database,
+      db
+        .selectFrom("memory_resource_revisions")
+        .select("lifecycle_state")
+        .where("revision_id", "=", params.revisionId),
+    );
+    if (current?.lifecycle_state !== "active") {
+      return;
+    }
+    const existing = executeSqliteQueryTakeFirstSync(
+      params.database,
+      db
+        .selectFrom("memory_scoped_chunks")
+        .select("chunk_id")
+        .where("revision_id", "=", params.revisionId)
+        .limit(1),
+    );
+    if (!existing) {
+      const chunks = chunkContent(params.content);
+      if (chunks.length > 0) {
+        executeSqliteQuerySync(
+          params.database,
+          db.insertInto("memory_scoped_chunks").values(
+            chunks.map((chunk) => ({
+              chunk_id: randomUUID(),
+              revision_id: params.revisionId,
+              chunk_ordinal: chunk.ordinal,
+              start_line: chunk.startLine,
+              end_line: chunk.endLine,
+              text: chunk.text,
+              content_hash: contentHash(chunk.text),
+              model: "builtin-markdown-v1",
+              updated_at: params.nowMs,
+            })),
+          ),
+        );
+      }
+    }
+    executeSqliteQuerySync(
+      params.database,
+      db
+        .updateTable("memory_write_intents")
+        .set({ indexed_at: params.nowMs, updated_at: params.nowMs })
+        .where("intent_id", "=", params.intentId)
+        .where("state", "=", "active"),
+    );
+  });
+}
+
+/** Complete a verified write or quarantine its evidence before any read plan is issued. */
+function recoverPendingWrites(agentId: string): void {
+  withScopedMemoryDatabase(agentId, (database, databasePath) => {
+    const db = getNodeSqliteKysely<ScopedMemoryDatabase>(database);
+    const knownByDirectory = new Map<string, Set<string>>(
+      executeSqliteQuerySync(
+        database,
+        db
+          .selectFrom("memory_storage_roots")
+          .select("path_key")
+          .where("agent_id", "=", agentId)
+          .where("backend_kind", "=", "builtin")
+          .where("lifecycle_state", "=", "active")
+          .where("path_key", "is not", null),
+      ).rows.flatMap((root) =>
+        root.path_key
+          ? [
+              [
+                path.join(resolveScopedMemoryArtifactBase(databasePath), root.path_key),
+                new Set<string>(),
+              ] as const,
+            ]
+          : [],
+      ),
+    );
+    // Catalogued revisions from pre-write migration and legacy creation flows are not
+    // write-intent orphans. Keep every catalogued locator out of the filesystem sweep;
+    // visibility still requires its active revision and current policy at read time.
+    for (const revision of executeSqliteQuerySync(
+      database,
+      db
+        .selectFrom("memory_resource_revisions as revision")
+        .innerJoin("memory_resources as resource", "resource.resource_id", "revision.resource_id")
+        .innerJoin("memory_stores as store", "store.store_id", "resource.store_id")
+        .innerJoin("memory_storage_roots as root", "root.storage_root_id", "store.storage_root_id")
+        .select(["root.path_key", "revision.artifact_locator"])
+        .where("resource.agent_id", "=", agentId)
+        .where("root.backend_kind", "=", "builtin")
+        .where("root.lifecycle_state", "=", "active")
+        .where("root.path_key", "is not", null),
+    ).rows) {
+      if (!revision.path_key) {
+        continue;
+      }
+      const directory = path.join(resolveScopedMemoryArtifactBase(databasePath), revision.path_key);
+      const known = knownByDirectory.get(directory) ?? new Set<string>();
+      known.add(revision.artifact_locator);
+      knownByDirectory.set(directory, known);
+    }
+    const intents = executeSqliteQuerySync(
+      database,
+      db
+        .selectFrom("memory_write_intents as intent")
+        .innerJoin("memory_stores as store", "store.store_id", "intent.store_id")
+        .innerJoin("memory_storage_roots as root", "root.storage_root_id", "store.storage_root_id")
+        .innerJoin("memory_policies as policy", "policy.policy_id", "store.policy_id")
+        .select([
+          "intent.intent_id",
+          "intent.pending_revision_id",
+          "intent.staged_locator",
+          "intent.final_locator",
+          "intent.content_hash",
+          "intent.content_bytes",
+          "intent.state",
+          "intent.indexed_at",
+          "root.path_key",
+          "policy.current_revision_id",
+          "policy.revocation_epoch",
+        ])
+        .where("intent.agent_id", "=", agentId)
+        .where("intent.state", "in", ["pending", "renamed", "active"])
+        .orderBy("intent.created_at")
+        .orderBy("intent.intent_id"),
+    ).rows;
+    for (const intent of intents) {
+      if (!intent.path_key || !intent.pending_revision_id || !intent.final_locator) {
+        quarantineWriteIntent({
+          database,
+          intentId: intent.intent_id,
+          revisionId: intent.pending_revision_id,
+          nowMs: Date.now(),
+          reasonCode: "recovery-incomplete-intent",
+        });
+        continue;
+      }
+      const directory = path.join(resolveScopedMemoryArtifactBase(databasePath), intent.path_key);
+      const known = knownByDirectory.get(directory) ?? new Set<string>();
+      known.add(intent.final_locator);
+      if (intent.staged_locator) {
+        known.add(intent.staged_locator);
+      }
+      knownByDirectory.set(directory, known);
+      const finalPath = resolveBuiltinScopedMemoryArtifactPath({
+        databasePath,
+        pathKey: intent.path_key,
+        artifactLocator: intent.final_locator,
+      });
+      const stagePath = intent.staged_locator
+        ? path.join(directory, intent.staged_locator)
+        : undefined;
+      if (
+        intent.state === "pending" &&
+        !fs.existsSync(finalPath) &&
+        stagePath &&
+        fs.existsSync(stagePath)
+      ) {
+        fs.renameSync(stagePath, finalPath);
+        syncDirectory(directory);
+        runSqliteImmediateTransactionSync(database, () => {
+          requireExactlyOneAffected(
+            executeSqliteQuerySync(
+              database,
+              db
+                .updateTable("memory_write_intents")
+                .set({ state: "renamed", updated_at: Date.now() })
+                .where("intent_id", "=", intent.intent_id)
+                .where("state", "=", "pending"),
+            ),
+            "recovery rename",
+          );
+        });
+        intent.state = "renamed";
+      }
+      const content = readVerifiedFile({
+        pathname: finalPath,
+        contentHash: intent.content_hash ?? "",
+        contentBytes: intent.content_bytes ?? -1,
+      });
+      if (content === undefined) {
+        quarantineWriteIntent({
+          database,
+          intentId: intent.intent_id,
+          revisionId: intent.pending_revision_id,
+          nowMs: Date.now(),
+          reasonCode: "recovery-artifact-mismatch",
+        });
+        quarantineArtifact({ directory, pathname: finalPath });
+        if (stagePath) {
+          quarantineArtifact({ directory, pathname: stagePath });
+        }
+        continue;
+      }
+      if (intent.state === "pending" || intent.state === "renamed") {
+        let policyChanged = false;
+        runSqliteImmediateTransactionSync(database, () => {
+          const revision = executeSqliteQueryTakeFirstSync(
+            database,
+            db
+              .selectFrom("memory_resource_revisions as revision")
+              .innerJoin(
+                "memory_resources as resource",
+                "resource.resource_id",
+                "revision.resource_id",
+              )
+              .innerJoin("memory_stores as store", "store.store_id", "resource.store_id")
+              .innerJoin("memory_policies as policy", "policy.policy_id", "store.policy_id")
+              .select([
+                "revision.resource_id",
+                "revision.policy_revision_id",
+                "revision.policy_revocation_epoch",
+                "policy.current_revision_id",
+                "policy.revocation_epoch",
+              ])
+              .where("revision.revision_id", "=", intent.pending_revision_id)
+              .where("resource.agent_id", "=", agentId)
+              .where("store.lifecycle_state", "=", "active")
+              .where("policy.lifecycle_state", "=", "active"),
+          );
+          if (
+            !revision ||
+            revision.policy_revision_id !== revision.current_revision_id ||
+            revision.policy_revocation_epoch !== revision.revocation_epoch
+          ) {
+            policyChanged = true;
+            requireExactlyOneAffected(
+              executeSqliteQuerySync(
+                database,
+                db
+                  .updateTable("memory_resource_revisions")
+                  .set({ lifecycle_state: "quarantined", retired_at: Date.now() })
+                  .where("revision_id", "=", intent.pending_revision_id)
+                  .where("lifecycle_state", "=", "pending"),
+              ),
+              "recovery policy quarantine revision",
+            );
+            requireExactlyOneAffected(
+              executeSqliteQuerySync(
+                database,
+                db
+                  .updateTable("memory_write_intents")
+                  .set({ state: "quarantined", updated_at: Date.now() })
+                  .where("intent_id", "=", intent.intent_id)
+                  .where("state", "in", ["pending", "renamed"]),
+              ),
+              "recovery policy quarantine intent",
+            );
+            executeSqliteQuerySync(
+              database,
+              db
+                .updateTable("memory_audit_outbox")
+                .set({
+                  decision: "quarantined",
+                  reason_code: "recovery-policy-changed",
+                  updated_at: Date.now(),
+                })
+                .where("intent_id", "=", intent.intent_id)
+                .where("state", "=", "pending"),
+            );
+            return;
+          }
+          requireExactlyOneAffected(
+            executeSqliteQuerySync(
+              database,
+              db
+                .updateTable("memory_resource_revisions")
+                .set({ lifecycle_state: "active", activated_at: Date.now() })
+                .where("revision_id", "=", intent.pending_revision_id)
+                .where("lifecycle_state", "=", "pending"),
+            ),
+            "recovery activation revision",
+          );
+          requireExactlyOneAffected(
+            executeSqliteQuerySync(
+              database,
+              db
+                .updateTable("memory_write_intents")
+                .set({ state: "active", activated_at: Date.now(), updated_at: Date.now() })
+                .where("intent_id", "=", intent.intent_id)
+                .where("state", "in", ["pending", "renamed"]),
+            ),
+            "recovery activation intent",
+          );
+          executeSqliteQuerySync(
+            database,
+            db
+              .updateTable("memory_audit_outbox")
+              .set({
+                decision: "committed",
+                reason_code: "recovered-write",
+                updated_at: Date.now(),
+              })
+              .where("intent_id", "=", intent.intent_id)
+              .where("state", "=", "pending"),
+          );
+        });
+        if (policyChanged) {
+          quarantineArtifact({ directory, pathname: finalPath });
+          continue;
+        }
+      }
+      if (intent.indexed_at === null) {
+        indexRecoveredRevision({
+          database,
+          intentId: intent.intent_id,
+          revisionId: intent.pending_revision_id,
+          content,
+          nowMs: Date.now(),
+        });
+      }
+    }
+    for (const [directory, known] of knownByDirectory) {
+      try {
+        for (const entry of fs.readdirSync(directory)) {
+          if (known.has(entry) || entry === ".quarantine") {
+            continue;
+          }
+          const quarantine = path.join(path.dirname(directory), ".quarantine");
+          fs.mkdirSync(quarantine, { recursive: true, mode: 0o700 });
+          fs.renameSync(
+            path.join(directory, entry),
+            path.join(quarantine, `orphan_${randomUUID()}`),
+          );
+          syncDirectory(quarantine);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+  });
+}
+
+async function writeAuthorizedMutation(params: {
+  context: MemoryAccessContext;
+  plan: AuthorizedMemoryPlan;
+  mutation: AuthorizedMemoryMutation;
+}): Promise<MemoryWriteResult> {
+  assertMutationShape(params.mutation);
+  if (params.context.operation !== mutationOperation(params.mutation)) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  recoverPendingWrites(params.context.agentId);
+  const state = readPlan(params);
+  if (!state) {
+    throw new Error("authorized memory mutation is unavailable");
+  }
+  const nowMs = Date.now();
+  const agentId = params.context.agentId;
+  if (params.mutation.kind === "sync") {
+    drainMemoryAuditOutbox(agentId);
+    return Object.freeze({
+      version: 1,
+      mutationId: params.mutation.mutationId,
+      status: "unchanged",
+      policyRevision: params.plan.memoryPolicyRevision,
+      committedAt: new Date(nowMs).toISOString(),
+    });
+  }
+
+  const result = withScopedMemoryDatabase(agentId, (database, databasePath) => {
+    const store = selectWriteStore({ database, agentId, state });
+    const db = getNodeSqliteKysely<ScopedMemoryDatabase>(database);
+    const existing =
+      "target" in params.mutation
+        ? resolveWriteTarget({
+            database,
+            agentId,
+            state,
+            storeId: store.storeId,
+            target: params.mutation.target,
+          })
+        : undefined;
+    const existingIntent = executeSqliteQueryTakeFirstSync(
+      database,
+      db
+        .selectFrom("memory_write_intents")
+        .select(["mutation_id", "state", "pending_revision_id", "updated_at"])
+        .where("agent_id", "=", agentId)
+        .where("idempotency_key", "=", params.mutation.idempotencyKey),
+    );
+    if (existingIntent) {
+      if (existingIntent.mutation_id !== params.mutation.mutationId) {
+        throw new Error("authorized memory mutation idempotency conflict");
+      }
+      return Object.freeze({
+        version: 1,
+        mutationId: params.mutation.mutationId,
+        status:
+          existingIntent.state === "active" || existingIntent.state === "tombstoned"
+            ? "unchanged"
+            : "committed",
+        policyRevision: store.policyRevisionId,
+        committedAt: new Date(existingIntent.updated_at).toISOString(),
+      });
+    }
+
+    if (
+      (params.mutation.kind === "delete" || params.mutation.kind === "tombstone") &&
+      "target" in params.mutation
+    ) {
+      const mutation = params.mutation;
+      if (!existing) {
+        throw new Error("authorized memory mutation is unavailable");
+      }
+      const intentId = randomUUID();
+      runSqliteImmediateTransactionSync(database, () => {
+        const current = resolveWriteTarget({
+          database,
+          agentId,
+          state,
+          storeId: store.storeId,
+          target: mutation.target,
+        });
+        requireExactlyOneAffected(
+          executeSqliteQuerySync(
+            database,
+            db
+              .updateTable("memory_resource_revisions")
+              .set({ lifecycle_state: "tombstoned", retired_at: nowMs })
+              .where("revision_id", "=", current.revisionId)
+              .where("lifecycle_state", "=", "active"),
+          ),
+          "tombstone revision",
+        );
+        // Removing chunks removes FTS/vector eligibility synchronously with the
+        // tombstone. The immutable revision row retains the audit evidence only.
+        executeSqliteQuerySync(
+          database,
+          db.deleteFrom("memory_scoped_chunks").where("revision_id", "=", current.revisionId),
+        );
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_write_intents").values({
+            intent_id: intentId,
+            idempotency_key: mutation.idempotencyKey,
+            mutation_id: mutation.mutationId,
+            agent_id: agentId,
+            request_id: params.context.requestId,
+            run_id: params.context.runId,
+            context_fingerprint: params.context.contextFingerprint,
+            plan_id: params.plan.planId,
+            mutation_kind: mutation.kind,
+            store_id: store.storeId,
+            resource_id: current.resourceId,
+            pending_revision_id: current.revisionId,
+            staged_locator: null,
+            final_locator: current.artifactLocator,
+            content_hash: current.contentHash,
+            content_bytes: current.contentBytes,
+            state: "tombstoned",
+            created_at: nowMs,
+            updated_at: nowMs,
+            activated_at: nowMs,
+            indexed_at: nowMs,
+          }),
+        );
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_audit_outbox").values({
+            event_id: randomUUID(),
+            intent_id: intentId,
+            agent_id: agentId,
+            request_id: params.context.requestId,
+            run_id: params.context.runId,
+            actor_ref: auditActorRef(params.context),
+            subject_ref: auditSubjectRef(params.context),
+            operation: params.context.operation,
+            resource_revision_id: current.revisionId,
+            content_hash: current.contentHash,
+            decision: "tombstoned",
+            reason_code: "authorized-tombstone",
+            state: "pending",
+            attempts: 0,
+            created_at: nowMs,
+            updated_at: nowMs,
+            delivered_at: null,
+          }),
+        );
+      });
+      const pathname = resolveBuiltinScopedMemoryArtifactPath({
+        databasePath,
+        pathKey: store.pathKey,
+        artifactLocator: existing.artifactLocator,
+      });
+      try {
+        fs.unlinkSync(pathname);
+        syncDirectory(path.dirname(pathname));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          // The catalog is already tombstoned. Retain the failed unlink as a
+          // quarantined artifact instead of leaving it in a selected root.
+          quarantineArtifact({ directory: path.dirname(pathname), pathname });
+          runSqliteImmediateTransactionSync(database, () => {
+            requireExactlyOneAffected(
+              executeSqliteQuerySync(
+                database,
+                db
+                  .updateTable("memory_write_intents")
+                  .set({ state: "quarantined", updated_at: Date.now() })
+                  .where("intent_id", "=", intentId)
+                  .where("state", "=", "tombstoned"),
+              ),
+              "tombstone artifact quarantine",
+            );
+            executeSqliteQuerySync(
+              database,
+              db
+                .updateTable("memory_audit_outbox")
+                .set({
+                  decision: "quarantined",
+                  reason_code: "tombstone-artifact-quarantined",
+                  updated_at: Date.now(),
+                })
+                .where("intent_id", "=", intentId)
+                .where("state", "=", "pending"),
+            );
+          });
+        }
+      }
+      return Object.freeze({
+        version: 1,
+        mutationId: mutation.mutationId,
+        status: "committed",
+        policyRevision: store.policyRevisionId,
+        committedAt: new Date(nowMs).toISOString(),
+      });
+    }
+
+    if (!("content" in params.mutation)) {
+      throw new Error("authorized memory mutation is unavailable");
+    }
+    const input = params.mutation.content;
+    const prior =
+      params.mutation.kind === "append" && existing
+        ? readVerifiedFile({
+            pathname: resolveBuiltinScopedMemoryArtifactPath({
+              databasePath,
+              pathKey: store.pathKey,
+              artifactLocator: existing.artifactLocator,
+            }),
+            contentHash: existing.contentHash,
+            contentBytes: existing.contentBytes,
+          })
+        : undefined;
+    if (params.mutation.kind === "append" && existing && prior === undefined) {
+      throw new Error("authorized memory mutation is unavailable");
+    }
+    const content = prior === undefined ? input : `${prior}${input}`;
+    if (!content.trim()) {
+      throw new Error("authorized memory mutation is unavailable");
+    }
+    const revisionId = randomUUID();
+    const intentId = randomUUID();
+    const finalLocator = `r1_${revisionId}.md`;
+    const stageLocator = `mwst1_${intentId}.tmp`;
+    const directory = path.join(resolveScopedMemoryArtifactBase(databasePath), store.pathKey);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const stagePath = path.join(directory, stageLocator);
+    const finalPath = resolveBuiltinScopedMemoryArtifactPath({
+      databasePath,
+      pathKey: store.pathKey,
+      artifactLocator: finalLocator,
+    });
+    const hash = contentHash(content);
+    const bytes = Buffer.byteLength(content);
+    const descriptor = fs.openSync(stagePath, "wx", 0o600);
+    try {
+      fs.writeFileSync(descriptor, content, "utf8");
+      fs.fchmodSync(descriptor, 0o600);
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    syncDirectory(directory);
+    const resourceId = existing?.resourceId ?? randomUUID();
+    try {
+      runSqliteImmediateTransactionSync(database, () => {
+        const currentStore = selectWriteStore({ database, agentId, state });
+        if (
+          currentStore.storeId !== store.storeId ||
+          currentStore.policyRevisionId !== store.policyRevisionId ||
+          currentStore.policyRevocationEpoch !== store.policyRevocationEpoch
+        ) {
+          throw new Error("authorized memory mutation is unavailable");
+        }
+        if (!existing) {
+          executeSqliteQuerySync(
+            database,
+            db.insertInto("memory_resources").values({
+              resource_id: resourceId,
+              agent_id: agentId,
+              store_id: store.storeId,
+              logical_locator: `memory/${revisionId}.md`,
+              source: "memory",
+              created_at: nowMs,
+            }),
+          );
+        }
+        const previous = executeSqliteQueryTakeFirstSync(
+          database,
+          db
+            .selectFrom("memory_resource_revisions")
+            .select("revision_number")
+            .where("resource_id", "=", resourceId)
+            .orderBy("revision_number", "desc")
+            .limit(1),
+        );
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_resource_revisions").values({
+            revision_id: revisionId,
+            resource_id: resourceId,
+            revision_number: (previous?.revision_number ?? 0) + 1,
+            artifact_locator: finalLocator,
+            content_hash: hash,
+            content_bytes: bytes,
+            policy_revision_id: store.policyRevisionId,
+            policy_revocation_epoch: store.policyRevocationEpoch,
+            source_policy_set_id: createScopedMemorySourcePolicySetId(store.policyRevisionId),
+            lifecycle_state: "pending",
+            actor_kind:
+              params.context.actor.kind === "principal"
+                ? params.context.actor.actorKind
+                : "unattributed",
+            actor_id:
+              params.context.actor.kind === "principal" ? params.context.actor.principalId : null,
+            expires_at: null,
+            created_at: nowMs,
+            activated_at: null,
+            retired_at: null,
+          }),
+        );
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_write_intents").values({
+            intent_id: intentId,
+            idempotency_key: params.mutation.idempotencyKey,
+            mutation_id: params.mutation.mutationId,
+            agent_id: agentId,
+            request_id: params.context.requestId,
+            run_id: params.context.runId,
+            context_fingerprint: params.context.contextFingerprint,
+            plan_id: params.plan.planId,
+            mutation_kind: params.mutation.kind,
+            store_id: store.storeId,
+            resource_id: resourceId,
+            pending_revision_id: revisionId,
+            staged_locator: stageLocator,
+            final_locator: finalLocator,
+            content_hash: hash,
+            content_bytes: bytes,
+            state: "pending",
+            created_at: nowMs,
+            updated_at: nowMs,
+            activated_at: null,
+            indexed_at: null,
+          }),
+        );
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_audit_outbox").values({
+            event_id: randomUUID(),
+            intent_id: intentId,
+            agent_id: agentId,
+            request_id: params.context.requestId,
+            run_id: params.context.runId,
+            actor_ref: auditActorRef(params.context),
+            subject_ref: auditSubjectRef(params.context),
+            operation: params.context.operation,
+            resource_revision_id: revisionId,
+            content_hash: hash,
+            decision: "pending",
+            reason_code: "authorized-write-pending",
+            state: "pending",
+            attempts: 0,
+            created_at: nowMs,
+            updated_at: nowMs,
+            delivered_at: null,
+          }),
+        );
+      });
+    } catch (error) {
+      try {
+        fs.unlinkSync(stagePath);
+      } catch {}
+      throw error;
+    }
+    fs.renameSync(stagePath, finalPath);
+    syncDirectory(directory);
+    const verified = readVerifiedFile({
+      pathname: finalPath,
+      contentHash: hash,
+      contentBytes: bytes,
+    });
+    if (verified === undefined) {
+      throw new Error("authorized memory finalized artifact is unavailable");
+    }
+    runSqliteImmediateTransactionSync(database, () => {
+      const currentStore = selectWriteStore({ database, agentId, state });
+      if (
+        currentStore.storeId !== store.storeId ||
+        currentStore.policyRevisionId !== store.policyRevisionId ||
+        currentStore.policyRevocationEpoch !== store.policyRevocationEpoch
+      ) {
+        throw new Error("authorized memory mutation is unavailable");
+      }
+      if (existing) {
+        executeSqliteQuerySync(
+          database,
+          db
+            .updateTable("memory_resource_revisions")
+            .set({ lifecycle_state: "tombstoned", retired_at: Date.now() })
+            .where("resource_id", "=", resourceId)
+            .where("lifecycle_state", "=", "active"),
+        );
+      }
+      requireExactlyOneAffected(
+        executeSqliteQuerySync(
+          database,
+          db
+            .updateTable("memory_resource_revisions")
+            .set({ lifecycle_state: "active", activated_at: Date.now() })
+            .where("revision_id", "=", revisionId)
+            .where("lifecycle_state", "=", "pending"),
+        ),
+        "activation revision",
+      );
+      requireExactlyOneAffected(
+        executeSqliteQuerySync(
+          database,
+          db
+            .updateTable("memory_write_intents")
+            .set({ state: "active", activated_at: Date.now(), updated_at: Date.now() })
+            .where("intent_id", "=", intentId)
+            .where("state", "=", "pending"),
+        ),
+        "activation intent",
+      );
+      executeSqliteQuerySync(
+        database,
+        db
+          .updateTable("memory_audit_outbox")
+          .set({
+            decision: "committed",
+            reason_code: "authorized-write-committed",
+            updated_at: Date.now(),
+          })
+          .where("intent_id", "=", intentId)
+          .where("state", "=", "pending"),
+      );
+    });
+    runSqliteImmediateTransactionSync(database, () => {
+      const chunks = chunkContent(verified);
+      if (chunks.length > 0) {
+        executeSqliteQuerySync(
+          database,
+          db.insertInto("memory_scoped_chunks").values(
+            chunks.map((chunk) => ({
+              chunk_id: randomUUID(),
+              revision_id: revisionId,
+              chunk_ordinal: chunk.ordinal,
+              start_line: chunk.startLine,
+              end_line: chunk.endLine,
+              text: chunk.text,
+              content_hash: contentHash(chunk.text),
+              model: "builtin-markdown-v1",
+              updated_at: Date.now(),
+            })),
+          ),
+        );
+      }
+      executeSqliteQuerySync(
+        database,
+        db
+          .updateTable("memory_write_intents")
+          .set({ indexed_at: Date.now(), updated_at: Date.now() })
+          .where("intent_id", "=", intentId)
+          .where("state", "=", "active"),
+      );
+    });
+    const handle = createHandle({
+      plan: state,
+      revisionId,
+      policyRevision: store.policyRevisionId,
+    });
+    return Object.freeze({
+      version: 1,
+      mutationId: params.mutation.mutationId,
+      status: "committed",
+      resourceHandle: handle,
+      policyRevision: store.policyRevisionId,
+      committedAt: new Date(Date.now()).toISOString(),
+    });
+  });
+  drainMemoryAuditOutbox(agentId);
+  return result;
+}
+
+const builtinScopedMemoryRuntime = {
+  async authorize(context: MemoryAccessContext): Promise<AuthorizedMemoryPlan> {
+    recoverPendingWrites(context.agentId);
+    drainMemoryAuditOutbox(context.agentId);
+    const state = createPlan(context);
     plans.set(state.plan.planId, state);
     return state.plan;
   },
@@ -491,6 +1681,9 @@ const builtinScopedMemoryReadRuntime = {
   async searchAuthorized(
     params: AuthorizedMemorySearchParams<"read">,
   ): Promise<AuthorizedMemoryResultEnvelope<readonly AuthorizedMemorySearchResult[]>> {
+    if (params.context.operation !== "read") {
+      throw new Error("authorized memory search is unavailable");
+    }
     const state = readPlan(params);
     if (!state || !params.query.trim()) {
       throw new Error("authorized memory search is unavailable");
@@ -547,6 +1740,9 @@ const builtinScopedMemoryReadRuntime = {
   async readAuthorized(
     params: AuthorizedMemoryReadParams<"read">,
   ): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>> {
+    if (params.context.operation !== "read") {
+      throw new Error("authorized memory read is unavailable");
+    }
     const state = readPlan(params);
     const storedHandle = state?.handles.get(params.handle.handleId);
     if (
@@ -589,13 +1785,101 @@ const builtinScopedMemoryReadRuntime = {
       sourcePolicySetIds: [`mps1_${snapshot.policyRevisionId}`],
     });
   },
+
+  async writeAuthorized(params: {
+    context: MemoryAccessContext;
+    plan: AuthorizedMemoryPlan;
+    mutation: AuthorizedMemoryMutation;
+  }): Promise<MemoryWriteResult> {
+    if (params.mutation.kind === "admin-reclassify") {
+      throw new Error("authorized memory reclassification is unavailable");
+    }
+    return await writeAuthorizedMutation(params);
+  },
+
+  async importAuthorized(params: {
+    context: MemoryAccessContext;
+    plan: AuthorizedMemoryPlan;
+    mutation: Extract<AuthorizedMemoryMutation, { kind: "import" }>;
+  }): Promise<MemoryWriteResult> {
+    return await writeAuthorizedMutation(params);
+  },
+
+  async syncAuthorized(params: {
+    context: MemoryAccessContext;
+    plan: AuthorizedMemoryPlan;
+  }): Promise<AuthorizedMemoryResultEnvelope<MemorySyncResult>> {
+    if (params.context.operation !== "sync") {
+      throw new Error("authorized memory sync is unavailable");
+    }
+    const state = readPlan(params);
+    if (!state) {
+      throw new Error("authorized memory sync is unavailable");
+    }
+    drainMemoryAuditOutbox(params.context.agentId);
+    return createEnvelope({
+      state,
+      context: params.context,
+      value: Object.freeze({ version: 1, status: "completed" as const, synchronizedHandles: [] }),
+      revisions: [],
+      sourcePolicySetIds: [params.plan.memoryPolicyRevision],
+    });
+  },
+
+  async exportAuthorized(params: {
+    context: MemoryAccessContext;
+    plan: AuthorizedMemoryPlan;
+    handles: readonly AuthorizedResourceHandle[];
+  }): Promise<AuthorizedMemoryResultEnvelope<MemoryExportResult>> {
+    if (params.context.operation !== "export") {
+      throw new Error("authorized memory export is unavailable");
+    }
+    const state = readPlan(params);
+    if (!state || params.handles.length > 0) {
+      // Export is deliberately unavailable until a caller has an export-specific
+      // scoped handle flow; never broaden a read handle into an artifact route.
+      throw new Error("authorized memory export is unavailable");
+    }
+    return createEnvelope({
+      state,
+      context: params.context,
+      value: Object.freeze({
+        version: 1,
+        exportId: randomUUID(),
+        contentType: "application/json" as const,
+        encoding: "utf8" as const,
+        payload: "[]",
+        exportedHandles: [],
+      }),
+      revisions: [],
+      sourcePolicySetIds: [params.plan.memoryPolicyRevision],
+    });
+  },
+
+  async statusAuthorized(params: {
+    context: MemoryAccessContext;
+    plan: AuthorizedMemoryPlan;
+  }): Promise<AuthorizedMemoryResultEnvelope<AuthorizedMemoryStatus>> {
+    if (params.context.operation !== "status") {
+      throw new Error("authorized memory status is unavailable");
+    }
+    const state = readPlan(params);
+    if (!state) {
+      throw new Error("authorized memory status is unavailable");
+    }
+    return createEnvelope({
+      state,
+      context: params.context,
+      value: Object.freeze({ version: 1, backend: "builtin", provider: "scoped-memory" }),
+      revisions: [],
+      sourcePolicySetIds: [params.plan.memoryPolicyRevision],
+    });
+  },
 };
 
-// Phase 1C intentionally supplies only content reads. The SDK includes derive overloads for
-// later phases, so retain the runtime-shaped facade while the implementation rejects them above.
 export const builtinScopedMemoryAuthorizedRuntime = Object.freeze(
-  builtinScopedMemoryReadRuntime,
-) as unknown as Pick<AuthorizedMemoryRuntime, "authorize" | "searchAuthorized" | "readAuthorized">;
+  builtinScopedMemoryRuntime,
+) as unknown as AuthorizedMemoryRuntime;
 
 export const builtinScopedMemoryVirtualView = Object.freeze({
   async materializeAuthorizedVirtualView(params: {
