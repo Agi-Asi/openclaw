@@ -122,7 +122,7 @@ In this posture, legacy content-bearing memory reads and ordinary durable-memory
 
 The current constrained egress profile permits only the automatic final reply. It rechecks the current recipient binding, route, delivery audience, exposure revision, and registry revision both when queueing and immediately before platform delivery. A changed recipient, route, sink, later exposure, or registry revision suppresses delivery. This is deliberately not a general egress registry and does not authorize model-initiated side effects.
 
-It remains a verified single-subject, read-only posture, not a general production cutover. Do not begin a two-subject pilot until every Phase 1D filesystem, sandbox, exec, egress, and required remote/cross-platform proof is complete. The `legacy` mode removes only the reversible P1C marker. It cannot undo a final Phase 6 cutover marker.
+The constrained profile has completed the Phase 1D filesystem, sandbox, exec, egress, and required local/remote cross-platform proof. An operator may use only this exact profile for a two-subject read-only pilot; it remains neither a general production cutover nor a write enablement. The `legacy` mode removes only the reversible P1C marker. It cannot undo a final Phase 6 cutover marker.
 
 ## Lint mode
 
