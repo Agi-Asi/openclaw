@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetMemoryIsolationCutoverForTest } from "../plugins/memory-cutover.js";
 import {
   closeOpenClawAgentDatabasesForTest,
@@ -11,9 +12,9 @@ import { runDoctorMemoryIsolation } from "./doctor-memory-isolation.js";
 
 describe("runDoctorMemoryIsolation", () => {
   let stateDir = "";
-  const cfg = {
+  const cfg: OpenClawConfig = {
     agents: { list: [{ id: "main", default: true }, { id: "support" }] },
-  } as const;
+  };
 
   beforeEach(() => {
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-doctor-memory-isolation-"));

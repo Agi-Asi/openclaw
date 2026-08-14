@@ -19,6 +19,7 @@ type TranscriptMemoryPolicyDatabase = Pick<
   | "memory_policy_set_members"
   | "memory_policy_sets"
   | "memory_compaction_policies"
+  | "memory_compaction_policy_sources"
   | "memory_resource_revisions"
   | "memory_run_exposure_resources"
   | "memory_run_exposures"

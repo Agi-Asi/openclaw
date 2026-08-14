@@ -8,7 +8,7 @@ import { castAgentMessage } from "../../test-helpers/agent-message-fixtures.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 const resolveProviderRuntimePluginHandle = vi.hoisted(() => vi.fn());
-const resolveSandboxContext = vi.hoisted(() => vi.fn(async () => null));
+const resolveSandboxContext = vi.hoisted(() => vi.fn());
 const createAuthorizedMemoryReadHost = vi.hoisted(() => vi.fn());
 const resolveAuthorizedMemoryVirtualFileBroker = vi.hoisted(() => vi.fn());
 const stageAuthorizedVirtualProjectionMountPlan = vi.hoisted(() => vi.fn());

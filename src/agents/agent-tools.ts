@@ -19,15 +19,15 @@ import { resolveEventSessionRoutingPolicy } from "../infra/event-session-routing
 import { applyExecPolicyLayer } from "../infra/exec-policy.js";
 import { mergeGatewayAgentCliPath } from "../infra/openclaw-cli-shim.js";
 import { logWarn } from "../logger.js";
-import {
-  MEMORY_POSTBOX_RUN_ID_BINDING,
-  MEMORY_POSTBOX_TURN_CAPABILITY_BINDING,
-} from "../plugins/memory-postbox-tool-binding.js";
 import type {
   PluginHookChannelContext,
   PluginHookToolRequesterContext,
 } from "../plugins/hook-types.js";
 import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
+import {
+  MEMORY_POSTBOX_RUN_ID_BINDING,
+  MEMORY_POSTBOX_TURN_CAPABILITY_BINDING,
+} from "../plugins/memory-postbox-tool-binding.js";
 import { resolveMemoryFlushPlan } from "../plugins/memory-state.js";
 import { appendRuntimePluginToolGrant } from "../plugins/tool-grant-allowlist.js";
 import type { AuthorizedMemoryReadHost, AuthorizedMemoryWriteHost } from "../plugins/tool-types.js";
@@ -405,12 +405,33 @@ type OpenClawCodingToolsOptions = {
 function resolvePluginToolBindings(options: OpenClawCodingToolsOptions | undefined) {
   const turnCapability = options?.memoryPostboxTurnCapability?.trim();
   const runId = options?.runId?.trim();
+  const callerBindings = options?.pluginToolBindings;
+  const memoryCoreBindings = callerBindings?.["memory-core"];
+  const { ["memory-core"]: _callerMemoryCoreBindings, ...otherCallerBindings } =
+    callerBindings ?? {};
+  const {
+    [MEMORY_POSTBOX_TURN_CAPABILITY_BINDING]: _ignoredPublicPostboxCapability,
+    [MEMORY_POSTBOX_RUN_ID_BINDING]: _ignoredPublicPostboxRunId,
+    ...safeMemoryCoreBindings
+  } = memoryCoreBindings ?? {};
+  const inheritedBindings =
+    memoryCoreBindings === undefined
+      ? callerBindings
+      : {
+          ...otherCallerBindings,
+          ...(Object.keys(safeMemoryCoreBindings).length > 0
+            ? { "memory-core": safeMemoryCoreBindings }
+            : {}),
+        };
   if (!turnCapability || !runId) {
-    return options?.pluginToolBindings;
+    return inheritedBindings;
   }
+  // Gateway-provided plugin bindings are serializable request input. Only the runner may inject
+  // these reserved names, so a retained or forged token cannot manufacture the postbox tool.
   return {
-    ...options?.pluginToolBindings,
+    ...inheritedBindings,
     "memory-core": {
+      ...safeMemoryCoreBindings,
       [MEMORY_POSTBOX_TURN_CAPABILITY_BINDING]: turnCapability,
       [MEMORY_POSTBOX_RUN_ID_BINDING]: runId,
     },

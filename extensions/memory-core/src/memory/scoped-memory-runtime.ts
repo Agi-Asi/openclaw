@@ -45,7 +45,10 @@ import {
   readBuiltinScopedMemoryRevisionSnapshot,
   resolveBuiltinScopedMemoryArtifactPath,
 } from "./scoped-memory-resources.js";
-import { createBuiltinMemoryProjection } from "./scoped-memory-sharing.js";
+import {
+  createBuiltinMemoryProjection,
+  expireBuiltinMemoryProjections,
+} from "./scoped-memory-sharing.js";
 import { createScopedMemorySourcePolicySetId } from "./scoped-memory-store.js";
 
 const PLAN_TTL_MS = 60_000;
@@ -137,6 +140,9 @@ function listAuthorizedStores(params: {
   context: MemoryAccessContext;
   nowMs: number;
 }): readonly AuthorizedStore[] {
+  // Expiry owns a durable tombstone and prior-exposure impact. Run it before every new
+  // authorization snapshot so a clock-only filter cannot leave an expired projection active.
+  expireBuiltinMemoryProjections({ agentId: params.context.agentId, nowMs: params.nowMs });
   return withScopedMemoryDatabase(params.context.agentId, (database) => {
     const rows = database
       .prepare(
@@ -241,7 +247,7 @@ function createPlan(context: MemoryAccessContext): PlanState {
               ? (["retrieve", "read"] as const)
               : context.operation === "derive"
                 ? (["retrieve", "read", "derive"] as const)
-              : ([context.operation] as const),
+                : ([context.operation] as const),
           ),
           audienceRevision: store.audienceRevision,
         }),
@@ -971,7 +977,10 @@ function resolveTranscriptDerivationSource(params: {
       .where("policy_set_id", "=", source.sourcePolicySetId)
       .orderBy("policy_id"),
   ).rows;
-  if (requirements.length === 0 || requirements.some((requirement) => requirement.retention_state !== "retained")) {
+  if (
+    requirements.length === 0 ||
+    requirements.some((requirement) => requirement.retention_state !== "retained")
+  ) {
     throw new Error("authorized transcript derivation is unavailable");
   }
   for (const requirement of requirements) {
@@ -984,7 +993,11 @@ function resolveTranscriptDerivationSource(params: {
           "revision.revision_id",
           "policy.current_revision_id",
         )
-        .select(["policy.lifecycle_state", "policy.revocation_epoch", "revision.lifecycle_state as revision_state"])
+        .select([
+          "policy.lifecycle_state",
+          "policy.revocation_epoch",
+          "revision.lifecycle_state as revision_state",
+        ])
         .where("policy.policy_id", "=", requirement.policy_id)
         .where("policy.current_revision_id", "=", requirement.expected_revision_id)
         .where("policy.revocation_epoch", "=", requirement.expected_revocation_epoch)
@@ -1014,7 +1027,9 @@ function resolveTranscriptDerivationSource(params: {
   ).rows;
   const nowMs = Date.now();
   if (
-    exposureSetIds.some((exposureSetId) => !exposures.some((row) => row.exposure_set_id === exposureSetId)) ||
+    exposureSetIds.some(
+      (exposureSetId) => !exposures.some((row) => row.exposure_set_id === exposureSetId),
+    ) ||
     exposures.some(
       (exposure) =>
         exposure.lifecycle_state !== "active" ||
@@ -1931,16 +1946,14 @@ async function writeAuthorizedMutation(params: {
         );
         executeSqliteQuerySync(
           database,
-          db
-            .insertInto("memory_revision_policy_requirements")
-            .values({
-              revision_id: revisionId,
-              policy_id: store.policyId,
-              expected_revision_id: store.policyRevisionId,
-              expected_revocation_epoch: store.policyRevocationEpoch,
-              requirement_kind: "output-policy",
-              created_at: nowMs,
-            }),
+          db.insertInto("memory_revision_policy_requirements").values({
+            revision_id: revisionId,
+            policy_id: store.policyId,
+            expected_revision_id: store.policyRevisionId,
+            expected_revocation_epoch: store.policyRevocationEpoch,
+            requirement_kind: "output-policy",
+            created_at: nowMs,
+          }),
         );
         for (const source of derivationSources) {
           for (const requirement of source.policyRequirements) {
@@ -1956,7 +1969,9 @@ async function writeAuthorizedMutation(params: {
                   requirement_kind: "source-policy",
                   created_at: nowMs,
                 })
-                .onConflict((conflict) => conflict.columns(["revision_id", "policy_id"]).doNothing()),
+                .onConflict((conflict) =>
+                  conflict.columns(["revision_id", "policy_id"]).doNothing(),
+                ),
             );
           }
           executeSqliteQuerySync(
@@ -1984,7 +1999,9 @@ async function writeAuthorizedMutation(params: {
                   requirement_kind: "source-policy",
                   created_at: nowMs,
                 })
-                .onConflict((conflict) => conflict.columns(["revision_id", "policy_id"]).doNothing()),
+                .onConflict((conflict) =>
+                  conflict.columns(["revision_id", "policy_id"]).doNothing(),
+                ),
             );
           }
           for (const sourceRevisionId of transcriptDerivationSource.sourceRevisionIds) {
@@ -2006,9 +2023,7 @@ async function writeAuthorizedMutation(params: {
               parent_kind: "transcript-policy-set",
               parent_id: transcriptDerivationSource.sourcePolicySetId,
               relation_kind:
-                transcriptDerivationPurpose === "compaction"
-                  ? "compacted-from"
-                  : "flushed-from",
+                transcriptDerivationPurpose === "compaction" ? "compacted-from" : "flushed-from",
               created_at: nowMs,
             }),
           );
@@ -2355,9 +2370,7 @@ async function stageSealedCompaction(
                 requirement_kind: "source-policy",
                 created_at: nowMs,
               })
-              .onConflict((conflict) =>
-                conflict.columns(["revision_id", "policy_id"]).doNothing(),
-              ),
+              .onConflict((conflict) => conflict.columns(["revision_id", "policy_id"]).doNothing()),
           );
         }
         const lineage = [

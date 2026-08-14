@@ -199,6 +199,15 @@ export interface MemoryPostboxRateLimits {
   window_started_at: number;
 }
 
+export interface MemoryPostboxReviewedCopies {
+  agent_id: string;
+  created_at: number;
+  item_id: string;
+  resource_id: string;
+  reviewed_content_hash: string;
+  revision_id: string;
+}
+
 export interface MemoryPostboxSettings {
   agent_id: string;
   mode: string;
@@ -953,6 +962,7 @@ export interface DB {
   memory_compaction_policy_sources: MemoryCompactionPolicySources;
   memory_postbox_items: MemoryPostboxItems;
   memory_postbox_rate_limits: MemoryPostboxRateLimits;
+  memory_postbox_reviewed_copies: MemoryPostboxReviewedCopies;
   memory_postbox_settings: MemoryPostboxSettings;
   memory_postbox_source_handles: MemoryPostboxSourceHandles;
   memory_embedding_cache: MemoryEmbeddingCache;

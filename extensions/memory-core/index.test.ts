@@ -293,7 +293,7 @@ describe("memory-core plugin runtime registration", () => {
     expect(host.remember).toHaveBeenCalledWith({ content: "durable fact" });
   });
 
-  it("exposes postbox deposit only with the memory-core-scoped host binding", () => {
+  it("exposes postbox deposit only with the memory-core-scoped host binding and no readback", async () => {
     const factories = new Map<string, (ctx: never) => unknown>();
     plugin.register(
       createTestPluginApi({
@@ -308,16 +308,26 @@ describe("memory-core plugin runtime registration", () => {
     );
     const postbox = factories.get("memory_postbox_deposit");
     expect(postbox?.({ agentId: "main", sessionKey: "session" } as never)).toBeNull();
-    expect(
-      postbox?.({
-        agentId: "main",
-        sessionKey: "session",
-        toolBindings: {
-          [MEMORY_POSTBOX_TURN_CAPABILITY_BINDING]: "opaque-turn-capability",
-          [MEMORY_POSTBOX_RUN_ID_BINDING]: "run-1",
-        },
-      } as never),
-    ).toMatchObject({ name: "memory_postbox_deposit" });
+    const tool = postbox?.({
+      agentId: "main",
+      sessionKey: "session",
+      sessionId: "session-1",
+      toolBindings: {
+        [MEMORY_POSTBOX_TURN_CAPABILITY_BINDING]: "opaque-turn-capability",
+        [MEMORY_POSTBOX_RUN_ID_BINDING]: "run-1",
+      },
+    } as never) as
+      | {
+          name: string;
+          description: string;
+          execute: (id: string, params: unknown) => Promise<{ details?: unknown }>;
+        }
+      | null
+      | undefined;
+    expect(tool).toMatchObject({ name: "memory_postbox_deposit" });
+    expect(tool?.description).toContain("cannot list, read, or identify postbox items");
+    const result = await tool?.execute("postbox-call", { content: "one-way observation" });
+    expect(result?.details).toEqual({ accepted: false });
   });
 
   it("keeps memory manager initialization demand-driven", () => {

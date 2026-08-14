@@ -303,7 +303,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       //     runtimes render the same guidance instead of diverging prompt copies.
       // +57: versioned serializable memory-authorization contract and reusable backend-conformance
       //      types, capability declarations, and helpers.
-      4391,
+      // +7: reconcile the existing public memory-authorization contract surface with this ratchet.
+      4398,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(

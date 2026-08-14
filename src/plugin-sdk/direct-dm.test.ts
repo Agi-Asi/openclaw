@@ -276,6 +276,8 @@ describe("channel-inbound direct-message helpers", () => {
         ReplyToId: "event-parent",
         ReplyToIdFull: "event-parent",
         MessageThreadId: "thread-7",
+        InputProvenance: { kind: "internal_system", sourceTool: "forged-adapter-context" },
+        InputProvenance: { kind: "internal_system", sourceTool: "forged-adapter-context" },
       },
       timestamp: 1_710_000_000_000,
       commandAuthorized: true,
@@ -306,6 +308,10 @@ describe("channel-inbound direct-message helpers", () => {
     expect(
       resolveImplicitMessageActionTarget({ currentChannelId, currentChannelProvider: "reef" }),
     ).toBe("reef:clawstudio");
+    expect(result.ctxPayload.InputProvenance).toEqual({
+      kind: "external_user",
+      sourceChannel: "reef",
+    });
     expect(recordInboundSession).toHaveBeenCalledTimes(1);
     expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledTimes(1);
     expect(deliver).toHaveBeenCalledWith({ text: "reply text" });

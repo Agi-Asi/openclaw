@@ -42,10 +42,16 @@ export const contextEngineCompactMock: Mock<() => Promise<CompactResult>> = vi.f
 }));
 
 export const isMemoryIsolationCutoverAgentMock = vi.fn(() => false);
-export const readAuthorizedTranscriptDerivationMock = vi.fn(() => undefined);
+export const readAuthorizedTranscriptDerivationMock = vi.fn<
+  typeof import("../../config/sessions/session-transcript-memory-policy.js").readAuthorizedTranscriptDerivation
+>(() => undefined);
 export const admitAuthorizedMemoryDerivationMock = vi.fn(async () => true);
-export const createAuthorizedMemoryDerivationHostMock = vi.fn(() => undefined);
-export const prepareAuthorizedSealedCompactionHostMock = vi.fn(async () => undefined);
+export const createAuthorizedMemoryDerivationHostMock = vi.fn<
+  typeof import("../memory-authorized-read-host.js").createAuthorizedMemoryDerivationHost
+>(() => undefined);
+export const prepareAuthorizedSealedCompactionHostMock = vi.fn<
+  typeof import("../memory-authorized-read-host.js").prepareAuthorizedSealedCompactionHost
+>(async () => undefined);
 
 export const hookRunner = {
   hasHooks: vi.fn<(hookName?: string) => boolean>(),

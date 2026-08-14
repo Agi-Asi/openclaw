@@ -104,6 +104,12 @@ type WriteInvocationState = Readonly<{
   runtime: Readonly<AuthorizedMemoryRuntime>;
 }>;
 
+type DeriveWriteInvocationState = Omit<WriteInvocationState, "context" | "plan"> &
+  Readonly<{
+    context: MemoryAccessContext & Readonly<{ operation: "derive" }>;
+    plan: AuthorizedMemoryPlan & Readonly<{ operation: "derive" }>;
+  }>;
+
 const writeInvocationStates = new WeakMap<object, WriteInvocationState>();
 
 type MemoryInvocationDiagnostic =
@@ -169,6 +175,18 @@ function readCurrentWriteContext(state: WriteInvocationState): MemoryAccessConte
     return undefined;
   }
   return current;
+}
+
+function isDeriveWriteInvocationState(
+  state: WriteInvocationState,
+): state is DeriveWriteInvocationState {
+  return state.context.operation === "derive" && state.plan.operation === "derive";
+}
+
+function isDeriveMemoryAccessContext(
+  context: MemoryAccessContext,
+): context is MemoryAccessContext & Readonly<{ operation: "derive" }> {
+  return context.operation === "derive";
 }
 
 function readCurrentContext(
@@ -585,7 +603,8 @@ export async function stageAuthorizedMemorySealedCompactionForInvocation(params:
   if (
     !state ||
     !context ||
-    context.operation !== "derive" ||
+    !isDeriveMemoryAccessContext(context) ||
+    !isDeriveWriteInvocationState(state) ||
     !state.runtime.stageSealedCompaction ||
     !isCurrentPlan({ context, plan: state.plan, nowMs: Date.now() })
   ) {
@@ -594,7 +613,7 @@ export async function stageAuthorizedMemorySealedCompactionForInvocation(params:
   try {
     return await state.runtime.stageSealedCompaction({
       context,
-      plan: state.plan as AuthorizedMemoryPlan & Readonly<{ operation: "derive" }>,
+      plan: state.plan,
       content: params.content,
       transcriptSource: params.transcriptSource,
     });

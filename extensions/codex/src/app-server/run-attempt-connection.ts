@@ -361,12 +361,7 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     });
     return {
       session,
-      appServer: withPreparedProcessEnv(
-        fenceCodexProjectDocumentsForMemoryIsolation({
-          agentId: sessionAgentId,
-          appServer: trusted,
-        }),
-      ),
+      appServer: withPreparedProcessEnv(trusted),
     };
   };
   let resolvedAppServer = resolveFinalAppServer(configuredAppServer, reviewerPolicyContext);
