@@ -191,6 +191,7 @@ function buildCacheKey(params: {
   coreGatewayMethodNames?: string[];
   allowProcessHomeSessionCatalogs?: boolean;
   activate?: boolean;
+  enterpriseIdentityAuthorityStartup?: boolean;
 }): string {
   const discoveryContext = resolvePluginDiscoveryContext({
     workspaceDir: params.workspaceDir,
@@ -240,7 +241,7 @@ function buildCacheKey(params: {
       activationMetadataKey: params.activationMetadataKey ?? "",
       allowProcessHomeSessionCatalogs: params.allowProcessHomeSessionCatalogs !== false,
     },
-  )}::${serializePluginIdScope(params.onlyPluginIds)}::${setupOnlyKey}::${setupOnlyModeKey}::${setupOnlyRequirementKey}::${params.channelPluginLoadIntent}::${bundledArtifactMode}::${rawConfigEnvMode}::${moduleLoadMode}::${discoveryMode}::${params.runtimeSubagentMode ?? "default"}::${params.runtimeBindingIdentity ?? "{}"}::${params.pluginSdkResolution ?? "auto"}::${JSON.stringify(params.coreGatewayMethodNames ?? [])}::${activationMode}`;
+  )}::${serializePluginIdScope(params.onlyPluginIds)}::${setupOnlyKey}::${setupOnlyModeKey}::${setupOnlyRequirementKey}::${params.channelPluginLoadIntent}::${bundledArtifactMode}::${rawConfigEnvMode}::${moduleLoadMode}::${discoveryMode}::${params.runtimeSubagentMode ?? "default"}::${params.runtimeBindingIdentity ?? "{}"}::${params.pluginSdkResolution ?? "auto"}::${JSON.stringify(params.coreGatewayMethodNames ?? [])}::${activationMode}::${params.enterpriseIdentityAuthorityStartup === true ? "enterprise-startup" : "enterprise-consumer"}`;
   return createHash("sha256").update(cacheIdentity).digest("hex");
 }
 
@@ -391,6 +392,7 @@ export function resolvePluginLoadCacheContext(options: PluginLoadOptions = {}) {
     coreGatewayMethodNames,
     allowProcessHomeSessionCatalogs: options.allowProcessHomeSessionCatalogs,
     activate: options.activate,
+    enterpriseIdentityAuthorityStartup: options.enterpriseIdentityAuthorityStartup,
   });
   return {
     env,

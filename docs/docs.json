@@ -1335,6 +1335,7 @@
                   "plugins/voice-call",
                   "plugins/vault",
                   "plugins/onepassword",
+                  "plugins/memory-enterprise-identity",
                   "plugins/memory-wiki",
                   "plugins/llama-cpp",
                   "plugins/memory-lancedb",

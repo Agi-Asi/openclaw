@@ -7,6 +7,12 @@ import {
 import { resolveEffectivePluginActivationState } from "./config-state.js";
 import { isPluginEnabledByDefaultForPlatform } from "./default-enablement.js";
 import {
+  createEnterpriseIdentityProviderAuthorityRegistry,
+  getProcessEnterpriseIdentityProviderAuthorityRegistry,
+  getOrCreateProcessEnterpriseIdentityProviderAuthorityRegistry,
+  resolveEnterpriseIdentityProviderAllowlist,
+} from "./enterprise-identity-provider-authority-registry.js";
+import {
   getReusableCachedPluginRegistry,
   pluginLoaderCacheState,
   setCachedPluginRegistry,
@@ -158,6 +164,18 @@ function loadOpenClawPluginsInternal(
         coreGatewayMethodNames: options.coreGatewayMethodNames,
       }),
       ...(options.hostServices !== undefined && { hostServices: options.hostServices }),
+      enterpriseIdentityProviderAuthorityRegistry:
+        options.enterpriseIdentityAuthorityStartup === true
+          ? getOrCreateProcessEnterpriseIdentityProviderAuthorityRegistry({
+              operatorAllowlist: resolveEnterpriseIdentityProviderAllowlist(options.config),
+            })
+          : (getProcessEnterpriseIdentityProviderAuthorityRegistry() ??
+            // A CLI, tool-discovery, or agent runtime must not become the first
+            // enterprise authority. It can consume an already-published Gateway
+            // snapshot, otherwise every registration is refused by this empty
+            // allowlist.
+            createEnterpriseIdentityProviderAuthorityRegistry()),
+      enterpriseIdentityAuthorityStartup: options.enterpriseIdentityAuthorityStartup === true,
       activateGlobalSideEffects: context.shouldActivate,
     });
     const { registry } = registryBuilder;
@@ -271,7 +289,17 @@ function loadOpenClawPluginsInternal(
         ),
       ),
     );
-    maybeThrowOnPluginLoadError(registry, options.throwOnLoadError);
+    const enterpriseRegistrationFailure =
+      options.enterpriseIdentityAuthorityStartup === true &&
+      registry.plugins.some(
+        (plugin) =>
+          plugin.status === "error" &&
+          (plugin.contracts?.enterpriseIdentityProviders?.length ?? 0) > 0,
+      );
+    maybeThrowOnPluginLoadError(
+      registry,
+      options.throwOnLoadError || enterpriseRegistrationFailure,
+    );
     if (context.shouldActivate && options.mode !== "validate") {
       const failedPlugins = registry.plugins.filter((plugin) => plugin.failedAt != null);
       if (failedPlugins.length > 0) {

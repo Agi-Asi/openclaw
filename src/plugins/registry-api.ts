@@ -15,6 +15,7 @@ import {
   unschedulePluginSessionTurnsByTag,
 } from "./host-hook-scheduled-turns.js";
 import { enqueuePluginNextTurnInjection } from "./host-hook-state.js";
+import { issueMemoryEnterpriseAccessAuditReporter } from "./memory-enterprise-access-audit-reporter.js";
 import { isPluginRegistryActivated, isPluginRegistryRetired } from "./registry-lifecycle.js";
 import type { PluginRegistrars } from "./registry-registrars.js";
 import type { PluginRuntimeResolver } from "./registry-runtime.js";
@@ -106,6 +107,9 @@ export function createPluginApiFactory(
     registerMemoryPromptSupplement,
     registerMemoryPromptPreparation,
     registerMemoryCorpusSupplement,
+    registerMemoryEmbeddingProvider,
+    registerEnterpriseIdentityProvider,
+    createMemoryEnterpriseAccessAuditReporter,
     registerCli,
     registerChannel,
   } = registrars;
@@ -161,7 +165,7 @@ export function createPluginApiFactory(
       !isPluginRegistryRetired(registry) &&
       (isActivatingLoadedRecord() ||
         (isPluginRegistryActivated(registry) && isLoadedRecordInRegistry()));
-    return buildPluginApi({
+    const api = buildPluginApi({
       id: record.id,
       name: record.name,
       version: record.version,
@@ -373,6 +377,10 @@ export function createPluginApiFactory(
                 registerMemoryPromptPreparation(record, prepare),
               registerMemoryCorpusSupplement: (supplement) =>
                 registerMemoryCorpusSupplement(record, supplement),
+              registerMemoryEmbeddingProvider: (adapter) =>
+                registerMemoryEmbeddingProvider(record, adapter),
+              registerEnterpriseIdentityProvider: (adapter) =>
+                registerEnterpriseIdentityProvider(record, adapter),
               on: (hookName, handler, opts) =>
                 registerTypedHook(record, hookName, handler, opts, params.hookPolicy),
             }
@@ -399,6 +407,11 @@ export function createPluginApiFactory(
           ),
       },
     });
+    const enterpriseAccessAuditReporter = createMemoryEnterpriseAccessAuditReporter(record);
+    if (enterpriseAccessAuditReporter) {
+      issueMemoryEnterpriseAccessAuditReporter(api, enterpriseAccessAuditReporter);
+    }
+    return api;
   };
 
   return { createApi, deactivatePluginSideEffectGuards };

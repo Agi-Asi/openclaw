@@ -59,6 +59,11 @@ export type PluginsLoadConfig = {
   paths?: string[];
 };
 
+export type EnterpriseIdentityProvidersConfig = {
+  /** Provider prefixes that may register enterprise identity verification material at startup. */
+  allow?: string[];
+};
+
 export type PluginInstallRecord = Omit<InstallRecordBase, "source"> & {
   source: InstallRecordBase["source"] | "marketplace";
   marketplaceName?: string;
@@ -74,6 +79,8 @@ export type PluginsConfig = {
   /** Optional plugin denylist (plugin ids). */
   deny?: string[];
   load?: PluginsLoadConfig;
+  /** Operator-owned enterprise identity provider allowlist. Empty or unset denies all providers. */
+  enterpriseIdentityProviders?: EnterpriseIdentityProvidersConfig;
   slots?: PluginSlotsConfig;
   entries?: Record<string, PluginEntryConfig>;
   /**

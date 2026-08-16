@@ -96,6 +96,9 @@ const getEmbeddingsHttpModule = createLazyRuntimeModule(() => import("./embeddin
 const getManagedMediaAttachmentsModule = createLazyRuntimeModule(
   () => import("./managed-image-attachments.js"),
 );
+const getMemoryEnterpriseOidcCallbackHttpModule = createLazyRuntimeModule(
+  () => import("./memory-enterprise-oidc-callback-http.js"),
+);
 const getMcpAppStandaloneModule = createLazyRuntimeModule(() => import("./mcp-app-standalone.js"));
 const getPluginIconHttpModule = createLazyRuntimeModule(() => import("./plugin-icon-http.js"));
 const getWorkspaceIconHttpModule = createLazyRuntimeModule(
@@ -392,6 +395,15 @@ export function createGatewayHttpServer(opts: {
           }),
         );
       }
+
+      // This public endpoint is receipt-bound, not browser-authenticated. It
+      // must run before hooks and plugins so a provider redirect cannot be
+      // claimed by a mutable route or expose its opaque authorization parameters.
+      addAdmittedStage(scopedRequestPath === "/memory/oidc/callback", async () =>
+        (
+          await getMemoryEnterpriseOidcCallbackHttpModule()
+        ).handleMemoryEnterpriseOidcCallbackHttpRequest(req, res),
+      );
 
       // Before hooks: an operator hooks.path of "/oauth" would otherwise claim
       // this exact GET and 405 every provider redirect. The claim is exact-path

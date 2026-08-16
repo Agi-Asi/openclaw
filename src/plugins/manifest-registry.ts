@@ -419,6 +419,8 @@ function mergeManifestContracts(
     "trustedToolPolicies",
     "externalAuthProviders",
     "embeddingProviders",
+    "memoryEmbeddingProviders",
+    "enterpriseIdentityProviders",
     "speechProviders",
     "realtimeTranscriptionProviders",
     "realtimeVoiceProviders",

@@ -568,6 +568,7 @@ export function loadGatewayPlugins(params: {
     resolvePluginSubagentOverridePolicies(resolvedConfig),
   );
   const pluginRegistry = loadAndActivateRootPluginRegistry({
+    enterpriseIdentityAuthorityStartup: true,
     config: resolvedConfig,
     allowProcessHomeSessionCatalogs,
     activationSourceConfig: params.activationSourceConfig ?? params.cfg,
