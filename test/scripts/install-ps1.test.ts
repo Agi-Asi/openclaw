@@ -1224,6 +1224,7 @@ describe("install.ps1 failure handling", () => {
         "  if ($isWindowsHost) {",
         "    $approvedNodeDir = Join-Path $sandbox 'approved node'",
         "    New-Item -ItemType Directory -Force -Path $approvedNodeDir | Out-Null",
+        "    $approvedNodeDir = Resolve-PhysicalDirectoryPath -Path $approvedNodeDir",
         "    $approvedNodePath = Join-Path $approvedNodeDir 'node.exe'",
         `    Copy-Item -LiteralPath ${toPowerShellSingleQuotedLiteral(process.execPath)} -Destination $approvedNodePath`,
         '    $env:Path = "$approvedNodeDir;$originalPath"',

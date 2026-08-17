@@ -281,6 +281,120 @@ jobs:
           export PATH="$NODE_BIN:$PATH"
           pnpm test:windows:ci
 
+      - name: Run Windows Git install launcher proof
+        if: ${{ !cancelled() && inputs.run_windows_ci }}
+        timeout-minutes: 20
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ inputs.target_ref }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE ".artifacts\windows-git-install"
+          $proofRoot = Join-Path $env:RUNNER_TEMP "openclaw-git-proof-%OPENCLAW_PROOF_PERCENT%-!openclaw_proof_bang!"
+          $originalHome = $env:HOME
+          $originalPath = $env:Path
+          $originalUserProfile = $env:USERPROFILE
+          $originalPercent = $env:OPENCLAW_PROOF_PERCENT
+          $originalBang = $env:openclaw_proof_bang
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          try {
+            $head = (git rev-parse HEAD).Trim()
+            if ($head -ne $env:EXPECTED_HEAD) {
+              throw "Checked out $head, expected frozen target $env:EXPECTED_HEAD."
+            }
+
+            $nodeSource = (Get-Command node -ErrorAction Stop).Source
+            $nodeDir = Join-Path $proofRoot "validated-node"
+            $proofHome = Join-Path $proofRoot "home"
+            New-Item -ItemType Directory -Force -Path $nodeDir, $proofHome | Out-Null
+            $validatedNode = Join-Path $nodeDir "node.exe"
+            Copy-Item -LiteralPath $nodeSource -Destination $validatedNode
+
+            $env:HOME = $proofHome
+            $env:USERPROFILE = $proofHome
+            $env:OPENCLAW_PROOF_PERCENT = "expanded-away"
+            $env:openclaw_proof_bang = "expanded-away"
+            $env:Path = "$nodeDir;$originalPath"
+
+            $installerLog = Join-Path $artifactDir "installer.log"
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 `
+              -InstallMethod git `
+              -GitDir $env:GITHUB_WORKSPACE `
+              -NoGitUpdate `
+              -NoOnboard *>&1 | Tee-Object -FilePath $installerLog
+            $installerExit = $LASTEXITCODE
+            if ($installerExit -ne 0) {
+              throw "Windows Git installer exited $installerExit."
+            }
+
+            $wrapperPath = Join-Path $proofHome ".local\bin\openclaw.cmd"
+            $wrapper = Get-Content -LiteralPath $wrapperPath -Raw
+            $escapedPaths =
+              $wrapper.Contains("%%OPENCLAW_PROOF_PERCENT%%") -and
+              $wrapper.Contains("^!openclaw_proof_bang^!")
+            if (-not $escapedPaths) {
+              throw "Generated wrapper did not preserve CMD metacharacters."
+            }
+
+            $shadowDir = Join-Path $proofRoot "shadow-node"
+            New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null
+            Set-Content -LiteralPath (Join-Path $shadowDir "node.cmd") -NoNewline -Value "@echo off`r`necho shadow-node`r`nexit /b 47`r`n"
+            $env:Path = "$shadowDir;$originalPath"
+            $cmdLine = 'call "' + $wrapperPath + '" --version'
+            $wrapperOutput = @(& $env:ComSpec /d /v:on /c $cmdLine 2>&1 | ForEach-Object { $_.ToString() })
+            $wrapperExit = $LASTEXITCODE
+            $wrapperText = $wrapperOutput -join "`n"
+            if ($wrapperExit -ne 0) {
+              throw "Generated wrapper exited $wrapperExit`: $wrapperText"
+            }
+            if ($wrapperText.Contains("shadow-node")) {
+              throw "Generated wrapper selected the PATH-shadow Node runtime."
+            }
+
+            Remove-Item -LiteralPath $validatedNode -Force
+            $missingOutput = @(& $env:ComSpec /d /v:on /c $cmdLine 2>&1 | ForEach-Object { $_.ToString() })
+            $missingExit = $LASTEXITCODE
+            $missingText = $missingOutput -join "`n"
+            if ($missingExit -ne 1) {
+              throw "Generated wrapper with missing runtime exited $missingExit`: $missingText"
+            }
+            if (
+              -not $missingText.Contains("validated Node.js runtime is missing") -or
+              -not $missingText.Contains("Re-run the OpenClaw installer")
+            ) {
+              throw "Generated wrapper omitted missing-runtime recovery guidance: $missingText"
+            }
+            if ($missingText.Contains("shadow-node")) {
+              throw "Generated wrapper selected the PATH-shadow Node after its validated runtime was removed."
+            }
+
+            [ordered]@{
+              head = $head
+              installerExit = $installerExit
+              missingRuntimeExit = $missingExit
+              missingRuntimeFailedClosed = $true
+              wrapperExit = $wrapperExit
+              wrapperEscapedPercentAndBang = $escapedPaths
+              wrapperIgnoredPathShadow = $true
+              version = $wrapperOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDir "proof.json")
+          } finally {
+            $env:HOME = $originalHome
+            $env:Path = $originalPath
+            $env:USERPROFILE = $originalUserProfile
+            $env:OPENCLAW_PROOF_PERCENT = $originalPercent
+            $env:openclaw_proof_bang = $originalBang
+            Remove-Item -LiteralPath $proofRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload Windows Git install launcher proof
+        if: ${{ always() && inputs.run_windows_ci }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-git-install-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/windows-git-install
+          if-no-files-found: warn
+
       - name: Preflight native Scheduled Task session
         if: ${{ inputs.run_windows_ci }}
         shell: pwsh
