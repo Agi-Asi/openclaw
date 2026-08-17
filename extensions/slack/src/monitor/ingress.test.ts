@@ -327,7 +327,9 @@ describe("Slack durable ingress", () => {
       await vi.waitFor(() => expect(starts).toEqual(["Ev-deferred"]));
       await receive(createReceiverEvent("Ev-next", undefined, { ts: "1700000000.000200" }));
       await vi.waitFor(() => expect(starts).toEqual(["Ev-deferred", "Ev-next"]));
-      await new Promise<void>((resolve) => setTimeout(resolve, 75));
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 75);
+      });
 
       expect(await queue.listFailed?.()).toEqual([]);
       expect((await queue.listClaims()).map((claim) => claim.id)).toEqual(["Ev-deferred"]);
