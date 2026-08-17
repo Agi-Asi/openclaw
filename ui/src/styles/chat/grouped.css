@@ -53,6 +53,7 @@
   gap: 2px 10px;
   justify-content: start;
   padding-bottom: 0;
+  margin-bottom: 12px;
 }
 
 .chat-group.user.chat-group--with-footer {
