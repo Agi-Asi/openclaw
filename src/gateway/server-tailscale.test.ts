@@ -74,6 +74,28 @@ describe("startGatewayTailscaleExposure", () => {
     expect(mocks.claimTailscaleRoute).not.toHaveBeenCalled();
   });
 
+  it.each(["serve", "funnel"] as const)(
+    "leaves externally owned %s routing unchanged",
+    async (mode) => {
+      const logTailscale = createLogger();
+      const cleanup = await startGatewayTailscaleExposure({
+        tailscaleMode: mode,
+        routeOwner: "external",
+        port: 18789,
+        logTailscale,
+      });
+
+      expect(cleanup).toBeNull();
+      expect(mocks.claimTailscaleRoute).not.toHaveBeenCalled();
+      expect(mocks.hasTailscaleFunnelRouteForPort).not.toHaveBeenCalled();
+      expect(mocks.getTailnetHostname).not.toHaveBeenCalled();
+      expect(mocks.getTailnetHostnameAfterServe).not.toHaveBeenCalled();
+      expect(logTailscale.info).toHaveBeenCalledWith(
+        expect.stringContaining("routing remains externally managed"),
+      );
+    },
+  );
+
   it("does not change Tailscale state before the private backend is bound", async () => {
     await expect(
       startGatewayTailscaleExposureBase({

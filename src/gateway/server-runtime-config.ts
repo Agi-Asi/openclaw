@@ -122,6 +122,18 @@ export async function resolveGatewayRuntimeConfig(params: {
   const tailscaleOverrides = params.tailscale ?? {};
   const tailscaleConfig = mergeGatewayTailscaleConfig(tailscaleBase, tailscaleOverrides);
   const tailscaleMode = tailscaleConfig.mode ?? "off";
+  if (tailscaleConfig.externalIngressPort !== undefined) {
+    if (tailscaleMode === "off") {
+      throw new Error(
+        "gateway.tailscale.externalIngressPort requires gateway.tailscale.mode=serve or funnel",
+      );
+    }
+    if (tailscaleConfig.externalIngressPort === params.port) {
+      throw new Error(
+        "gateway.tailscale.externalIngressPort must differ from the ordinary gateway port",
+      );
+    }
+  }
   const resolvedAuth = resolveGatewayAuth({
     authConfig: params.cfg.gateway?.auth,
     authOverride: params.auth,

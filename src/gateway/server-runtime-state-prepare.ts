@@ -472,6 +472,7 @@ export async function prepareGatewayKernelState(params: {
     nodeDesktopStreamBroker,
     clients: connectionState.clients,
     tailscaleMode,
+    tailscaleIngressPort: tailscaleConfig.externalIngressPort,
   });
   const {
     clients,

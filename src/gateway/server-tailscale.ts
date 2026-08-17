@@ -13,6 +13,7 @@ import { prepareMcpAppChannelOrigin } from "./mcp-app-channel-origin.js";
 
 export async function startGatewayTailscaleExposure(params: {
   tailscaleMode: "off" | "serve" | "funnel";
+  routeOwner?: "openclaw" | "external";
   port: number;
   backend?: GatewayTailscaleIngressEndpoint;
   preserveFunnel?: boolean;
@@ -24,6 +25,12 @@ export async function startGatewayTailscaleExposure(params: {
   }
   if (!params.backend) {
     throw new Error("Managed Tailscale ingress failed to start");
+  }
+  if (params.routeOwner === "external") {
+    params.logTailscale.info(
+      `${params.tailscaleMode} ingress listening on ${params.backend.host}:${params.backend.port}; routing remains externally managed`,
+    );
+    return null;
   }
   const backendTarget = params.backend.port;
   const effectiveMode = params.tailscaleMode;

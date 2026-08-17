@@ -140,6 +140,7 @@ export async function createGatewayHttpTransport(params: {
   nodeDesktopStreamBroker?: NodeDesktopStreamBroker;
   clients: Set<GatewayWsClient>;
   tailscaleMode?: "off" | GatewayTailscaleIngressMode;
+  tailscaleIngressPort?: number;
   prepareManagedTailscaleIngress?: (endpoint: GatewayTailscaleIngressEndpoint) => Promise<void>;
 }): Promise<{
   httpServer: HttpServer;
@@ -486,7 +487,7 @@ export async function createGatewayHttpTransport(params: {
         await listenGatewayHttpServer({
           httpServer: tailscaleHttpServer,
           bindHost: "127.0.0.1",
-          port: 0,
+          port: params.tailscaleIngressPort ?? 0,
           retryEaddrinuse: false,
           serviceName: "Tailscale gateway ingress",
         });

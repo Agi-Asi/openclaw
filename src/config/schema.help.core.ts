@@ -143,6 +143,8 @@ export const CORE_FIELD_HELP: Record<string, string> = {
     "Tailscale integration settings for Serve/Funnel exposure and lifecycle handling on gateway start/exit. Keep off unless your deployment intentionally relies on Tailscale ingress.",
   "gateway.tailscale.mode":
     'Tailscale publish mode: "off", "serve", or "funnel" for private or public exposure paths. Use "serve" for tailnet-only access and "funnel" only when public internet reachability is required.',
+  "gateway.tailscale.externalIngressPort":
+    "Fixed loopback port for a Tailscale Serve or Funnel route managed outside OpenClaw. Set this when sharing an existing Tailscale HTTPS listener; OpenClaw validates attributed ingress on this port but never creates, changes, or removes the external route.",
   "gateway.tailscale.preserveFunnel":
     "Deprecated migration guard for mode='serve'. If an external Funnel still targets the ordinary Gateway listener, OpenClaw leaves exposure unchanged and warns that only plugin-authenticated webhooks remain usable until password auth is configured and mode is migrated to 'funnel'.",
   "gateway.remote":

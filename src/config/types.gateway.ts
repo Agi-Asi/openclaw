@@ -257,6 +257,11 @@ export type GatewayTailscaleConfig = {
   /** Tailscale exposure mode for the Gateway control UI. */
   mode?: GatewayTailscaleMode;
   /**
+   * Fixed loopback port for a Tailscale Serve/Funnel route managed outside
+   * OpenClaw. When set, OpenClaw does not create or remove the Tailscale route.
+   */
+  externalIngressPort?: number;
+  /**
    * Detect an external Funnel route left on the ordinary Gateway listener and
    * leave exposure unchanged with migration guidance. Gateway-authenticated
    * routes reject that ingress; plugin-authenticated webhooks keep their owner auth.

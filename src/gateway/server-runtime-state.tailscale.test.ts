@@ -1,4 +1,5 @@
 import { request as httpRequest, type RequestOptions } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
@@ -57,6 +58,23 @@ async function requestUpgrade(options: RequestOptions): Promise<{
   });
 }
 
+async function reserveLoopbackPort(): Promise<number> {
+  const server = createNetServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("failed to reserve a loopback port");
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  return address.port;
+}
+
 describe("managed Tailscale gateway ingress", () => {
   const openServers: Array<Awaited<ReturnType<typeof createGatewayRuntimeStateForTest>>> = [];
 
@@ -99,6 +117,22 @@ describe("managed Tailscale gateway ingress", () => {
     releaseRouteClaim();
     await starting;
     expect(runtime.httpServer.listening).toBe(true);
+  });
+
+  it("binds externally routed Tailscale ingress to its configured loopback port", async () => {
+    const externalIngressPort = await reserveLoopbackPort();
+    const runtime = await createGatewayRuntimeStateForTest(undefined, {
+      tailscaleMode: "serve",
+      tailscaleIngressPort: externalIngressPort,
+    });
+    openServers.push(runtime);
+
+    await runtime.startListening();
+
+    expect(runtime.getTailscaleIngressEndpoint()).toEqual({
+      host: "127.0.0.1",
+      port: externalIngressPort,
+    });
   });
 
   it("binds a distinct private listener and rejects the same headers on the ordinary listener", async () => {

@@ -232,6 +232,32 @@ function validateGatewayTailscaleAuth(config: OpenClawConfig): ConfigValidationI
   ];
 }
 
+function validateGatewayTailscaleExternalIngress(config: OpenClawConfig): ConfigValidationIssue[] {
+  const externalIngressPort = config.gateway?.tailscale?.externalIngressPort;
+  if (externalIngressPort === undefined) {
+    return [];
+  }
+  const tailscaleMode = config.gateway?.tailscale?.mode ?? "off";
+  if (tailscaleMode !== "serve" && tailscaleMode !== "funnel") {
+    return [
+      {
+        path: "gateway.tailscale.externalIngressPort",
+        message:
+          "gateway.tailscale.externalIngressPort requires gateway.tailscale.mode=serve or funnel",
+      },
+    ];
+  }
+  if (config.gateway?.port === externalIngressPort) {
+    return [
+      {
+        path: "gateway.tailscale.externalIngressPort",
+        message: "gateway.tailscale.externalIngressPort must differ from the ordinary gateway port",
+      },
+    ];
+  }
+  return [];
+}
+
 function collectModelPolicyAllowIssues(config: OpenClawConfig): ConfigValidationIssue[] {
   const issues: ConfigValidationIssue[] = [];
   const defaultModels = config.agents?.defaults?.models;
@@ -384,6 +410,11 @@ export function validateConfigObjectRaw(
   const gatewayTailscaleAuthIssues = validateGatewayTailscaleAuth(validatedConfig);
   if (gatewayTailscaleAuthIssues.length > 0) {
     return { ok: false, issues: gatewayTailscaleAuthIssues };
+  }
+  const gatewayTailscaleExternalIngressIssues =
+    validateGatewayTailscaleExternalIngress(validatedConfig);
+  if (gatewayTailscaleExternalIngressIssues.length > 0) {
+    return { ok: false, issues: gatewayTailscaleExternalIngressIssues };
   }
   const modelPolicyAllowIssues = collectModelPolicyAllowIssues(validatedConfig);
   if (modelPolicyAllowIssues.length > 0) {

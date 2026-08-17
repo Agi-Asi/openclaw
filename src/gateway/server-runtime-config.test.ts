@@ -320,6 +320,22 @@ describe("resolveGatewayRuntimeConfig", () => {
       ).rejects.toThrow("gateway.auth.mode=none cannot be used with gateway.tailscale.mode=serve");
     });
 
+    it("rejects an external Tailscale ingress port that collides with the ordinary gateway", async () => {
+      await expect(
+        resolveGatewayRuntimeConfig({
+          cfg: {
+            gateway: {
+              auth: TOKEN_AUTH,
+              tailscale: { mode: "serve", externalIngressPort: 18789 },
+            },
+          },
+          port: 18789,
+        }),
+      ).rejects.toThrow(
+        "gateway.tailscale.externalIngressPort must differ from the ordinary gateway port",
+      );
+    });
+
     it("respects explicit loopback config even inside a container", async () => {
       const fs = require("node:fs");
       vi.spyOn(fs, "accessSync").mockImplementation(() => undefined); // /.dockerenv exists

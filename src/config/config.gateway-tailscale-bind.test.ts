@@ -35,6 +35,34 @@ describe("gateway tailscale bind validation", () => {
     expect(funnelRes.ok).toBe(true);
   });
 
+  it("accepts a dedicated external ingress port when Tailscale ingress is enabled", () => {
+    const res = validateConfigObject({
+      gateway: {
+        bind: "loopback",
+        tailscale: { mode: "serve", externalIngressPort: 19012 },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("rejects a dedicated external ingress port when Tailscale ingress is off", () => {
+    const res = validateConfigObject({
+      gateway: {
+        tailscale: { mode: "off", externalIngressPort: 19012 },
+      },
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.issues).toContainEqual({
+        path: "gateway.tailscale.externalIngressPort",
+        message:
+          "gateway.tailscale.externalIngressPort requires gateway.tailscale.mode=serve or funnel",
+      });
+    }
+  });
+
   it("rejects the retired Tailscale serviceName key from canonical config", () => {
     const res = validateConfigObject({
       gateway: {

@@ -140,6 +140,7 @@ export const GatewayConfigSchema = z
     tailscale: z
       .strictObject({
         mode: z.union([z.literal("off"), z.literal("serve"), z.literal("funnel")]).optional(),
+        externalIngressPort: z.number().int().min(1).max(65535).optional(),
         preserveFunnel: z.boolean().optional(),
       })
       .optional(),
