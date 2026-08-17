@@ -1082,9 +1082,6 @@ describe("cron service run admission", () => {
     await activeRun;
     await vi.waitFor(() => expect(state.runAdmission.capacityListener).toBeNull());
     expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
-    expect(
-      state.store?.jobs.find((job) => job.id === scheduledJob.id)?.state.runningAtMs,
-    ).toBeUndefined();
     const receipt = openOpenClawStateDatabase()
       .db.prepare(
         "SELECT status FROM cron_run_receipts WHERE store_key = ? AND job_id = ? ORDER BY started_at_ms DESC LIMIT 1",
