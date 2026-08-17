@@ -90,7 +90,7 @@ describe("channel ingress drain watchdog", () => {
         queue,
         now: () => clock,
         adoptionStallTimeoutMs: 5_000,
-        deferredAdoptionStallTimeoutMs: null,
+        deferredClaimSettlement: "lifecycle",
         dispatchClaimedEvent: async (_event, lifecycle) => {
           adoptDeferred = lifecycle.onAdopted;
           return { kind: "deferred" };

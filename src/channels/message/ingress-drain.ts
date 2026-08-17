@@ -49,6 +49,7 @@ export const DEFAULT_INGRESS_ADOPTION_STALL_MS = 5 * 60 * 1000;
 const INGRESS_TOMBSTONE_RETRY_MAX_ATTEMPTS = 8;
 
 type DeferredLaneOccupancy = "hold" | "release";
+type DeferredClaimSettlement = "ingress-watchdog" | "lifecycle";
 
 export type CreateChannelIngressDrainOptions<
   TPayload,
@@ -80,12 +81,8 @@ export type CreateChannelIngressDrainOptions<
   ) => boolean;
   ownerId?: string;
   adoptionStallTimeoutMs?: number;
-  /**
-   * Adoption stall timeout after dispatch explicitly defers to another lifecycle.
-   * Undefined preserves the original claim-to-adoption deadline; null lets the
-   * deferred lifecycle own settlement without a wall-clock deadline.
-   */
-  deferredAdoptionStallTimeoutMs?: number | null;
+  /** Who expires a claim after explicit deferral. Default "ingress-watchdog". */
+  deferredClaimSettlement?: DeferredClaimSettlement;
   claimLeaseMs?: number;
   /**
    * Whether a claimed event keeps occupying its ingress serialization lane after
@@ -124,7 +121,7 @@ export function createChannelIngressDrain<
   registerLiveIngressDrainInstance(ownerId);
   const adoptionStallTimeoutMs =
     options.adoptionStallTimeoutMs ?? DEFAULT_INGRESS_ADOPTION_STALL_MS;
-  const deferredAdoptionStallTimeoutMs = options.deferredAdoptionStallTimeoutMs;
+  const deferredClaimSettlement = options.deferredClaimSettlement ?? "ingress-watchdog";
   const claimLeaseMs = options.claimLeaseMs ?? INGRESS_CLAIM_LEASE_MS;
   const now = options.now ?? Date.now;
   const formatError = options.formatError ?? formatErrorMessage;
@@ -384,14 +381,8 @@ export function createChannelIngressDrain<
     };
   };
 
-  const armStallWatchdog = (
-    state: ActiveHandlerState<TPayload, TMetadata>,
-    timeoutMs: number | null = adoptionStallTimeoutMs,
-  ) => {
+  const armStallWatchdog = (state: ActiveHandlerState<TPayload, TMetadata>) => {
     clearStallTimer(state);
-    if (timeoutMs === null) {
-      return;
-    }
     state.stallTimer = setTimeout(() => {
       // Pre-adoption only (dispatching OR deferred). Timer is not cleared by deferral.
       if (state.phase !== "dispatching" && state.phase !== "deferred") {
@@ -420,7 +411,7 @@ export function createChannelIngressDrain<
             `ingress drain: failed to dead-letter stalled event ${displayId}; holding claim: ${formatError(err)}`,
           );
         });
-    }, timeoutMs);
+    }, adoptionStallTimeoutMs);
     state.stallTimer.unref?.();
   };
 
@@ -474,8 +465,8 @@ export function createChannelIngressDrain<
         // Channels with a lifecycle-owned queue can transfer timeout ownership
         // without weakening the watchdog for ordinary dispatch stalls.
         state.phase = "deferred";
-        if (deferredAdoptionStallTimeoutMs !== undefined) {
-          armStallWatchdog(state, deferredAdoptionStallTimeoutMs);
+        if (deferredClaimSettlement === "lifecycle") {
+          clearStallTimer(state);
         }
         if (deferredLaneOccupancy === "release") {
           if (laneOwnerByKey.get(state.laneKey) === state) {
