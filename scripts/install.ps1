@@ -1730,14 +1730,16 @@ function Install-OpenClawFromGit {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     }
     $cmdPath = Join-Path $binDir "openclaw.cmd"
+    $cmdNodePath = $nodePath.Replace("%", "%%").Replace("!", "^!")
+    $cmdEntryPath = $entryPath.Replace("%", "%%").Replace("!", "^!")
     $cmdContents = @(
         "@echo off"
-        "if exist ""$nodePath"" goto openclaw_runtime_ready"
+        "if exist ""$cmdNodePath"" goto openclaw_runtime_ready"
         "echo [!] OpenClaw's validated Node.js runtime is missing. 1>&2"
         "echo [i] Re-run the OpenClaw installer to repair this Git installation. 1>&2"
         "exit /b 1"
         ":openclaw_runtime_ready"
-        """$nodePath"" ""$entryPath"" %*"
+        """$cmdNodePath"" ""$cmdEntryPath"" %*"
         ""
     ) -join "`r`n"
     Set-Content -Path $cmdPath -Value $cmdContents -NoNewline

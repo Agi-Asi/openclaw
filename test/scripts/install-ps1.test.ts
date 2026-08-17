@@ -1176,10 +1176,16 @@ describe("install.ps1 failure handling", () => {
     expect(gitInstallBody).toContain('$entryPath = Join-Path $RepoDir "dist\\\\entry.js"');
     expect(gitInstallBody).toContain("Test-Path $entryPath");
     expect(gitInstallBody).toContain('Write-Host "[!] OpenClaw build did not produce $entryPath"');
-    expect(gitInstallBody).toContain('if exist ""$nodePath"" goto openclaw_runtime_ready');
+    expect(gitInstallBody).toContain(
+      '$cmdNodePath = $nodePath.Replace("%", "%%").Replace("!", "^!")',
+    );
+    expect(gitInstallBody).toContain(
+      '$cmdEntryPath = $entryPath.Replace("%", "%%").Replace("!", "^!")',
+    );
+    expect(gitInstallBody).toContain('if exist ""$cmdNodePath"" goto openclaw_runtime_ready');
     expect(gitInstallBody).toContain("OpenClaw's validated Node.js runtime is missing");
     expect(gitInstallBody).toContain("Re-run the OpenClaw installer");
-    expect(gitInstallBody).toContain('""$nodePath"" ""$entryPath"" %*');
+    expect(gitInstallBody).toContain('""$cmdNodePath"" ""$cmdEntryPath"" %*');
     expect(gitInstallBody).not.toContain("& $pnpmCommand -C $RepoDir install");
     expect(gitInstallBody).not.toContain('node ""$RepoDir\\\\dist\\\\entry.js"" %*');
   });
@@ -1193,7 +1199,8 @@ describe("install.ps1 failure handling", () => {
       [
         scriptWithoutEntryPoint,
         "",
-        `$sandbox = ${toPowerShellSingleQuotedLiteral(join(tempDir, "sandbox with spaces"))}`,
+        `$testRoot = ${toPowerShellSingleQuotedLiteral(join(tempDir, "sandbox with spaces"))}`,
+        "$sandbox = Join-Path $testRoot 'paths %OPENCLAW_TEST_PERCENT% !openclaw_test_bang!'",
         "$originalPath = $env:Path",
         "$originalUserProfile = $env:USERPROFILE",
         "try {",
@@ -1201,7 +1208,7 @@ describe("install.ps1 failure handling", () => {
         "  $repo = Join-Path $sandbox 'repo with spaces'",
         "  $entryDir = Join-Path $repo 'dist'",
         "  $entryPath = Join-Path $repo 'dist\\\\entry.js'",
-        "  $homeDir = Join-Path $sandbox 'home with spaces'",
+        "  $homeDir = Join-Path $testRoot 'home with spaces'",
         "  New-Item -ItemType Directory -Force -Path (Join-Path $repo '.git'), $entryDir, $homeDir | Out-Null",
         "  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
         "  [System.IO.File]::WriteAllText($entryPath, 'process.stdout.write(\"approved-node:\" + process.execPath);', $utf8NoBom)",
@@ -1227,16 +1234,19 @@ describe("install.ps1 failure handling", () => {
         "  $result = Install-OpenClawFromGit -RepoDir $repo -SkipUpdate",
         "  if (-not $result) { throw 'Git install failed' }",
         "  $wrapperPath = Join-Path $homeDir '.local\\bin\\openclaw.cmd'",
-        '  $expectedLine = "`"$validatedNodePath`" `"$entryPath`" %*"',
+        "  $cmdNodePath = $validatedNodePath.Replace('%', '%%').Replace('!', '^!')",
+        "  $cmdEntryPath = $entryPath.Replace('%', '%%').Replace('!', '^!')",
+        '  $expectedLine = "`"$cmdNodePath`" `"$cmdEntryPath`" %*"',
         "  $wrapperLines = @(Get-Content -LiteralPath $wrapperPath)",
         '  if ($wrapperLines[-1] -ne $expectedLine) { throw "Wrapper=$($wrapperLines[-1]) Expected=$expectedLine" }',
-        '  if ($wrapperLines[1] -ne "if exist `"$validatedNodePath`" goto openclaw_runtime_ready") { throw "Missing runtime guard: $($wrapperLines[1])" }',
+        '  if ($wrapperLines[1] -ne "if exist `"$cmdNodePath`" goto openclaw_runtime_ready") { throw "Missing runtime guard: $($wrapperLines[1])" }',
         "  if ($isWindowsHost) {",
         "    $shadowDir = Join-Path $sandbox 'shadow-node'",
         "    New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null",
         "    [System.IO.File]::WriteAllText((Join-Path $shadowDir 'node.cmd'), \"@echo off`r`necho shadow-node`r`nexit /b 47`r`n\", $utf8NoBom)",
         '    $env:Path = "$shadowDir;$originalPath"',
-        "    $output = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })",
+        "    $cmdLine = 'call \"' + $wrapperPath + '\" --version'",
+        "    $output = @(& $env:ComSpec /d /v:on /c $cmdLine 2>&1 | ForEach-Object { $_.ToString() })",
         "    $exitCode = $LASTEXITCODE",
         '    $text = $output -join "`n"',
         '    if ($exitCode -ne 0) { throw "Wrapper exit=$exitCode output=$text" }',
@@ -1254,7 +1264,7 @@ describe("install.ps1 failure handling", () => {
         "} finally {",
         "  $env:Path = $originalPath",
         "  $env:USERPROFILE = $originalUserProfile",
-        "  Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue",
+        "  Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue",
         "}",
         "",
       ].join("\n"),
