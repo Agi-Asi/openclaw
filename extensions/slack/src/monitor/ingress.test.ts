@@ -211,13 +211,12 @@ function createReceiverEventWithBody(body: Record<string, unknown>): ReceiverEve
 function attachIngress(
   queue: ChannelIngressQueue<SlackIngressPayload>,
   processEvent: (event: ReceiverEvent) => Promise<void>,
-  options: { adoptionStallTimeoutMs?: number } = {},
 ) {
   const ingress = createSlackDurableIngress({
     accountId: "default",
     queue,
     pollIntervalMs: 60_000,
-    adoptionStallTimeoutMs: options.adoptionStallTimeoutMs ?? 5_000,
+    adoptionStallTimeoutMs: 5_000,
   });
   const harness = createReceiverHarness();
   ingress.wrapReceiver(harness.receiver).init({ processEvent } as App);
@@ -303,7 +302,7 @@ describe("Slack durable ingress", () => {
     });
   });
 
-  it("keeps deferred work recoverable while later same-lane events start", async () => {
+  it("releases a deferred lane while preserving its claim until adoption", async () => {
     await withQueue(async (queue) => {
       const starts: string[] = [];
       let adoptDeferred: (() => void | Promise<void>) | undefined;
@@ -318,18 +317,13 @@ describe("Slack durable ingress", () => {
         }
         await lifecycle?.onAdopted();
       });
-      const { ingress, receive } = attachIngress(queue, processEvent, {
-        adoptionStallTimeoutMs: 25,
-      });
+      const { ingress, receive } = attachIngress(queue, processEvent);
       ingress.start();
 
       await receive(createReceiverEvent("Ev-deferred"));
       await vi.waitFor(() => expect(starts).toEqual(["Ev-deferred"]));
       await receive(createReceiverEvent("Ev-next", undefined, { ts: "1700000000.000200" }));
       await vi.waitFor(() => expect(starts).toEqual(["Ev-deferred", "Ev-next"]));
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 75);
-      });
 
       expect(await queue.listFailed?.()).toEqual([]);
       expect((await queue.listClaims()).map((claim) => claim.id)).toEqual(["Ev-deferred"]);

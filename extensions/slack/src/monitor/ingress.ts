@@ -299,10 +299,9 @@ export function createSlackDurableIngress(
     retention: "standard",
     appendRetryDelaysMs: [0],
     drain: {
-      // Reply-lane deferral has explicit adopt/fail/cancel/abandon settlement.
-      // Keep its durable claim recoverable without blocking later Slack events.
+      // Reply-lane deferral keeps the shared adoption watchdog and durable claim,
+      // but must not block later Slack events on the same ingress lane.
       deferredLaneOccupancy: "release",
-      deferredClaimSettlement: "lifecycle",
       resolveNonRetryableFailure: resolveSlackIngressNonRetryableFailure,
       // Shipped Slack rows did not store lanes, so replay still derives them from payloads.
       deriveLaneKey: (record) =>

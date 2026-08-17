@@ -49,7 +49,6 @@ export const DEFAULT_INGRESS_ADOPTION_STALL_MS = 5 * 60 * 1000;
 const INGRESS_TOMBSTONE_RETRY_MAX_ATTEMPTS = 8;
 
 type DeferredLaneOccupancy = "hold" | "release";
-type DeferredClaimSettlement = "ingress-watchdog" | "lifecycle";
 
 export type CreateChannelIngressDrainOptions<
   TPayload,
@@ -81,8 +80,6 @@ export type CreateChannelIngressDrainOptions<
   ) => boolean;
   ownerId?: string;
   adoptionStallTimeoutMs?: number;
-  /** Who expires a claim after explicit deferral. Default "ingress-watchdog". */
-  deferredClaimSettlement?: DeferredClaimSettlement;
   claimLeaseMs?: number;
   /**
    * Whether a claimed event keeps occupying its ingress serialization lane after
@@ -121,7 +118,6 @@ export function createChannelIngressDrain<
   registerLiveIngressDrainInstance(ownerId);
   const adoptionStallTimeoutMs =
     options.adoptionStallTimeoutMs ?? DEFAULT_INGRESS_ADOPTION_STALL_MS;
-  const deferredClaimSettlement = options.deferredClaimSettlement ?? "ingress-watchdog";
   const claimLeaseMs = options.claimLeaseMs ?? INGRESS_CLAIM_LEASE_MS;
   const now = options.now ?? Date.now;
   const formatError = options.formatError ?? formatErrorMessage;
@@ -461,13 +457,8 @@ export function createChannelIngressDrain<
         if (state.phase !== "dispatching") {
           return;
         }
-        // Deferred always holds the durable claim until adoption or abandonment.
-        // Channels with a lifecycle-owned queue can transfer timeout ownership
-        // without weakening the watchdog for ordinary dispatch stalls.
+        // Deferred holds the claim; watchdog remains armed until adoption or abandon.
         state.phase = "deferred";
-        if (deferredClaimSettlement === "lifecycle") {
-          clearStallTimer(state);
-        }
         if (deferredLaneOccupancy === "release") {
           if (laneOwnerByKey.get(state.laneKey) === state) {
             laneOwnerByKey.delete(state.laneKey);
