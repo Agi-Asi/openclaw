@@ -5287,6 +5287,10 @@ button.chat-pr__diff {
     gap: 6px;
   }
 
+  .session-suggestions {
+    width: calc(100% - 8px);
+  }
+
   .chat-run-error {
     width: calc(100% - 8px);
     margin: 6px 4px 0;
