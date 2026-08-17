@@ -3,9 +3,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { isSupportedOpenClawNodeVersion } from "../../node-version.mjs";
 import { NODE_RELEASE_VERSION_CASES } from "../helpers/node-version-cases.js";
+import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 import { createScriptTestHarness } from "./test-helpers.js";
 
 const SCRIPT_PATH = "scripts/install.ps1";
@@ -91,6 +92,7 @@ function createDeferredPathSuccessFixture(source: string): string {
 
 describe("install.ps1 failure handling", () => {
   const harness = createScriptTestHarness();
+  const tempDirs = useAutoCleanupTempDirTracker(afterEach);
   const source = readFileSync(SCRIPT_PATH, "utf8");
   const powershell = findPowerShell();
   const runIfPowerShell = powershell ? it : it.skip;
@@ -1182,87 +1184,83 @@ describe("install.ps1 failure handling", () => {
   });
 
   runIfPowerShell("binds git wrappers to the validated Node runtime", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "openclaw-install-ps1-node-binding-"));
+    const tempDir = tempDirs.make("openclaw-install-ps1-node-binding-");
     const scriptPath = join(tempDir, "node-binding.ps1");
-    try {
-      const scriptWithoutEntryPoint = source.replace(ENTRYPOINT_RE, "");
-      writeFileSync(
-        scriptPath,
-        [
-          scriptWithoutEntryPoint,
-          "",
-          `$sandbox = ${toPowerShellSingleQuotedLiteral(join(tempDir, "sandbox with spaces"))}`,
-          "$originalPath = $env:Path",
-          "$originalUserProfile = $env:USERPROFILE",
-          "try {",
-          "  $isWindowsHost = $IsWindows -or $env:OS -eq 'Windows_NT'",
-          "  $repo = Join-Path $sandbox 'repo with spaces'",
-          "  $entryDir = Join-Path $repo 'dist'",
-          "  $entryPath = Join-Path $repo 'dist\\\\entry.js'",
-          "  $homeDir = Join-Path $sandbox 'home with spaces'",
-          "  New-Item -ItemType Directory -Force -Path (Join-Path $repo '.git'), $entryDir, $homeDir | Out-Null",
-          "  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
-          "  [System.IO.File]::WriteAllText($entryPath, 'process.stdout.write(\"approved-node:\" + process.execPath);', $utf8NoBom)",
-          "  $env:USERPROFILE = $homeDir",
-          "  function Ensure-Git { return $true }",
-          "  function Resolve-GitCheckoutPath { param([string]$RepoDir) return $RepoDir }",
-          "  function Assert-GitCheckoutHasCommit { param([string]$RepoDir) }",
-          "  function Ensure-Pnpm { param([string]$RepoDir) }",
-          "  function Remove-LegacySubmodule { param([string]$RepoDir) }",
-          "  function Get-PnpmCommandPath { return 'fake-pnpm' }",
-          "  function fake-pnpm { $global:LASTEXITCODE = 0 }",
-          "  function Add-ToUserPath { param([string]$PathEntry) return $false }",
-          "  if ($isWindowsHost) {",
-          "    $approvedNodeDir = Join-Path $sandbox 'approved node'",
-          "    New-Item -ItemType Directory -Force -Path $approvedNodeDir | Out-Null",
-          "    $approvedNodePath = Join-Path $approvedNodeDir 'node.exe'",
-          "    Copy-Item -LiteralPath (Get-Command node -CommandType Application).Source -Destination $approvedNodePath",
-          '    $env:Path = "$approvedNodeDir;$originalPath"',
-          "  }",
-          "  if (-not (Check-Node)) { throw 'current Node runtime did not validate' }",
-          "  $validatedNodePath = $script:ValidatedNodePath",
-          '  if ($isWindowsHost -and $validatedNodePath -ne $approvedNodePath) { throw "Validated=$validatedNodePath Expected=$approvedNodePath" }',
-          "  $result = Install-OpenClawFromGit -RepoDir $repo -SkipUpdate",
-          "  if (-not $result) { throw 'Git install failed' }",
-          "  $wrapperPath = Join-Path $homeDir '.local\\bin\\openclaw.cmd'",
-          '  $expectedLine = "`"$validatedNodePath`" `"$entryPath`" %*"',
-          "  $wrapperLines = @(Get-Content -LiteralPath $wrapperPath)",
-          '  if ($wrapperLines[1] -ne $expectedLine) { throw "Wrapper=$($wrapperLines[1]) Expected=$expectedLine" }',
-          "  if ($isWindowsHost) {",
-          "    $shadowDir = Join-Path $sandbox 'shadow-node'",
-          "    New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null",
-          "    [System.IO.File]::WriteAllText((Join-Path $shadowDir 'node.cmd'), \"@echo off`r`necho shadow-node`r`nexit /b 47`r`n\", $utf8NoBom)",
-          '    $env:Path = "$shadowDir;$originalPath"',
-          "    $output = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })",
-          "    $exitCode = $LASTEXITCODE",
-          '    $text = $output -join "`n"',
-          '    if ($exitCode -ne 0) { throw "Wrapper exit=$exitCode output=$text" }',
-          "    if ($text -notmatch '^approved-node:') { throw \"Validated runtime did not run: $text\" }",
-          "    if ($text -match 'shadow-node') { throw \"PATH shadow ran: $text\" }",
-          "  }",
-          "} finally {",
-          "  $env:Path = $originalPath",
-          "  $env:USERPROFILE = $originalUserProfile",
-          "  Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue",
-          "}",
-          "",
-        ].join("\n"),
-      );
+    const scriptWithoutEntryPoint = source.replace(ENTRYPOINT_RE, "");
+    writeFileSync(
+      scriptPath,
+      [
+        scriptWithoutEntryPoint,
+        "",
+        `$sandbox = ${toPowerShellSingleQuotedLiteral(join(tempDir, "sandbox with spaces"))}`,
+        "$originalPath = $env:Path",
+        "$originalUserProfile = $env:USERPROFILE",
+        "try {",
+        "  $isWindowsHost = $IsWindows -or $env:OS -eq 'Windows_NT'",
+        "  $repo = Join-Path $sandbox 'repo with spaces'",
+        "  $entryDir = Join-Path $repo 'dist'",
+        "  $entryPath = Join-Path $repo 'dist\\\\entry.js'",
+        "  $homeDir = Join-Path $sandbox 'home with spaces'",
+        "  New-Item -ItemType Directory -Force -Path (Join-Path $repo '.git'), $entryDir, $homeDir | Out-Null",
+        "  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
+        "  [System.IO.File]::WriteAllText($entryPath, 'process.stdout.write(\"approved-node:\" + process.execPath);', $utf8NoBom)",
+        "  $env:USERPROFILE = $homeDir",
+        "  function Ensure-Git { return $true }",
+        "  function Resolve-GitCheckoutPath { param([string]$RepoDir) return $RepoDir }",
+        "  function Assert-GitCheckoutHasCommit { param([string]$RepoDir) }",
+        "  function Ensure-Pnpm { param([string]$RepoDir) }",
+        "  function Remove-LegacySubmodule { param([string]$RepoDir) }",
+        "  function Get-PnpmCommandPath { return 'fake-pnpm' }",
+        "  function fake-pnpm { $global:LASTEXITCODE = 0 }",
+        "  function Add-ToUserPath { param([string]$PathEntry) return $false }",
+        "  if ($isWindowsHost) {",
+        "    $approvedNodeDir = Join-Path $sandbox 'approved node'",
+        "    New-Item -ItemType Directory -Force -Path $approvedNodeDir | Out-Null",
+        "    $approvedNodePath = Join-Path $approvedNodeDir 'node.exe'",
+        "    Copy-Item -LiteralPath (Get-Command node -CommandType Application).Source -Destination $approvedNodePath",
+        '    $env:Path = "$approvedNodeDir;$originalPath"',
+        "  }",
+        "  if (-not (Check-Node)) { throw 'current Node runtime did not validate' }",
+        "  $validatedNodePath = $script:ValidatedNodePath",
+        '  if ($isWindowsHost -and $validatedNodePath -ne $approvedNodePath) { throw "Validated=$validatedNodePath Expected=$approvedNodePath" }',
+        "  $result = Install-OpenClawFromGit -RepoDir $repo -SkipUpdate",
+        "  if (-not $result) { throw 'Git install failed' }",
+        "  $wrapperPath = Join-Path $homeDir '.local\\bin\\openclaw.cmd'",
+        '  $expectedLine = "`"$validatedNodePath`" `"$entryPath`" %*"',
+        "  $wrapperLines = @(Get-Content -LiteralPath $wrapperPath)",
+        '  if ($wrapperLines[1] -ne $expectedLine) { throw "Wrapper=$($wrapperLines[1]) Expected=$expectedLine" }',
+        "  if ($isWindowsHost) {",
+        "    $shadowDir = Join-Path $sandbox 'shadow-node'",
+        "    New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null",
+        "    [System.IO.File]::WriteAllText((Join-Path $shadowDir 'node.cmd'), \"@echo off`r`necho shadow-node`r`nexit /b 47`r`n\", $utf8NoBom)",
+        '    $env:Path = "$shadowDir;$originalPath"',
+        "    $output = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })",
+        "    $exitCode = $LASTEXITCODE",
+        '    $text = $output -join "`n"',
+        '    if ($exitCode -ne 0) { throw "Wrapper exit=$exitCode output=$text" }',
+        "    if ($text -notmatch '^approved-node:') { throw \"Validated runtime did not run: $text\" }",
+        "    if ($text -match 'shadow-node') { throw \"PATH shadow ran: $text\" }",
+        "  }",
+        "} finally {",
+        "  $env:Path = $originalPath",
+        "  $env:USERPROFILE = $originalUserProfile",
+        "  Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue",
+        "}",
+        "",
+      ].join("\n"),
+    );
 
-      const result = runPowerShell([
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        scriptPath,
-      ]);
+    const result = runPowerShell([
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+    ]);
 
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    } finally {
-      rmSync(tempDir, { force: true, recursive: true });
-    }
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
   });
 
   it("cleans legacy git submodules only from the selected git checkout", () => {
