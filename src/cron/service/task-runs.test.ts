@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import { getDetachedTaskLifecycleRuntime } from "../../tasks/detached-task-runtime.js";
 import * as taskExecutor from "../../tasks/task-executor.js";
-import { finalizeTaskRunByRunIdCore } from "../../tasks/task-executor.js";
 import * as taskRegistry from "../../tasks/task-registry.js";
 import { markTaskLostById } from "../../tasks/task-registry.js";
 import { listTaskRegistryRecordsByRuntimeSourceIdFromSqlite } from "../../tasks/task-registry.store.sqlite.js";
@@ -412,7 +411,7 @@ describe("cron task run terminal records", () => {
     );
   });
 
-  it("keeps operator cancellation while attaching terminal run history", async () => {
+  it("keeps operator cancellation reason when webhook delivery is interrupted", async () => {
     await withOpenClawTestState(
       { layout: "state-only", prefix: "openclaw-cron-cancelled-task-" },
       async () => {
@@ -443,13 +442,12 @@ describe("cron task run terminal records", () => {
         if (!taskRunId) {
           throw new Error("expected cron task run id");
         }
-        finalizeTaskRunByRunIdCore({
+        taskExecutor.finalizeTaskRunByRunIdCore({
           runId: taskRunId,
           runtime: "cron",
           status: "cancelled",
           endedAt: startedAt + 50,
-          error: "cancelled by operator",
-          terminalSummary: "Cancelled by operator.",
+          error: "Cancelled by operator.",
         });
 
         tryFinishCronTaskRun(state, {
@@ -460,6 +458,9 @@ describe("cron task run terminal records", () => {
             action: "finished",
             job,
             status: "ok",
+            summary: "payload complete",
+            delivered: false,
+            deliveryError: "cron webhook delivery cancelled: Cancelled by operator.",
             runAtMs: startedAt,
             durationMs: 100,
           },
@@ -472,9 +473,9 @@ describe("cron task run terminal records", () => {
         expect(row).toMatchObject({
           status: "cancelled",
           endedAt: startedAt + 100,
+          error: "Cancelled by operator.",
           detail: { kind: "cron-run", status: "ok", durationMs: 100 },
         });
-        expect(row?.error).toBeUndefined();
         expect(row?.terminalSummary).toBeUndefined();
         expect(
           readCronTaskRunHistoryPage({
@@ -486,6 +487,9 @@ describe("cron task run terminal records", () => {
             jobId: job.id,
             status: "ok",
             error: undefined,
+            summary: "payload complete",
+            delivered: false,
+            deliveryError: "cron webhook delivery cancelled: Cancelled by operator.",
           }),
         ]);
       },
@@ -810,7 +814,7 @@ describe("cron task run terminal records", () => {
           }),
         );
         expect(recovery.taskRunId).toBe(legacyRunId);
-        finalizeTaskRunByRunIdCore({
+        taskExecutor.finalizeTaskRunByRunIdCore({
           runId: legacyRunId,
           runtime: "cron",
           status: "timed_out",
