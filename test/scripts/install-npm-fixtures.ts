@@ -15,7 +15,7 @@ export function writeNpmInstallRetryFixture(path: string) {
       'if [[ "$is_install" -eq 0 ]]; then exit 0; fi',
       'spec="${!#}"',
       'printf "%s\\n" "$spec" >> "$NPM_FAKE_CALLS"',
-      'attempt="$(wc -l < "$NPM_FAKE_CALLS")"',
+      'attempt="$(awk \'END { print NR }\' "$NPM_FAKE_CALLS")"',
       'if [[ "$NPM_FAKE_OUTCOME" == "success" || "$NPM_FAKE_OUTCOME" == "transient" && "$attempt" -eq 2 ]]; then',
       '  if [[ -n "${NPM_FAKE_PACKAGE_DIR:-}" ]]; then',
       '    mkdir -p "$NPM_FAKE_PACKAGE_DIR/dist"',
