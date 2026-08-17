@@ -279,6 +279,34 @@ async function readSlotColdOpenOutcome(
 }
 
 suite.define(() => {
+  it("fills the detail slot when a background task opens", async () => {
+    const context = await suite.newBrowserContext({ serviceWorkers: "block" });
+    try {
+      const page = await context.newPage();
+      const choices = await openColdSidebar(page, populatedColdOpenScenario());
+      await choices.filter({ hasText: "Tasks" }).click();
+      await page.locator(".chat-tasks-rail__task-open").click();
+
+      const detailSlot = page.locator('.side-panel__panel[data-panel-slot="detail"]');
+      const taskDetail = detailSlot.locator(":scope > .chat-task-detail");
+      await taskDetail.waitFor();
+
+      const widths = await detailSlot.evaluate((slot) => {
+        const detail = slot.querySelector<HTMLElement>(":scope > .chat-task-detail");
+        if (!detail) {
+          throw new Error("Task detail must render as the detail slot root");
+        }
+        return {
+          detail: detail.getBoundingClientRect().width,
+          slot: slot.getBoundingClientRect().width,
+        };
+      });
+      expect(widths.detail).toBeCloseTo(widths.slot, 0);
+    } finally {
+      await suite.closeBrowserContext(context);
+    }
+  });
+
   it("preserves the production header-action shapes for Side chat and Discussion", async () => {
     const context = await suite.newBrowserContext({ serviceWorkers: "block" });
     const page = await context.newPage();
