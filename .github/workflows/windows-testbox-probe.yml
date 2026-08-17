@@ -297,6 +297,7 @@ jobs:
           $originalPercent = $env:OPENCLAW_PROOF_PERCENT
           $originalBang = $env:openclaw_proof_bang
           $proofRepo = Join-Path $proofRoot "repo"
+          $nodeDir = Join-Path $env:RUNNER_TEMP "openclaw-git-proof-node-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $proofWorktreeAdded = $false
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           try {
@@ -312,7 +313,6 @@ jobs:
             $proofWorktreeAdded = $true
 
             $nodeSource = (Get-Command node -ErrorAction Stop).Source
-            $nodeDir = Join-Path $proofRoot "validated-node"
             $proofHome = Join-Path $proofRoot "home"
             New-Item -ItemType Directory -Force -Path $nodeDir, $proofHome | Out-Null
             $validatedNode = Join-Path $nodeDir "node.exe"
@@ -321,6 +321,10 @@ jobs:
             $env:HOME = $proofHome
             $env:USERPROFILE = $proofHome
             $env:Path = "$nodeDir;$originalPath"
+            $resolvedNode = (& powershell.exe -NoProfile -Command '(Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source').Trim()
+            if ($LASTEXITCODE -ne 0 -or $resolvedNode -ine $validatedNode) {
+              throw "Child PowerShell resolved Node to '$resolvedNode', expected '$validatedNode'."
+            }
 
             $installerLog = Join-Path $artifactDir "installer.log"
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 `
@@ -337,9 +341,10 @@ jobs:
             Copy-Item -LiteralPath $wrapperPath -Destination (Join-Path $artifactDir "openclaw.cmd")
             $wrapper = Get-Content -LiteralPath $wrapperPath -Raw
             $escapedPaths =
-              $wrapper.Contains("^^openclaw_proof_caret^^") -and
+              $wrapper.Contains("^openclaw_proof_caret^") -and
               $wrapper.Contains("%%OPENCLAW_PROOF_PERCENT%%") -and
-              $wrapper.Contains("^!openclaw_proof_bang^!")
+              $wrapper.Contains("!openclaw_proof_bang!") -and
+              $wrapper.Contains("setlocal DisableDelayedExpansion")
             if (-not $escapedPaths) {
               throw "Generated wrapper did not preserve CMD metacharacters."
             }
@@ -353,18 +358,28 @@ jobs:
             $env:Path = "$shadowDir;$originalPath"
             Push-Location -LiteralPath (Split-Path -Parent $wrapperPath)
             try {
-              $wrapperOutput = @(& $env:ComSpec /d /v:on /c 'call openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })
+              $wrapperOutput = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })
               $wrapperExit = $LASTEXITCODE
               $wrapperText = $wrapperOutput -join "`n"
               if ($wrapperExit -ne 0) {
-                throw "Generated wrapper exited $wrapperExit`: $wrapperText"
+                throw "Generated wrapper exited $wrapperExit under PowerShell: $wrapperText"
               }
               if ($wrapperText.Contains("shadow-node")) {
                 throw "Generated wrapper selected the PATH-shadow Node runtime."
               }
 
+              $cmdOutput = @(& $env:ComSpec /d /v:on /c 'openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })
+              $cmdExit = $LASTEXITCODE
+              $cmdText = $cmdOutput -join "`n"
+              if ($cmdExit -ne 0) {
+                throw "Generated wrapper exited $cmdExit under CMD: $cmdText"
+              }
+              if ($cmdText.Contains("shadow-node")) {
+                throw "Generated wrapper selected the PATH-shadow Node runtime under CMD."
+              }
+
               Remove-Item -LiteralPath $validatedNode -Force
-              $missingOutput = @(& $env:ComSpec /d /v:on /c 'call openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })
+              $missingOutput = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })
               $missingExit = $LASTEXITCODE
               $missingText = $missingOutput -join "`n"
               if ($missingExit -ne 1) {
@@ -388,9 +403,10 @@ jobs:
               installerExit = $installerExit
               missingRuntimeExit = $missingExit
               missingRuntimeFailedClosed = $true
-              wrapperExit = $wrapperExit
+              wrapperCmdExit = $cmdExit
               wrapperEscapedCaretPercentAndBang = $escapedPaths
               wrapperIgnoredPathShadow = $true
+              wrapperPowerShellExit = $wrapperExit
               version = $wrapperOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
             } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDir "proof.json")
           } finally {
@@ -404,6 +420,7 @@ jobs:
               git worktree prune
             }
             Remove-Item -LiteralPath $proofRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $nodeDir -Recurse -Force -ErrorAction SilentlyContinue
           }
 
       - name: Upload Windows Git install launcher proof

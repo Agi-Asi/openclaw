@@ -1177,11 +1177,10 @@ describe("install.ps1 failure handling", () => {
     expect(gitInstallBody).toContain("Test-Path $entryPath");
     expect(gitInstallBody).toContain('Write-Host "[!] OpenClaw build did not produce $entryPath"');
     const cmdLiteralBody = extractFunctionBody(source, "ConvertTo-CmdLiteral");
-    expect(cmdLiteralBody).toContain(
-      '$Value.Replace("^", "^^").Replace("%", "%%").Replace("!", "^!")',
-    );
+    expect(cmdLiteralBody).toContain('$Value.Replace("%", "%%")');
     expect(gitInstallBody).toContain("$cmdNodePath = ConvertTo-CmdLiteral -Value $nodePath");
     expect(gitInstallBody).toContain("$cmdEntryPath = ConvertTo-CmdLiteral -Value $entryPath");
+    expect(gitInstallBody).toContain('"setlocal DisableDelayedExpansion"');
     expect(gitInstallBody).toContain('if exist ""$cmdNodePath"" goto openclaw_runtime_ready');
     expect(gitInstallBody).toContain("OpenClaw's validated Node.js runtime is missing");
     expect(gitInstallBody).toContain("Re-run the OpenClaw installer");
@@ -1233,12 +1232,13 @@ describe("install.ps1 failure handling", () => {
         "  $result = Install-OpenClawFromGit -RepoDir $repo -SkipUpdate",
         "  if (-not $result) { throw 'Git install failed' }",
         "  $wrapperPath = Join-Path $homeDir '.local\\bin\\openclaw.cmd'",
-        "  $cmdNodePath = $validatedNodePath.Replace('^', '^^').Replace('%', '%%').Replace('!', '^!')",
-        "  $cmdEntryPath = $entryPath.Replace('^', '^^').Replace('%', '%%').Replace('!', '^!')",
+        "  $cmdNodePath = $validatedNodePath.Replace('%', '%%')",
+        "  $cmdEntryPath = $entryPath.Replace('%', '%%')",
         '  $expectedLine = "`"$cmdNodePath`" `"$cmdEntryPath`" %*"',
         "  $wrapperLines = @(Get-Content -LiteralPath $wrapperPath)",
         '  if ($wrapperLines[-1] -ne $expectedLine) { throw "Wrapper=$($wrapperLines[-1]) Expected=$expectedLine" }',
-        '  if ($wrapperLines[1] -ne "if exist `"$cmdNodePath`" goto openclaw_runtime_ready") { throw "Missing runtime guard: $($wrapperLines[1])" }',
+        '  if ($wrapperLines[1] -ne "setlocal DisableDelayedExpansion") { throw "Missing delayed expansion guard: $($wrapperLines[1])" }',
+        '  if ($wrapperLines[2] -ne "if exist `"$cmdNodePath`" goto openclaw_runtime_ready") { throw "Missing runtime guard: $($wrapperLines[2])" }',
         "  if ($isWindowsHost) {",
         "    $shadowDir = Join-Path $sandbox 'shadow-node'",
         "    New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null",
@@ -1246,14 +1246,22 @@ describe("install.ps1 failure handling", () => {
         '    $env:Path = "$shadowDir;$originalPath"',
         "    Push-Location -LiteralPath (Split-Path -Parent $wrapperPath)",
         "    try {",
-        "      $output = @(& $env:ComSpec /d /v:on /c 'call openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })",
+        "      $env:OPENCLAW_TEST_PERCENT = 'expanded-away'",
+        "      $env:openclaw_test_bang = 'expanded-away'",
+        "      $output = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })",
         "      $exitCode = $LASTEXITCODE",
         '      $text = $output -join "`n"',
         '      if ($exitCode -ne 0) { throw "Wrapper exit=$exitCode output=$text" }',
         "      if ($text -notmatch '^approved-node:') { throw \"Validated runtime did not run: $text\" }",
         "      if ($text -match 'shadow-node') { throw \"PATH shadow ran: $text\" }",
+        "      $cmdOutput = @(& $env:ComSpec /d /v:on /c 'openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })",
+        "      $cmdExitCode = $LASTEXITCODE",
+        '      $cmdText = $cmdOutput -join "`n"',
+        '      if ($cmdExitCode -ne 0) { throw "CMD wrapper exit=$cmdExitCode output=$cmdText" }',
+        "      if ($cmdText -notmatch '^approved-node:') { throw \"Validated runtime did not run under CMD: $cmdText\" }",
+        "      if ($cmdText -match 'shadow-node') { throw \"PATH shadow ran under CMD: $cmdText\" }",
         "      Remove-Item -LiteralPath $validatedNodePath -Force",
-        "      $missingOutput = @(& $env:ComSpec /d /v:on /c 'call openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })",
+        "      $missingOutput = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })",
         "      $missingExitCode = $LASTEXITCODE",
         '      $missingText = $missingOutput -join "`n"',
         '      if ($missingExitCode -ne 1) { throw "Missing runtime exit=$missingExitCode output=$missingText" }',

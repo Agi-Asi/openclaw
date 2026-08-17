@@ -1616,7 +1616,8 @@ function New-TransactionalGitCheckout {
 function ConvertTo-CmdLiteral {
     param([string]$Value)
 
-    return $Value.Replace("^", "^^").Replace("%", "%%").Replace("!", "^!")
+    # Quoted paths preserve carets, and the wrapper disables delayed expansion for bangs.
+    return $Value.Replace("%", "%%")
 }
 
 function Install-OpenClawFromGit {
@@ -1741,6 +1742,7 @@ function Install-OpenClawFromGit {
     $cmdEntryPath = ConvertTo-CmdLiteral -Value $entryPath
     $cmdContents = @(
         "@echo off"
+        "setlocal DisableDelayedExpansion"
         "if exist ""$cmdNodePath"" goto openclaw_runtime_ready"
         "echo [!] OpenClaw's validated Node.js runtime is missing. 1>&2"
         "echo [i] Re-run the OpenClaw installer to repair this Git installation. 1>&2"
