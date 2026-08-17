@@ -313,28 +313,16 @@ function Test-NodeSqliteSupported {
     )
 }
 
-function Resolve-NodeCommandPath {
+function Check-Node {
+    $script:ValidatedNodePath = $null
     try {
         $nodeCommand = Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1
         $nodePath = $nodeCommand.Source
         if ([string]::IsNullOrWhiteSpace($nodePath)) {
-            return $null
+            throw "Node.js not found"
         }
         $nodePath = [System.IO.Path]::GetFullPath($nodePath)
         if (-not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
-            return $null
-        }
-        return $nodePath
-    } catch {
-        return $null
-    }
-}
-
-function Check-Node {
-    $script:ValidatedNodePath = $null
-    try {
-        $nodePath = Resolve-NodeCommandPath
-        if (-not $nodePath) {
             throw "Node.js not found"
         }
         $nodeVersion = (& $nodePath -v 2>$null)
@@ -1742,7 +1730,16 @@ function Install-OpenClawFromGit {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     }
     $cmdPath = Join-Path $binDir "openclaw.cmd"
-    $cmdContents = "@echo off`r`n""$nodePath"" ""$entryPath"" %*`r`n"
+    $cmdContents = @(
+        "@echo off"
+        "if exist ""$nodePath"" goto openclaw_runtime_ready"
+        "echo [!] OpenClaw's validated Node.js runtime is missing. 1>&2"
+        "echo [i] Re-run the OpenClaw installer to repair this Git installation. 1>&2"
+        "exit /b 1"
+        ":openclaw_runtime_ready"
+        """$nodePath"" ""$entryPath"" %*"
+        ""
+    ) -join "`r`n"
     Set-Content -Path $cmdPath -Value $cmdContents -NoNewline
 
     if (Add-ToUserPath $binDir) {

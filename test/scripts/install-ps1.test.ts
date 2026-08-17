@@ -775,7 +775,6 @@ describe("install.ps1 failure handling", () => {
   it("checks the full supported Node version range", () => {
     const versionBody = extractFunctionBody(source, "Test-NodeVersionSupported");
     const sqliteBody = extractFunctionBody(source, "Test-NodeSqliteSupported");
-    const resolveNodeBody = extractFunctionBody(source, "Resolve-NodeCommandPath");
     const checkNodeBody = extractFunctionBody(source, "Check-Node");
     expect(versionBody).toContain("$major -eq 22");
     expect(versionBody).toContain("$patch -ge 3");
@@ -786,8 +785,7 @@ describe("install.ps1 failure handling", () => {
     expect(versionBody).toContain("$major -gt 25");
     expect(sqliteBody).toContain("$minor -eq 51 -and $patch -ge 3");
     expect(checkNodeBody).toContain("Test-NodeVersionSupported -Version $nodeVersion");
-    expect(resolveNodeBody).toContain("Get-Command node -CommandType Application");
-    expect(checkNodeBody).toContain("Resolve-NodeCommandPath");
+    expect(checkNodeBody).toContain("Get-Command node -CommandType Application");
     expect(checkNodeBody).toContain("SELECT sqlite_version() AS version");
     expect(checkNodeBody).toContain("$sqliteProbe | & $nodePath -");
     expect(checkNodeBody).not.toContain("& $nodePath -e");
@@ -1178,6 +1176,9 @@ describe("install.ps1 failure handling", () => {
     expect(gitInstallBody).toContain('$entryPath = Join-Path $RepoDir "dist\\\\entry.js"');
     expect(gitInstallBody).toContain("Test-Path $entryPath");
     expect(gitInstallBody).toContain('Write-Host "[!] OpenClaw build did not produce $entryPath"');
+    expect(gitInstallBody).toContain('if exist ""$nodePath"" goto openclaw_runtime_ready');
+    expect(gitInstallBody).toContain("OpenClaw's validated Node.js runtime is missing");
+    expect(gitInstallBody).toContain("Re-run the OpenClaw installer");
     expect(gitInstallBody).toContain('""$nodePath"" ""$entryPath"" %*');
     expect(gitInstallBody).not.toContain("& $pnpmCommand -C $RepoDir install");
     expect(gitInstallBody).not.toContain('node ""$RepoDir\\\\dist\\\\entry.js"" %*');
@@ -1228,7 +1229,8 @@ describe("install.ps1 failure handling", () => {
         "  $wrapperPath = Join-Path $homeDir '.local\\bin\\openclaw.cmd'",
         '  $expectedLine = "`"$validatedNodePath`" `"$entryPath`" %*"',
         "  $wrapperLines = @(Get-Content -LiteralPath $wrapperPath)",
-        '  if ($wrapperLines[1] -ne $expectedLine) { throw "Wrapper=$($wrapperLines[1]) Expected=$expectedLine" }',
+        '  if ($wrapperLines[-1] -ne $expectedLine) { throw "Wrapper=$($wrapperLines[-1]) Expected=$expectedLine" }',
+        '  if ($wrapperLines[1] -ne "if exist `"$validatedNodePath`" goto openclaw_runtime_ready") { throw "Missing runtime guard: $($wrapperLines[1])" }',
         "  if ($isWindowsHost) {",
         "    $shadowDir = Join-Path $sandbox 'shadow-node'",
         "    New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null",
@@ -1240,6 +1242,14 @@ describe("install.ps1 failure handling", () => {
         '    if ($exitCode -ne 0) { throw "Wrapper exit=$exitCode output=$text" }',
         "    if ($text -notmatch '^approved-node:') { throw \"Validated runtime did not run: $text\" }",
         "    if ($text -match 'shadow-node') { throw \"PATH shadow ran: $text\" }",
+        "    Remove-Item -LiteralPath $validatedNodePath -Force",
+        "    $missingOutput = @(& $wrapperPath --version 2>&1 | ForEach-Object { $_.ToString() })",
+        "    $missingExitCode = $LASTEXITCODE",
+        '    $missingText = $missingOutput -join "`n"',
+        '    if ($missingExitCode -ne 1) { throw "Missing runtime exit=$missingExitCode output=$missingText" }',
+        "    if ($missingText -notmatch 'validated Node.js runtime is missing') { throw \"Missing recovery error: $missingText\" }",
+        "    if ($missingText -notmatch 'Re-run the OpenClaw installer') { throw \"Missing recovery action: $missingText\" }",
+        "    if ($missingText -match 'shadow-node') { throw \"PATH shadow ran after removal: $missingText\" }",
         "  }",
         "} finally {",
         "  $env:Path = $originalPath",
