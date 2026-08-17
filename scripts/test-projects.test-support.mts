@@ -146,7 +146,10 @@ type ChangedTestTargetPlan = {
   skippedBroadFallbackPaths?: string[];
 };
 
-type ImportGraphOptions = { tooling?: boolean };
+type ImportGraphOptions = {
+  targetedScans?: { remaining: number };
+  tooling?: boolean;
+};
 type VitestSpecShape = Pick<VitestRunSpec, "config" | "env">;
 type WatchableVitestSpecShape = VitestSpecShape & Pick<VitestRunSpec, "watchMode">;
 type ImportGraph = {
@@ -813,6 +816,11 @@ const TOOLING_IMPORTABLE_FILE_EXTENSIONS = [
 const TOOLING_IMPORT_GRAPH_GREP_PATHS = TOOLING_IMPORT_GRAPH_ROOTS.flatMap((root) =>
   TOOLING_IMPORTABLE_FILE_EXTENSIONS.map((ext) => `:(glob)${root}/**/*${ext}`),
 );
+// Broad matches make one-rg-per-importer traversal more expensive than building
+// the in-memory graph once, especially for shared test support modules.
+const TARGETED_IMPORT_GRAPH_CANDIDATE_LIMIT = 256;
+// Bound subprocess fanout even when every individual search result is narrow.
+const TARGETED_IMPORT_GRAPH_SCAN_LIMIT = 2;
 const IMPORT_SPECIFIER_PATTERN =
   /\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
 const REEXPORT_SPECIFIER_PATTERN =
@@ -1642,17 +1650,23 @@ function findDirectImportersWithGitGrep(
     return null;
   }
 
-  let skippedBroadTerm = false;
   const importers: string[] = [];
   for (const term of terms) {
+    if (options.targetedScans && options.targetedScans.remaining === 0) {
+      cachedDirectImporters.set(cacheKey, null);
+      return null;
+    }
+    if (options.targetedScans) {
+      options.targetedScans.remaining -= 1;
+    }
     const candidates = listImportGraphGrepMatches(cwd, term, { tooling });
     if (!candidates) {
       cachedDirectImporters.set(cacheKey, null);
       return null;
     }
-    if (candidates.length > 800) {
-      skippedBroadTerm = true;
-      continue;
+    if (candidates.length > TARGETED_IMPORT_GRAPH_CANDIDATE_LIMIT) {
+      cachedDirectImporters.set(cacheKey, null);
+      return null;
     }
     for (const file of candidates) {
       if (file === importedFile || !fileSet.has(file) || importers.includes(file)) {
@@ -1681,12 +1695,8 @@ function findDirectImportersWithGitGrep(
       break;
     }
   }
-  const result =
-    skippedBroadTerm && importers.length === 0 && !importedFile.startsWith("test/helpers/")
-      ? null
-      : importers;
-  cachedDirectImporters.set(cacheKey, result);
-  return result;
+  cachedDirectImporters.set(cacheKey, importers);
+  return importers;
 }
 
 function resolveAffectedTestsFromTargetedImportScan(
@@ -1708,9 +1718,13 @@ function resolveAffectedTestsFromTargetedImportScan(
   const queue = [normalized];
   const seen = new Set(queue);
   const targets = [];
+  const targetedScans = { remaining: TARGETED_IMPORT_GRAPH_SCAN_LIMIT };
 
   for (const current of queue) {
-    const importers = findDirectImportersWithGitGrep(cwd, current, fileSet, { tooling });
+    const importers = findDirectImportersWithGitGrep(cwd, current, fileSet, {
+      targetedScans,
+      tooling,
+    });
     if (importers === null) {
       return null;
     }
