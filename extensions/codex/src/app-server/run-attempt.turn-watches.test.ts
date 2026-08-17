@@ -2482,21 +2482,28 @@ describe("runCodexAppServerAttempt turn watches", () => {
     });
   });
 
-  it("correlates native tool progress diagnostics with the app-server item", async () => {
+  it("joins native tool start and output progress on the app-server item ID", async () => {
     const harness = createStartedThreadHarness();
     const params = makeTestParams({ timeoutMs: 1_000 });
-    const progressEvents: DiagnosticEventPayload[] = [];
+    const boundaryEvents: Array<{
+      type: "start" | "progress";
+      toolCallId: string | undefined;
+    }> = [];
     const stopDiagnostics = onInternalDiagnosticEvent((event) => {
+      if (event.type === "tool.execution.started" && event.toolCallId === "command-1") {
+        boundaryEvents.push({ type: "start", toolCallId: event.toolCallId });
+      }
       if (
         event.type === "run.progress" &&
         event.reason === "codex_app_server:notification:item/commandExecution/outputDelta"
       ) {
-        progressEvents.push(event);
+        boundaryEvents.push({ type: "progress", toolCallId: event.toolCallId });
       }
     });
     try {
       const run = runCodexAppServerAttempt(params);
       await harness.waitForMethod("turn/start");
+      await harness.notify(startedCommand("command-1", "sleep 30"));
       await harness.notify({
         method: "item/commandExecution/outputDelta",
         params: {
@@ -2506,14 +2513,17 @@ describe("runCodexAppServerAttempt turn watches", () => {
           delta: "still running",
         },
       });
-      await vi.waitFor(() => expect(progressEvents).toHaveLength(1), { interval: 1 });
+      await vi.waitFor(() => expect(boundaryEvents).toHaveLength(2), { interval: 1 });
       await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
       await run;
     } finally {
       stopDiagnostics();
     }
 
-    expect(progressEvents[0]).toMatchObject({ toolCallId: "command-1" });
+    expect(boundaryEvents).toEqual([
+      { type: "start", toolCallId: "command-1" },
+      { type: "progress", toolCallId: "command-1" },
+    ]);
   });
 
   it("does not idle-timeout when terminal completion queues behind projection", async () => {
