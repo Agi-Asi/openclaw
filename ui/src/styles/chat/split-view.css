@@ -199,8 +199,138 @@ openclaw-chat-pane {
 
 /* Renaming needs the row's spare width, which the trail must pass through:
    without this the input is trapped inside a shrink-only container. */
-.chat-pane__crumbs:has(.chat-pane__session-title-input) {
+.chat-pane__crumbs:has(.chat-pane__session-title-input),
+.chat-pane__session-identity:has(.chat-pane__session-title-input) {
   flex: 1 1 auto;
+}
+
+/* The session name and its menu are one identity segment; people and sharing
+   stay beside that segment without leaking into the pane-level action row. */
+.chat-pane__session-identity {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The session's own controls sit tighter than the trail's segment gap: their
+   buttons already carry 5px of internal padding, so the optical air matches the
+   6px between segments without the boxes drifting away from the title.
+   The trail lifts itself 1px to put text on the chrome centerline; these are
+   chrome, so they give that pixel back and stay level with the action row. */
+.chat-pane__session-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: 6px;
+  transform: translateY(1px);
+}
+
+.chat-pane__people {
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-pane__people :is(.session-owner-chip--header, .viewer-avatar--session) {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  box-shadow: 0 0 0 1.5px var(--chat-surface);
+}
+
+.chat-pane__people > openclaw-viewer-facepile:not(:first-child) .viewer-facepile {
+  margin-inline-start: -6px;
+}
+
+.chat-pane__people .chat-pane__presence {
+  margin-inline-start: 4px;
+}
+
+.chat-pane__people .chat-pane__sharing-anchor {
+  position: relative;
+  z-index: 3;
+  isolation: isolate;
+  margin-inline-start: -6px;
+}
+
+.chat-pane__people > :not(.chat-pane__sharing-anchor) {
+  position: relative;
+  z-index: 1;
+}
+
+.chat-pane__people .chat-pane__sharing-anchor button.chat-pane__sharing-trigger {
+  position: relative;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--chat-surface);
+  color: var(--muted);
+}
+
+.chat-pane__people .chat-pane__sharing-trigger::before {
+  position: absolute;
+  inset: -1.5px;
+  z-index: 0;
+  border: 1px solid currentColor;
+  border-radius: inherit;
+  opacity: 0.32;
+  content: "";
+  pointer-events: none;
+}
+
+.chat-pane__sharing-trigger-plus {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+}
+
+.chat-pane__sharing-trigger-plus > svg {
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  stroke-width: 1.5px;
+}
+
+.chat-pane__people .chat-pane__sharing-menu .chat-pane__sharing-trigger:is(:hover, :focus-visible),
+.chat-pane__people .chat-pane__sharing-menu[open] .chat-pane__sharing-trigger {
+  background:
+    linear-gradient(color-mix(in srgb, var(--text) 7%, transparent), transparent),
+    var(--chat-surface);
+  color: var(--text);
+}
+
+.chat-pane__people .chat-pane__sharing-trigger:is(:hover, :focus-visible)::before,
+.chat-pane__people .chat-pane__sharing-menu[open] .chat-pane__sharing-trigger::before {
+  color: var(--muted);
+  opacity: 0.32;
+}
+
+/* A custom element defaults to display:inline, so as a flex child it keeps a
+   text line box whose descender space drags the trigger below the row
+   centerline — the same correction the action row applies to its own children. */
+.chat-pane__session-menu-anchor,
+.chat-pane__session-menu-anchor > openclaw-chat-header-session-menu,
+.chat-pane__sharing-anchor {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.chat-pane__session-menu-anchor,
+.chat-pane__session-menu-anchor > openclaw-chat-header-session-menu {
+  width: 28px;
+  height: 28px;
+}
+
+.chat-header-session-menu[open] .chat-header-session-menu__trigger {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
 }
 
 /* House separator treatment: an aria-hidden glyph tinted with --muted, spacing
@@ -277,18 +407,27 @@ openclaw-chat-pane {
   text-overflow: ellipsis;
 }
 
+/* Renaming edits the title in place, so the field must occupy the title's box
+   rather than announce itself: the 28px height matches the action buttons the
+   row is already sized for, and border + padding reproduce the display button's
+   text origin (3px 5px pulled back by -5px) so the name does not jump when
+   editing starts or ends. The border is neutral because a rename in progress is
+   not an error or an accent-worthy state. */
 .chat-pane__session-title-input {
   flex: 1 1 auto;
   min-width: 60px;
   height: 28px;
-  padding: 0 7px;
-  border: 1px solid var(--accent);
+  box-sizing: border-box;
+  padding: 2px 4px;
+  margin-inline: -5px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 68%, transparent);
   border-radius: var(--radius-sm);
   background: var(--panel);
   color: var(--text);
   font: inherit;
   font-size: 12px;
   outline: none;
+  caret-color: var(--text);
   user-select: text;
   -webkit-user-select: text;
 }
@@ -552,7 +691,11 @@ openclaw-chat-pane {
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--muted);
+  /* The project is context, the session is the subject: holding the project one
+     step below --muted keeps the trail readable while the title stays the only
+     full-contrast text. Pointer and keyboard both restore it, so nothing that
+     can be acted on stays dim. */
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
   font-size: 12px;
   cursor: var(--cursor-action);
 }
@@ -840,24 +983,26 @@ openclaw-chat-pane {
   white-space: normal;
 }
 
-/* Plain web shell chrome overlays the first pane header. Expanded navigation
-   shows toggle + search; collapsed navigation adds new-thread between them. */
-html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-web-chrome)
-  .shell:not(.shell--nav-collapsed):not(.shell--mobile-nav)
-  .chat-split-view__column:first-child
-  > .chat-split-view__cell:first-child
-  :is(.chat-main__conversation-column, .chat-pane-primary-column)
-  > .chat-pane__header {
-  padding-left: 88px;
-}
-
+/* Collapsed plain-web navigation keeps one recovery toggle over the first pane
+   header; expanded navigation owns its controls inside the sidebar. */
 html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-web-chrome)
   .shell--nav-collapsed:not(.shell--mobile-nav)
   .chat-split-view__column:first-child
   > .chat-split-view__cell:first-child
   :is(.chat-main__conversation-column, .chat-pane-primary-column)
   > .chat-pane__header {
-  padding-left: 124px;
+  padding-left: 60px;
+}
+
+/* The fixed limited-access status is newer than the aligned-header layout.
+   Clear it only while it is present; collapsed shells reuse the wider safe area. */
+html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-web-chrome)
+  .shell:has(.scope-upgrade-shell-status):not(.shell--mobile-nav)
+  .chat-split-view__column:first-child
+  > .chat-split-view__cell:first-child
+  :is(.chat-main__conversation-column, .chat-pane-primary-column)
+  > .chat-pane__header {
+  padding-left: var(--shell-chrome-safe-area-left);
 }
 
 /* Native macOS desktop shells: the pane header is the window's top surface,

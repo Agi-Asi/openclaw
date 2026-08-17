@@ -8,7 +8,6 @@ import type {
 } from "../components/app-sidebar-workboard.ts";
 import { icons } from "../components/icons.ts";
 import { renderLazyElementModal } from "../components/lazy-view-error.ts";
-import { CUSTODIAN_PANEL_TOGGLE_EVENT } from "../components/panel-toggle-contract.ts";
 import {
   renderLazySettingsSidebar,
   type SettingsSidebarModule,
@@ -48,9 +47,6 @@ import {
 import { createUpdateProgressWatcher } from "./update-overlay-helpers.ts";
 
 const EMPTY_SESSION_HAS_DRAFT = () => false;
-const PALETTE_SHORTCUT = /Mac|iP(hone|ad|od)/i.test(globalThis.navigator?.platform ?? "")
-  ? "⌘K"
-  : "Ctrl K";
 const SCOPE_UPGRADE_SURFACE_ELEMENT = {
   tagName: "openclaw-device-scope-upgrade-banner",
   label: t("connection.scopeUpgrade.status"),
@@ -379,6 +375,8 @@ export function renderApplicationShell(host: ShellViewHost) {
       onOpenApprovals: () => host.openApprovals(),
       onRetryConnect: () => context.gateway.connect(),
       onOpenNewSession: openNewSession,
+      onOpenPalette: () => host.openPalette(),
+      onToggleSidebar: () => host.toggleNavigationSurface(),
       onUpdateSidebarEntries: (entries: string[]) =>
         context.navigation.update({ sidebarEntries: entries }),
       onPairMobile: () => void context.overlays.openDevicePairSetup(),
@@ -493,7 +491,7 @@ export function renderApplicationShell(host: ShellViewHost) {
         .onOpenPalette=${() => host.openPalette()}
         .onToggleDrawer=${(trigger: HTMLElement) => host.toggleNavigationSurface(trigger)}
       ></openclaw-app-topbar>
-      ${!onboarding && !settingsTakeover && !mobileNavLayout
+      ${navCollapsed && !onboarding && !settingsTakeover && !mobileNavLayout
         ? html`
             <div class="shell-chrome-controls">
               <openclaw-tooltip
@@ -509,49 +507,10 @@ export function renderApplicationShell(host: ShellViewHost) {
                     : nothing}
                   @click=${() => host.toggleNavigationSurface()}
                 >
-                  ${navCollapsed ? icons.panelLeftOpen : icons.panelLeftClose}
+                  ${icons.panelLeftOpen}
                 </button>
               </openclaw-tooltip>
-              ${navCollapsed
-                ? html`<openclaw-tooltip
-                    .content=${newSessionAccess.allowed
-                      ? t("chat.runControls.newSession")
-                      : newSessionAccess.reason}
-                  >
-                    <button
-                      type="button"
-                      class="shell-chrome-controls__button shell-chrome-controls__new-thread"
-                      aria-label=${t("chat.runControls.newSession")}
-                      ?disabled=${!newSessionAccess.allowed}
-                      @click=${() => openNewSession(selectedAgentId)}
-                    >
-                      ${icons.plus}
-                    </button>
-                  </openclaw-tooltip>`
-                : nothing}
-              <openclaw-tooltip .content=${`${t("chat.openCommandPalette")} (${PALETTE_SHORTCUT})`}>
-                <button
-                  type="button"
-                  class="shell-chrome-controls__button shell-chrome-controls__search"
-                  aria-label=${t("chat.openCommandPalette")}
-                  @click=${() => host.openPalette()}
-                >
-                  ${icons.search}
-                </button>
-              </openclaw-tooltip>
-              ${navCollapsed && custodianPanelAvailable
-                ? html`<openclaw-tooltip .content=${t("nav.askOpenClaw")}>
-                    <button
-                      type="button"
-                      class="shell-chrome-controls__button shell-chrome-controls__custodian"
-                      aria-label=${t("nav.askOpenClaw")}
-                      @click=${() =>
-                        window.dispatchEvent(new CustomEvent(CUSTODIAN_PANEL_TOGGLE_EVENT))}
-                    >
-                      ${icons.lobster}
-                    </button>
-                  </openclaw-tooltip>`
-                : nothing}
+              <span class="shell-chrome-controls__separator" aria-hidden="true"></span>
             </div>
           `
         : nothing}

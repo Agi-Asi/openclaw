@@ -292,17 +292,47 @@ describe("chat pane header", () => {
     expect(container.querySelector(".chat-pane__palette-open")).toBeNull();
   });
 
-  it("places the session menu last in the header action row", () => {
+  it("groups session controls with the identity trail", () => {
     const { container } = mount({
       mergedChrome: true,
       onClosePane: vi.fn(),
       sessionMenuAction: html`<button data-action="session-menu"></button>`,
+      sharingControl: html`<button data-action="sharing"></button>`,
+      presence: html`<span data-slot="presence"></span>`,
     });
+    const controls = container.querySelector(".chat-pane__session-controls");
+    const identity = container.querySelector(".chat-pane__session-identity");
     const actions = container.querySelector(".chat-pane__actions");
 
-    expect(actions?.lastElementChild?.getAttribute("data-action")).toBe("session-menu");
+    expect(identity?.querySelector('[data-action="session-menu"]')).not.toBeNull();
+    expect(controls?.querySelectorAll("[data-action], [data-slot]")).toHaveLength(2);
+    expect(actions?.querySelector('[data-action="session-menu"]')).toBeNull();
     expect(actions?.querySelector(".chat-pane__palette-open")).not.toBeNull();
     expect(actions?.querySelector(".chat-pane__close-pane")).not.toBeNull();
+  });
+
+  it("omits people controls when the session menu is the only identity action", () => {
+    const { container } = mount({ sessionMenuAction: html`<button></button>` });
+    expect(container.querySelector(".chat-pane__session-controls")).toBeNull();
+  });
+
+  it("keeps the owner chip's complete native tooltip as the single tooltip owner", async () => {
+    const { container } = mount({
+      showOwnerChip: true,
+      ownerViewing: true,
+      session: row({
+        owner: { actor: { type: "human", id: "profile-ada", label: "Ada" } },
+      }),
+    });
+    const ownerChip = container.querySelector<HTMLElement & { updateComplete: Promise<boolean> }>(
+      "openclaw-session-owner-chip",
+    );
+    await ownerChip?.updateComplete;
+    const owner = ownerChip?.querySelector<HTMLElement>(".session-owner-chip");
+
+    expect(owner?.title).toContain("Ada");
+    expect(owner?.title).toContain("viewing now");
+    expect(owner?.closest("openclaw-tooltip")).toBeNull();
   });
 
   it("moves narrow session actions into the compact menu", () => {
@@ -434,14 +464,14 @@ describe("chat pane header", () => {
     expect(container.querySelector(".chat-pane__placement-chip")).toBeNull();
   });
 
-  it("places pane presence between the identity trail and face control", () => {
+  it("keeps pane presence inside the identity trail", () => {
     const { container } = mount({
       presence: html`<span data-slot="presence"></span>`,
       faceControl: html`<span data-slot="face"></span>`,
     });
     const crumbs = container.querySelector(".chat-pane__crumbs");
-    expect(crumbs?.nextElementSibling?.getAttribute("data-slot")).toBe("presence");
-    expect(crumbs?.nextElementSibling?.nextElementSibling?.getAttribute("data-slot")).toBe("face");
+    expect(crumbs?.querySelector('[data-slot="presence"]')).not.toBeNull();
+    expect(crumbs?.nextElementSibling?.getAttribute("data-slot")).toBe("face");
   });
 
   it("leads with the project, then a separator, then the session title", () => {
@@ -451,7 +481,7 @@ describe("chat pane header", () => {
     expect(segments).toEqual([
       "chat-pane__workspace-menu",
       "chat-pane__crumb-sep",
-      "chat-pane__session-title chat-pane__session-title-button",
+      "chat-pane__session-identity",
     ]);
     expect(crumbs?.querySelector(".chat-pane__crumb-sep")?.textContent).toBe("/");
     expect(crumbs?.querySelector(".chat-pane__crumb-sep")?.getAttribute("aria-hidden")).toBe(
@@ -469,7 +499,7 @@ describe("chat pane header", () => {
       "chat-pane__crumb-sep",
       "chat-pane__parent-session",
       "chat-pane__crumb-sep",
-      "chat-pane__session-title chat-pane__session-title-button",
+      "chat-pane__session-identity",
     ]);
     const parent = crumbs?.querySelector<HTMLButtonElement>(".chat-pane__parent-session");
     expect(parent?.textContent?.trim()).toBe("Release prep");
@@ -481,8 +511,20 @@ describe("chat pane header", () => {
     const { container } = mount({ workspaceLabel: null, workspaceRoot: null });
     expect(container.querySelector(".chat-pane__crumb-sep")).toBeNull();
     expect(container.querySelector(".chat-pane__crumbs")?.firstElementChild?.className).toContain(
-      "chat-pane__session-title",
+      "chat-pane__session-identity",
     );
+  });
+
+  it("holds the title's position and height through a rename", () => {
+    const rest = mount();
+    const editing = mount({ editing: true, renameValue: "Session title" });
+    const restIdentity = rest.container.querySelector(".chat-pane__session-identity");
+    const editIdentity = editing.container.querySelector(".chat-pane__session-identity");
+
+    // Same slot in the same group: renaming replaces the title in place rather
+    // than reflowing the trail around a wider control.
+    expect(restIdentity?.children).toHaveLength(editIdentity?.children.length ?? -1);
+    expect(editIdentity?.lastElementChild?.className).toBe("chat-pane__session-title-input");
   });
 
   it("keeps the rename input inside the trail so the project stays visible", () => {
