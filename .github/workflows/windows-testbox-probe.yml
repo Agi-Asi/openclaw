@@ -296,12 +296,20 @@ jobs:
           $originalUserProfile = $env:USERPROFILE
           $originalPercent = $env:OPENCLAW_PROOF_PERCENT
           $originalBang = $env:openclaw_proof_bang
+          $proofRepo = Join-Path $proofRoot "repo"
+          $proofWorktreeAdded = $false
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           try {
             $head = (git rev-parse HEAD).Trim()
             if ($head -ne $env:EXPECTED_HEAD) {
               throw "Checked out $head, expected frozen target $env:EXPECTED_HEAD."
             }
+
+            git worktree add --detach --force -- $proofRepo $head | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not create the hostile-path installer worktree."
+            }
+            $proofWorktreeAdded = $true
 
             $nodeSource = (Get-Command node -ErrorAction Stop).Source
             $nodeDir = Join-Path $proofRoot "validated-node"
@@ -317,7 +325,7 @@ jobs:
             $installerLog = Join-Path $artifactDir "installer.log"
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 `
               -InstallMethod git `
-              -GitDir $env:GITHUB_WORKSPACE `
+              -GitDir $proofRepo `
               -NoGitUpdate `
               -NoOnboard *>&1 | Tee-Object -FilePath $installerLog
             $installerExit = $LASTEXITCODE
@@ -326,6 +334,7 @@ jobs:
             }
 
             $wrapperPath = Join-Path $proofHome ".local\bin\openclaw.cmd"
+            Copy-Item -LiteralPath $wrapperPath -Destination (Join-Path $artifactDir "openclaw.cmd")
             $wrapper = Get-Content -LiteralPath $wrapperPath -Raw
             $escapedPaths =
               $wrapper.Contains("^^openclaw_proof_caret^^") -and
@@ -390,6 +399,10 @@ jobs:
             $env:USERPROFILE = $originalUserProfile
             $env:OPENCLAW_PROOF_PERCENT = $originalPercent
             $env:openclaw_proof_bang = $originalBang
+            if ($proofWorktreeAdded) {
+              git worktree remove --force -- $proofRepo 2>$null
+              git worktree prune
+            }
             Remove-Item -LiteralPath $proofRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
 
