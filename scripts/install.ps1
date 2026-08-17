@@ -1613,6 +1613,12 @@ function New-TransactionalGitCheckout {
     }
 }
 
+function ConvertTo-CmdLiteral {
+    param([string]$Value)
+
+    return $Value.Replace("^", "^^").Replace("%", "%%").Replace("!", "^!")
+}
+
 function Install-OpenClawFromGit {
     param(
         [string]$RepoDir,
@@ -1731,8 +1737,8 @@ function Install-OpenClawFromGit {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     }
     $cmdPath = Join-Path $binDir "openclaw.cmd"
-    $cmdNodePath = $nodePath.Replace("%", "%%").Replace("!", "^!")
-    $cmdEntryPath = $entryPath.Replace("%", "%%").Replace("!", "^!")
+    $cmdNodePath = ConvertTo-CmdLiteral -Value $nodePath
+    $cmdEntryPath = ConvertTo-CmdLiteral -Value $entryPath
     $cmdContents = @(
         "@echo off"
         "if exist ""$cmdNodePath"" goto openclaw_runtime_ready"

@@ -290,7 +290,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE ".artifacts\windows-git-install"
-          $proofRoot = Join-Path $env:RUNNER_TEMP "openclaw-git-proof-%OPENCLAW_PROOF_PERCENT%-!openclaw_proof_bang!"
+          $proofRoot = Join-Path $env:RUNNER_TEMP "openclaw-git-proof-^openclaw_proof_caret^-%OPENCLAW_PROOF_PERCENT%-!openclaw_proof_bang!"
           $originalHome = $env:HOME
           $originalPath = $env:Path
           $originalUserProfile = $env:USERPROFILE
@@ -312,8 +312,6 @@ jobs:
 
             $env:HOME = $proofHome
             $env:USERPROFILE = $proofHome
-            $env:OPENCLAW_PROOF_PERCENT = "expanded-away"
-            $env:openclaw_proof_bang = "expanded-away"
             $env:Path = "$nodeDir;$originalPath"
 
             $installerLog = Join-Path $artifactDir "installer.log"
@@ -330,42 +328,50 @@ jobs:
             $wrapperPath = Join-Path $proofHome ".local\bin\openclaw.cmd"
             $wrapper = Get-Content -LiteralPath $wrapperPath -Raw
             $escapedPaths =
+              $wrapper.Contains("^^openclaw_proof_caret^^") -and
               $wrapper.Contains("%%OPENCLAW_PROOF_PERCENT%%") -and
               $wrapper.Contains("^!openclaw_proof_bang^!")
             if (-not $escapedPaths) {
               throw "Generated wrapper did not preserve CMD metacharacters."
             }
 
+            $env:OPENCLAW_PROOF_PERCENT = "expanded-away"
+            $env:openclaw_proof_bang = "expanded-away"
+
             $shadowDir = Join-Path $proofRoot "shadow-node"
             New-Item -ItemType Directory -Force -Path $shadowDir | Out-Null
             Set-Content -LiteralPath (Join-Path $shadowDir "node.cmd") -NoNewline -Value "@echo off`r`necho shadow-node`r`nexit /b 47`r`n"
             $env:Path = "$shadowDir;$originalPath"
-            $cmdLine = 'call "' + $wrapperPath + '" --version'
-            $wrapperOutput = @(& $env:ComSpec /d /v:on /c $cmdLine 2>&1 | ForEach-Object { $_.ToString() })
-            $wrapperExit = $LASTEXITCODE
-            $wrapperText = $wrapperOutput -join "`n"
-            if ($wrapperExit -ne 0) {
-              throw "Generated wrapper exited $wrapperExit`: $wrapperText"
-            }
-            if ($wrapperText.Contains("shadow-node")) {
-              throw "Generated wrapper selected the PATH-shadow Node runtime."
-            }
+            Push-Location -LiteralPath (Split-Path -Parent $wrapperPath)
+            try {
+              $wrapperOutput = @(& $env:ComSpec /d /v:on /c 'call openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })
+              $wrapperExit = $LASTEXITCODE
+              $wrapperText = $wrapperOutput -join "`n"
+              if ($wrapperExit -ne 0) {
+                throw "Generated wrapper exited $wrapperExit`: $wrapperText"
+              }
+              if ($wrapperText.Contains("shadow-node")) {
+                throw "Generated wrapper selected the PATH-shadow Node runtime."
+              }
 
-            Remove-Item -LiteralPath $validatedNode -Force
-            $missingOutput = @(& $env:ComSpec /d /v:on /c $cmdLine 2>&1 | ForEach-Object { $_.ToString() })
-            $missingExit = $LASTEXITCODE
-            $missingText = $missingOutput -join "`n"
-            if ($missingExit -ne 1) {
-              throw "Generated wrapper with missing runtime exited $missingExit`: $missingText"
-            }
-            if (
-              -not $missingText.Contains("validated Node.js runtime is missing") -or
-              -not $missingText.Contains("Re-run the OpenClaw installer")
-            ) {
-              throw "Generated wrapper omitted missing-runtime recovery guidance: $missingText"
-            }
-            if ($missingText.Contains("shadow-node")) {
-              throw "Generated wrapper selected the PATH-shadow Node after its validated runtime was removed."
+              Remove-Item -LiteralPath $validatedNode -Force
+              $missingOutput = @(& $env:ComSpec /d /v:on /c 'call openclaw.cmd --version' 2>&1 | ForEach-Object { $_.ToString() })
+              $missingExit = $LASTEXITCODE
+              $missingText = $missingOutput -join "`n"
+              if ($missingExit -ne 1) {
+                throw "Generated wrapper with missing runtime exited $missingExit`: $missingText"
+              }
+              if (
+                -not $missingText.Contains("validated Node.js runtime is missing") -or
+                -not $missingText.Contains("Re-run the OpenClaw installer")
+              ) {
+                throw "Generated wrapper omitted missing-runtime recovery guidance: $missingText"
+              }
+              if ($missingText.Contains("shadow-node")) {
+                throw "Generated wrapper selected the PATH-shadow Node after its validated runtime was removed."
+              }
+            } finally {
+              Pop-Location
             }
 
             [ordered]@{
@@ -374,7 +380,7 @@ jobs:
               missingRuntimeExit = $missingExit
               missingRuntimeFailedClosed = $true
               wrapperExit = $wrapperExit
-              wrapperEscapedPercentAndBang = $escapedPaths
+              wrapperEscapedCaretPercentAndBang = $escapedPaths
               wrapperIgnoredPathShadow = $true
               version = $wrapperOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
             } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDir "proof.json")
