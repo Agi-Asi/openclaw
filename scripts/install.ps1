@@ -1527,7 +1527,8 @@ function Assert-GitCheckoutHasCommit {
 function Resolve-PhysicalDirectoryPath {
     param([string]$Path)
 
-    $resolved = & node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' $Path
+    $realpathScript = 'process.stdout.write(require("node:fs").realpathSync(process.argv[2]))'
+    $resolved = $realpathScript | & node - $Path
     if ($LASTEXITCODE -ne 0 -or -not $resolved) {
         throw "Could not resolve directory path: $Path"
     }
