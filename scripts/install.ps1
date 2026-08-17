@@ -35,6 +35,7 @@ Options:
 }
 
 $script:InstallExitCode = 0
+$script:ValidatedNodePath = $null
 
 function Fail-Install {
     param([int]$Code = 1)
@@ -312,10 +313,30 @@ function Test-NodeSqliteSupported {
     )
 }
 
-function Check-Node {
+function Resolve-NodeCommandPath {
     try {
         $nodeCommand = Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1
         $nodePath = $nodeCommand.Source
+        if ([string]::IsNullOrWhiteSpace($nodePath)) {
+            return $null
+        }
+        $nodePath = [System.IO.Path]::GetFullPath($nodePath)
+        if (-not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
+            return $null
+        }
+        return $nodePath
+    } catch {
+        return $null
+    }
+}
+
+function Check-Node {
+    $script:ValidatedNodePath = $null
+    try {
+        $nodePath = Resolve-NodeCommandPath
+        if (-not $nodePath) {
+            throw "Node.js not found"
+        }
         $nodeVersion = (& $nodePath -v 2>$null)
         $sqliteProbe = 'const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(":memory:"); try { process.stdout.write(String(db.prepare("SELECT sqlite_version() AS version").get().version)); } finally { db.close(); }'
         $sqliteVersion = ($sqliteProbe | & $nodePath - 2>$null)
@@ -328,6 +349,7 @@ function Check-Node {
                 (Test-NodeSqliteSupported -Version $sqliteVersion)
             ) {
                 Write-Host "[OK] Node.js $nodeVersion found" -ForegroundColor Green
+                $script:ValidatedNodePath = $nodePath
                 return $true
             } elseif (Test-NodeVersionSupported -Version $nodeVersion) {
                 $sqliteVersionLabel = if ([string]::IsNullOrWhiteSpace($sqliteVersion)) {
@@ -1709,12 +1731,18 @@ function Install-OpenClawFromGit {
         return $false
     }
 
+    $nodePath = $script:ValidatedNodePath
+    if ([string]::IsNullOrWhiteSpace($nodePath) -or -not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
+        Write-Host "[!] Validated Node.js runtime not found after build" -ForegroundColor Red
+        return $false
+    }
+
     $binDir = Join-Path $env:USERPROFILE ".local\\bin"
     if (-not (Test-Path $binDir)) {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     }
     $cmdPath = Join-Path $binDir "openclaw.cmd"
-    $cmdContents = "@echo off`r`nnode ""$entryPath"" %*`r`n"
+    $cmdContents = "@echo off`r`n""$nodePath"" ""$entryPath"" %*`r`n"
     Set-Content -Path $cmdPath -Value $cmdContents -NoNewline
 
     if (Add-ToUserPath $binDir) {
