@@ -1,18 +1,14 @@
 // Real CLI process coverage for pre-action legacy migration ownership.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 
-const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-preaction-owner-"));
-
-afterAll(() => {
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
+const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 function createFixture(label: string) {
-  const root = path.join(tempRoot, label);
+  const root = tempDirs.make(`openclaw-preaction-owner-${label}-`);
   const stateDir = path.join(root, "state");
   const pluginDir = path.join(root, "memory-owner");
   const markerPath = path.join(root, "action.json");
