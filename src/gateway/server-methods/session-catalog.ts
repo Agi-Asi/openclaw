@@ -323,6 +323,7 @@ function catalogResult(
       ...(provider.openTerminal ? { openTerminal: true } : {}),
       ...(createSession ? { createSession } : {}),
     },
+    ...(provider.shareRoute ? { shareRoute: provider.shareRoute } : {}),
     hosts,
   };
   if (error) {
