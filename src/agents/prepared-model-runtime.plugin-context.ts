@@ -43,6 +43,7 @@ function preparePluginLoadContext(
       workspaceDir,
       metadataSnapshot: preparedMetadataSnapshot,
       manifestRegistry: metadataSnapshot.manifestRegistry,
+      preferBuiltPluginArtifacts: true,
     }),
     metadataSnapshot,
     installRecords: extractPluginInstallRecordsFromInstalledPluginIndex(metadataSnapshot.index),
