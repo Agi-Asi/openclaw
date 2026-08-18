@@ -26,6 +26,10 @@ type MatrixQaStreamingConfig = {
     toolProgress?: boolean;
   };
 };
+type MatrixQaStreamingPreviewSnapshot = {
+  commandText?: MatrixQaCommandTextMode;
+  toolProgress: boolean;
+};
 type MatrixQaAgentDefaultsOverrides = {
   blockStreamingChunk?: {
     breakPreference?: "newline" | "paragraph" | "sentence";
@@ -133,8 +137,7 @@ type MatrixQaConfigSnapshot = {
   replyToMode: MatrixQaReplyToMode;
   startupVerification?: "if-unverified" | "off";
   streaming: MatrixQaStreamingMode;
-  streamingPreviewCommandText?: MatrixQaCommandTextMode;
-  streamingPreviewToolProgress: boolean;
+  streamingPreview: MatrixQaStreamingPreviewSnapshot;
   textChunkLimit?: number;
   threadBindings: MatrixQaThreadBindingsConfigOverrides;
   threadReplies: MatrixQaThreadRepliesMode;
@@ -293,22 +296,16 @@ function isMatrixQaStreamingConfig(
   return isRecord(value);
 }
 
-function resolveMatrixQaStreamingPreviewToolProgress(
+function resolveMatrixQaStreamingPreview(
   value: MatrixQaConfigOverrides["streaming"],
-): boolean {
+): MatrixQaStreamingPreviewSnapshot {
   if (!isMatrixQaStreamingConfig(value)) {
-    return true;
+    return { toolProgress: true };
   }
-  return value.preview?.toolProgress ?? true;
-}
-
-function resolveMatrixQaStreamingPreviewCommandText(
-  value: MatrixQaConfigOverrides["streaming"],
-): MatrixQaCommandTextMode | undefined {
-  if (!isMatrixQaStreamingConfig(value)) {
-    return undefined;
-  }
-  return value.preview?.commandText;
+  return {
+    ...(value.preview?.commandText ? { commandText: value.preview.commandText } : {}),
+    toolProgress: value.preview?.toolProgress ?? true,
+  };
 }
 
 function resolveMatrixQaAutoJoinAllowlist(params: { overrides?: MatrixQaConfigOverrides }) {
@@ -469,10 +466,7 @@ function buildMatrixQaChannelAccountConfig(params: {
     mode: params.snapshot.streaming,
     preview: {
       ...preview,
-      ...(params.snapshot.streamingPreviewCommandText
-        ? { commandText: params.snapshot.streamingPreviewCommandText }
-        : {}),
-      toolProgress: params.snapshot.streamingPreviewToolProgress,
+      ...params.snapshot.streamingPreview,
     },
   });
   const threadBindings = restoreOwnedFields(
@@ -552,12 +546,7 @@ function buildMatrixQaConfigSnapshot(params: {
     replyToMode: params.overrides?.replyToMode ?? "off",
     startupVerification: params.overrides?.startupVerification,
     streaming: resolveMatrixQaStreamingMode(params.overrides?.streaming),
-    streamingPreviewCommandText: resolveMatrixQaStreamingPreviewCommandText(
-      params.overrides?.streaming,
-    ),
-    streamingPreviewToolProgress: resolveMatrixQaStreamingPreviewToolProgress(
-      params.overrides?.streaming,
-    ),
+    streamingPreview: resolveMatrixQaStreamingPreview(params.overrides?.streaming),
     threadBindings: { ...params.overrides?.threadBindings },
     textChunkLimit: params.overrides?.textChunkLimit,
     threadReplies: params.overrides?.threadReplies ?? "inbound",
