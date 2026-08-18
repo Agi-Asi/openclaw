@@ -34,10 +34,16 @@ struct MacSessionObserverDigestTests {
             headline: "On track",
             health: .onTrack)
 
-        let updated = ChatSessionSidebarModel.applying(observerDigest: accepted, to: [session])
+        let updated = ChatSessionSidebarModel.applying(
+            observerDigest: accepted,
+            to: [session],
+            authoritativeRunIds: ["run-1"])
 
         #expect(updated[0].observerDigest?.headline == "On track")
-        #expect(ChatSessionSidebarModel.subtitle(for: updated[0], workSubtitle: "Work") == "On track")
+        #expect(ChatSessionSidebarModel.subtitle(
+            for: updated[0],
+            workSubtitle: "Work",
+            authoritativeRunIds: ["run-1"]) == "On track")
     }
 
     @Test func `native chat sidebar rejects another agent global digest`() {
@@ -98,7 +104,8 @@ struct MacSessionObserverDigestTests {
         let accepted = ChatSessionSidebarModel.applying(
             observerDigest: selected,
             to: rejectedOwnerless,
-            activeAgentId: "work")
+            activeAgentId: "work",
+            authoritativeRunIds: ["run-work"])
 
         #expect(rejected[0].observerDigest == nil)
         #expect(rejectedOwnerless[0].observerDigest == nil)
