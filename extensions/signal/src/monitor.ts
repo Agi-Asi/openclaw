@@ -46,9 +46,9 @@ import { waitForTransportReady } from "openclaw/plugin-sdk/transport-ready-runti
 import { resolveSignalAccount, resolveSignalReplyToMode } from "./accounts.js";
 import { isSignalNativeApprovalHandlerConfigured } from "./approval-native.js";
 import { addSignalApprovalReactionHintToStructuredPayload } from "./approval-reactions.js";
-import { signalRpcRequest, signalCheck } from "./client-adapter.js";
+import { signalRpcRequest } from "./client-adapter.js";
 import type { SignalTransportKind } from "./client-adapter.js";
-import { createSignalDaemonLifecycle } from "./daemon-lifecycle.js";
+import { createSignalDaemonLifecycle, waitForSignalDaemonReady } from "./daemon-lifecycle.js";
 import { spawnSignalDaemon, type SignalDaemonHandle } from "./daemon.js";
 import { isSignalSenderAllowed, type resolveSignalSender } from "./identity.js";
 import { createSignalEventHandler } from "./monitor/event-handler.js";
@@ -192,37 +192,6 @@ function buildSignalReactionSystemEventText(params: {
   const base = `Signal reaction added: ${params.emojiLabel} by ${params.actorLabel} msg ${params.messageId}`;
   const withTarget = params.targetLabel ? `${base} from ${params.targetLabel}` : base;
   return params.groupLabel ? `${withTarget} in ${params.groupLabel}` : withTarget;
-}
-
-async function waitForSignalDaemonReady(params: {
-  baseUrl: string;
-  abortSignal?: AbortSignal;
-  timeoutMs: number;
-  logAfterMs: number;
-  logIntervalMs?: number;
-  runtime: RuntimeEnv;
-  waitForTransportReadyFn?: typeof waitForTransportReady;
-}): Promise<void> {
-  const waitForTransportReadyFn = params.waitForTransportReadyFn ?? waitForTransportReady;
-  await waitForTransportReadyFn({
-    label: "signal daemon",
-    timeoutMs: params.timeoutMs,
-    logAfterMs: params.logAfterMs,
-    logIntervalMs: params.logIntervalMs,
-    pollIntervalMs: 150,
-    abortSignal: params.abortSignal,
-    runtime: params.runtime,
-    check: async () => {
-      const res = await signalCheck(params.baseUrl, 1000);
-      if (res.ok) {
-        return { ok: true };
-      }
-      return {
-        ok: false,
-        error: res.error ?? (res.status ? `HTTP ${res.status}` : "unreachable"),
-      };
-    },
-  });
 }
 
 const SIGNAL_ATTACHMENT_RPC_RESPONSE_HEADROOM_BYTES = 64 * 1024;
