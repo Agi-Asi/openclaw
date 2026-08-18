@@ -784,6 +784,62 @@ describe("canonical session message recovery", () => {
     expect(state.chatMessages).toEqual([selectedUser]);
   });
 
+  it("does not let a remembered predecessor terminal overwrite a successor start", () => {
+    const sessionKey = "agent:main:main";
+    const sharedHost = makeChatHost({
+      sessionKey,
+      sessionsResult: {
+        ts: 1,
+        path: "",
+        count: 1,
+        defaults: { modelProvider: null, model: null, contextTokens: null },
+        sessions: [
+          {
+            key: sessionKey,
+            kind: "direct",
+            updatedAt: 1,
+            hasActiveRun: true,
+            status: "running",
+          },
+        ],
+      },
+    });
+    const { state } = createSessionEventState({
+      sessionKey,
+      sessions: sharedHost.sessions,
+      sessionsResult: sharedHost.sessions.state.result,
+      activeChatRunIdsBySession: new Map(),
+      lastLocalTerminalReconcile: {
+        sessionKey,
+        runId: "run-predecessor",
+        phase: "done",
+        sessionStatus: "done",
+      },
+    });
+
+    handlePageGatewayEvent(state, {
+      type: "event",
+      event: "sessions.changed",
+      payload: {
+        key: sessionKey,
+        sessionKey,
+        kind: "direct",
+        updatedAt: 2,
+        phase: "start",
+        runId: "run-successor",
+        hasActiveRun: true,
+        status: "running",
+      },
+    });
+
+    expect(state.lastLocalTerminalReconcile).toBeNull();
+    expect(state.activeChatRunIdsBySession?.get(sessionKey)).toEqual(new Set(["run-successor"]));
+    expect(state.sessions.state.result?.sessions[0]).toMatchObject({
+      hasActiveRun: true,
+      status: "running",
+    });
+  });
+
   it("reloads selected history for an identity-only persisted message invalidation", async () => {
     const { request, state } = createSessionEventState({ chatRunId: "active-run" });
 
@@ -1008,7 +1064,7 @@ describe("ChatStateController render lifecycle", () => {
     expect(requestUpdate).not.toHaveBeenCalled();
   });
 
-  it("accepts an event-local observer run when attaching mid-run", () => {
+  it("rejects a delayed predecessor observer and accepts the locally tracked run", () => {
     const projectedDigest = {
       sessionKey: "agent:main:current",
       runId: "r1",
@@ -1029,6 +1085,7 @@ describe("ChatStateController render lifecycle", () => {
           },
         ],
       },
+      activeChatRunIdsBySession: new Map([[projectedDigest.sessionKey, new Set(["r2"])]]),
       requestUpdate,
     });
     const observerEvent = (runId?: string) =>
@@ -1045,7 +1102,10 @@ describe("ChatStateController render lifecycle", () => {
         },
       }) satisfies Parameters<typeof handlePageGatewayEvent>[1];
 
-    handlePageGatewayEvent(state, observerEvent());
+    handlePageGatewayEvent(state, observerEvent("r1"));
+    expect(state.observerDigest).toBe(projectedDigest);
+    expect(requestUpdate).not.toHaveBeenCalled();
+
     handlePageGatewayEvent(state, observerEvent("r2"));
     expect(state.observerDigest?.headline).toBe("Live status r2");
     expect(requestUpdate).toHaveBeenCalledOnce();
@@ -1150,6 +1210,7 @@ describe("ChatStateController render lifecycle", () => {
         },
       },
       chatRunId: null,
+      activeChatRunIdsBySession: new Map([["agent:work:main", new Set(["run-work"])]]),
       observerDigest: {
         sessionKey: "global",
         agentId: "work",

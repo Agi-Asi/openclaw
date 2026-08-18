@@ -41,6 +41,8 @@ export type SessionRunTerminal = {
   startedRunIds?: readonly string[];
   /** Pane-owned run when the terminal event arrived, before local cleanup. */
   currentRunId?: string | null;
+  /** Terminal tombstone retained only while the supplied tracker has no successor. */
+  rememberedRunId?: string | null;
   /** Latest session status after this owned model run leaves the active registry. */
   status: SessionRunStatus;
   endedAt: number;
@@ -613,6 +615,8 @@ export function reconcileSessionRunTerminal(
   }
   const runId = terminal.runId?.trim() || null;
   const currentRunId = terminal.currentRunId?.trim() || null;
+  const rememberedRunId = terminal.rememberedRunId?.trim() || null;
+  const hasTrackerFacts = terminal.startedRunIds !== undefined;
   const startedRunIds = new Set(
     terminal.startedRunIds?.map((id) => id.trim()).filter(Boolean) ?? [],
   );
@@ -624,7 +628,12 @@ export function reconcileSessionRunTerminal(
     if (row.hasActiveRun === true || isSessionRunActive(row)) {
       const ownsCurrentRun = runId !== null && runId === currentRunId;
       const ownsTrackedRun = runId !== null && startedRunIds.has(runId);
-      if (!ownsCurrentRun && !ownsTrackedRun) {
+      const ownsRememberedRun =
+        hasTrackerFacts &&
+        runId !== null &&
+        runId === rememberedRunId &&
+        [...startedRunIds].every((startedRunId) => startedRunId === runId);
+      if (!ownsCurrentRun && !ownsTrackedRun && !ownsRememberedRun) {
         return row;
       }
       if (!ownsCurrentRun && runId) {

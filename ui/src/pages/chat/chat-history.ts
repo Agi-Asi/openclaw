@@ -1764,6 +1764,7 @@ async function loadChatHistoryUncached(
       (!projectedInFlightRun || projectedInFlightRun.status === "streaming"),
     );
     if (inFlightRunIsActive) {
+      // The shared tracker is also the client-local owner for observer digests.
       trackChatSessionRun(state, inFlightRunId);
     }
     const canAdoptInFlightRun = Boolean(

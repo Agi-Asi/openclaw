@@ -207,6 +207,7 @@ public enum ChatSessionSidebarModel {
     public static func subtitle(
         for session: OpenClawChatSessionEntry,
         workSubtitle: String?,
+        authoritativeRunIds: Set<String> = [],
         now: Double = Date().timeIntervalSince1970 * 1000) -> String?
     {
         let agentStatus = self.activeAgentStatus(session.agentStatus, now: now)
@@ -216,7 +217,9 @@ public enum ChatSessionSidebarModel {
         let queued = self.normalized(session.status)?.lowercased() == "queued"
             ? String(localized: "Waiting for a concurrency slot")
             : nil
-        let observer = self.visibleObserverDigest(for: session)?.headline
+        let observer = self.visibleObserverDigest(
+            for: session,
+            authoritativeRunIds: authoritativeRunIds)?.headline
         return declaredAttention ?? failedAttention ?? statusNote ?? queued ?? observer ?? workSubtitle
     }
 
@@ -225,7 +228,8 @@ public enum ChatSessionSidebarModel {
     public static func applying(
         observerDigest digest: SessionObserverDigest,
         to sessions: [OpenClawChatSessionEntry],
-        activeAgentId: String? = nil) -> [OpenClawChatSessionEntry]
+        activeAgentId: String? = nil,
+        authoritativeRunIds: Set<String> = []) -> [OpenClawChatSessionEntry]
     {
         let scopedSessions = self.clearingForeignGlobalObserverDigest(
             in: sessions,
@@ -242,7 +246,7 @@ public enum ChatSessionSidebarModel {
         var session = scopedSessions[index]
         let candidate = OpenClawChatSessionObserverDigest(digest)
         guard self.isRunning(session),
-              self.normalized(candidate.runId) != nil
+              self.normalized(candidate.runId).map(authoritativeRunIds.contains) == true
         else { return scopedSessions }
 
         if let previous = session.observerDigest,
@@ -353,7 +357,8 @@ public enum ChatSessionSidebarModel {
     public static func applying(
         sessionChange change: OpenClawChatSessionsChangedEvent,
         to sessions: [OpenClawChatSessionEntry],
-        activeAgentId: String? = nil) -> [OpenClawChatSessionEntry]?
+        activeAgentId: String? = nil,
+        authoritativeRunIds: Set<String> = []) -> [OpenClawChatSessionEntry]?
     {
         guard let key = change.sessionKey else { return sessions }
         guard let index = sessions.firstIndex(where: { $0.key == key }) else { return nil }
@@ -388,10 +393,16 @@ public enum ChatSessionSidebarModel {
             session.endedAt = endedAt
         }
 
+        if self.isRunning(session),
+           self.normalized(session.observerDigest?.runId).map(authoritativeRunIds.contains) != true
+        {
+            session.observerDigest = nil
+        }
+
         if observerDigestPresent {
             if let projected = projectedDigest {
                 let matchesActiveRun = !self.isRunning(session) ||
-                    self.normalized(projected.runId) != nil
+                    self.normalized(projected.runId).map(authoritativeRunIds.contains) == true
                 if matchesActiveRun {
                     if let previous = session.observerDigest,
                        previous.runId == projected.runId
@@ -414,11 +425,14 @@ public enum ChatSessionSidebarModel {
     }
 
     private static func visibleObserverDigest(
-        for session: OpenClawChatSessionEntry) -> OpenClawChatSessionObserverDigest?
+        for session: OpenClawChatSessionEntry,
+        authoritativeRunIds: Set<String>) -> OpenClawChatSessionObserverDigest?
     {
         guard let digest = session.observerDigest else { return nil }
         if self.isRunning(session) {
-            return self.normalized(digest.runId) == nil ? nil : digest
+            return self.normalized(digest.runId).map(authoritativeRunIds.contains) == true
+                ? digest
+                : nil
         }
         let health = digest.health.lowercased()
         guard health == "done" || health == "failed",

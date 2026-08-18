@@ -589,7 +589,10 @@ struct ChatSessionSidebarModelTests {
             updatedat: 200,
             headline: "Second",
             health: .onTrack)
-        var sessions = ChatSessionSidebarModel.applying(observerDigest: revision2, to: [running])
+        var sessions = ChatSessionSidebarModel.applying(
+            observerDigest: revision2,
+            to: [running],
+            authoritativeRunIds: ["run-1"])
 
         sessions = ChatSessionSidebarModel.applying(
             observerDigest: SessionObserverDigest(
@@ -599,9 +602,13 @@ struct ChatSessionSidebarModelTests {
                 updatedat: 300,
                 headline: "Stale",
                 health: .grinding),
-            to: sessions)
+            to: sessions,
+            authoritativeRunIds: ["run-1"])
         #expect(sessions[0].observerDigest?.headline == "Second")
-        #expect(ChatSessionSidebarModel.subtitle(for: sessions[0], workSubtitle: "Work") == "Second")
+        #expect(ChatSessionSidebarModel.subtitle(
+            for: sessions[0],
+            workSubtitle: "Work",
+            authoritativeRunIds: ["run-1"]) == "Second")
 
         sessions = try #require(ChatSessionSidebarModel.applying(
             sessionChange: .init(
@@ -615,8 +622,32 @@ struct ChatSessionSidebarModelTests {
                     health: "wrapping-up"),
                 status: "running",
                 hasActiveRun: true),
-            to: sessions))
+            to: sessions,
+            authoritativeRunIds: ["run-1"]))
         #expect(sessions[0].observerDigest?.headline == "Projected")
+    }
+
+    @Test func `delayed predecessor observer does not replace the locally owned run`() {
+        let running = self.entry(
+            key: "agent:main:work",
+            status: "running",
+            hasActiveRun: true)
+        let sessions = ChatSessionSidebarModel.applying(
+            observerDigest: SessionObserverDigest(
+                sessionkey: running.key,
+                runid: "run-predecessor",
+                revision: 2,
+                updatedat: 200,
+                headline: "Stale",
+                health: .grinding),
+            to: [running],
+            authoritativeRunIds: ["run-successor"])
+
+        #expect(sessions[0].observerDigest == nil)
+        #expect(ChatSessionSidebarModel.subtitle(
+            for: sessions[0],
+            workSubtitle: "Work",
+            authoritativeRunIds: ["run-successor"]) == "Work")
     }
 
     @Test func `global reconnect rejects foreign and stale observer projections`() throws {
@@ -645,7 +676,8 @@ struct ChatSessionSidebarModelTests {
                     headline: "Foreign status",
                     health: "done")),
             to: [running],
-            activeAgentId: "work"))
+            activeAgentId: "work",
+            authoritativeRunIds: ["run-work"]))
 
         let replayed = try #require(ChatSessionSidebarModel.applying(
             sessionChange: .init(
@@ -660,7 +692,8 @@ struct ChatSessionSidebarModelTests {
                     headline: "Replayed work status",
                     health: "on-track")),
             to: foreign,
-            activeAgentId: "work"))
+            activeAgentId: "work",
+            authoritativeRunIds: ["run-work"]))
 
         #expect(replayed[0].observerDigest?.headline == "Current work status")
         #expect(replayed[0].observerDigest?.revision == 4)
@@ -696,7 +729,8 @@ struct ChatSessionSidebarModelTests {
                 updatedat: 900,
                 headline: "New run",
                 health: .onTrack),
-            to: rolled)
+            to: rolled,
+            authoritativeRunIds: ["run-2"])
         #expect(accepted[0].observerDigest?.headline == "New run")
     }
 
@@ -736,7 +770,8 @@ struct ChatSessionSidebarModelTests {
                 sessionKey: existing.key,
                 reason: "message",
                 updatedAt: 400),
-            to: [existing]))[0]
+            to: [existing],
+            authoritativeRunIds: ["run-1"]))[0]
 
         #expect(updated.updatedAt == 400)
         #expect(updated.agentStatus == agentStatus)

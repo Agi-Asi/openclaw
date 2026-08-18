@@ -40,6 +40,12 @@ extension OpenClawChatViewModel {
             })
     }
 
+    func authoritativeObserverRunIDs(for sessionKey: String) -> Set<String> {
+        self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
+            ? self.pendingRuns
+            : []
+    }
+
     var liveLocalRunIDs: Set<String> {
         Set(self.pendingRuns.filter { self.liveRunStateByRunID[$0]?.terminal != true })
     }

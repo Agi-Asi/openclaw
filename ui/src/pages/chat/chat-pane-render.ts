@@ -37,6 +37,7 @@ import {
 } from "./chat-pane-state.ts";
 import { dismissRealtimeTalkError } from "./chat-realtime.ts";
 import { activeChatRunStartupStatus } from "./chat-run-startup.ts";
+import { readTrackedChatSessionRuns } from "./chat-session-run-tracker.ts";
 import { refreshChatCommands, refreshPageChat } from "./chat-state-refresh.ts";
 import {
   resolveChatAgentId,
@@ -81,6 +82,10 @@ export class ChatPane extends ChatPaneLayoutRender {
       localRunId: state.chatRunId,
       session: selectedSession,
       digest: observerDigest,
+      trackedRunIds: readTrackedChatSessionRuns(state, [
+        state.sessionKey,
+        selectedSession?.key ?? state.sessionKey,
+      ]),
     });
     const workspaceConflict = workspaceResultConflictFromPlacement(selectedSession?.placement);
     const placement = selectedSession?.placement;

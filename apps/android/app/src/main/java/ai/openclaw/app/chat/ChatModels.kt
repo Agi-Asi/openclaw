@@ -319,6 +319,8 @@ data class ChatSessionEntry(
   val hasAgentStatusMetadata: Boolean = agentStatus != null,
   val observerDigest: SessionObserverDigest? = null,
   val hasObserverDigestMetadata: Boolean = observerDigest != null,
+  /** Client-local proof that the digest run is owned by pending/history state. */
+  val observerDigestRunIsAuthoritative: Boolean = false,
   val lastActivityAt: Long? = null,
   val totalTokens: Long? = null,
   val totalTokensFresh: Boolean? = null,

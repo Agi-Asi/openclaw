@@ -5643,8 +5643,15 @@ class ChatController internal constructor(
         _sessions.value,
         digest,
         activeAgentId = selectedAgentId,
+        authoritativeRunIds = authoritativeObserverRunIds(),
       )
   }
+
+  private fun authoritativeObserverRunIds(): Set<String> =
+    buildSet {
+      addAll(synchronized(pendingRuns) { pendingRuns.toSet() })
+      latestAppliedInFlightRunId?.trim()?.takeIf(String::isNotEmpty)?.let(::add)
+    }
 
   private fun scheduleSessionsChangedBranchReconciliation(
     eventGatewayScope: ChatCacheScope?,
@@ -5711,8 +5718,27 @@ class ChatController internal constructor(
       return
     }
     if (eventOwner != visibleOwner) return
-    val ownedEntry = reconcileSessionObserverProjectionOwner(entry, eventOwner)
     val phase = payload["phase"].asStringOrNull()
+    val startedRunId =
+      payload["runId"]
+        .asStringOrNull()
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.takeIf { phase == "start" }
+    val ownerReconciledEntry = reconcileSessionObserverProjectionOwner(entry, eventOwner)
+    val ownedEntry =
+      if (
+        startedRunId != null &&
+        ownerReconciledEntry.observerDigest?.runId?.trim() != startedRunId
+      ) {
+        ownerReconciledEntry.copy(
+          observerDigest = null,
+          hasObserverDigestMetadata = true,
+          observerDigestRunIsAuthoritative = false,
+        )
+      } else {
+        ownerReconciledEntry
+      }
     val terminalRunId =
       payload["runId"]
         .asStringOrNull()
@@ -6244,6 +6270,7 @@ class ChatController internal constructor(
     runId: String,
     publishRunState: Boolean = true,
   ) {
+    if (latestAppliedInFlightRunId == runId) latestAppliedInFlightRunId = null
     pendingRunProjectionsByRunId.remove(runId)
     pendingRunTimeoutJobs.remove(runId)?.cancel()
     unknownOutcomeRunIds.remove(runId)
@@ -6265,6 +6292,7 @@ class ChatController internal constructor(
     preserveDisconnectedOwnership: Boolean = false,
     clearRunTelemetry: Boolean = true,
   ) {
+    latestAppliedInFlightRunId = null
     for ((_, job) in pendingRunTimeoutJobs) {
       job.cancel()
     }
@@ -7505,6 +7533,15 @@ internal fun mergeChatSessionEntry(
       next = next.observerDigest,
       hasNextProjection = next.hasObserverDigestMetadata,
     )
+  val observerDigestRunIsAuthoritative =
+    observerDigest != null &&
+      (
+        next.observerDigestRunIsAuthoritative ||
+          (
+            existing.observerDigestRunIsAuthoritative &&
+              existing.observerDigest?.runId?.trim() == observerDigest.runId?.trim()
+          )
+      )
   return existing.copy(
     // Partial events may omit identity; retain the last observed occurrence until
     // an authoritative event supplies the replacement session ID.
@@ -7527,6 +7564,7 @@ internal fun mergeChatSessionEntry(
     agentStatus = if (next.hasAgentStatusMetadata) next.agentStatus else existing.agentStatus,
     hasAgentStatusMetadata = existing.hasAgentStatusMetadata || next.hasAgentStatusMetadata,
     observerDigest = observerDigest,
+    observerDigestRunIsAuthoritative = observerDigestRunIsAuthoritative,
     hasObserverDigestMetadata = existing.hasObserverDigestMetadata || next.hasObserverDigestMetadata,
     lastActivityAt = next.lastActivityAt ?: existing.lastActivityAt,
     totalTokens =
@@ -7606,6 +7644,7 @@ internal fun applySessionObserverDigest(
   sessions: List<ChatSessionEntry>,
   digest: SessionObserverDigest,
   activeAgentId: String? = null,
+  authoritativeRunIds: Set<String> = emptySet(),
 ): List<ChatSessionEntry> {
   val digestAgentId = normalizedObserverAgentId(digest.agentId)
   val selectedAgentId = normalizedObserverAgentId(activeAgentId)
@@ -7622,11 +7661,16 @@ internal fun applySessionObserverDigest(
   val session = scopedSessions[index]
   val runId = digest.runId?.trim()?.takeIf { it.isNotEmpty() } ?: return scopedSessions
   val isRunning = session.hasActiveRun == true || session.status?.trim()?.lowercase() == "running"
-  if (!isRunning) return scopedSessions
+  if (!isRunning || runId !in authoritativeRunIds) return scopedSessions
   val previous = session.observerDigest
   if (previous?.runId == runId && !observerDigestIsNewer(digest, previous)) return scopedSessions
   return scopedSessions.toMutableList().also {
-    it[index] = session.copy(observerDigest = digest, hasObserverDigestMetadata = true)
+    it[index] =
+      session.copy(
+        observerDigest = digest,
+        hasObserverDigestMetadata = true,
+        observerDigestRunIsAuthoritative = true,
+      )
   }
 }
 
@@ -7653,6 +7697,8 @@ internal fun reconcileGlobalObserverDigestOwner(
             null
           },
         hasObserverDigestMetadata = true,
+        observerDigestRunIsAuthoritative =
+          session.observerDigestRunIsAuthoritative && digestAgentId == null && adoptOwnerless,
       )
   }
 }
@@ -7665,12 +7711,21 @@ internal fun reconcileSessionObserverProjectionOwner(
   if (session.key != "global" || digest == null) return session
   val owner =
     normalizedObserverAgentId(ownerAgentId)
-      ?: return session.copy(observerDigest = null, hasObserverDigestMetadata = false)
+      ?: return session.copy(
+        observerDigest = null,
+        hasObserverDigestMetadata = false,
+        observerDigestRunIsAuthoritative = false,
+      )
   val digestOwner = normalizedObserverAgentId(digest.agentId)
   return when (digestOwner) {
     null -> session.copy(observerDigest = digest.copy(agentId = owner))
     owner -> session
-    else -> session.copy(observerDigest = null, hasObserverDigestMetadata = false)
+    else ->
+      session.copy(
+        observerDigest = null,
+        hasObserverDigestMetadata = false,
+        observerDigestRunIsAuthoritative = false,
+      )
   }
 }
 

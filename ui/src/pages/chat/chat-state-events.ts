@@ -5,7 +5,10 @@ import { fireFirstReplyConfetti } from "../../components/confetti.ts";
 import { isGitHubPullRequestLink } from "../../components/github-link-target.ts";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
-import { pickFreshestObserverDigest } from "../../lib/observer-digest.ts";
+import {
+  isObserverDigestRunAuthoritative,
+  pickFreshestObserverDigest,
+} from "../../lib/observer-digest.ts";
 import {
   readSessionChangedEvent,
   type SessionChangedResult,
@@ -35,6 +38,7 @@ import { flushChatQueueForEvent, resumeStoredChatOutboxes } from "./chat-send-ac
 import { preserveQueuedUserTurn } from "./chat-send-support.ts";
 import { recordChatSendServerTiming } from "./chat-send-timing.ts";
 import {
+  readTrackedChatSessionRuns,
   resetTrackedChatSessionRuns,
   settleTrackedChatSessionRun,
   trackChatSessionRun,
@@ -234,6 +238,11 @@ function handleSessionsChangedEvent(state: ChatPageHost, payload: unknown) {
     state.selectedChatSessionArchived = event.archived;
   }
   if (event && matchesChat && source?.phase === "start") {
+    const startedRunId = event.runId?.trim();
+    const rememberedRunId = state.lastLocalTerminalReconcile?.runId?.trim();
+    if (startedRunId && rememberedRunId && startedRunId !== rememberedRunId) {
+      state.lastLocalTerminalReconcile = null;
+    }
     trackChatSessionRun(state, event.runId);
   }
   const result = reconcileSessionEvent(state, payload);
@@ -399,7 +408,14 @@ function observerDigestMatchesAuthoritativeRun(
     return digest.runId === state.chatRunId;
   }
   const session = selectedChatSessionRow(state);
-  return Boolean(session?.hasActiveRun && digest.runId);
+  if (!session?.hasActiveRun) {
+    return false;
+  }
+  return isObserverDigestRunAuthoritative({
+    digestRunId: digest.runId,
+    localRunId: null,
+    trackedRunIds: readTrackedChatSessionRuns(state, [state.sessionKey, digest.sessionKey]),
+  });
 }
 
 export function handlePageGatewayEvent(state: ChatPageHost, event: GatewayEventFrame) {

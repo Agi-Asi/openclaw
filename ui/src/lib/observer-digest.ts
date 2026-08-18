@@ -33,11 +33,26 @@ export function isCriticalObserverHealth(health: unknown): health is "stuck" | "
   return health === "stuck" || health === "waiting-on-user";
 }
 
-/** Local live run id wins; otherwise an active digest owns its event-local run id. */
+export function isObserverDigestRunAuthoritative(params: {
+  digestRunId: string | null | undefined;
+  localRunId: string | null | undefined;
+  trackedRunIds?: ReadonlySet<string>;
+}): boolean {
+  const digestRunId = params.digestRunId?.trim();
+  if (!digestRunId) {
+    return false;
+  }
+  return (
+    digestRunId === params.localRunId?.trim() || params.trackedRunIds?.has(digestRunId) === true
+  );
+}
+
+/** Local live run id wins; otherwise only locally owned digest identities render. */
 export function resolveChatPaneObserverRunId(params: {
   localRunId: string | null;
   session: { hasActiveRun?: boolean } | undefined;
   digest: { runId?: string } | null;
+  trackedRunIds?: ReadonlySet<string>;
 }): string | null {
   if (params.localRunId) {
     return params.localRunId;
@@ -45,7 +60,13 @@ export function resolveChatPaneObserverRunId(params: {
   if (!params.session?.hasActiveRun) {
     return null;
   }
-  return params.digest?.runId ?? null;
+  return isObserverDigestRunAuthoritative({
+    digestRunId: params.digest?.runId,
+    localRunId: null,
+    trackedRunIds: params.trackedRunIds,
+  })
+    ? (params.digest?.runId ?? null)
+    : null;
 }
 
 export function pickFreshestObserverDigest<T extends ComparableObserverDigest>(

@@ -41,7 +41,8 @@ extension OpenClawChatViewModel {
             self.sessions = ChatSessionSidebarModel.applying(
                 observerDigest: digest,
                 to: self.sessions,
-                activeAgentId: self.activeAgentId)
+                activeAgentId: self.activeAgentId,
+                authoritativeRunIds: self.authoritativeObserverRunIDs(for: digest.sessionkey))
         case let .chat(chat):
             self.handleChatEvent(chat)
         case let .sessionMessage(message):
@@ -99,7 +100,9 @@ extension OpenClawChatViewModel {
         let projectedSessions = ChatSessionSidebarModel.applying(
             sessionChange: change,
             to: self.sessions,
-            activeAgentId: self.activeAgentId)
+            activeAgentId: self.activeAgentId,
+            authoritativeRunIds: self.authoritativeObserverRunIDs(
+                for: change.sessionKey ?? change.session?.key ?? ""))
         if let projectedSessions {
             self.sessions = projectedSessions
         } else if !ownedSwarmActivityNote, change.reason != "patch", change.reason != "command-metadata" {
@@ -226,7 +229,9 @@ extension OpenClawChatViewModel {
             if let projected = ChatSessionSidebarModel.applying(
                 sessionChange: change,
                 to: self.sessions,
-                activeAgentId: self.activeAgentId)
+                activeAgentId: self.activeAgentId,
+                authoritativeRunIds: self.authoritativeObserverRunIDs(
+                    for: change.sessionKey ?? change.session?.key ?? ""))
             {
                 self.sessions = projected
             }

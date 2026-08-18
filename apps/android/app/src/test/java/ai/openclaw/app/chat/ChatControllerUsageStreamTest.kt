@@ -46,8 +46,7 @@ class ChatControllerUsageStreamTest {
     phase: String,
   ): String = """{"sessionKey":"main","runId":"$runId","seq":$sequence,"ts":11,"stream":"lifecycle","data":{"phase":"$phase"}}"""
 
-  private fun advertise(active: Boolean): String =
-    """{"reason":"patch","session":{"key":"main","agentId":"main","hasActiveRun":$active}}"""
+  private fun advertise(active: Boolean): String = """{"reason":"patch","session":{"key":"main","agentId":"main","hasActiveRun":$active}}"""
 
   @Test
   @OptIn(ExperimentalCoroutinesApi::class)

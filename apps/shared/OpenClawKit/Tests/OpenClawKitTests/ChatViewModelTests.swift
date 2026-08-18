@@ -3319,6 +3319,7 @@ struct ChatViewModelTests {
             headline: "Selected owner",
             health: "on-track")
         vm.sessions = [selected]
+        vm.pendingRuns = ["run-work"]
 
         vm.handleTransportEvent(.sessionsChanged(.init(
             sessionKey: "global",

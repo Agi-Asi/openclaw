@@ -321,5 +321,4 @@ class ChatControllerSessionPolicyTest {
     assertEquals(true, merged.hasActiveRun)
     assertEquals("running", merged.status)
   }
-
 }

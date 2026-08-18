@@ -400,7 +400,11 @@ function reconcileSessionRows(
   host: RunLifecycleHost,
   options: ReconcileOptions,
   occurredAt: number,
-  ownership?: { currentRunId: string | null; startedRunIds: readonly string[] },
+  ownership?: {
+    currentRunId: string | null;
+    startedRunIds: readonly string[];
+    rememberedRunId?: string | null;
+  },
 ) {
   if (!options.outcome) {
     return;
@@ -416,6 +420,7 @@ function reconcileSessionRows(
     runId: options.runId ?? host.chatRunId ?? null,
     currentRunId: ownership?.currentRunId ?? host.chatRunId ?? null,
     startedRunIds: ownership?.startedRunIds ?? [...readTrackedChatSessionRuns(host, [...keys])],
+    rememberedRunId: ownership?.rememberedRunId ?? null,
     status,
     endedAt: occurredAt,
   };
@@ -460,7 +465,6 @@ export function reconcileChatRunLifecycle(host: RunLifecycleHost, options: Recon
     currentRunId: host.chatRunId ?? null,
     startedRunIds: [...readTrackedChatSessionRuns(host, trackedSessionKeys)],
   };
-
   if (options.clearIndicators ?? true) {
     clearRunIndicators(host, runId);
   }
@@ -536,9 +540,18 @@ function reconcileStaleSelectedSessionRunAfterLocalCompletion(host: RunLifecycle
     // revive the completed run.
     return false;
   }
-  // Browser and Gateway clocks can differ. The terminal event supplies the
-  // run identity; the row supplies only the direct-activity fact.
-  if (recent.runId == null || row.hasActiveRun !== true) {
+  // The tombstone plus the real tracker prove that no successor start has
+  // claimed the row. Missing tracker state cannot safely authorize repair.
+  if (
+    recent.runId == null ||
+    row.hasActiveRun !== true ||
+    host.activeChatRunIdsBySession === undefined
+  ) {
+    return false;
+  }
+  const sessionKeys = [recent.sessionKey, host.sessionKey];
+  const trackedRunIds = [...readTrackedChatSessionRuns(host, sessionKeys)];
+  if (trackedRunIds.some((runId) => runId !== recent.runId)) {
     host.lastLocalTerminalReconcile = null;
     return false;
   }
@@ -551,7 +564,11 @@ function reconcileStaleSelectedSessionRunAfterLocalCompletion(host: RunLifecycle
       runId: recent.runId,
     },
     Date.now(),
-    { currentRunId: recent.runId, startedRunIds: [] },
+    {
+      currentRunId: null,
+      startedRunIds: trackedRunIds,
+      rememberedRunId: recent.runId,
+    },
   );
   host.requestUpdate?.();
   return true;

@@ -350,7 +350,8 @@ struct ChatSessionSidebar: View {
         }
         return ChatSessionSidebarModel.subtitle(
             for: session,
-            workSubtitle: parts.isEmpty ? nil : parts.joined(separator: " · "))
+            workSubtitle: parts.isEmpty ? nil : parts.joined(separator: " · "),
+            authoritativeRunIds: self.viewModel.authoritativeObserverRunIDs(for: session.key))
     }
 
     private var connectionFooter: some View {

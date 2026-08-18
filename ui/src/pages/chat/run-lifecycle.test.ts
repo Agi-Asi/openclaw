@@ -233,6 +233,7 @@ function makeHost(over: Partial<ReconcileHost> = {}): ReconcileHost {
     sessionKey: "s1",
     chatRunId: null,
     chatStream: null,
+    activeChatRunIdsBySession: new Map(),
     sessionsResult: makeSessionsResult([{ key: "s1", hasActiveRun: true, status: "running" }]),
     requestUpdate: () => {},
     ...over,
@@ -478,6 +479,16 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
 
   it("does NOT clear a genuinely recovered active run with no recent local completion", () => {
     const host = makeHost({ lastLocalTerminalReconcile: null });
+    expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(false);
+    expect(rowActive(host)).toBe(true);
+  });
+
+  it("does not reapply a remembered terminal without the real run tracker", () => {
+    const host = makeHost({
+      activeChatRunIdsBySession: undefined,
+      lastLocalTerminalReconcile: makeLocalTerminalReconcile(),
+    });
+
     expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(false);
     expect(rowActive(host)).toBe(true);
   });

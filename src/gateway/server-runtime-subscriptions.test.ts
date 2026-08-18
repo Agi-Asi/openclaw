@@ -400,7 +400,7 @@ describe("startGatewayEventSubscriptions", () => {
         canonicalKey: string;
         sessionId?: string;
         agentId?: string;
-      }) => { active: boolean; runIds: string[] };
+      }) => { hasActiveRun: boolean; hasProjectedRun: boolean };
     };
 
     expect(
@@ -410,7 +410,7 @@ describe("startGatewayEventSubscriptions", () => {
         sessionId: "session-ops",
         agentId: "ops",
       }),
-    ).toEqual({ active: true, runIds: ["run-ops"] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
   });
 
   it("drives a registered chat run through the terminal persistence transition table", async () => {

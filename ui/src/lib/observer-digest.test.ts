@@ -1,6 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { isCriticalObserverHealth, projectSessionObserverDigest } from "./observer-digest.ts";
+import {
+  isCriticalObserverHealth,
+  projectSessionObserverDigest,
+  resolveChatPaneObserverRunId,
+} from "./observer-digest.ts";
 
 describe("projectSessionObserverDigest", () => {
   it("binds a session-row projection to its owning session", () => {
@@ -29,5 +33,37 @@ describe("isCriticalObserverHealth", () => {
     expect(isCriticalObserverHealth("waiting-on-user")).toBe(true);
     expect(isCriticalObserverHealth("done")).toBe(false);
     expect(isCriticalObserverHealth("failed")).toBe(false);
+  });
+});
+
+describe("resolveChatPaneObserverRunId", () => {
+  it("rejects an active-row digest without a local identity owner", () => {
+    expect(
+      resolveChatPaneObserverRunId({
+        localRunId: null,
+        session: { hasActiveRun: true },
+        digest: { runId: "run-stale" },
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "locally tracked start",
+      trackedRunIds: new Set(["run-current"]),
+    },
+    {
+      name: "history in-flight snapshot recorded in the tracker",
+      trackedRunIds: new Set(["run-current"]),
+    },
+  ])("accepts a digest owned by the $name", ({ trackedRunIds }) => {
+    expect(
+      resolveChatPaneObserverRunId({
+        localRunId: null,
+        session: { hasActiveRun: true },
+        digest: { runId: "run-current" },
+        trackedRunIds,
+      }),
+    ).toBe("run-current");
   });
 });

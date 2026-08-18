@@ -942,7 +942,10 @@ internal fun sessionListSubtitle(
     digest != null &&
       (digest.health == "done" || digest.health == "failed") &&
       (session.lastReadAt ?: 0L) < digest.updatedAt
-  val observer = digest?.headline?.takeIf { running || finalDigestUnread }
+  val observer =
+    digest?.headline?.takeIf {
+      (running && session.observerDigestRunIsAuthoritative) || (!running && finalDigestUnread)
+    }
   val queued = nativeString("Waiting for a concurrency slot").takeIf { runStatus == "queued" }
   return declaredAttention ?: failedAttention ?: agentStatus?.note ?: queued ?: observer ?: fallback
 }

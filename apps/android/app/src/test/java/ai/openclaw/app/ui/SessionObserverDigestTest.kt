@@ -25,11 +25,13 @@ class SessionObserverDigestTest {
       applySessionObserverDigest(
         listOf(running),
         digest(runId = "run-1", revision = 2, updatedAt = 200, headline = "Second"),
+        authoritativeRunIds = setOf("run-1"),
       )
     sessions =
       applySessionObserverDigest(
         sessions,
         digest(runId = "run-1", revision = 1, updatedAt = 300, headline = "Stale"),
+        authoritativeRunIds = setOf("run-1"),
       )
     assertEquals("Second", sessions.single().observerDigest?.headline)
     assertEquals("Second", sessionListSubtitle(sessions.single(), fallback = "Work", nowMs = 1_000))
@@ -46,6 +48,27 @@ class SessionObserverDigestTest {
         hasRunMetadata = true,
       )
     assertEquals("Projected", mergeChatSessionEntry(sessions.single(), projected).observerDigest?.headline)
+  }
+
+  @Test
+  fun delayedPredecessorObserverDoesNotReplaceTheLocallyOwnedRun() {
+    val running =
+      ChatSessionEntry(
+        key = "agent:main:work",
+        updatedAtMs = 100,
+        hasActiveRun = true,
+        status = "running",
+      )
+
+    val sessions =
+      applySessionObserverDigest(
+        listOf(running),
+        digest(runId = "run-predecessor", revision = 2, updatedAt = 200, headline = "Stale"),
+        authoritativeRunIds = setOf("run-successor"),
+      )
+
+    assertNull(sessions.single().observerDigest)
+    assertEquals("Work", sessionListSubtitle(sessions.single(), fallback = "Work", nowMs = 1_000))
   }
 
   @Test
@@ -108,7 +131,13 @@ class SessionObserverDigestTest {
         missingOwner,
         activeAgentId = null,
       )
-    val accepted = applySessionObserverDigest(ownerless, selectedOwner, activeAgentId = "work")
+    val accepted =
+      applySessionObserverDigest(
+        ownerless,
+        selectedOwner,
+        activeAgentId = "work",
+        authoritativeRunIds = setOf("run-work"),
+      )
 
     assertNull(rejected.single().observerDigest)
     assertNull(ownerless.single().observerDigest)
@@ -147,6 +176,7 @@ class SessionObserverDigestTest {
           headline = "Foreign status",
         ),
         activeAgentId = "work",
+        authoritativeRunIds = setOf("run-work"),
       )
     val replayed =
       applySessionObserverDigest(
@@ -157,6 +187,7 @@ class SessionObserverDigestTest {
           headline = "Replayed work status",
         ),
         activeAgentId = "work",
+        authoritativeRunIds = setOf("run-work"),
       )
 
     assertEquals("Current work status", replayed.single().observerDigest?.headline)
@@ -257,6 +288,7 @@ class SessionObserverDigestTest {
         lastReadAt = 100,
         agentStatus = agentStatus,
         observerDigest = liveDigest,
+        observerDigestRunIsAuthoritative = true,
         hasActiveRun = true,
         status = "failed",
         lastRunError = "Needs approval",
