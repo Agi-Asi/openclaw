@@ -40,6 +40,8 @@ type ConnectedNodePluginToolSnapshot = {
 const CONNECTED_NODE_PLUGIN_TOOL_SNAPSHOT_KEY = Symbol.for(
   "openclaw.gateway.connected-node-plugin-tool-snapshot",
 );
+// Registry publication and agent tool construction occupy separate packaged chunks.
+// Share their snapshot or an inventoried node tool disappears from agent runs.
 const snapshot = resolveGlobalSingleton<ConnectedNodePluginToolSnapshot>(
   CONNECTED_NODE_PLUGIN_TOOL_SNAPSHOT_KEY,
   () => ({ toolsByNodeId: new Map(), version: 0 }),
