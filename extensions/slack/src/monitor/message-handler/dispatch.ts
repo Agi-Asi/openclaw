@@ -21,7 +21,6 @@ import {
 } from "openclaw/plugin-sdk/reply-payload";
 import type { ReplyPayload, ReplyDispatchKind } from "openclaw/plugin-sdk/reply-runtime";
 import { danger, logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
-import { settleProvisionalParentFork } from "openclaw/plugin-sdk/session-store-runtime";
 import { formatSlackError } from "../../errors.js";
 import { normalizeSlackOutboundText } from "../../format.js";
 import { SLACK_EDIT_TEXT_MAX_BYTES } from "../../limits.js";
@@ -41,6 +40,7 @@ import {
 } from "../../streaming.js";
 import { countSlackTextUtf8Bytes } from "../../truncate.js";
 import { resolveSlackBotLoopProtection } from "./dispatch-helpers.js";
+import { settleSlackProvisionalParentFork } from "./dispatch-parent-fork.js";
 import { createSlackProgressRuntime } from "./dispatch-progress.js";
 import { createSlackDispatchSetup } from "./dispatch-setup.js";
 import { createSlackStreamingDeliveryRuntime } from "./dispatch-streaming.js";
@@ -617,12 +617,7 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   } finally {
     progress.progressDraft.cancel();
     if (!progress.useDraftProgressCard) {
-      try {
-        await draftStream?.discardPending();
-      } catch (error) {
-        provisionalParentForkCompletion?.resolve();
-        throw error;
-      }
+      await draftStream?.discardPending();
     }
   }
 
@@ -688,36 +683,13 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     const confirmedSlackReplyDelivered = delivery.observedReplyDelivery || streamFallbackDelivered;
 
     if (prepared.provisionalParentFork) {
-      try {
-        // Queue counts describe attempted dispatcher work, not transport
-        // success. Keep copied parent context only after Slack acknowledges a
-        // normal, preview, streaming, or fallback delivery.
-        const outcome = confirmedSlackReplyDelivered ? "confirm" : "retire";
-        const settlement = await settleProvisionalParentFork({
-          agentId: route.agentId,
-          id: prepared.provisionalParentFork.id,
-          outcome,
-          sessionKey: prepared.provisionalParentFork.sessionKey,
-          storePath: prepared.turn.storePath,
-        });
-        if (settlement === "mismatch" || settlement === "stale") {
-          runtime.error?.(
-            danger(
-              `slack: provisional parent fork ${outcome} did not settle for ${prepared.provisionalParentFork.sessionKey} (${settlement})`,
-            ),
-          );
-        }
-      } catch (err) {
-        // A concurrent thread turn can hold the session admission fence. Its
-        // initializer sees the still-provisional marker and rolls over to an
-        // isolated generation, so cleanup failure must not duplicate a visible
-        // Slack reply or fail the already-settled delivery.
-        runtime.error?.(
-          danger(
-            `slack: provisional parent fork settlement failed for ${prepared.provisionalParentFork.sessionKey}: ${formatSlackError(err)}`,
-          ),
-        );
-      }
+      await settleSlackProvisionalParentFork({
+        agentId: route.agentId,
+        confirmedReplyDelivered: confirmedSlackReplyDelivered,
+        fork: prepared.provisionalParentFork,
+        runtime,
+        storePath: prepared.turn.storePath,
+      });
     }
   } finally {
     provisionalParentForkCompletion?.resolve();

@@ -1,7 +1,6 @@
-import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
   loadSessionEntry,
@@ -17,11 +16,10 @@ import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db
 import { finalizeInboundContext } from "./inbound-context.js";
 import { initSessionState } from "./session.js";
 
-const roots: string[] = [];
+const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
-async function makeStorePath(): Promise<string> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-provisional-fork-sqlite-"));
-  roots.push(root);
+function makeStorePath(): string {
+  const root = tempDirs.make("openclaw-provisional-fork-sqlite-");
   return path.join(root, "sessions", "sessions.json");
 }
 
@@ -80,14 +78,13 @@ async function seedParentTranscript(params: {
   );
 }
 
-afterEach(async () => {
+afterEach(() => {
   closeOpenClawStateDatabaseForTest();
-  await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
 describe("provisional parent fork SQLite isolation", () => {
   it("deletes copied context instead of replaying it after settlement is missed", async () => {
-    const storePath = await makeStorePath();
+    const storePath = makeStorePath();
     const parentSessionKey = "agent:main:slack:channel:c1";
     const parentSessionId = "parent-session";
     const threadSessionKey = "agent:main:slack:channel:c1:thread:shared-root";
@@ -183,7 +180,7 @@ describe("provisional parent fork SQLite isolation", () => {
   });
 
   it("preserves user-owned context when a provisional bot root arrives late", async () => {
-    const storePath = await makeStorePath();
+    const storePath = makeStorePath();
     const parentSessionKey = "agent:main:slack:channel:c3";
     const parentSessionId = "parent-delayed-root";
     const threadSessionKey = "agent:main:slack:channel:c3:thread:user-first";
@@ -275,7 +272,7 @@ describe("provisional parent fork SQLite isolation", () => {
   });
 
   it("stays isolated when Slack retirement wins during lifecycle admission drain", async () => {
-    const storePath = await makeStorePath();
+    const storePath = makeStorePath();
     const parentSessionKey = "agent:main:slack:channel:c2";
     const parentSessionId = "parent-race";
     const threadSessionKey = "agent:main:slack:channel:c2:thread:race";

@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import {
   getSessionEntry,
@@ -10,17 +9,15 @@ import {
 } from "./session-store-runtime.js";
 
 describe("provisional parent fork settlement", () => {
-  let tempDir: string;
+  const tempDirs = useAutoCleanupTempDirTracker(afterEach);
   let storePath: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-provisional-parent-fork-"));
-    storePath = path.join(tempDir, "sessions.json");
+    storePath = path.join(tempDirs.make("openclaw-provisional-parent-fork-"), "sessions.json");
   });
 
   afterEach(() => {
     closeOpenClawStateDatabaseForTest();
-    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it("confirms a matching fork without refreshing activity", async () => {

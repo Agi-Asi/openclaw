@@ -895,27 +895,12 @@ describe("monitorSlackProvider tool results", () => {
   });
 
   it.each([
-    {
-      label: "unset inheritance",
-      threadInheritParent: undefined,
-      rootParentSessionKey: "agent:main:slack:channel:c1",
-      followUpParentSessionKey: undefined,
-    },
-    {
-      label: "explicit isolation",
-      threadInheritParent: false,
-      rootParentSessionKey: undefined,
-      followUpParentSessionKey: undefined,
-    },
-    {
-      label: "explicit inheritance",
-      threadInheritParent: true,
-      rootParentSessionKey: "agent:main:slack:channel:c1",
-      followUpParentSessionKey: "agent:main:slack:channel:c1",
-    },
-  ])(
-    "routes a bot-opened thread through Slack ingress and dispatch for $label",
-    async ({ threadInheritParent, rootParentSessionKey, followUpParentSessionKey }) => {
+    ["unset inheritance", undefined, "agent:main:slack:channel:c1", undefined],
+    ["explicit isolation", false, undefined, undefined],
+    ["explicit inheritance", true, "agent:main:slack:channel:c1", "agent:main:slack:channel:c1"],
+  ] as const)(
+    "routes a bot-opened thread through Slack ingress and dispatch for %s",
+    async (_label, threadInheritParent, rootParentSessionKey, followUpParentSessionKey) => {
       setOpenChannelDirectMessages({ replyToMode: "all", threadInheritParent });
       const contexts: Array<{ SessionKey?: string; ParentSessionKey?: string }> = [];
       replyMock.mockImplementation(async (ctx: unknown) => {
