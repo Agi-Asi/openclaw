@@ -37,6 +37,30 @@ export function readCodexSupportedReasoningEfforts(compat: unknown): string[] | 
   return efforts.filter((effort): effort is string => typeof effort === "string");
 }
 
+export function applyCachedCodexReasoningMetadata(params: {
+  model: EmbeddedRunAttemptParams["model"];
+  provider: string;
+  modelId: string;
+  catalog?: {
+    entries: readonly Array<{ provider: string; id: string; compat?: unknown }>;
+  };
+}): EmbeddedRunAttemptParams["model"] {
+  const provider = params.provider.trim().toLowerCase();
+  const modelId = params.modelId.trim().toLowerCase();
+  const route = params.catalog?.entries.find(
+    (entry) =>
+      entry.provider.trim().toLowerCase() === provider &&
+      entry.id.trim().toLowerCase() === modelId,
+  );
+  const supportedReasoningEfforts = readCodexSupportedReasoningEfforts(route?.compat);
+  return supportedReasoningEfforts
+    ? {
+        ...params.model,
+        compat: { ...params.model.compat, supportedReasoningEfforts },
+      }
+    : params.model;
+}
+
 function resolveSupportedReasoningEffort(params: {
   requested: CodexReasoningEffort;
   supportedReasoningEfforts: readonly string[];
