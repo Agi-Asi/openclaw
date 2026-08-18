@@ -51,6 +51,7 @@ import {
   reconcileChatRunAfterSessionStatePublication,
 } from "./run-lifecycle.ts";
 import { applySessionMessagePayload } from "./session-message-apply.ts";
+import { isSidebarSlotVisible } from "./sidebar-layout.ts";
 import { rememberAuthoritativeTerminal } from "./terminal-message-identity.ts";
 import { handleAgentEvent, handleSessionOperationEvent } from "./tool-stream.ts";
 
@@ -469,10 +470,10 @@ export function handlePageGatewayEvent(
       removeDeliveredQueuedChatSendForRun(state, payload?.runId);
       void resumeStoredChatOutboxes(state);
       if (chatScopedEventSessionMatches(state, payload?.sessionKey, payload?.agentId)) {
-        if (isPresented()) {
+        if (isPresented() && isSidebarSlotVisible(state.sidebarLayout, "workspace")) {
           refreshSessionWorkspace(state);
         } else {
-          retireSessionWorkspaceCheckout(state, false);
+          refreshSessionWorkspace(state, "on-reveal");
         }
       }
     }

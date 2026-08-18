@@ -141,7 +141,7 @@ suite.define(() => {
             const later = (await gateway.getRequests()).slice(before + requests.length);
             return countSessionHydrationRequests(later, hiddenSessionKey);
           })
-          .toBe(4);
+          .toBe(2);
       } finally {
         await suite.closeBrowserContext(context);
       }

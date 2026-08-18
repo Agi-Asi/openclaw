@@ -25,8 +25,7 @@ export function createChatPaneRails(params: {
   setObserverVisibility: (visible: boolean) => void;
 }) {
   const { state, sidebarLayout } = params;
-  const hasPanelSlot = (slot: SidebarSlotId) =>
-    sidebarLayout.columns[0]?.panels.some((panel) => panel.slot === slot) === true;
+  const isPanelVisible = (slot: SidebarSlotId) => isSidebarSlotVisible(sidebarLayout, slot);
   const openPanelSlot = (slot: SidebarSlotId) => {
     state.updateSidebarLayout(openSlot(state.sidebarLayout, slot));
     if (slot === "companion") {
@@ -40,16 +39,16 @@ export function createChatPaneRails(params: {
     state.updateSidebarLayout(closeSlot(state.sidebarLayout, slot));
   };
   const togglePanelSlot = (slot: SidebarSlotId) =>
-    hasPanelSlot(slot) ? closePanelSlot(slot) : openPanelSlot(slot);
+    isPanelVisible(slot) ? closePanelSlot(slot) : openPanelSlot(slot);
   const sessionWorkspaceBase = createSessionWorkspaceProps(state, {
     draftScope: params.presentationId,
-    expanded: hasPanelSlot("workspace"),
+    expanded: isPanelVisible("workspace"),
     narrowLayout: false,
     presented: params.presented,
   });
   const sessionWorkspace = {
     ...sessionWorkspaceBase,
-    collapsed: !hasPanelSlot("workspace"),
+    collapsed: !isPanelVisible("workspace"),
     narrowLayout: false,
     onToggleCollapsed: () => togglePanelSlot("workspace"),
     onToggleTerminal: state.terminalAvailable ? () => togglePanelSlot("terminal") : undefined,
@@ -66,7 +65,7 @@ export function createChatPaneRails(params: {
   });
   const backgroundTasks = {
     ...backgroundTasksBase,
-    collapsed: !hasPanelSlot("tasks"),
+    collapsed: !isPanelVisible("tasks"),
     narrowLayout: false,
     onToggleCollapsed: () => togglePanelSlot("tasks"),
   };

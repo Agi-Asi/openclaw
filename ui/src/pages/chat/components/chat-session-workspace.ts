@@ -153,8 +153,11 @@ function artifactSidebarContent(params: {
   return { kind: "markdown", content, rawText: content };
 }
 
-export function refreshSessionWorkspace(state: SessionWorkspaceHost) {
-  if (refreshSessionWorkspaceState(state)) {
+export function refreshSessionWorkspace(
+  state: SessionWorkspaceHost,
+  timing: "now" | "on-reveal" = "now",
+) {
+  if (refreshSessionWorkspaceState(state, timing)) {
     state.handleOpenSidebar(resolveSessionDiffSidebarContent(state));
   }
 }
@@ -442,13 +445,10 @@ export function createSessionWorkspaceProps(
 ): SessionWorkspaceProps {
   state.sessionWorkspaceDraftScope = options?.draftScope;
   const workspace = getSessionWorkspace(state);
+  const expanded = options?.expanded ?? !workspace.collapsed;
   if (
-    // The collapsed header still renders the diff action, so load its checkout
-    // capability eagerly instead of waiting for the file rail to open.
     options?.presented !== false &&
-    (options?.expanded === true ||
-      !workspace.collapsed ||
-      isGatewayMethodAdvertised(state, "sessions.diff") === true) &&
+    expanded &&
     state.connected &&
     state.agentsList &&
     !workspace.loading &&
@@ -459,7 +459,7 @@ export function createSessionWorkspaceProps(
   }
   const diffContent = resolveSessionDiffSidebarContent(state);
   return {
-    collapsed: options?.expanded === true ? false : workspace.collapsed,
+    collapsed: !expanded,
     sessionKey: state.sessionKey,
     list: workspace.list?.sessionKey === state.sessionKey ? workspace.list : null,
     loading: workspace.loading,
@@ -505,11 +505,13 @@ export function resolveSessionDiffSidebarContent(
   state: SessionWorkspaceHost,
 ): SidebarContent | null {
   const workspace = getSessionWorkspace(state);
+  const workspaceList = workspace.list?.sessionKey === state.sessionKey ? workspace.list : null;
+  // Missing list data means unknown, not non-Git: hidden Files panes no longer load eagerly,
+  // and sessions.diff owns the authoritative fallback for non-checkout workspaces.
   const canOpenDiff =
     isGatewayMethodAdvertised(state, "sessions.diff") === true &&
     Boolean(state.client) &&
-    workspace.list?.sessionKey === state.sessionKey &&
-    workspace.list.gitCheckout !== false;
+    workspaceList?.gitCheckout !== false;
   if (!canOpenDiff) {
     return null;
   }

@@ -374,9 +374,6 @@ describeControlUiE2e("session diff panel", () => {
         return watchedKey;
       })
       .not.toBe("");
-    await expect
-      .poll(async () => (await gateway.getRequests("sessions.files.list")).length)
-      .toBe(1);
     await gateway.emitGatewayEvent(CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT, {
       sessions: {
         [watchedKey]: {
@@ -418,11 +415,11 @@ describeControlUiE2e("session diff panel", () => {
       },
     });
     await page.goto(`${server.baseUrl}chat`);
+    await openChatSidePanelType(page, "Files");
     await expect
       .poll(async () => (await gateway.getRequests("sessions.files.list")).length)
       .toBe(1);
 
-    await openChatSidePanelType(page, "Files");
     await openChatSidePanelType(page, "Review");
 
     await expect
@@ -678,6 +675,7 @@ describeControlUiE2e("session diff panel", () => {
       },
     });
     await page.goto(`${server.baseUrl}chat`);
+    await openChatSidePanelType(page, "Files");
     await expect
       .poll(async () => (await gateway.getRequests("sessions.files.list")).length)
       .toBe(1);

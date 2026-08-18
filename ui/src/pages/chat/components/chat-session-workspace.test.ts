@@ -119,7 +119,7 @@ describe("session workspace state", () => {
     const pending = createSessionWorkspaceProps(state, { expanded: true });
 
     expect(pending.list).toBeNull();
-    expect(pending.onOpenDiff).toBeUndefined();
+    expect(pending.onOpenDiff).toBeTypeOf("function");
     expect(listFiles).toHaveBeenCalledTimes(2);
     expect(state.sidebarContent).toBeNull();
 
@@ -192,6 +192,78 @@ describe("session workspace state", () => {
     expect(state.sidebarContent).not.toBe(oldDiff);
     expect(listFiles).toHaveBeenCalledTimes(2);
     resolveRefresh({ sessionKey: state.sessionKey, files: [] });
+  });
+
+  it("rotates an open Review loader without fetching hidden Workspace facts", () => {
+    const listFiles = vi.fn();
+    const state = {
+      client: { request: vi.fn() } as never,
+      connected: true,
+      connectionEpoch: 1,
+      handleOpenSidebar: vi.fn(),
+      hello: gatewayHello(["sessions.diff"]),
+      agentsList: { agents: [] },
+      requestUpdate: vi.fn(),
+      sessionKey: "agent:main:current",
+      sidebarContent: null,
+      sessions: { listFiles } as never,
+    } as SessionWorkspaceHost;
+    state.handleOpenSidebar = (content) => {
+      state.sidebarContent = content;
+    };
+    const workspace = createSessionWorkspaceProps(state, { expanded: false });
+    workspace.onOpenDiff?.();
+    const oldDiff = state.sidebarContent;
+
+    refreshSessionWorkspace(state, "on-reveal");
+
+    expect(state.sidebarContent).toMatchObject({ kind: "session-diff" });
+    expect(state.sidebarContent).not.toBe(oldDiff);
+    expect(listFiles).not.toHaveBeenCalled();
+  });
+
+  it("defers workspace I/O while collapsed even when session diff is available", async () => {
+    const listFiles = vi.fn().mockResolvedValue({
+      sessionKey: "agent:main:current",
+      gitCheckout: true,
+      files: [],
+    });
+    const request = vi.fn().mockResolvedValue({ artifacts: [] });
+    const state = {
+      client: { request },
+      connected: true,
+      handleOpenSidebar: vi.fn(),
+      hello: gatewayHello(["sessions.diff"]),
+      agentsList: { agents: [] },
+      requestUpdate: vi.fn(),
+      sessionKey: "agent:main:current",
+      sidebarContent: null,
+      sessions: { listFiles },
+    } as unknown as SessionWorkspaceHost;
+
+    const collapsed = createSessionWorkspaceProps(state, { expanded: false });
+
+    expect(collapsed.collapsed).toBe(true);
+    expect(collapsed.onOpenDiff).toBeTypeOf("function");
+    expect(listFiles).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+
+    const expanded = createSessionWorkspaceProps(state, { expanded: true });
+    expect(expanded.collapsed).toBe(false);
+    await vi.waitFor(() => expect(listFiles).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledExactlyOnceWith("artifacts.list", {
+        sessionKey: "agent:main:current",
+        agentId: "main",
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(createSessionWorkspaceProps(state, { expanded: false }).onOpenDiff).toBeTypeOf(
+        "function",
+      ),
+    );
+    expect(listFiles).toHaveBeenCalledOnce();
   });
 });
 

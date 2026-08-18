@@ -191,13 +191,28 @@ export function loadSessionWorkspace(
 }
 
 /** Refresh workspace facts after a run, which may have created a git checkout. */
-export function refreshSessionWorkspaceState(state: SessionWorkspaceHost): boolean {
+export function refreshSessionWorkspaceState(
+  state: SessionWorkspaceHost,
+  timing: "now" | "on-reveal" = "now",
+): boolean {
   const workspace = state.sessionWorkspaceState;
   if (!workspace || workspace.sessionKey !== state.sessionKey) {
     return false;
   }
   const diffOpen =
     workspace.diffContent !== undefined && state.sidebarContent === workspace.diffContent;
+  if (timing === "on-reveal") {
+    // Replace the request generation so an in-flight load cannot restore stale facts,
+    // while retaining the selection and open file/artifact detail until Files is revealed.
+    clearWorkspaceTimer(workspace);
+    const next = createSessionWorkspaceState(state, workspace);
+    next.activeId = workspace.activeId;
+    next.browserPath = workspace.browserPath;
+    next.browserSearch = workspace.browserSearch;
+    state.sessionWorkspaceState = next;
+    requestWorkspaceUpdate(state);
+    return diffOpen;
+  }
   delete workspace.diffContent;
   if (workspace.loading) {
     workspace.pendingReload = true;
