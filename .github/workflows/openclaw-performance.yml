@@ -343,6 +343,7 @@ jobs:
             *) exit 1 ;;
           esac
           test "$NODE_OPTIONS" = "$diagnostic_node_options"
+          echo "NODE_OPTIONS=$diagnostic_node_options" >> "$GITHUB_ENV"
 
           systemctl --user show-environment >/dev/null
 
