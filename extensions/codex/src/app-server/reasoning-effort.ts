@@ -29,9 +29,7 @@ function normalizeCodexReasoningEfforts(
 }
 
 /** Read reasoning metadata after the Codex app-server route has been selected. */
-export function readCodexSupportedReasoningEfforts(
-  compat: unknown,
-): string[] | undefined {
+export function readCodexSupportedReasoningEfforts(compat: unknown): string[] | undefined {
   if (!compat || typeof compat !== "object" || Array.isArray(compat)) {
     return undefined;
   }
@@ -58,11 +56,11 @@ export function applyCachedCodexReasoningMetadata(params: {
       entry.id.trim().toLowerCase() === modelId,
   );
   const supportedReasoningEfforts = readCodexSupportedReasoningEfforts(route?.compat);
-  const compat = supportedReasoningEfforts
-    ? ({
+  const compat: CodexReasoningModelCompat | undefined = supportedReasoningEfforts
+    ? {
         ...params.model.compat,
         supportedReasoningEfforts,
-      } satisfies CodexReasoningModelCompat)
+      }
     : undefined;
   return compat
     ? {
