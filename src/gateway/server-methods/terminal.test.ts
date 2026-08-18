@@ -64,6 +64,7 @@ function makeOpts(
     write: vi.fn(() => true),
     resize: vi.fn(() => true),
     close: vi.fn(() => true),
+    closeAgent: vi.fn(() => true),
     attach: vi.fn(() => ({
       sessionId: "terminal-1",
       agentId: "main",
@@ -124,6 +125,54 @@ afterEach(() => {
 });
 
 describe("terminal gateway policy", () => {
+  it("opens an exact-session terminal with the initiating operator as viewer", async () => {
+    const { opts, sessions, respond } = makeOpts(
+      {
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        cols: 80,
+        rows: 24,
+      },
+      { enabled: true },
+    );
+
+    await expectDefined(terminalHandlers["terminal.open"], "terminal.open")(opts);
+
+    expect(sessions.open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: { kind: "agent", agentId: "main", agentSessionKey: "agent:main:main" },
+        initialViewerConnId: "conn-1",
+      }),
+    );
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ sessionId: "terminal-1" }),
+    );
+  });
+
+  it("rejects a session key whose owner differs from the requested agent", async () => {
+    const { opts, sessions, respond } = makeOpts(
+      {
+        agentId: "main",
+        sessionKey: "agent:ops:main",
+        cols: 80,
+        rows: 24,
+      },
+      { enabled: true },
+    );
+
+    await expectDefined(terminalHandlers["terminal.open"], "terminal.open")(opts);
+
+    expect(sessions.open).not.toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("does not match session key agent"),
+      }),
+    );
+  });
+
   it("lists agent-owned sessions with their owner marker", async () => {
     const { opts, sessions, respond } = makeOpts({}, { enabled: true });
     sessions.list.mockReturnValue([

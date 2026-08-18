@@ -49,6 +49,8 @@ export type TerminalSessionManagerOptions = {
 
 export type TerminalOpenRequest = {
   owner: TerminalOwner;
+  /** Operator connection that cancels a pending shared open and views it once live. */
+  initialViewerConnId?: string;
   agentId: string;
   cwd: string;
   shell: string;

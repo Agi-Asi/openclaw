@@ -467,6 +467,26 @@ describe("TerminalConnection", () => {
     });
   });
 
+  it("forwards exact chat session ownership only when supplied", async () => {
+    const { client, conn } = makeHarness();
+    await openSession(
+      conn,
+      {},
+      {
+        agentId: "ops",
+        sessionKey: "agent:ops:main",
+        cols: 100,
+        rows: 30,
+      },
+    );
+
+    expect(client.requests[0]).toEqual({
+      method: "terminal.open",
+      params: { agentId: "ops", sessionKey: "agent:ops:main", cols: 100, rows: 30 },
+      options: { timeoutMs: TERMINAL_OPEN_WATCHDOG_MS },
+    });
+  });
+
   it("maps the Gateway's request-scoped terminal open deadline", async () => {
     const { client, conn } = makeHarness();
     client.request = <T>(

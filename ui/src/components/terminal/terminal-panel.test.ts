@@ -238,6 +238,38 @@ describe("OpenClawTerminalPanel", () => {
     });
   });
 
+  it("shares sessions opened from a chat-scoped panel", async () => {
+    createGhosttyTerminalMock.mockResolvedValue(createTerminalController());
+    const requests: Array<{ method: string; params: unknown }> = [];
+    const client: TerminalGatewayClient = {
+      forceReconnect: () => {},
+      request: async <T>(method: string, params?: unknown) => {
+        requests.push({ method, params });
+        return terminalOpenResult("session-shared") as T;
+      },
+      addEventListener: () => () => {},
+    };
+    const panel = document.createElement(TERMINAL_PANEL_ELEMENT_NAME) as OpenClawTerminalPanel;
+    panel.client = client;
+    panel.agentId = "ops";
+    panel.sessionKey = "agent:ops:main";
+    panel.available = true;
+    panel.embedded = true;
+    document.body.append(panel);
+
+    await waitForFast(() => {
+      expect(requests[0]).toEqual({
+        method: "terminal.open",
+        params: {
+          agentId: "ops",
+          sessionKey: "agent:ops:main",
+          cols: 100,
+          rows: 30,
+        },
+      });
+    });
+  });
+
   it("forces a full render after hiding and showing the panel", async () => {
     const controller = createTerminalController();
     let createOptions: CreateOptions | undefined;

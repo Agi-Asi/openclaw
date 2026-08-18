@@ -42,7 +42,11 @@ export class ChatPaneSessionPanelToggleController {
       return true;
     }
     if (slot === "terminal") {
-      const intent = terminalToggleIntent(event, resolveChatAgentId(owner.state));
+      const intent = terminalToggleIntent(
+        event,
+        resolveChatAgentId(owner.state),
+        owner.state.sessionKey,
+      );
       const embeddedTerminal = owner.renderRoot.querySelector("openclaw-terminal-panel[embedded]");
       const terminalConstructor = customElements.get("openclaw-terminal-panel");
       const embeddedTerminalMounted =

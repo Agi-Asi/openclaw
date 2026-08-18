@@ -571,6 +571,40 @@ describe("TerminalSessionManager", () => {
 describe("TerminalSessionManager agent ownership", () => {
   const agentOwner = { kind: "agent", agentSessionKey: "agent:main:main" } as const;
 
+  it("atomically opens an agent-owned session with its initiating viewer", async () => {
+    const emit = vi.fn();
+    const fake = makeFakePty();
+    const manager = new TerminalSessionManager({ emit, spawn: async () => fake });
+    const outcome = await manager.open(
+      baseRequest({ owner: agentOwner, initialViewerConnId: "viewer-1" }),
+    );
+    if (!outcome.ok) {
+      throw new Error("expected open");
+    }
+
+    expect(manager.listAgent("agent:main:main")).toMatchObject([
+      { sessionId: outcome.sessionId, attached: true, owner: "agent:agent:main:main" },
+    ]);
+    expect(manager.write("viewer-1", outcome.sessionId, "human\n")).toBe(true);
+    expect(fake.writes).toEqual(["human\n"]);
+  });
+
+  it("kills a shared open when its initiating viewer disconnects during spawn", async () => {
+    const spawned = deferred<FakeTerminalPty>();
+    const fake = makeFakePty();
+    const manager = new TerminalSessionManager({ emit: vi.fn(), spawn: () => spawned.promise });
+    const opening = manager.open(
+      baseRequest({ owner: agentOwner, initialViewerConnId: "viewer-1" }),
+    );
+
+    manager.handleDisconnect("viewer-1");
+    spawned.resolve(fake);
+
+    await expect(opening).resolves.toMatchObject({ ok: false, code: "closed" });
+    expect(fake.killed).toBe(true);
+    expect(manager.size).toBe(0);
+  });
+
   it("continues live offsets after output buffered before the first viewer", async () => {
     vi.useFakeTimers();
     try {

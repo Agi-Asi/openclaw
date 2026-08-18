@@ -63,9 +63,9 @@ export class TerminalPanelSessionController
       currentGeneration: () => this.lifecycleGeneration,
       canRun: () => this.terminalActionsCanRun(),
       attach: (sessionId, agentOwned) => this.attachSessionNow(sessionId, agentOwned),
-      open: (catalog, agentId) => this.openSessionNow(catalog, agentId),
+      open: (catalog, agentId, sessionKey) => this.openSessionNow(catalog, agentId, sessionKey),
       reattach: () => this.reattachPersistedSessions(),
-      ensureInitial: (agentId) => this.ensureInitialSession(agentId),
+      ensureInitial: (agentId, sessionKey) => this.ensureInitialSession(agentId, sessionKey),
       hasTabs: () => this.tabs.length > 0,
       requestUpdate: () => this.host.requestUpdate(),
       setBooting: (booting) => this.updateControllerState("booting", booting),
@@ -196,7 +196,12 @@ export class TerminalPanelSessionController
 
   async restoreSessions(): Promise<void> {
     const agentId = this.host.agentId?.trim() || null;
-    await terminalIntentQueue.queue({ kind: "restore", agentId });
+    const sessionKey = this.host.sessionKey?.trim() || undefined;
+    await terminalIntentQueue.queue({
+      kind: "restore",
+      agentId,
+      ...(sessionKey ? { sessionKey } : {}),
+    });
   }
 
   async openCatalogSession(catalog: TerminalPanelCatalogReference): Promise<void> {
@@ -280,9 +285,12 @@ export class TerminalPanelSessionController
     persistLiveTerminalSessions(this.tabs);
   }
 
-  private async ensureInitialSession(agentId: string | null): Promise<boolean> {
+  private async ensureInitialSession(
+    agentId: string | null,
+    sessionKey?: string,
+  ): Promise<boolean> {
     if (this.tabs.length === 0) {
-      return this.openSessionNow(undefined, agentId);
+      return this.openSessionNow(undefined, agentId, sessionKey);
     }
     return this.terminalActionsCanRun();
   }
@@ -502,23 +510,29 @@ export class TerminalPanelSessionController
   }
 
   async openSession(catalog?: TerminalPanelCatalogReference): Promise<void> {
+    const sessionKey = catalog ? undefined : this.host.sessionKey?.trim() || undefined;
     await terminalIntentQueue.queue(
       catalog
         ? { kind: "catalog", agentId: this.host.agentId?.trim() || null, catalog }
-        : { kind: "open", agentId: this.host.agentId?.trim() || null },
+        : {
+            kind: "open",
+            agentId: this.host.agentId?.trim() || null,
+            ...(sessionKey ? { sessionKey } : {}),
+          },
     );
   }
 
   private async openSessionNow(
     catalog: TerminalPanelCatalogReference | undefined,
     agentId: string | null,
+    sessionKey?: string,
   ): Promise<boolean> {
     const operation = this.captureTerminalOperation();
     if (!operation) {
       return false;
     }
     this.updateControllerState("booting", true);
-    this.openRetry.remember(catalog, agentId);
+    this.openRetry.remember(catalog, agentId, sessionKey);
     this.host.terminalPanelErrorText = null;
     // Freeze the selection for this tab; later agent changes affect only new tabs.
     const ownerAgentId = agentId ?? undefined;
@@ -527,15 +541,27 @@ export class TerminalPanelSessionController
     try {
       const boot = await this.bootTab(operation, { awaitFirstOutput: Boolean(catalog) });
       createdTab = boot.tab;
-      const result = await boot.connection.open(
-        {
-          agentId: ownerAgentId,
-          cols: boot.cols,
-          rows: boot.rows,
-          ...(catalog ? { catalog } : {}),
-        },
-        boot.sink,
-      );
+      const openParams = {
+        agentId: ownerAgentId,
+        ...(sessionKey ? { sessionKey } : {}),
+        cols: boot.cols,
+        rows: boot.rows,
+        ...(catalog ? { catalog } : {}),
+      };
+      let result;
+      try {
+        result = await boot.connection.open(openParams, boot.sink);
+      } catch (error) {
+        if (
+          !sessionKey ||
+          !(error instanceof Error) ||
+          !error.message.includes("agent control requires operator confirmation") ||
+          !window.confirm(t("terminal.agentControlConfirmation"))
+        ) {
+          throw error;
+        }
+        result = await boot.connection.open({ ...openParams, allowAgentControl: true }, boot.sink);
+      }
       if (!this.isTerminalOperationCurrent(operation) || boot.tab.cancelled) {
         // The tab's close button was clicked while the open RPC was in flight.
         // The server session is live and its sink registered; close it now or

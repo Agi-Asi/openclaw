@@ -22,6 +22,10 @@ export const TerminalOpenParamsSchema = closedObject({
   // Optional agent selector; defaults to the gateway's default agent. The
   // session starts in that agent's workspace and inherits its isolation.
   agentId: Type.Optional(NonEmptyString),
+  // Exact conversation owner for terminals explicitly shared from Chat.
+  sessionKey: Type.Optional(NonEmptyString),
+  // Operator consent for ask-mode agent control of an interactive PTY.
+  allowAgentControl: Type.Optional(Type.Literal(true)),
   catalog: Type.Optional(SessionCatalogLocatorSchema),
   cols: TerminalDimension,
   rows: TerminalDimension,

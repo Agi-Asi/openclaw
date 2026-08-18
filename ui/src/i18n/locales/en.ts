@@ -2130,6 +2130,8 @@ export const en: TranslationMap = {
     tabLabel: "shell {n}",
     tabHint: "{agent} · {cwd}",
     agentOwnedBadge: "agent",
+    agentControlConfirmation:
+      "Allow the agent in this exact chat session to read, type into, resize, and close this terminal?",
     exited: "exited",
     exitedCode: "exited ({code})",
     detached: "detached",

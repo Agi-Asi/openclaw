@@ -19,12 +19,16 @@ import {
   validateTerminalResizeParams,
   validateTerminalUploadResult,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { resolveExecDefaults } from "../../agents/exec-defaults.js";
 import { allowsProcessHomeSessionScan } from "../../config/paths.js";
 import { NODE_TERMINAL_UPLOAD_COMMAND } from "../../infra/node-commands.js";
 import { mergeProcessEnv } from "../../infra/process-env.js";
 import type { TerminalUploadFile } from "../../infra/terminal-file-upload.js";
 import type { SessionCatalogTerminalPlan } from "../../plugins/session-catalog.js";
 import { applyPluginNodeInvokePolicy } from "../node-invoke-plugin-policy.js";
+import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
+import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
+import { loadGatewaySessionEntryReadOnly } from "../session-utils.js";
 import { buildTerminalEnv, type TerminalLaunchResolution } from "../terminal/launch.js";
 import { createNodeRelayBackend } from "../terminal/node-relay.js";
 import {
@@ -170,7 +174,81 @@ type TerminalSessionOpenRequest = {
   resolveCatalogPlan?: (agentId: string) => Promise<SessionCatalogTerminalPlan>;
   catalogFailureMessage?: string;
   failureHint?: string;
+  sessionKey?: string;
+  allowAgentControl?: true;
 };
+
+function resolveSharedTerminalOwner(
+  context: GatewayRequestHandlerOptions["context"],
+  request: TerminalSessionOpenRequest,
+):
+  | { ok: true; owner: { kind: "conn" } }
+  | {
+      ok: true;
+      owner: { kind: "agent"; agentId: string; agentSessionKey: string };
+    }
+  | { ok: false; error: ReturnType<typeof errorShape> } {
+  if (!request.sessionKey) {
+    return { ok: true, owner: { kind: "conn" } };
+  }
+  if (request.resolveCatalogPlan) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.INVALID_REQUEST, "catalog terminals cannot be shared with chat"),
+    };
+  }
+  const cfg = context.getRuntimeConfig();
+  const requested = resolveRequestedSessionAgentId(cfg, request.sessionKey, request.agentId);
+  if (!requested.ok) {
+    return requested;
+  }
+  const agentSessionKey = resolveStoredSessionKeyForAgentStore({
+    cfg,
+    agentId: requested.agentId,
+    sessionKey: request.sessionKey,
+  });
+  const sessionEntry = loadGatewaySessionEntryReadOnly(agentSessionKey, {
+    agentId: requested.agentId,
+  }).entry;
+  const exec = resolveExecDefaults({
+    cfg,
+    agentId: requested.agentId,
+    sessionKey: agentSessionKey,
+    sessionEntry,
+    sandboxAvailable: false,
+  });
+  if (exec.security === "deny") {
+    return {
+      ok: false,
+      error: errorShape(
+        ErrorCodes.INVALID_REQUEST,
+        "terminal cannot be shared because exec policy denies host command execution",
+      ),
+    };
+  }
+  if (exec.security === "allowlist") {
+    return {
+      ok: false,
+      error: errorShape(
+        ErrorCodes.INVALID_REQUEST,
+        "terminal cannot be shared because an interactive shell cannot be allowlisted",
+      ),
+    };
+  }
+  if (exec.ask !== "off" && request.allowAgentControl !== true) {
+    return {
+      ok: false,
+      error: errorShape(
+        ErrorCodes.INVALID_REQUEST,
+        "agent control requires operator confirmation for this terminal",
+      ),
+    };
+  }
+  return {
+    ok: true,
+    owner: { kind: "agent", agentId: requested.agentId, agentSessionKey },
+  };
+}
 
 /** Canonical terminal admission and launch path shared by shell, resume, and start RPCs. */
 export async function openTerminalSession(
@@ -192,6 +270,11 @@ export async function openTerminalSession(
         terminalFailureMessage("terminal is not available", request.failureHint),
       ),
     );
+    return;
+  }
+  const initialOwner = resolveSharedTerminalOwner(context, request);
+  if (!initialOwner.ok) {
+    respond(false, undefined, initialOwner.error);
     return;
   }
   const launch = context.resolveTerminalLaunchPolicy(request.agentId);
@@ -343,6 +426,11 @@ export async function openTerminalSession(
     respondLaunchBlocked(respond, refreshedLaunch.block, request.failureHint);
     return;
   }
+  const refreshedOwner = resolveSharedTerminalOwner(context, request);
+  if (!refreshedOwner.ok) {
+    respond(false, undefined, refreshedOwner.error);
+    return;
+  }
   if (nodeRelay) {
     const relay = nodeRelay;
     const access = authorizeCatalogTerminalNode(context, relay.plan);
@@ -393,7 +481,9 @@ export async function openTerminalSession(
   try {
     outcome = await waitForTerminalOpenDeadline(() => {
       openingTerminal = manager.open({
-        owner: { kind: "conn", connId },
+        owner:
+          refreshedOwner.owner.kind === "agent" ? refreshedOwner.owner : { kind: "conn", connId },
+        ...(refreshedOwner.owner.kind === "agent" ? { initialViewerConnId: connId } : {}),
         agentId: spawnPlan.agentId,
         cwd: spawnPlan.cwd,
         shell: spawnPlan.shell,
@@ -415,7 +505,15 @@ export async function openTerminalSession(
         void openingTerminal.then(
           (lateOutcome) => {
             if (lateOutcome.ok) {
-              manager.close(connId, lateOutcome.sessionId);
+              if (refreshedOwner.owner.kind === "agent") {
+                manager.closeAgent(
+                  refreshedOwner.owner.agentSessionKey,
+                  lateOutcome.sessionId,
+                  refreshedOwner.owner.agentId,
+                );
+              } else {
+                manager.close(connId, lateOutcome.sessionId);
+              }
             }
           },
           () => undefined,
@@ -438,7 +536,15 @@ export async function openTerminalSession(
   if (context.isConnectionActive?.(connId) === false) {
     // A browser deadline can close the socket while PTY creation is still
     // finishing. Release the raced session instead of leaving an orphan.
-    manager.close(connId, outcome.sessionId);
+    if (refreshedOwner.owner.kind === "agent") {
+      manager.closeAgent(
+        refreshedOwner.owner.agentSessionKey,
+        outcome.sessionId,
+        refreshedOwner.owner.agentId,
+      );
+    } else {
+      manager.close(connId, outcome.sessionId);
+    }
     respond(
       false,
       undefined,
@@ -502,6 +608,8 @@ export const terminalHandlers: GatewayRequestHandlers = {
     }
     await openTerminalSession(opts, {
       ...(p.agentId ? { agentId: p.agentId } : {}),
+      ...(p.sessionKey ? { sessionKey: p.sessionKey } : {}),
+      ...(p.allowAgentControl ? { allowAgentControl: true } : {}),
       cols: p.cols,
       rows: p.rows,
       ...(resolveCatalogPlan ? { resolveCatalogPlan } : {}),

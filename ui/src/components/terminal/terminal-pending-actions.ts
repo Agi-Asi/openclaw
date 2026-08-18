@@ -19,8 +19,14 @@ type RetryOpenAction = Extract<TerminalPanelAction, { kind: "catalog" | "open" }
 export class TerminalOpenRetry {
   private action: RetryOpenAction | null = null;
 
-  remember(catalog: TerminalPanelCatalogReference | undefined, agentId: string | null): void {
-    this.action = catalog ? { kind: "catalog", agentId, catalog } : { kind: "open", agentId };
+  remember(
+    catalog: TerminalPanelCatalogReference | undefined,
+    agentId: string | null,
+    sessionKey?: string,
+  ): void {
+    this.action = catalog
+      ? { kind: "catalog", agentId, catalog }
+      : { kind: "open", agentId, ...(sessionKey ? { sessionKey } : {}) };
   }
 
   clearUnlessRetryable(error: unknown): void {
@@ -59,9 +65,10 @@ export type TerminalIntentHost = {
   open: (
     catalog: TerminalPanelCatalogReference | undefined,
     agentId: string | null,
+    sessionKey?: string,
   ) => Promise<boolean>;
   reattach: () => Promise<void>;
-  ensureInitial: (agentId: string | null) => Promise<boolean>;
+  ensureInitial: (agentId: string | null, sessionKey?: string) => Promise<boolean>;
   hasTabs: () => boolean;
   requestUpdate: () => void;
   setBooting: (booting: boolean) => void;
@@ -275,7 +282,7 @@ class TerminalIntentQueue {
       return host.attach(action.sessionId, action.agentOwned);
     }
     if (action.kind === "open") {
-      return host.open(undefined, action.agentId);
+      return host.open(undefined, action.agentId, action.sessionKey);
     }
     await host.reattach();
     // A second panel mounting mid-flight must not strand this action: the host
@@ -285,7 +292,7 @@ class TerminalIntentQueue {
     }
     return action.kind === "catalog"
       ? host.open(action.catalog, action.agentId)
-      : host.ensureInitial(action.agentId);
+      : host.ensureInitial(action.agentId, action.sessionKey);
   }
 
   private clearRefreshTimer(): void {
@@ -342,6 +349,7 @@ export const terminalIntentQueue = new TerminalIntentQueue();
 export function terminalToggleIntent(
   event: Event,
   fallbackAgentId: string | null,
+  sessionKey?: string,
 ): TerminalPanelAction | null {
   const detail =
     event instanceof CustomEvent && typeof event.detail === "object" && event.detail !== null
@@ -357,5 +365,7 @@ export function terminalToggleIntent(
   if (detail.catalog) {
     return { kind: "catalog", agentId, catalog: detail.catalog };
   }
-  return detail.open === true ? { kind: "restore", agentId } : null;
+  return detail.open === true
+    ? { kind: "restore", agentId, ...(sessionKey ? { sessionKey } : {}) }
+    : null;
 }

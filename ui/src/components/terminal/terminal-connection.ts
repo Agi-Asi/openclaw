@@ -221,7 +221,14 @@ export class TerminalConnection {
 
   /** Opens a session and registers its output/exit sinks before returning. */
   async open(
-    params: { agentId?: string; cols: number; rows: number; catalog?: TerminalCatalogReference },
+    params: {
+      agentId?: string;
+      sessionKey?: string;
+      allowAgentControl?: true;
+      cols: number;
+      rows: number;
+      catalog?: TerminalCatalogReference;
+    },
     sink: SessionSink,
   ): Promise<TerminalOpenResult> {
     let result: TerminalOpenResult;

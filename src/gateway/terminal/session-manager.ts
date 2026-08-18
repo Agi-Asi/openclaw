@@ -145,7 +145,7 @@ export class TerminalSessionManager {
       }
       reservationActive = false;
       this.opening -= 1;
-      this.untrackPendingOpen(request.owner, pending);
+      this.untrackPendingOpen(request, pending);
     };
     const pending: TerminalPendingOpen = {
       agentId: request.agentId,
@@ -163,7 +163,7 @@ export class TerminalSessionManager {
       pending.abort(this.openAbortMessage(request.signal));
     };
     request.signal?.addEventListener("abort", abortPending, { once: true });
-    this.trackPendingOpen(request.owner, pending);
+    this.trackPendingOpen(request, pending);
     let backend: TerminalBackend;
     try {
       backend = request.createBackend
@@ -263,7 +263,7 @@ export class TerminalSessionManager {
     const session: TerminalSession = {
       id: sessionId,
       owner: request.owner,
-      viewers: new Set(),
+      viewers: new Set(request.initialViewerConnId ? [request.initialViewerConnId] : []),
       agentId: request.agentId,
       cwd: request.cwd,
       shell: request.shell,
@@ -281,6 +281,9 @@ export class TerminalSessionManager {
     if (request.owner.kind === "conn") {
       this.indexByConn(request.owner.connId, session.id);
       session.output.push(composeTerminalIntroBanner());
+    }
+    if (request.initialViewerConnId) {
+      this.indexByConn(request.initialViewerConnId, session.id);
     }
 
     backend.onData((chunk) => {
@@ -534,15 +537,17 @@ export class TerminalSessionManager {
     return this.list().filter((summary) => sessionIds.has(summary.sessionId));
   }
 
-  private trackPendingOpen(owner: TerminalOwner, pending: TerminalPendingOpen): void {
-    this.pendingOpens.set(pending, owner);
-    if (owner.kind !== "conn") {
+  private trackPendingOpen(request: TerminalOpenRequest, pending: TerminalPendingOpen): void {
+    this.pendingOpens.set(pending, request.owner);
+    const connId =
+      request.initialViewerConnId ?? (request.owner.kind === "conn" ? request.owner.connId : null);
+    if (!connId) {
       return;
     }
-    let set = this.pendingByConn.get(owner.connId);
+    let set = this.pendingByConn.get(connId);
     if (!set) {
       set = new Set();
-      this.pendingByConn.set(owner.connId, set);
+      this.pendingByConn.set(connId, set);
     }
     set.add(pending);
   }
@@ -551,16 +556,18 @@ export class TerminalSessionManager {
     return signal?.reason instanceof Error ? signal.reason.message : "terminal open cancelled";
   }
 
-  private untrackPendingOpen(owner: TerminalOwner, pending: TerminalPendingOpen): void {
+  private untrackPendingOpen(request: TerminalOpenRequest, pending: TerminalPendingOpen): void {
     this.pendingOpens.delete(pending);
-    if (owner.kind !== "conn") {
+    const connId =
+      request.initialViewerConnId ?? (request.owner.kind === "conn" ? request.owner.connId : null);
+    if (!connId) {
       return;
     }
-    const set = this.pendingByConn.get(owner.connId);
+    const set = this.pendingByConn.get(connId);
     if (set) {
       set.delete(pending);
       if (set.size === 0) {
-        this.pendingByConn.delete(owner.connId);
+        this.pendingByConn.delete(connId);
       }
     }
   }

@@ -48,7 +48,8 @@ function terminalAction(value: unknown): TerminalPanelAction | null {
     return null;
   }
   if (value.kind === "restore" || value.kind === "open") {
-    return { kind: value.kind, agentId };
+    const sessionKey = nonEmptyString(value.sessionKey) ? value.sessionKey : undefined;
+    return { kind: value.kind, agentId, ...(sessionKey ? { sessionKey } : {}) };
   }
   if (value.kind === "catalog") {
     const catalog = catalogReference(value.catalog);

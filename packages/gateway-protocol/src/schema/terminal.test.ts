@@ -32,6 +32,19 @@ describe("terminal protocol", () => {
     ).toBe(false);
   });
 
+  it("accepts only non-empty session ownership keys", () => {
+    expect(
+      validateTerminalOpenParams({
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        cols: 80,
+        rows: 24,
+      }),
+    ).toBe(true);
+    expect(validateTerminalOpenParams({ sessionKey: "", cols: 80, rows: 24 })).toBe(false);
+    expect(validateTerminalOpenParams({ sessionKey: 42, cols: 80, rows: 24 })).toBe(false);
+  });
+
   it("bounds terminal uploads inside one gateway frame", () => {
     expect(
       validateTerminalUploadParams({

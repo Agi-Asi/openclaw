@@ -36,8 +36,8 @@ export type TerminalPanelCatalogReference = {
 
 /** Explicit terminal work retained until it either runs or reports a visible failure. */
 export type TerminalPanelAction =
-  | { kind: "restore"; agentId: string | null }
-  | { kind: "open"; agentId: string | null }
+  | { kind: "restore"; agentId: string | null; sessionKey?: string }
+  | { kind: "open"; agentId: string | null; sessionKey?: string }
   | { kind: "catalog"; agentId: string | null; catalog: TerminalPanelCatalogReference }
   | { kind: "attach"; sessionId: string; agentOwned: boolean };
 
@@ -51,6 +51,7 @@ export interface TerminalPanelSessionControllerHost extends ReactiveControllerHo
   readonly isConnected: boolean;
   readonly client: TerminalGatewayClient | null;
   readonly agentId: string | null;
+  readonly sessionKey: string | null;
   readonly available: boolean;
   readonly themeMode: "dark" | "light";
   readonly fullscreen: boolean;
