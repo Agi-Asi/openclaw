@@ -334,7 +334,7 @@ jobs:
           fi
 
           mkdir -p "$MANAGED_GATEWAY_DIAGNOSTICS_DIR"
-          diagnostic_node_options="--heapsnapshot-signal=SIGUSR2 --report-on-signal --report-signal=SIGUSR2 --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
+          diagnostic_node_options="--heapsnapshot-signal=SIGUSR2 --diagnostic-dir=${MANAGED_GATEWAY_DIAGNOSTICS_DIR} --report-on-signal --report-signal=SIGWINCH --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
           export NODE_OPTIONS="$diagnostic_node_options"
           systemctl --user import-environment NODE_OPTIONS
           rendered_node_options="$(systemctl --user show-environment | sed -n '/^NODE_OPTIONS=/p')"
@@ -511,6 +511,9 @@ jobs:
           if [[ "$MATRIX_DEEP_PROFILE" == "true" ]]; then
             args+=(--profile-on-failure)
           fi
+          if [[ "$LANE_ID" == "mock-deep-profile" ]]; then
+            args+=(--keep-env)
+          fi
           if [[ "$FAIL_ON_REGRESSION" == "true" ]]; then
             args+=(--gate)
           fi
@@ -602,6 +605,91 @@ jobs:
           fi
           if [[ "$FAIL_ON_REGRESSION" == "true" && "$effective_status" != "0" ]]; then
             exit "$effective_status"
+          fi
+
+      - name: Capture managed Gateway memory diagnostics
+        if: ${{ always() && steps.lane.outputs.run == 'true' && matrix.lane == 'mock-deep-profile' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$MANAGED_GATEWAY_DIAGNOSTICS_DIR"
+
+          report_json="$(node "$PERFORMANCE_HELPER_DIR/scripts/lib/kova-report-selector.mjs" --report-dir "$REPORT_DIR")"
+          env_name="$(jq -r '.records[0].envName // empty' "$report_json")"
+          gateway_pid="$(jq -r '.records[0].failureDiagnostics.service.childPid // empty' "$report_json")"
+          if [[ -z "$env_name" || ! "$gateway_pid" =~ ^[1-9][0-9]*$ || ! -d "/proc/$gateway_pid" ]]; then
+            echo "::error::Kova did not retain the exact managed Gateway process for diagnostics."
+            exit 1
+          fi
+
+          gateway_comm="$(tr -d '\n' < "/proc/$gateway_pid/comm")"
+          if [[ "$gateway_comm" != "openclaw-gatewa" ]]; then
+            echo "::error::Kova PID $gateway_pid is not the managed Gateway role."
+            exit 1
+          fi
+
+          expected_node_options="--heapsnapshot-signal=SIGUSR2 --diagnostic-dir=${MANAGED_GATEWAY_DIAGNOSTICS_DIR} --report-on-signal --report-signal=SIGWINCH --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
+          actual_node_options="$(tr '\0' '\n' < "/proc/$gateway_pid/environ" | sed -n 's/^NODE_OPTIONS=//p')"
+          node_options_match=false
+          if [[ "$actual_node_options" == "$expected_node_options" ]]; then
+            node_options_match=true
+          fi
+          printf '%s' "$actual_node_options" | sha256sum | cut -d ' ' -f 1 > "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/node-options.sha256"
+          cp "/proc/$gateway_pid/status" "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/process-status.txt"
+          cp "/proc/$gateway_pid/smaps_rollup" "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/smaps-rollup.txt"
+          gateway_cwd="$(readlink "/proc/$gateway_pid/cwd")"
+
+          jq -n \
+            --arg envName "$env_name" \
+            --argjson pid "$gateway_pid" \
+            --arg command "$gateway_comm" \
+            --arg cwd "$gateway_cwd" \
+            --argjson nodeOptionsMatch "$node_options_match" \
+            '{envName:$envName,pid:$pid,command:$command,cwd:$cwd,nodeOptionsPresent:true,nodeOptionsMatch:$nodeOptionsMatch}' \
+            > "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/managed-gateway.json"
+
+          # The report signal is distinct from the heap signal so the synchronous
+          # heap writer cannot hide whether the managed process accepted either hook.
+          kill -WINCH "$gateway_pid"
+          report_file=""
+          heap_file=""
+          deadline=$((SECONDS + 180))
+          while (( SECONDS < deadline )); do
+            report_file="$(find "$MANAGED_GATEWAY_DIAGNOSTICS_DIR" -maxdepth 1 -type f -name "report.*.${gateway_pid}.*.json" -print -quit)"
+            heap_file="$(find "$MANAGED_GATEWAY_DIAGNOSTICS_DIR" -maxdepth 1 -type f -name "Heap.*.${gateway_pid}.*.heapsnapshot" -print -quit)"
+            if [[ -n "$report_file" && -n "$heap_file" ]]; then
+              report_size="$(stat -c %s "$report_file")"
+              heap_size="$(stat -c %s "$heap_file")"
+              sleep 5
+              if [[ "$report_size" -gt 0 && "$heap_size" -gt 0 && "$report_size" == "$(stat -c %s "$report_file")" && "$heap_size" == "$(stat -c %s "$heap_file")" ]]; then
+                break
+              fi
+            fi
+            sleep 5
+          done
+
+          report_valid=false
+          heap_valid=false
+          if [[ -n "$report_file" ]] && jq -e --argjson pid "$gateway_pid" '.header.processId == $pid' "$report_file" >/dev/null; then
+            report_valid=true
+          fi
+          if [[ -n "$heap_file" && -s "$heap_file" && "$(head -c 1 "$heap_file")" == "{" && "$(tail -c 1 "$heap_file")" == "}" ]]; then
+            heap_valid=true
+          fi
+          jq \
+            --argjson reportValid "$report_valid" \
+            --argjson heapValid "$heap_valid" \
+            --arg reportFile "${report_file##*/}" \
+            --arg heapFile "${heap_file##*/}" \
+            '. + {reportValid:$reportValid,heapValid:$heapValid,reportFile:$reportFile,heapFile:$heapFile}' \
+            "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/managed-gateway.json" \
+            > "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/managed-gateway.json.tmp"
+          mv "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/managed-gateway.json.tmp" "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/managed-gateway.json"
+
+          if [[ "$node_options_match" != "true" || "$report_valid" != "true" || "$heap_valid" != "true" ]]; then
+            echo "Managed Gateway diagnostics were incomplete; inspect the redacted metadata artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Captured PID-bound managed Gateway report and heap snapshot." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Validate Kova evidence
