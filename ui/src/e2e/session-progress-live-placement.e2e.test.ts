@@ -146,7 +146,7 @@ suite.define(() => {
       { step: "Filed issue", status: "completed" },
     ];
 
-    for (const colorScheme of ["dark", "light"] as const) {
+    for (const colorScheme of ["light", "dark"] as const) {
       await suite.withPage(
         {
           colorScheme,
