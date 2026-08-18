@@ -1,4 +1,5 @@
 // Covers shell environment fallback loading.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -101,7 +102,7 @@ describe("shell env fallback", () => {
     expect(receivedEnv.ZDOTDIR).toBeUndefined();
     expect(receivedEnv.SHELL).toBeUndefined();
     expect(receivedEnv.HOME).toBe(os.homedir());
-    expect(receivedEnv.PS1).toBe("");
+    expect(receivedEnv.PS1).toBeUndefined();
   }
 
   function withEtcShells(shells: string[], fn: () => void) {
@@ -624,25 +625,30 @@ describe("shell env fallback", () => {
     expectSanitizedStartupEnv(receivedEnv);
   });
 
-  it("seeds PS1 before a nounset login-shell probe reads startup state", () => {
-    if (process.platform === "win32") {
+  it("uses interactive Bash login startup before nounset reads PS1", () => {
+    if (process.platform === "win32" || !fs.existsSync("/bin/bash")) {
       return;
     }
-    const root = tempDirs.make("openclaw-shell-env-nounset-");
-    const shell = path.join(root, "strict-login-shell");
-    fs.writeFileSync(
-      shell,
-      '#!/bin/bash\nset -u\n: "$PS1"\n[[ "$1 $2 $3" == "-l -c env -0" ]]\nprintf "OPENAI_API_KEY=from-shell\\0"\n',
-      { mode: 0o755 },
-    );
+    const shell = "/bin/bash";
     const env: NodeJS.ProcessEnv = { SHELL: shell };
+    const exec = vi.fn(
+      (file: string, args: string[], options: Parameters<typeof execFileSync>[2]) => {
+        expect(args).toStrictEqual(["-lic", "env -0"]);
+        return execFileSync(file, ["-lic", 'set -u; : "$PS1"; env -0'], options);
+      },
+    );
 
     withEtcShells([shell], () => {
-      expect(loadShellEnvFallback({ enabled: true, env, expectedKeys: ["OPENAI_API_KEY"] })).toEqual(
-        { ok: true, applied: ["OPENAI_API_KEY"] },
-      );
+      expect(
+        loadShellEnvFallback({
+          enabled: true,
+          env,
+          expectedKeys: ["PATH"],
+          exec: exec as unknown as Parameters<typeof loadShellEnvFallback>[0]["exec"],
+        }),
+      ).toMatchObject({ ok: true });
     });
-    expect(env.OPENAI_API_KEY).toBe("from-shell");
+    expect(exec).toHaveBeenCalledOnce();
   });
 
   it("sanitizes startup-related env vars before login-shell PATH probe", () => {

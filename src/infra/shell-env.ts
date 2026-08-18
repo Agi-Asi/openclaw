@@ -30,16 +30,13 @@ const execCacheIds = new WeakMap<object, number>();
 function resolveShellExecEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const execEnv = sanitizeHostExecEnv({ baseEnv: env });
 
-  // Pin startup-file resolution to the real home; a fixed prompt also keeps
-  // nounset system login files from failing without forwarding caller contents.
+  // Startup-file resolution must stay pinned to the real user home.
   const home = os.homedir().trim();
   if (home) {
     execEnv.HOME = home;
   } else {
     delete execEnv.HOME;
   }
-
-  execEnv.PS1 = "";
 
   // Avoid zsh startup-file redirection via env poisoning.
   delete execEnv.ZDOTDIR;
@@ -95,7 +92,10 @@ function execLoginShellEnvZero(params: {
   exec: typeof execFileSync;
   timeoutMs: number;
 }): Buffer {
-  return params.exec(params.shell, ["-l", "-c", "env -0"], {
+  // Bash clears an imported PS1 in noninteractive mode before login profiles run.
+  const args =
+    path.basename(params.shell) === "bash" ? ["-lic", "env -0"] : ["-l", "-c", "env -0"];
+  return params.exec(params.shell, args, {
     encoding: "buffer",
     timeout: params.timeoutMs,
     maxBuffer: DEFAULT_MAX_BUFFER_BYTES,
