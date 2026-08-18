@@ -654,10 +654,10 @@ export async function startOrResumeThread(
           startModelProvider,
           supervisedReasoningEffort:
             binding.connectionScope === "supervision"
-              ? resolveAttemptReasoningEffort(
+              ? (resolveAttemptReasoningEffort(
                   params.params,
                   binding.model ?? startModelSelection.model ?? params.params.modelId,
-                ) ?? undefined
+                ) ?? undefined)
               : undefined,
           userMcpServersConfigPatch,
           dynamicToolsFingerprint,
