@@ -617,7 +617,7 @@ describe("matrix qa config", () => {
     expect(config.messages?.groupChat?.mentionPatterns).toEqual(["\\S"]);
   });
 
-  it("resets preview overrides when a scalar streaming override follows an object", () => {
+  it("resets progress and preview overrides when a scalar follows an object", () => {
     const optedOut = buildMatrixQaConfig({} as OpenClawConfig, {
       driverUserId: "@driver:matrix-qa.test",
       homeserver: "http://127.0.0.1:28008/",
@@ -625,7 +625,8 @@ describe("matrix qa config", () => {
       overrides: {
         streaming: {
           mode: "quiet",
-          preview: { commandText: "raw", toolProgress: false },
+          progress: { commandText: "raw" },
+          preview: { toolProgress: false },
         },
       },
       sutAccessToken: "sut-token",
@@ -649,7 +650,8 @@ describe("matrix qa config", () => {
       block: { enabled: false },
       chunkMode: "length",
       mode: "quiet",
-      preview: { commandText: "raw", toolProgress: false },
+      progress: { commandText: "raw" },
+      preview: { toolProgress: false },
     });
     expect(reset.channels?.matrix?.accounts?.sut?.streaming).toEqual({
       block: { enabled: false },

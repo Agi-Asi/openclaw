@@ -14,7 +14,7 @@ scenario:
       matrixConfigOverrides:
         streaming:
           mode: partial
-          preview:
+          progress:
             commandText: raw
         toolProfile: coding
 

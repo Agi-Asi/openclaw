@@ -21,14 +21,12 @@ type MatrixQaExecApprovalsEnabled = boolean | "auto";
 type MatrixQaAllowBotsMode = boolean | "mentions";
 type MatrixQaStreamingConfig = {
   mode?: MatrixQaStreamingMode;
-  preview?: {
+  progress?: {
     commandText?: MatrixQaCommandTextMode;
+  };
+  preview?: {
     toolProgress?: boolean;
   };
-};
-type MatrixQaStreamingPreviewSnapshot = {
-  commandText?: MatrixQaCommandTextMode;
-  toolProgress: boolean;
 };
 type MatrixQaAgentDefaultsOverrides = {
   blockStreamingChunk?: {
@@ -137,7 +135,8 @@ type MatrixQaConfigSnapshot = {
   replyToMode: MatrixQaReplyToMode;
   startupVerification?: "if-unverified" | "off";
   streaming: MatrixQaStreamingMode;
-  streamingPreview: MatrixQaStreamingPreviewSnapshot;
+  streamingProgressCommandText?: MatrixQaCommandTextMode;
+  streamingPreviewToolProgress: boolean;
   textChunkLimit?: number;
   threadBindings: MatrixQaThreadBindingsConfigOverrides;
   threadReplies: MatrixQaThreadRepliesMode;
@@ -296,16 +295,16 @@ function isMatrixQaStreamingConfig(
   return isRecord(value);
 }
 
-function resolveMatrixQaStreamingPreview(
+function resolveMatrixQaStreamingProgressCommandText(
   value: MatrixQaConfigOverrides["streaming"],
-): MatrixQaStreamingPreviewSnapshot {
-  if (!isMatrixQaStreamingConfig(value)) {
-    return { toolProgress: true };
-  }
-  return {
-    ...(value.preview?.commandText ? { commandText: value.preview.commandText } : {}),
-    toolProgress: value.preview?.toolProgress ?? true,
-  };
+): MatrixQaCommandTextMode | undefined {
+  return isMatrixQaStreamingConfig(value) ? value.progress?.commandText : undefined;
+}
+
+function resolveMatrixQaStreamingPreviewToolProgress(
+  value: MatrixQaConfigOverrides["streaming"],
+): boolean {
+  return isMatrixQaStreamingConfig(value) ? (value.preview?.toolProgress ?? true) : true;
 }
 
 function resolveMatrixQaAutoJoinAllowlist(params: { overrides?: MatrixQaConfigOverrides }) {
@@ -456,19 +455,28 @@ function buildMatrixQaChannelAccountConfig(params: {
   const block = restoreOwnedFields(current?.streaming?.block, baseline?.streaming?.block, [
     "enabled",
   ]);
+  const progress = restoreOwnedFields(
+    current?.streaming?.progress,
+    baseline?.streaming?.progress,
+    ["commandText"],
+  );
   const preview = restoreOwnedFields(current?.streaming?.preview, baseline?.streaming?.preview, [
-    "commandText",
     "toolProgress",
   ]);
+  if (params.snapshot.streamingProgressCommandText) {
+    progress.commandText = params.snapshot.streamingProgressCommandText;
+  }
   Object.assign(streaming, {
     block: { ...block, enabled: params.snapshot.blockStreaming },
     chunkMode: params.snapshot.chunkMode ?? "length",
     mode: params.snapshot.streaming,
-    preview: {
-      ...preview,
-      ...params.snapshot.streamingPreview,
-    },
+    preview: { ...preview, toolProgress: params.snapshot.streamingPreviewToolProgress },
   });
+  if (Object.keys(progress).length > 0) {
+    streaming.progress = progress;
+  } else {
+    delete streaming.progress;
+  }
   const threadBindings = restoreOwnedFields(
     current?.threadBindings,
     baseline?.threadBindings,
@@ -546,7 +554,12 @@ function buildMatrixQaConfigSnapshot(params: {
     replyToMode: params.overrides?.replyToMode ?? "off",
     startupVerification: params.overrides?.startupVerification,
     streaming: resolveMatrixQaStreamingMode(params.overrides?.streaming),
-    streamingPreview: resolveMatrixQaStreamingPreview(params.overrides?.streaming),
+    streamingProgressCommandText: resolveMatrixQaStreamingProgressCommandText(
+      params.overrides?.streaming,
+    ),
+    streamingPreviewToolProgress: resolveMatrixQaStreamingPreviewToolProgress(
+      params.overrides?.streaming,
+    ),
     threadBindings: { ...params.overrides?.threadBindings },
     textChunkLimit: params.overrides?.textChunkLimit,
     threadReplies: params.overrides?.threadReplies ?? "inbound",
