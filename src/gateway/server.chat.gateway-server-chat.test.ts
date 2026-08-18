@@ -22,6 +22,7 @@ import { captureEnv, setTestEnvValue } from "../test-utils/env.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import * as sessionLifecycleState from "./session-lifecycle-state.js";
 import {
+  agentDiscoveryMock,
   connectOk,
   dispatchInboundMessageMock,
   installGatewayTestHooks,
@@ -591,8 +592,19 @@ describe("gateway server chat", () => {
   test("handles chat send and history flows", async () => {
     const tempDirs: string[] = [];
     let webchatWs: WebSocket | undefined;
+    const visionModel = { primary: "test-provider/vision-model" };
 
     try {
+      testState.agentConfig = { model: visionModel };
+      agentDiscoveryMock.enabled = true;
+      agentDiscoveryMock.models = [
+        {
+          provider: "test-provider",
+          id: "vision-model",
+          name: "Vision Model",
+          input: ["text", "image"],
+        },
+      ];
       webchatWs = new WebSocket(`ws://127.0.0.1:${port}`, {
         headers: { origin: `http://127.0.0.1:${port}` },
       });
@@ -620,7 +632,7 @@ describe("gateway server chat", () => {
       webchatWs.close();
       webchatWs = undefined;
 
-      testState.agentConfig = { timeoutSeconds: 123 };
+      testState.agentConfig = { timeoutSeconds: 123, model: visionModel };
       const timeoutRes = await rpcReq(ws, "chat.send", {
         sessionKey: "main",
         message: "hello",
@@ -629,7 +641,7 @@ describe("gateway server chat", () => {
       expect(timeoutRes.ok).toBe(true);
       expect(timeoutRes.payload?.runId).toBe("idem-timeout-1");
       await waitForAgentRunDrained("idem-timeout-1");
-      testState.agentConfig = undefined;
+      testState.agentConfig = { model: visionModel };
 
       const sessionRes = await rpcReq(ws, "chat.send", {
         sessionKey: "agent:main:subagent:abc",
@@ -785,6 +797,8 @@ describe("gateway server chat", () => {
       expect(extractFirstTextBlock(defaultMsgs[0])).toBe("m1");
     } finally {
       testState.agentConfig = undefined;
+      agentDiscoveryMock.enabled = false;
+      agentDiscoveryMock.models = [];
       testState.sessionStorePath = undefined;
       testState.sessionConfig = undefined;
       if (webchatWs) {
