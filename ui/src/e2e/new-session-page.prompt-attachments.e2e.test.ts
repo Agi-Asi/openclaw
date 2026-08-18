@@ -36,6 +36,10 @@ async function withNewSessionPage(run: (page: Page) => Promise<void>): Promise<v
 
 suite.define(() => {
   it("restores a text-only prompt in a fresh page", async () => {
+    const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
+    if (artifactDir) {
+      await mkdir(artifactDir, { recursive: true });
+    }
     const context = await suite.browser.newContext({
       locale: "en-US",
       serviceWorkers: "block",
@@ -59,6 +63,12 @@ suite.define(() => {
       await expect
         .poll(() => restoredPage.locator(".new-session-page__message").inputValue())
         .toBe(text);
+      if (artifactDir) {
+        await restoredPage.screenshot({
+          fullPage: true,
+          path: path.join(artifactDir, "new-session-text-only-draft-restored.png"),
+        });
+      }
     } finally {
       await context.close();
     }
