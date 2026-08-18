@@ -702,21 +702,28 @@ describe("gateway server chat", () => {
       const pngB64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=";
 
-      const imgRes = await rpcReq(ws, "chat.send", {
-        sessionKey: "main",
-        message: "see image",
-        idempotencyKey: "idem-img",
-        attachments: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: "image/png",
-              data: pngB64,
-            },
-          },
-        ],
-      });
+      process.env.OPENCLAW_TEST_CHAT_IMAGE_CATALOG_DIAGNOSTIC = "1";
+      const imgRes = await (async () => {
+        try {
+          return await rpcReq(ws, "chat.send", {
+            sessionKey: "main",
+            message: "see image",
+            idempotencyKey: "idem-img",
+            attachments: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: pngB64,
+                },
+              },
+            ],
+          });
+        } finally {
+          delete process.env.OPENCLAW_TEST_CHAT_IMAGE_CATALOG_DIAGNOSTIC;
+        }
+      })();
       expect(imgRes.ok).toBe(true);
       expectStringRunId(imgRes.payload);
       const imgOnlyRes = await rpcReq(ws, "chat.send", {

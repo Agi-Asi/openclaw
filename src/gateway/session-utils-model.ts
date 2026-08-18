@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
@@ -461,6 +462,7 @@ export async function resolveGatewayModelSupportsImages(params: {
     // Attachment admission first consumes lifecycle-prepared capabilities. Runtime-only models
     // retain the evidence-based live fallback without making known models wait for discovery.
     for (const readOnly of [true, false]) {
+      const diagnosticStartedAt = performance.now();
       const loadParams = {
         ...(params.agentId ? { agentId: params.agentId } : {}),
         readOnly,
@@ -475,6 +477,11 @@ export async function resolveGatewayModelSupportsImages(params: {
         provider: params.provider,
         modelId: params.model,
       });
+      if (process.env.OPENCLAW_TEST_CHAT_IMAGE_CATALOG_DIAGNOSTIC === "1") {
+        console.error(
+          `[chat-image-catalog] ${JSON.stringify({ provider: params.provider, model: params.model, readOnly, durationMs: Math.round(performance.now() - diagnosticStartedAt), catalogComplete: snapshot?.catalogComplete, entries: catalog.length, staticEntries: snapshot?.staticEntries?.length ?? 0, found: Boolean(catalogEntry), input: catalogEntry?.input ?? [] })}`,
+        );
+      }
       // Same-generation provider facts repair stale discovered capabilities without
       // crossing agent ownership, physical routes, or authored input policy.
       const staticEntry =
