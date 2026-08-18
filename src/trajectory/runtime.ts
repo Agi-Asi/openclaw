@@ -321,6 +321,15 @@ function createSqliteTrajectoryRuntimeSink(params: {
       (targetKeyAgentId && target?.agentId !== targetKeyAgentId) ||
       (completeTargetKeyEntry && completeTargetKeyEntry.sessionId !== target?.sessionId))
   ) {
+    console.error("[trajectory-diagnostic] rejected-complete-target", {
+      completeTargetKeySessionId: completeTargetKeyEntry?.sessionId,
+      requestedSessionId: params.sessionId,
+      requestedSessionKey,
+      targetAgentId: target?.agentId,
+      targetKeyAgentId,
+      targetSessionId: target?.sessionId,
+      targetSessionKey: target?.sessionKey,
+    });
     return null;
   }
   const targetKeyEntry =
@@ -353,8 +362,17 @@ function createSqliteTrajectoryRuntimeSink(params: {
         }
       : legacyMarker;
   if (!marker || marker.sessionId !== params.sessionId) {
+    console.error("[trajectory-diagnostic] rejected-marker", {
+      markerSessionId: marker?.sessionId,
+      requestedSessionId: params.sessionId,
+    });
     return null;
   }
+  console.error("[trajectory-diagnostic] accepted", {
+    agentId: marker.agentId,
+    sessionId: marker.sessionId,
+    sessionKey: marker.sessionKey,
+  });
   let pendingEvents: TrajectoryEvent[] = [];
   let queuedBytes = 0;
   return {
@@ -363,6 +381,10 @@ function createSqliteTrajectoryRuntimeSink(params: {
         ? `pendingRows=${pendingEvents.length} queuedBytes=${queuedBytes} activeOperation=sqlite-append`
         : undefined,
     flush: async () => {
+      console.error("[trajectory-diagnostic] flush", {
+        pendingEvents: pendingEvents.length,
+        sessionId: marker.sessionId,
+      });
       if (pendingEvents.length === 0) {
         return;
       }
