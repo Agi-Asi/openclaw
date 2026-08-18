@@ -6,8 +6,8 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { clampThinkingLevel } from "@openclaw/ai/internal/runtime";
-import { projectThinkingCatalogCompat } from "../../auto-reply/thinking.shared.js";
 import { resolveThinkingDefaultForModel } from "../../auto-reply/thinking.js";
+import { projectThinkingCatalogCompat } from "../../auto-reply/thinking.shared.js";
 import { createSessionEntryWithTranscript } from "../../config/sessions/session-accessor.js";
 import { bindStreamLlmRuntime } from "../../llm/model-runtime-binding.js";
 import type { Message, Model } from "../../llm/types.js";

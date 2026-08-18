@@ -19,11 +19,7 @@ import {
   setChannelSourceTurnSameThreadRequired,
 } from "../../auto-reply/reply/source-turn-id.js";
 import { messageToolOwnsVisibleReply } from "../../auto-reply/source-reply-delivery-mode.js";
-import type {
-  ThinkLevel,
-  ThinkingCatalogEntry,
-  VerboseLevel,
-} from "../../auto-reply/thinking.js";
+import type { ThinkLevel, ThinkingCatalogEntry, VerboseLevel } from "../../auto-reply/thinking.js";
 import { resolveSessionAuthProfileOverrideSource } from "../../config/sessions/auth-profile-override-provenance.js";
 import {
   persistSessionTranscriptTurn,
