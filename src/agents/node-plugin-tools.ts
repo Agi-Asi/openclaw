@@ -166,6 +166,11 @@ export function createNodePluginTools(params: {
     entries.push({ ...entry, command, normalizedName });
     nameCounts.set(normalizedName, (nameCounts.get(normalizedName) ?? 0) + 1);
   }
+  if (process.env.OPENCLAW_DEBUG_NODE_PLUGIN_TOOLS === "1") {
+    process.stderr.write(
+      `[node-plugin-tools-diag] materialize-input pid=${process.pid} names=${entries.map((entry) => entry.descriptor.name).join(",")} allow=${[...allowlist].join(",")}\n`,
+    );
+  }
 
   const tools: AnyAgentTool[] = [];
   for (const entry of entries) {
@@ -256,6 +261,11 @@ export function createNodePluginTools(params: {
         : {}),
     });
     tools.push(tool);
+  }
+  if (process.env.OPENCLAW_DEBUG_NODE_PLUGIN_TOOLS === "1") {
+    process.stderr.write(
+      `[node-plugin-tools-diag] materialize-output pid=${process.pid} names=${tools.map((tool) => tool.name).join(",")}\n`,
+    );
   }
   return tools;
 }

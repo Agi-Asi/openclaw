@@ -183,6 +183,8 @@ describe.skipIf(!LIVE_ENABLED)("OpenAI cross-placement MCP model proof", () => {
           runtimeEnvPatch: {
             OPENAI_API_KEY,
             OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
+            OPENCLAW_DEBUG_MODEL_PAYLOAD: "tools",
+            OPENCLAW_DEBUG_NODE_PLUGIN_TOOLS: "1",
             OPENCLAW_SKIP_CHANNELS: "1",
           },
           mutateConfig: (cfg) => {
@@ -279,7 +281,9 @@ describe.skipIf(!LIVE_ENABLED)("OpenAI cross-placement MCP model proof", () => {
           "chat.history omitted the exact final expected token",
         ).toBe(true);
       } catch (error) {
-        proofError = error;
+        proofError = new Error(
+          `${error instanceof Error ? error.stack : String(error)}\nGateway logs:\n${gateway?.logs() ?? "gateway unavailable"}`,
+        );
       } finally {
         const stopped = await Promise.allSettled([
           ...(node ? [stopChild(node)] : []),

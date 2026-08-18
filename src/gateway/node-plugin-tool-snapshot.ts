@@ -35,6 +35,7 @@ export type RegisteredNodePluginToolCommand = {
 type ConnectedNodePluginToolSnapshot = {
   toolsByNodeId: Map<string, ConnectedNodePluginTool[]>;
   version: number;
+  debugToken: string;
 };
 
 const CONNECTED_NODE_PLUGIN_TOOL_SNAPSHOT_KEY = Symbol.for(
@@ -44,7 +45,7 @@ const CONNECTED_NODE_PLUGIN_TOOL_SNAPSHOT_KEY = Symbol.for(
 // Share their snapshot or an inventoried node tool disappears from agent runs.
 const snapshot = resolveGlobalSingleton<ConnectedNodePluginToolSnapshot>(
   CONNECTED_NODE_PLUGIN_TOOL_SNAPSHOT_KEY,
-  () => ({ toolsByNodeId: new Map(), version: 0 }),
+  () => ({ toolsByNodeId: new Map(), version: 0, debugToken: `${process.pid}-${Date.now()}` }),
   (value) => {
     value.toolsByNodeId.clear();
     value.version = 0;
@@ -214,6 +215,11 @@ export function replaceConnectedNodePluginTools(params: {
     })),
   );
   bumpSnapshotVersion();
+  if (process.env.OPENCLAW_DEBUG_NODE_PLUGIN_TOOLS === "1") {
+    process.stderr.write(
+      `[node-plugin-tools-diag] write pid=${process.pid} token=${snapshot.debugToken} version=${snapshot.version} names=${params.tools.map((entry) => entry.descriptor.name).join(",")}\n`,
+    );
+  }
 }
 
 export function removeConnectedNodePluginTools(nodeId: string): void {
@@ -224,7 +230,7 @@ export function removeConnectedNodePluginTools(nodeId: string): void {
 }
 
 export function listConnectedNodePluginTools(): ConnectedNodePluginTool[] {
-  return [...snapshot.toolsByNodeId.values()]
+  const tools = [...snapshot.toolsByNodeId.values()]
     .flat()
     .toSorted(
       (left, right) =>
@@ -232,6 +238,12 @@ export function listConnectedNodePluginTools(): ConnectedNodePluginTool[] {
         left.descriptor.name.localeCompare(right.descriptor.name) ||
         left.nodeId.localeCompare(right.nodeId),
     );
+  if (process.env.OPENCLAW_DEBUG_NODE_PLUGIN_TOOLS === "1") {
+    process.stderr.write(
+      `[node-plugin-tools-diag] read pid=${process.pid} token=${snapshot.debugToken} version=${snapshot.version} names=${tools.map((entry) => entry.descriptor.name).join(",")}\n`,
+    );
+  }
+  return tools;
 }
 
 export function getConnectedNodePluginToolsVersion(): number {
