@@ -3227,20 +3227,10 @@ describe("Codex app-server supervised branch lifecycle", () => {
         };
       }
       if (method === "thread/fork") {
-        return nativeThreadResult(
-          probeThreadId,
-          "native-effective",
-          "native-provider",
-          "max",
-        );
+        return nativeThreadResult(probeThreadId, "native-effective", "native-provider", "max");
       }
       if (method === "thread/start" || method === "thread/resume") {
-        return nativeThreadResult(
-          finalThreadId,
-          "native-effective",
-          "native-provider",
-          "max",
-        );
+        return nativeThreadResult(finalThreadId, "native-effective", "native-provider", "max");
       }
       if (method === "thread/inject_items" || method === "thread/archive") {
         return {};

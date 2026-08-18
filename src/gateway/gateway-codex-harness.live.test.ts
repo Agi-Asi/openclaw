@@ -310,9 +310,7 @@ function resolveCodexHarnessExpectedEffort(modelId: string): string | null {
 }
 
 function resolveCodexHarnessExpectedNativeEffort(modelId: string): string | null {
-  return CODEX_HARNESS_THINKING === "off"
-    ? "none"
-    : resolveCodexHarnessExpectedEffort(modelId);
+  return CODEX_HARNESS_THINKING === "off" ? "none" : resolveCodexHarnessExpectedEffort(modelId);
 }
 
 function logCodexLiveStep(step: string, details?: Record<string, unknown>): void {
