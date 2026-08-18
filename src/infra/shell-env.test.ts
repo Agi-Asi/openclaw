@@ -624,6 +624,27 @@ describe("shell env fallback", () => {
     expectSanitizedStartupEnv(receivedEnv);
   });
 
+  it("seeds PS1 before a nounset login-shell probe reads startup state", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const root = tempDirs.make("openclaw-shell-env-nounset-");
+    const shell = path.join(root, "strict-login-shell");
+    fs.writeFileSync(
+      shell,
+      '#!/bin/bash\nset -u\n: "$PS1"\n[[ "$1 $2 $3" == "-l -c env -0" ]]\nprintf "OPENAI_API_KEY=from-shell\\0"\n',
+      { mode: 0o755 },
+    );
+    const env: NodeJS.ProcessEnv = { SHELL: shell };
+
+    withEtcShells([shell], () => {
+      expect(loadShellEnvFallback({ enabled: true, env, expectedKeys: ["OPENAI_API_KEY"] })).toEqual(
+        { ok: true, applied: ["OPENAI_API_KEY"] },
+      );
+    });
+    expect(env.OPENAI_API_KEY).toBe("from-shell");
+  });
+
   it("sanitizes startup-related env vars before login-shell PATH probe", () => {
     const env = makeUnsafeStartupEnv();
     let receivedEnv: NodeJS.ProcessEnv | undefined;
