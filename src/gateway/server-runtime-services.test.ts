@@ -362,6 +362,7 @@ describe("server-runtime-services", () => {
       deps: {},
       maxEnqueuedAt: 123,
       log: sessionDeliveryLog,
+      resolveGatewayContext: expect.any(Function),
     });
     const runtimeParams = hoisted.startSessionDeliveryRuntime.mock.calls[0]?.[0] as
       | {
@@ -873,6 +874,7 @@ describe("server-runtime-services", () => {
       minimalTestGateway: true,
       cfgAtStart: {} as never,
       deps: {} as never,
+      resolveGatewayContext: vi.fn(),
       sessionDeliveryRecoveryMaxEnqueuedAt: 123,
       cronState: createTestCronState(cron),
       cronReconciliation: createTestCronReconciliation(),

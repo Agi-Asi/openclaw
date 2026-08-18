@@ -33,10 +33,8 @@ import {
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { normalizeMediaReferenceForComparison } from "../media/media-reference-comparison.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
-import {
-  dispatchGatewayMethodInProcess,
-  type GatewayContextResolver,
-} from "./server-plugin-in-process-dispatch.js";
+import type { GatewayContextResolver } from "./server-plugin-in-process-dispatch.js";
+import { dispatchGatewayMethodInProcess } from "./server-plugins.js";
 import { loadSessionEntry } from "./session-utils.js";
 
 const log = createSubsystemLogger("gateway/restart-sentinel");

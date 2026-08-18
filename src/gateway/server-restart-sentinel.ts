@@ -742,7 +742,6 @@ async function scheduleRestartSentinelWakeAttempt(params: { deps: CliDeps; attem
 export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   await scheduleRestartSentinelWakeAttempt({ ...params, attempt: 0 });
 }
-
 export async function refreshLatestUpdateRestartSentinel(): Promise<RestartSentinelPayload | null> {
   const current = await readRestartSentinel();
   if (
