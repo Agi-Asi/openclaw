@@ -213,7 +213,9 @@ node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-onboard-sta
 openclaw_e2e_assert_dep_absent "$DEP_SENTINEL" "$HOME/.openclaw"
 
 echo "Configuring $CHANNEL..."
-openclaw_e2e_run_logged channel-add "$OPENCLAW_E2E_CLI_BIN" channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}"
+openclaw_e2e_run_logged channel-add bash -c \
+  'printf "forced canonical redaction proof: %s\n" "$*" >&2; exit 42' \
+  channel-add "${CHANNEL_ADD_ARGS[@]}"
 node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-channel-config "$CHANNEL" "${CHANNEL_CONFIG_TOKENS[@]}"
 
 echo "Checking status surfaces for $CHANNEL..."
