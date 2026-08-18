@@ -910,6 +910,53 @@ class ChatControllerReconnectRestoreTest {
     }
 
   @Test
+  fun rejectedHistoryPredecessorCannotAuthorizeItsObserverDigest() =
+    runTest {
+      val gateway = ScriptedGateway(json)
+      val controller = loadController(gateway, history(emptyList()))
+      gateway.respondWith(
+        "sessions.list",
+        """{"sessions":[{"key":"main","hasActiveRun":true,"status":"running"}]}""",
+      )
+      controller.handleGatewayEvent(
+        "sessions.changed",
+        """{"reason":"start","sessionKey":"main","session":{"key":"main","hasActiveRun":true,"status":"running"}}""",
+      )
+      runCurrent()
+      assertEquals(1, controller.sessions.value.size)
+
+      val historyStarted = CompletableDeferred<Unit>()
+      val releaseHistory = CompletableDeferred<String>()
+      gateway.respond("chat.history") {
+        historyStarted.complete(Unit)
+        releaseHistory.await()
+      }
+      controller.refresh()
+      runCurrent()
+      historyStarted.await()
+
+      gateway.respondChatSend(status = "started")
+      assertTrue(controller.sendMessageAwaitAcceptance("successor work", "off", emptyList()))
+      releaseHistory.complete(
+        history(emptyList(), inFlightRun = "run-predecessor" to "stale work"),
+      )
+      runCurrent()
+      assertEquals(1, controller.pendingRunCount.value)
+      assertNull(controller.streamingAssistantText.value)
+
+      controller.handleGatewayEvent(
+        "session.observer",
+        """{"sessionKey":"main","runId":"run-predecessor","revision":1,"updatedAt":200,"headline":"Stale predecessor","health":"on-track"}""",
+      )
+
+      assertNull(
+        controller.sessions.value
+          .single()
+          .observerDigest,
+      )
+    }
+
+  @Test
   fun reconnectRetiresPersistedLocalRunBeforeAdoptingOtherRun() =
     runTest {
       val gateway = ScriptedGateway(json)

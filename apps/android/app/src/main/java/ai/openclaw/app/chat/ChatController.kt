@@ -3848,7 +3848,6 @@ class ChatController internal constructor(
             ?.runId
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-        latestAppliedInFlightRunId = snapshotRunId
         val optimisticRunIds = runIdsToReconcile.filterTo(mutableSetOf()) { optimisticMessagesByRunId.containsKey(it) }
         prunePersistedOptimisticMessages(history.messages)
         if (snapshotRunId == null) {
@@ -3901,7 +3900,7 @@ class ChatController internal constructor(
         // All live history paths (bootstrap, reconnect recovery, cache-first
         // replace) adopt the gateway's in-flight run snapshot so restored
         // runs keep their pending state and streaming text.
-        adoptInFlightRun(history, runIdsOwnedAfterRequest)
+        latestAppliedInFlightRunId = adoptInFlightRun(history, runIdsOwnedAfterRequest)
         publishRunPresentation()
         history.thinkingLevel
           ?.trim()
@@ -6177,20 +6176,21 @@ class ChatController internal constructor(
   private fun adoptInFlightRun(
     history: ChatHistory,
     runIdsOwnedAfterRequest: Set<String>,
-  ) {
-    val run = history.inFlightRun ?: return
-    val runId = run.runId.trim().takeIf { it.isNotEmpty() } ?: return
-    if (runIdsOwnedAfterRequest.isNotEmpty() && runId !in runIdsOwnedAfterRequest) return
+  ): String? {
+    val run = history.inFlightRun ?: return null
+    val runId = run.runId.trim().takeIf { it.isNotEmpty() } ?: return null
+    if (runIdsOwnedAfterRequest.isNotEmpty() && runId !in runIdsOwnedAfterRequest) return null
     synchronized(pendingRuns) {
       // A different locally-owned run means this snapshot predates it; ignore.
-      if (pendingRuns.isNotEmpty() && runId !in pendingRuns) return
-      if (pendingRuns.isEmpty() && unresolvedRepliesByRunId.isNotEmpty() && !unresolvedRepliesByRunId.containsKey(runId)) return
+      if (pendingRuns.isNotEmpty() && runId !in pendingRuns) return null
+      if (pendingRuns.isEmpty() && unresolvedRepliesByRunId.isNotEmpty() && !unresolvedRepliesByRunId.containsKey(runId)) return null
       pendingRuns.add(runId)
     }
     armPendingRunTimeout(runId)
     if (run.text.isNotEmpty()) {
       _streamingAssistantText.value = run.text
     }
+    return runId
   }
 
   private fun armPendingRunTimeout(runId: String) {
