@@ -3229,8 +3229,18 @@ describe("Codex app-server supervised branch lifecycle", () => {
       if (method === "thread/fork") {
         return nativeThreadResult(probeThreadId, "native-effective", "native-provider", "max");
       }
-      if (method === "thread/start" || method === "thread/resume") {
+      if (method === "thread/start") {
         return nativeThreadResult(finalThreadId, "native-effective", "native-provider", "max");
+      }
+      if (method === "thread/resume") {
+        const config = (requestParams as { config?: Record<string, unknown> }).config;
+        const reasoningEffort = config?.model_reasoning_effort;
+        return nativeThreadResult(
+          finalThreadId,
+          "native-effective",
+          "native-provider",
+          typeof reasoningEffort === "string" ? reasoningEffort : null,
+        );
       }
       if (method === "thread/inject_items" || method === "thread/archive") {
         return {};
@@ -3352,6 +3362,9 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(request.mock.calls[0]?.[1]).toEqual({ threadId: finalThreadId, includeTurns: false });
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("model");
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
+    expect(request.mock.calls[1]?.[1]).toMatchObject({
+      config: { model_reasoning_effort: "max" },
+    });
     expect(resumed).toMatchObject({
       threadId: finalThreadId,
       reasoningEffort: "max",
