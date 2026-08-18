@@ -365,6 +365,11 @@ export function runWithGatewayIndependentRootWorkContinuation<T>(
 /** Transfers an admitted request root to work that intentionally outlives its handler. */
 export function retainGatewayRootWorkAdmissionContinuation(): (() => void) | null {
   const current = GATEWAY_WORK_ADMISSION_STATE.currentRootWork.getStore();
+  if (process.env.OPENCLAW_TEST_CHAT_ADMISSION_DIAGNOSTIC === "1") {
+    console.error(
+      `[chat-admission-diagnostic] retain current=${Boolean(current)} released=${current?.released ?? "none"} references=${current?.references ?? "none"} active=${GATEWAY_WORK_ADMISSION_STATE.activeRootWork.size}`,
+    );
+  }
   if (!current || current.released) {
     return null;
   }

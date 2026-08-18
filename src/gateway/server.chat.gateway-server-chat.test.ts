@@ -581,6 +581,7 @@ describe("gateway server chat", () => {
   test("handles chat send and history flows", async () => {
     const tempDirs: string[] = [];
     let webchatWs: WebSocket | undefined;
+    let diagnosticStep = "open webchat socket";
 
     try {
       webchatWs = new WebSocket(`ws://127.0.0.1:${port}`, {
@@ -590,6 +591,7 @@ describe("gateway server chat", () => {
       await new Promise<void>((resolve) => {
         webchatWs?.once("open", resolve);
       });
+      diagnosticStep = "connect webchat client";
       await connectOk(webchatWs, {
         client: {
           id: GATEWAY_CLIENT_NAMES.CONTROL_UI,
@@ -599,6 +601,7 @@ describe("gateway server chat", () => {
         },
       });
 
+      diagnosticStep = "send initial webchat turn";
       const webchatRes = await rpcReq(webchatWs, "chat.send", {
         sessionKey: "main",
         message: "hello",
@@ -610,6 +613,7 @@ describe("gateway server chat", () => {
       webchatWs = undefined;
 
       testState.agentConfig = { timeoutSeconds: 123 };
+      diagnosticStep = "send timeout-configured turn";
       const timeoutRes = await rpcReq(ws, "chat.send", {
         sessionKey: "main",
         message: "hello",
@@ -619,6 +623,7 @@ describe("gateway server chat", () => {
       expect(timeoutRes.payload?.runId).toBe("idem-timeout-1");
       testState.agentConfig = undefined;
 
+      diagnosticStep = "send subagent-key turn";
       const sessionRes = await rpcReq(ws, "chat.send", {
         sessionKey: "agent:main:subagent:abc",
         message: "hello",
@@ -653,6 +658,7 @@ describe("gateway server chat", () => {
         },
       });
 
+      diagnosticStep = "verify denied send policy";
       const blockedRes = await rpcReq(ws, "chat.send", {
         sessionKey: "discord:group:dev",
         message: "hello",
@@ -686,6 +692,7 @@ describe("gateway server chat", () => {
       });
 
       vi.mocked(agentCommandMock).mockClear();
+      diagnosticStep = "verify agent method bypasses send policy";
       const agentAllowedRes = await rpcReq(ws, "agent", {
         sessionKey: "cron:job-1",
         message: "hi",
@@ -702,6 +709,7 @@ describe("gateway server chat", () => {
       const pngB64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=";
 
+      diagnosticStep = "send legacy image attachment";
       const imgRes = await rpcReq(ws, "chat.send", {
         sessionKey: "main",
         message: "see image",
@@ -719,6 +727,7 @@ describe("gateway server chat", () => {
       });
       expect(imgRes.ok).toBe(true);
       expectStringRunId(imgRes.payload);
+      diagnosticStep = "send image-only attachment";
       const imgOnlyRes = await rpcReq(ws, "chat.send", {
         sessionKey: "main",
         message: "",
@@ -761,6 +770,7 @@ describe("gateway server chat", () => {
       }
       await replaceMainTranscriptLines(lines);
 
+      diagnosticStep = "load bounded chat history";
       const defaultRes = await rpcReq<{ messages?: unknown[] }>(ws, "chat.history", {
         sessionKey: "main",
       });
@@ -768,6 +778,10 @@ describe("gateway server chat", () => {
       const defaultMsgs = defaultRes.payload?.messages ?? [];
       expect(defaultMsgs.length).toBe(200);
       expect(extractFirstTextBlock(defaultMsgs[0])).toBe("m1");
+    } catch (error) {
+      throw new Error(`chat flow failed during ${diagnosticStep}: ${String(error)}`, {
+        cause: error,
+      });
     } finally {
       testState.agentConfig = undefined;
       testState.sessionStorePath = undefined;
@@ -888,6 +902,7 @@ describe("gateway server chat", () => {
           await releasePersistence.promise;
           await persistLifecycleEvent(params);
         });
+      process.env.OPENCLAW_TEST_CHAT_ADMISSION_DIAGNOSTIC = "1";
       const sessionChanged = await (async () => {
         try {
           dispatchInboundMessageMock.mockImplementationOnce(async () => {
@@ -934,6 +949,7 @@ describe("gateway server chat", () => {
           });
           return changed;
         } finally {
+          delete process.env.OPENCLAW_TEST_CHAT_ADMISSION_DIAGNOSTIC;
           rejectDispatch.resolve();
           releasePersistence.resolve();
           persistSpy.mockRestore();
