@@ -137,4 +137,66 @@ suite.define(() => {
       },
     );
   });
+
+  it("dismisses a completed card across rerender and reload", async () => {
+    const sessionKey = "agent:main:progress-complete";
+    const plan = [
+      { step: "Inspected owner", status: "completed" },
+      { step: "Implemented fix", status: "completed" },
+      { step: "Filed issue", status: "completed" },
+    ];
+
+    for (const colorScheme of ["dark", "light"] as const) {
+      await suite.withPage(
+        {
+          colorScheme,
+          locale: "en-US",
+          serviceWorkers: "block",
+          viewport: { height: 900, width: 560 },
+        },
+        async ({ page }) => {
+          const gateway = await installMockGateway(page, {
+            featureMethods: ["chat.metadata", "chat.startup", "progressCard.get"],
+            methodResponses: {
+              "progressCard.get": {
+                card: {
+                  revision: 3,
+                  sessionKey,
+                  steps: plan,
+                  updatedAt: 3,
+                },
+              },
+              "sessions.list": chatSessionListResponse([
+                {
+                  key: sessionKey,
+                  kind: "direct",
+                  label: "Completed progress",
+                  updatedAt: 3,
+                },
+              ]),
+            },
+            sessionKey,
+          });
+
+          await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
+          await expect.poll(() => gateway.getRequests("progressCard.get")).toHaveLength(1);
+          const card = page.locator('[data-progress-card-placement="composer"]');
+          await expect.poll(() => card.isVisible()).toBe(true);
+          await card.locator("summary").click();
+          await captureProof(page, `completed-${colorScheme}-before.png`);
+
+          if (colorScheme === "light") {
+            return;
+          }
+          await card.getByRole("button", { name: "Dismiss progress card" }).click();
+          await expect.poll(() => card.count()).toBe(0);
+
+          await page.locator("textarea").fill("rerender");
+          await expect.poll(() => card.count()).toBe(0);
+          await page.reload();
+          await expect.poll(() => card.count()).toBe(0);
+        },
+      );
+    }
+  });
 });
