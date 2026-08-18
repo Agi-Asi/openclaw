@@ -5068,7 +5068,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
     }
   });
 
-  it("does not persist cumulative CLI usage as a fresh context snapshot", async () => {
+  it("marks prior context usage stale when CLI usage is only cumulative", async () => {
     const sessionEntry = makeSessionEntry({
       totalTokens: 42_000,
       totalTokensFresh: true,
@@ -5113,7 +5113,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
     expect(stored.fallbackNotice).toBeUndefined();
     expect(stored.modelProvider).toBe("claude-cli");
     expect(stored.model).toBe("claude-opus-4-7");
-    expect(stored.totalTokens).toBeUndefined();
+    expect(stored.totalTokens).toBe(42_000);
     expect(stored.totalTokensFresh).toBe(false);
   });
 
