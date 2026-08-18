@@ -755,6 +755,15 @@ jobs:
             exit 1
           fi
 
+          mkdir -p "$SOURCE_PERF_DIR/gateway-cpu/cpu-profiles"
+          pnpm test:gateway:concurrency -- \
+            --cpu-prof-dir "$SOURCE_PERF_DIR/gateway-cpu/cpu-profiles" \
+            --output "$SOURCE_PERF_DIR/gateway-cpu/gateway-concurrency-bench.json" \
+            --runs 1 \
+            --warmup 0 \
+            --max-control-ms 4000
+          exit 0
+
           pnpm test:gateway:cpu-scenarios \
             --output-dir "$SOURCE_PERF_DIR/gateway-cpu" \
             --runs "$source_runs" \
