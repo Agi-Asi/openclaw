@@ -216,19 +216,31 @@ describe("openclaw-session-link-hovercard-provider", () => {
     expect(document.querySelector(".session-link-hovercard")).toBeNull();
   });
 
-  it("does not overlay sidebar session navigation", async () => {
+  it("opens sidebar session rows beyond their trailing actions", async () => {
     const { provider, request } = createProvider({ response: previewResponse() });
+    const sidebar = document.createElement("openclaw-app-sidebar");
+    const row = document.createElement("div");
+    row.className = "sidebar-recent-session";
+    row.getBoundingClientRect = () => new DOMRect(10, 35, 230, 34);
     const anchor = document.createElement("a");
     anchor.className = "sidebar-recent-session__link";
     anchor.href = "/chat/main/research";
     anchor.textContent = "Research";
-    provider.append(anchor);
+    anchor.getBoundingClientRect = () => new DOMRect(20, 40, 160, 24);
+    row.append(anchor);
+    sidebar.append(row);
+    provider.append(sidebar);
     document.body.append(provider);
 
     await hover(anchor);
 
-    expect(document.querySelector(".session-link-hovercard")).toBeNull();
-    expect(request).not.toHaveBeenCalled();
+    const card = document.querySelector<HTMLElement>(".session-link-hovercard");
+    expect(card?.textContent).toContain("Research plan");
+    expect(card?.dataset.side).toBe("right");
+    expect(card?.style.left).toBe("250px");
+    expect(request).toHaveBeenCalledWith("controlUi.sessionPreview", {
+      sessionKey: "agent:main:research",
+    });
   });
 
   it("resolves a short session path only from the loaded roster", async () => {

@@ -178,9 +178,10 @@ describe("AppSidebar session mutation feedback", () => {
       throw new Error("expected session owner fixture");
     }
     row.createdActor = { type: "human", id: "profile-ada", label: "Ada" };
-    result.creators = [
-      { id: "profile-ada", label: "Ada" },
-      { id: "profile-bob", label: "Bob" },
+    row.owner = { actor: row.createdActor };
+    result.owners = [
+      { type: "human", id: "profile-ada", label: "Ada" },
+      { type: "human", id: "profile-bob", label: "Bob" },
     ];
     harness.publishList({ result, agentId: "main" });
     await sidebar.updateComplete;

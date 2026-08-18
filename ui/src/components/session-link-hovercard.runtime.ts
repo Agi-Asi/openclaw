@@ -12,6 +12,7 @@ import { sessionRefFromPath, type SessionPathTarget } from "../app-session-route
 import type { ApplicationContext } from "../app/context.ts";
 import { i18n, t } from "../i18n/index.ts";
 import { formatRelativeTimestamp } from "../lib/format.ts";
+import { sessionProgressCardsForGateway } from "../lib/session-progress-cards.ts";
 import {
   areUiSessionKeysEquivalent,
   buildAgentMainSessionKey,
@@ -548,6 +549,46 @@ export class SessionLinkHovercardProvider extends ReactiveElement {
     if (this.activeAnchor !== anchor || this.activeTarget?.sessionKey !== target.sessionKey) {
       return;
     }
+    if (!anchor.closest("openclaw-app-sidebar")) {
+      this.mountPreview(anchor, target, "vertical");
+      return;
+    }
+    // Position outside the complete row, including its trailing actions. Anchoring
+    // to the link alone lets the card cover those controls and makes them unclickable.
+    const positionAnchor = anchor.parentElement!;
+    // Sidebar rows share their hover surface with the progress hovercard: an active
+    // progress card owns the row, so the preview opens only without one. A card that
+    // appears while the preview is open is not reconciled until the next hover.
+    const progressCards = this.context
+      ? sessionProgressCardsForGateway(this.context.gateway)
+      : null;
+    const known = progressCards?.get(target.sessionKey);
+    if (known) {
+      return;
+    }
+    if (!progressCards || known === null) {
+      this.mountPreview(positionAnchor, target, "horizontal");
+      return;
+    }
+    void progressCards
+      .load(target.sessionKey)
+      .catch(() => null)
+      .then((progressCard) => {
+        const stillActive =
+          this.activeAnchor === anchor &&
+          this.activeTarget?.sessionKey === target.sessionKey &&
+          this.hovercard.held;
+        if (!progressCard && stillActive) {
+          this.mountPreview(positionAnchor, target, "horizontal");
+        }
+      });
+  }
+
+  private mountPreview(
+    anchor: HTMLElement,
+    target: SessionPreviewTarget,
+    placement: "horizontal" | "vertical",
+  ): void {
     nextHovercardId += 1;
     const card = createPortaledHovercard(
       `openclaw-session-hovercard-${nextHovercardId}`,
@@ -558,7 +599,7 @@ export class SessionLinkHovercardProvider extends ReactiveElement {
     renderLoading(card);
     card.addEventListener("pointerenter", this.handleCardPointerEnter);
     card.addEventListener("pointerleave", this.handleCardPointerLeave);
-    this.hovercard.mount(anchor, card, "vertical");
+    this.hovercard.mount(anchor, card, placement);
     void this.previewTask.run([target]);
   }
 
