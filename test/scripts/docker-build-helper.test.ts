@@ -2635,7 +2635,9 @@ docker_e2e_docker_run_cmd run demo
     expect(script).toContain(
       'openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1 || channel_add_status=$?',
     );
-    expect(script).toContain('echo "channels add failed for $CHANNEL with exit code $channel_add_status"');
+    expect(script).toContain(
+      'echo "channels add failed for $CHANNEL with exit code $channel_add_status"',
+    );
     expect(script).toContain("/tmp/openclaw-channel-add.log >&2");
     expect(script).toContain('exit "$channel_add_status"');
     expect(script).toContain("s/openclaw-npm-onboard-discord-token/[REDACTED]/g");
