@@ -13,17 +13,19 @@ export function sqliteSessionEntriesEqual(
     return left === right;
   }
   const {
+    owner: _leftOwner,
     participants: _leftParticipants,
     participantCount: _leftParticipantCount,
     ...leftEntry
   } = left;
   const {
+    owner: _rightOwner,
     participants: _rightParticipants,
     participantCount: _rightParticipantCount,
     ...rightEntry
   } = right;
-  // Participant history is a separately mutable SQLite projection. It must not
-  // invalidate logical-session compare-and-swap or leak into entry_json writes.
+  // Collaboration metadata is a separately mutable SQLite projection. It must
+  // not invalidate logical-session compare-and-swap or leak into entry_json writes.
   return JSON.stringify(leftEntry) === JSON.stringify(rightEntry);
 }
 

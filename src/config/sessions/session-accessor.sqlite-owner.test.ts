@@ -6,6 +6,7 @@ import {
 } from "../../state/openclaw-agent-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import {
+  applySessionEntryLifecycleMutation,
   assignSessionOwner,
   loadSessionEntry,
   upsertSessionEntryCore,
@@ -76,6 +77,49 @@ describe("SQLite session owner assignment", () => {
           dflt_value: null,
         });
       }
+    });
+  });
+
+  it("allows lifecycle updates after assigning an owner", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const scope = {
+        agentId: "main",
+        env: state.env,
+        sessionKey: "agent:main:owned-lifecycle-session",
+      };
+      await upsertSessionEntryCore(scope, {
+        sessionId: "session-owned-lifecycle",
+        updatedAt: 1,
+      });
+      assignSessionOwner(scope, {
+        owner: { type: "human", id: "profile-owner" },
+        assignedBy: { type: "human", id: "profile-assigner" },
+        assignedAt: 2,
+      });
+
+      await applySessionEntryLifecycleMutation({
+        agentId: scope.agentId,
+        storePath: state.statePath("agents", "main", "sessions", "sessions.json"),
+        upserts: [
+          {
+            sessionKey: scope.sessionKey,
+            buildEntry: ({ currentEntry }) =>
+              currentEntry ? { ...currentEntry, label: "updated", updatedAt: 3 } : null,
+          },
+        ],
+        skipMaintenance: true,
+      });
+
+      expect(loadSessionEntry(scope)).toMatchObject({
+        label: "updated",
+        owner: {
+          actor: { type: "human", id: "profile-owner" },
+          assignedBy: { type: "human", id: "profile-assigner" },
+          assignedAt: 2,
+        },
+        sessionId: "session-owned-lifecycle",
+        updatedAt: 3,
+      });
     });
   });
 });
