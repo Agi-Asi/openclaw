@@ -30,13 +30,16 @@ const execCacheIds = new WeakMap<object, number>();
 function resolveShellExecEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const execEnv = sanitizeHostExecEnv({ baseEnv: env });
 
-  // Startup-file resolution must stay pinned to the real user home.
+  // Pin startup-file resolution to the real home; a fixed prompt also keeps
+  // nounset system login files from failing without forwarding caller contents.
   const home = os.homedir().trim();
   if (home) {
     execEnv.HOME = home;
   } else {
     delete execEnv.HOME;
   }
+
+  execEnv.PS1 = "";
 
   // Avoid zsh startup-file redirection via env poisoning.
   delete execEnv.ZDOTDIR;

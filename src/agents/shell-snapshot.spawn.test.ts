@@ -28,7 +28,7 @@ describe.skipIf(process.platform === "win32")("shell snapshot subprocesses", () 
   let envSnapshot: ReturnType<typeof captureEnv>;
 
   beforeEach(() => {
-    envSnapshot = captureEnv(["HOME", "OPENCLAW_EXEC_SHELL_SNAPSHOT", "OPENCLAW_STATE_DIR", "PS1"]);
+    envSnapshot = captureEnv(["HOME", "OPENCLAW_EXEC_SHELL_SNAPSHOT", "OPENCLAW_STATE_DIR"]);
     spawnMock.mockReset();
     killProcessTreeMock.mockReset();
   });
@@ -63,30 +63,5 @@ describe.skipIf(process.platform === "win32")("shell snapshot subprocesses", () 
     const options = spawnMock.mock.calls[0]?.[2] as SpawnOptions | undefined;
     expect(options?.stdio).toBe("ignore");
     expect(killProcessTreeMock).toHaveBeenCalledWith(4242, { graceMs: 0, detached: true });
-  });
-
-  it("seeds a fixed prompt for shell startup without forwarding the host prompt", async () => {
-    const child = Object.assign(new EventEmitter(), { pid: 4242 }) as ChildProcess;
-    spawnMock.mockImplementation(() => {
-      queueMicrotask(() => child.emit("close", 1));
-      return child;
-    });
-
-    const home = tempDirs.make("openclaw-snapshot-spawn-home-");
-    const stateDir = tempDirs.make("openclaw-snapshot-spawn-state-");
-    setTestEnvValue("HOME", home);
-    setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
-    setTestEnvValue("PS1", "host-prompt");
-
-    await maybeWrapCommandWithShellSnapshot({
-      command: "echo unchanged",
-      shell: "/bin/bash",
-      shellArgs: ["-c"],
-      cwd: os.tmpdir(),
-      env: { ...process.env },
-    });
-
-    const options = spawnMock.mock.calls[0]?.[2] as SpawnOptions | undefined;
-    expect(options?.env?.PS1).toBe("$ ");
   });
 });

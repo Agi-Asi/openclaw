@@ -324,9 +324,6 @@ function buildTrustedSnapshotCaptureEnv(
 ): Record<string, string | undefined> {
   const env = buildSnapshotCaptureEnv(process.env);
   env.HOME = getTrustedShellHome();
-  // Interactive Bash startup files commonly read PS1 while the invoking runtime
-  // has nounset enabled. Seed a fixed prompt without trusting caller state.
-  env.PS1 = "$ ";
   // OPENCLAW_SHELL is injected by the exec runtime, so startup files can keep
   // their documented exec-specific branches without trusting model input.
   if (runtimeEnv.OPENCLAW_SHELL === "exec") {
