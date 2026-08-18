@@ -776,6 +776,7 @@ describe("createSessionCapability", () => {
       sessions.reconcileRunTerminal({
         sessionKeys: ["main"],
         runId: "run-1",
+        startedRunIds: ["run-1"],
         status: "done",
         endedAt: 160,
       }),

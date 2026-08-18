@@ -103,6 +103,7 @@ const targetedSessionReconciliationCases = [
         sessions.reconcileRunTerminal({
           sessionKeys: ["agent:main:main"],
           runId: "run-1",
+          startedRunIds: ["run-1"],
           status: "done",
           endedAt: 2,
         }),
