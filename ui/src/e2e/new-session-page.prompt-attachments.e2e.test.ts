@@ -54,7 +54,47 @@ suite.define(() => {
       await firstMessage.fill(text);
       await waitForPersistedNewSessionDraft(firstPage, text, 0);
       await firstPage.reload();
-      await expect.poll(() => firstMessage.inputValue()).toBe(text);
+      try {
+        await expect.poll(() => firstMessage.inputValue()).toBe(text);
+      } catch (error) {
+        const diagnostic = await firstPage.evaluate(() => {
+          const page = document.querySelector("openclaw-new-session-page") as
+            | (HTMLElement & {
+                submission?: {
+                  message?: string;
+                  draftPersistence?: {
+                    gatewayOwner?: string;
+                    mutationGeneration?: number;
+                    recoveryScope?: string;
+                    restoreGeneration?: number;
+                    restoredIdentity?: string;
+                    revision?: number;
+                    routeKey?: string;
+                  };
+                };
+              })
+            | null;
+          const persistence = page?.submission?.draftPersistence;
+          return {
+            hasGatewayOwner: Boolean(persistence?.gatewayOwner),
+            hasRecoveryScope: Boolean(persistence?.recoveryScope),
+            hasRestoredIdentity: Boolean(persistence?.restoredIdentity),
+            messageLength: page?.submission?.message?.length ?? -1,
+            mutationGeneration: persistence?.mutationGeneration ?? -1,
+            restoreGeneration: persistence?.restoreGeneration ?? -1,
+            revision: persistence?.revision ?? -1,
+            routeKey: persistence?.routeKey ?? "",
+          };
+        });
+        console.info(`[pr125637-diagnostic] ${JSON.stringify(diagnostic)}`);
+        if (artifactDir) {
+          await firstPage.screenshot({
+            fullPage: true,
+            path: path.join(artifactDir, "new-session-text-only-draft-reload-failure.png"),
+          });
+        }
+        throw error;
+      }
       await firstPage.close();
 
       const restoredPage = await context.newPage();
