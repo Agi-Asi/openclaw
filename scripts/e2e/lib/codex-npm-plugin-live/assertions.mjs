@@ -831,6 +831,21 @@ function assertFollowthrough() {
   const replyTexts = (response.payloads || [])
     .map((payload) => (payload && typeof payload.text === "string" ? payload.text.trim() : ""))
     .filter(Boolean);
+  const diagnosticTimeline = extractOpenClawToolTimeline(
+    readSessionEntry(sessionId).transcriptEvents,
+  );
+  const diagnosticMessageCalls = diagnosticTimeline.flatMap((entry) => {
+    if (entry.type !== "call" || entry.name !== "message" || !entry.args) {
+      return [];
+    }
+    const text = [entry.args.message, entry.args.text, entry.args.body, entry.args.content].find(
+      (value) => typeof value === "string",
+    );
+    return text === progressMarker || text === completeMarker
+      ? [{ action: entry.args.action, final: entry.args.final, text }]
+      : [];
+  });
+  console.error(`followthrough_message_calls=${JSON.stringify(diagnosticMessageCalls)}`);
   const expectedReplies = [progressMarker, completeMarker];
   if (JSON.stringify(replyTexts) !== JSON.stringify(expectedReplies)) {
     throw new Error(
