@@ -30,10 +30,12 @@ describe("buildCurrentOpenClawCliArgv", () => {
       if (!prepared.ok) {
         return;
       }
-      expect(prepared.binding.operands).toHaveLength(1);
-      expect(path.basename(prepared.binding.operands[0]?.snapshot.path ?? "")).toBe(
-        "openclaw.mjs",
+      const operandBasenames = prepared.binding.operands.map((operand) =>
+        path.basename(operand.snapshot.path),
       );
+      expect(operandBasenames).toContain("openclaw.mjs");
+      expect(command).not.toContain("--import");
+      expect(command).not.toContain("src/entry.ts");
     },
   );
 
