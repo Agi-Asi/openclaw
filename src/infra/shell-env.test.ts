@@ -124,8 +124,8 @@ describe("shell env fallback", () => {
     }
   }
 
-  function requireExecCall(exec: ReturnType<typeof vi.fn>): unknown[] {
-    const call = exec.mock.calls[0];
+  function requireExecCall(exec: ReturnType<typeof vi.fn>, index = 0): unknown[] {
+    const call = (exec.mock.calls as unknown[][])[index];
     if (!call) {
       throw new Error("expected shell env exec call");
     }
@@ -699,8 +699,8 @@ describe("shell env fallback", () => {
     });
 
     expect(exec).toHaveBeenCalledTimes(2);
-    expect(exec.mock.calls[0]?.[1]).toStrictEqual(["-lic", "printf '\\0'; env -0"]);
-    expect(exec.mock.calls[1]?.[1]).toStrictEqual(["-l", "-c", "printf '\\0'; env -0"]);
+    expect(requireExecCall(exec)[1]).toStrictEqual(["-lic", "printf '\\0'; env -0"]);
+    expect(requireExecCall(exec, 1)[1]).toStrictEqual(["-l", "-c", "printf '\\0'; env -0"]);
   });
 
   it("sanitizes startup-related env vars before login-shell PATH probe", () => {
