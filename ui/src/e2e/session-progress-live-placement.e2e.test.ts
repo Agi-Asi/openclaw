@@ -200,6 +200,7 @@ suite.define(() => {
           await expect.poll(() => card.count()).toBe(0);
           await gateway.setMethodResponse("progressCard.get", { card: null });
           await page.reload();
+          await page.locator("textarea").waitFor({ state: "visible" });
           await expect.poll(() => card.count()).toBe(0);
           expect(await gateway.getRequests("chat.send")).toHaveLength(0);
           await captureProof(page, `completed-${colorScheme}-after.png`);
