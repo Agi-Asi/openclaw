@@ -28,12 +28,7 @@ describe.skipIf(process.platform === "win32")("shell snapshot subprocesses", () 
   let envSnapshot: ReturnType<typeof captureEnv>;
 
   beforeEach(() => {
-    envSnapshot = captureEnv([
-      "HOME",
-      "OPENCLAW_EXEC_SHELL_SNAPSHOT",
-      "OPENCLAW_STATE_DIR",
-      "PS1",
-    ]);
+    envSnapshot = captureEnv(["HOME", "OPENCLAW_EXEC_SHELL_SNAPSHOT", "OPENCLAW_STATE_DIR", "PS1"]);
     spawnMock.mockReset();
     killProcessTreeMock.mockReset();
   });
