@@ -20,6 +20,7 @@ import { createNonExitingRuntime, ExitError, type RuntimeEnv } from "../../runti
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import {
   sanitizeWizardStepForClient,
+  WizardClientCapabilityError,
   WizardSession,
   type WizardStep,
 } from "../../wizard/session.js";
@@ -43,6 +44,7 @@ export type ChannelSetupWizardRunner = (
     channel?: string;
     onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
     beforePersistentEffect?: () => Promise<void>;
+    signal?: AbortSignal;
   },
   runtime: RuntimeEnv,
   prompter: WizardPrompter,
@@ -82,6 +84,22 @@ function sanitizeWizardResultForClient<T extends { step?: WizardStep }>(result: 
   return result.step ? { ...result, step: sanitizeWizardStepForClient(result.step) } : result;
 }
 
+async function readWizardResultForClient(params: {
+  session: WizardSession;
+  supportsQrCode: boolean;
+  respond: RespondFn;
+}) {
+  try {
+    return await params.session.next({ supportsQrCode: params.supportsQrCode });
+  } catch (error) {
+    if (error instanceof WizardClientCapabilityError) {
+      params.respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, error.message));
+      return null;
+    }
+    throw error;
+  }
+}
+
 /** Resolves a live wizard session or sends the public not-found error. */
 function findWizardSessionOrRespond(params: {
   context: GatewayRequestContext;
@@ -114,7 +132,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
     const createSession = () =>
       flow === "channels"
         ? new WizardSession(
-            (prompter, _signal, wizardSession) =>
+            (prompter, signal, wizardSession) =>
               runHostedWizard((runtime) =>
                 context.channelWizardRunner(
                   {
@@ -123,6 +141,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
                     // Durable effects (plugin installs, config commit) must finish
                     // even if the client cancels mid-write.
                     beforePersistentEffect: async () => wizardSession.lockCancellation(),
+                    signal,
                   },
                   runtime,
                   prompter,
@@ -155,7 +174,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
       return;
     }
     context.wizardSessions.set(sessionId, session);
-    const result = await session.next();
+    const result = await session.next({ supportsQrCode });
     if (result.done) {
       // Let the runner release setup admission before the terminal response,
       // so an immediate replacement wizard is not rejected as still busy.
@@ -164,7 +183,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
     }
     respond(true, { sessionId, ...sanitizeWizardResultForClient(result) }, undefined);
   },
-  "wizard.next": async ({ params, respond, context }) => {
+  "wizard.next": async ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateWizardNextParams, "wizard.next", respond)) {
       return;
     }
@@ -173,6 +192,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
     if (!session) {
       return;
     }
+    const supportsQrCode = hasGatewayClientCap(client?.connect.caps, GATEWAY_CLIENT_CAPS.WIZARD_QR);
     const answer = params.answer as { stepId?: string; value?: unknown } | undefined;
     if (answer) {
       if (session.getStatus() !== "running") {
@@ -182,10 +202,18 @@ export const wizardHandlers: GatewayRequestHandlers = {
       try {
         const validationError = await session.answer(answer.stepId ?? "", answer.value);
         if (validationError) {
+          const result = await readWizardResultForClient({
+            session,
+            supportsQrCode,
+            respond,
+          });
+          if (!result) {
+            return;
+          }
           respond(
             true,
             {
-              ...sanitizeWizardResultForClient(await session.next()),
+              ...sanitizeWizardResultForClient(result),
               error: validationError,
             },
             undefined,
@@ -197,7 +225,10 @@ export const wizardHandlers: GatewayRequestHandlers = {
         return;
       }
     }
-    const result = await session.next();
+    const result = await readWizardResultForClient({ session, supportsQrCode, respond });
+    if (!result) {
+      return;
+    }
     if (result.done) {
       // Keep terminal response ordering identical to wizard.start.
       await whenAdmittedWizardSessionSettled(session);

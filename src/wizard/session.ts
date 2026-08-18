@@ -22,6 +22,23 @@ type WizardQrStep = Omit<ProtocolWizardQrStep, "qrDataUrl" | "expiresInMs"> & {
 export type WizardStep = ProtocolWizardNonQrStep | WizardQrStep;
 type WizardNonQrStepInput = Omit<ProtocolWizardNonQrStep, "id">;
 
+export class WizardClientCapabilityError extends Error {
+  constructor() {
+    super("wizard: this QR step requires a QR-capable client");
+    this.name = "WizardClientCapabilityError";
+  }
+}
+
+/** Keep credential-bearing steps behind the capability negotiated by this client. */
+export function assertWizardStepClientCapability(
+  step: Pick<WizardStep, "type">,
+  supportsQrCode: boolean,
+): void {
+  if (step.type === "qr" && !supportsQrCode) {
+    throw new WizardClientCapabilityError();
+  }
+}
+
 type WizardStepInputRequirement = "always" | "never" | "client-executor";
 
 const WIZARD_STEP_INPUT_REQUIREMENT_BY_TYPE = {
@@ -364,13 +381,14 @@ export class WizardSession {
     this.runnerPromise = this.run(prompter);
   }
 
-  async next(): Promise<WizardNextResult> {
+  async next(options?: { supportsQrCode?: boolean }): Promise<WizardNextResult> {
     const progressStep = this.progressSteps.shift();
     if (progressStep) {
       this.rememberDeliveredProgressStep(progressStep.id);
       return { done: false, step: progressStep, status: this.status };
     }
     if (this.currentStep) {
+      assertWizardStepClientCapability(this.currentStep, options?.supportsQrCode === true);
       if (this.currentStep.type === "qr" && this.deliveredPassiveStepId === this.currentStep.id) {
         if (!this.stepDeferred) {
           this.stepDeferred = createDeferredCore();
@@ -395,6 +413,7 @@ export class WizardSession {
     }
     const step = await this.stepDeferred.promise;
     if (step) {
+      assertWizardStepClientCapability(step, options?.supportsQrCode === true);
       if (step.type === "qr") {
         this.deliveredPassiveStepId = step.id;
       }

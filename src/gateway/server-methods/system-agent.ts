@@ -519,6 +519,7 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
     await runSystemAgentGatewayTask(async () => {
       const sessions = context.systemAgentSessions;
       const sessionId = params.sessionId;
+      const supportsQrCode = supportsSystemAgentWizardQr(client?.connect.caps);
       // Initialization, resets, and turns share one per-session queue. Without
       // it, concurrent first messages can create competing engines and lose
       // conversation state when the later initializer replaces the first.
@@ -605,7 +606,7 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
           // surface: "gateway" keeps setup from installing or restarting its own daemon.
           const engine = new SystemAgentChatEngine({
             surface: "gateway",
-            supportsQrCode: supportsSystemAgentWizardQr(client?.connect.caps),
+            supportsQrCode,
             verifiedInference: inference.binding,
             operatorApprovalOnly: params.delegation !== undefined,
             ...(params.delegation?.agentId ? { requesterAgentId: params.delegation.agentId } : {}),
@@ -686,14 +687,13 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
           (params.message === undefined || !params.message.trim())
         ) {
           const historyStart = session.engine.historyLength();
-          const rejoin = await buildSystemAgentRejoinResult({
-            sessionId,
-            welcome: session.welcome,
-            ...(session.welcomeQuestion ? { welcomeQuestion: session.welcomeQuestion } : {}),
-            engine: session.engine,
-          });
+          const rejoin = await buildSystemAgentRejoinResult(sessionId, session, supportsQrCode);
+          if ("error" in rejoin) {
+            respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, rejoin.error.message));
+            return;
+          }
           persistEngineHistory(session.engine, historyStart);
-          respond(true, rejoin, undefined);
+          respond(true, rejoin.result, undefined);
           acknowledgeDeliveredSystemAgentWelcome(session);
           return;
         }

@@ -55,7 +55,7 @@ describe("WizardSession", () => {
       { supportsQrCode: true },
     );
 
-    const presented = await session.next();
+    const presented = await session.next({ supportsQrCode: true });
     expect(presented.step).toMatchObject({ type: "qr", executor: "gateway" });
     if (!presented.step) {
       throw new Error("expected QR step");
@@ -66,7 +66,7 @@ describe("WizardSession", () => {
     );
 
     let pollCompleted = false;
-    const poll = session.next().finally(() => {
+    const poll = session.next({ supportsQrCode: true }).finally(() => {
       pollCompleted = true;
     });
     await Promise.resolve();
@@ -101,7 +101,7 @@ describe("WizardSession", () => {
       },
       { supportsQrCode: true },
     );
-    const presented = await session.next();
+    const presented = await session.next({ supportsQrCode: true });
     expect(presented.step?.type).toBe("qr");
 
     session.cancel();
