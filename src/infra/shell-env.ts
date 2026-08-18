@@ -92,7 +92,8 @@ function execLoginShellEnvZero(params: {
   exec: typeof execFileSync;
   timeoutMs: number;
 }): Buffer {
-  // Bash clears an imported PS1 in noninteractive mode before login profiles run.
+  // Bash clears PS1 before noninteractive login profiles run, breaking profiles that inspect it.
+  // Use interactive login startup for Bash; keep other shells on noninteractive login startup.
   const args = path.basename(params.shell) === "bash" ? ["-lic", "env -0"] : ["-l", "-c", "env -0"];
   return params.exec(params.shell, args, {
     encoding: "buffer",
