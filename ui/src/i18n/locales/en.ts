@@ -164,6 +164,27 @@ export const en: TranslationMap = {
     issue: "issue",
     ariaLabel: "{state} {kind} {repo} #{number}: {title}, by {author}",
   },
+  sessionHovercard: {
+    ariaLabel: "Session information",
+    created: "created {time}",
+    updated: "updated {time}",
+    noPrYet: "No PR yet",
+    more: "+{count} more",
+    changedFile: "{count} file",
+    changedFiles: "{count} files",
+    pullRequestLabel: "Pull request #{number}, {state}",
+    states: {
+      open: "Open",
+      draft: "Draft",
+      merged: "Merged",
+      closed: "Closed",
+    },
+    checks: {
+      passing: "CI checks passing",
+      failing: "CI checks failing",
+      pending: "CI checks running",
+    },
+  },
   sessionProgressCard: {
     ariaLabel: "Session progress",
     title: "Progress",
@@ -209,6 +230,7 @@ export const en: TranslationMap = {
       browseAllTitle: "More channels…",
       browseAllSubtitle: "Browse every available channel, including installable plugins.",
       runSetup: "Run setup",
+      adminRequired: "Browsing only. Channel setup requires operator.admin access.",
       saveBeforeSetup:
         "You have unsaved channel config changes. Save or reload them before running guided setup.",
     },
@@ -552,6 +574,13 @@ export const en: TranslationMap = {
     succeeded: "Gateway updated and restarted.",
   },
   devices: {
+    readOnly: {
+      pairingRequired: "Browsing only. Device changes require operator.pairing access.",
+      adminRequired:
+        "Browsing only. Exec approvals and node bindings require operator.admin access.",
+      pairingAndAdminRequired:
+        "Browsing only. Device changes require operator.pairing; exec approvals and node bindings require operator.admin.",
+    },
     pairing: {
       button: "Pair device",
       adminRequired: "Administrator access is required to create setup codes.",
@@ -752,6 +781,7 @@ export const en: TranslationMap = {
     },
   },
   worktrees: {
+    adminRequired: "Browsing only. Worktree changes require operator.admin access.",
     newWorktree: "New worktree",
     ownerManual: "Manual",
     ownerSession: "Session",
@@ -861,6 +891,7 @@ export const en: TranslationMap = {
     createOutcomeUnknown:
       "The Gateway changed while this session was starting. Check recent sessions before starting this task again.",
     cliAgentsGroup: "CLI agents",
+    cliAgentsUnavailable: "CLI agents unavailable",
     cloudSetupInterrupted:
       "This cloud session's setup was interrupted. Check recent sessions before starting this task again.",
     catalogUnavailable: "This session target is unavailable.",
@@ -881,6 +912,15 @@ export const en: TranslationMap = {
     emptyTitle: "No dashboards yet",
     emptyDescription: "Open a session and switch to the Dashboard face to add it here.",
     loadError: "Could not load dashboards: {error}",
+    openFullscreen: "Open full-screen dashboard",
+  },
+  dashboardDocument: {
+    close: "Close dashboard",
+    missingSession: "No dashboard session was specified.",
+    notFound: "This session could not be found.",
+    unavailable: "Session dashboards are unavailable for this connection.",
+    loadFailed:
+      "Could not load this dashboard: {error}. Check the Gateway connection and try again.",
   },
   sessionsView: {
     subagentPrefix: "Subagent:",
@@ -1632,6 +1672,7 @@ export const en: TranslationMap = {
     themeRemoved: "Custom theme removed.",
   },
   configView: {
+    adminRequired: "Configuration changes require operator.admin access.",
     categories: {
       core: "Core",
       ai: "Agent Defaults",
@@ -2104,6 +2145,7 @@ export const en: TranslationMap = {
     settingsSearchPlaceholder: "Search settings…",
     settingsSearchNoResults: "No matching settings.",
     settingsSearchClear: "Clear settings search",
+    settingsLoadFailed: "Settings navigation could not load.",
     exitSettings: "Back to app",
     expand: "Expand sidebar",
     collapse: "Collapse sidebar",
@@ -2613,6 +2655,7 @@ export const en: TranslationMap = {
     confirmBackup: "OpenClaw creates a verified pre-import backup before copying memory.",
     confirmImport: "Import memory",
     disconnected: "Connect to the gateway to import memory.",
+    adminRequired: "Memory import requires operator.admin access.",
     title: "Import assistant memory",
     subtitle:
       "Review Codex consolidated memory and Claude Code auto-memory before copying it into OpenClaw.",
@@ -3351,12 +3394,20 @@ export const en: TranslationMap = {
     timeAll: "All time",
     people: "People",
     allPeople: "All",
+    everyone: "Everyone",
+    peopleButtonLabel: "Filter sessions by person",
+    lastActive: "· {time}",
+    unresolvedIdentities: "Unresolved identities",
+    clearPersonFilter: "Clear person filter",
     sessions: "Sessions",
     showing: "Showing {shown} of {total}",
     today: "Today",
     yesterday: "Yesterday",
     unknownDate: "Unknown date",
     noSessions: "No sessions match these filters.",
+    automationGroup: "{count} automation sessions",
+    inspectRun: "Inspect run",
+    backToSessions: "Back to sessions",
     channelLabel: "Channel: {value}",
     agentLabel: "Agent: {value}",
     online: "Online",
@@ -3380,6 +3431,7 @@ export const en: TranslationMap = {
       description: "Your profile on this gateway.",
       loading: "Loading your identity…",
       profileUnavailable: "Your identity profile could not be loaded.",
+      writeRequired: "Profile editing requires operator.write access.",
       notSet: "Identity is not set.",
       setIdentity: "Set identity",
       avatar: "Avatar",
@@ -3487,6 +3539,8 @@ export const en: TranslationMap = {
       loadingPrevious: "Loading the previous revision\u2026",
       previousUnavailable: "The previous revision is unavailable, so this is the full body.",
       tooLarge: "This comparison is too large to show here. Switch to Full body to read it.",
+      truncated:
+        "This comparison is truncated. Changes and statistics may be incomplete. Switch to Full body to review the complete revision.",
     },
     applied: {
       history: "History",
@@ -3763,7 +3817,9 @@ export const en: TranslationMap = {
       toolCapability: "Tool: {capability}",
       granted: "Granted",
       allow: "Allow",
+      allowFailed: "Could not allow widget access. Try again.",
       reject: "Reject",
+      rejectFailed: "Could not reject widget access. Try again.",
       rejected: "Access rejected",
       rejectedDetail: "This widget stays inactive until it is removed or replaced.",
       appLoading: "Restoring app…",
@@ -5095,6 +5151,10 @@ export const en: TranslationMap = {
       dockRight: "Dock chat right",
       dockBottom: "Dock chat bottom",
       resizeDock: "Resize chat dock",
+      enterFullscreen: "Enter fullscreen",
+      exitFullscreen: "Exit fullscreen",
+      fullscreenUnavailable: "Fullscreen is unavailable in this browser",
+      fullscreenFailed: "Could not change fullscreen mode: {error}",
       workboardCard: "Workboard card: {title}, {status}",
       defaultTab: "Main",
       mockPlaceholder: "Board view seam · {tabs} tabs · {widgets} widgets",

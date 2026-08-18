@@ -360,6 +360,7 @@ describe("Codex ring-zero thread config", () => {
       dynamicTools: [],
       hostSystemAgentActive: true,
       nativeCodeModeEnabled: false,
+      config: { project_doc_max_bytes: 64_000 },
     });
     const resume = buildThreadResumeParams(params, {
       appServer,
@@ -367,6 +368,7 @@ describe("Codex ring-zero thread config", () => {
       hostSystemAgentActive: true,
       nativeCodeModeEnabled: false,
       threadId: "thread-1",
+      config: { project_doc_max_bytes: 64_000 },
     });
 
     expect(start.environments).toEqual([]);
@@ -1039,7 +1041,7 @@ describe("Codex app-server native code mode config", () => {
     );
     expect(instructions).toContain("call the matching entry through `tools`");
     expect(instructions).toContain(
-      "Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation, never as a substitute for `spawn_agent`.",
+      "Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation, never as a substitute for `spawn_agent` on internal legwork.",
     );
   });
 
@@ -1440,6 +1442,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.hooks": true,
       apps: { _default: { enabled: false } },
       mcp_servers: {
@@ -1594,6 +1597,7 @@ describe("Codex app-server native code mode config", () => {
     );
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.code_mode": true,
       "features.code_mode_only": false,
       "features.goals": false,
@@ -1723,6 +1727,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.code_mode": true,
       "features.code_mode_only": true,
       "features.goals": false,
@@ -1746,6 +1751,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.code_mode": true,
       "features.code_mode_only": true,
       "features.goals": false,
@@ -1805,6 +1811,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.code_mode": true,
       "features.code_mode_only": false,
       "features.goals": false,
@@ -1831,6 +1838,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.code_mode": false,
       "features.code_mode_only": false,
       "features.goals": false,
@@ -1852,6 +1860,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.config).toEqual({
+      project_doc_max_bytes: 131_072,
       "features.code_mode": false,
       "features.code_mode_only": false,
       "features.goals": false,
@@ -1893,8 +1902,17 @@ describe("Codex app-server native code mode config", () => {
     });
   });
 
-  it("keeps native Codex project docs enabled when context is not lightweight", () => {
-    const request = buildThreadResumeParams(
+  it("defaults native Codex project docs to 128 KiB while honoring explicit overrides", () => {
+    const defaultRequest = buildThreadStartParams(
+      createAttemptParams({ provider: "openai", bootstrapContextRunKind: "cron" }),
+      {
+        cwd: "/repo",
+        dynamicTools: [],
+        appServer: createAppServerOptions() as never,
+        developerInstructions: "test instructions",
+      },
+    );
+    const overrideRequest = buildThreadResumeParams(
       createAttemptParams({ provider: "openai", bootstrapContextRunKind: "cron" }),
       {
         threadId: "thread-1",
@@ -1906,7 +1924,8 @@ describe("Codex app-server native code mode config", () => {
       },
     );
 
-    expect(request.config).toEqual({
+    expect(defaultRequest.config?.project_doc_max_bytes).toBe(131_072);
+    expect(overrideRequest.config).toEqual({
       project_doc_max_bytes: 64_000,
       "features.code_mode": true,
       "features.code_mode_only": false,
@@ -2111,6 +2130,7 @@ describe("Codex app-server turn params", () => {
       approvalPolicy: "on-request",
       approvalsReviewer: "guardian_subagent",
       config: {
+        project_doc_max_bytes: 131_072,
         "features.code_mode": true,
         "features.code_mode_only": false,
         "features.goals": false,
@@ -3316,6 +3336,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       excludeTurns: true,
       developerInstructions: agentWorkspaceDeveloperInstructions,
       config: {
+        project_doc_max_bytes: 131_072,
         allow_login_shell: false,
         shell_environment_policy: {
           experimental_use_profile: false,
@@ -3335,6 +3356,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       dynamicTools,
       environments: [{ environmentId: "local", cwd: workspaceDir }],
       config: {
+        project_doc_max_bytes: 131_072,
         allow_login_shell: false,
         model_reasoning_effort: "max",
         shell_environment_policy: {
