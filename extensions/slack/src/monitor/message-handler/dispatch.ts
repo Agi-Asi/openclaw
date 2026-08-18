@@ -696,6 +696,10 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   }
   if (!anyReplyDelivered && !draftPreviewCommitted.value) {
     await draftStream?.clear();
+    // A person may have interrupted an ordinary preview before the model
+    // decided to stay silent. That preview is no longer the active draft, but
+    // leaving it behind falsely suggests the agent is still working.
+    await draftStream?.dropDetachedMessages();
     return;
   }
 

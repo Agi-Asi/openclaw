@@ -182,6 +182,47 @@ describe("createSlackDraftStream", () => {
     expect(stream.messageId()).toBe("333.444");
   });
 
+  it("removes a progress preview detached by an intervening human message", async () => {
+    const accountId = "silent-interrupted-reply";
+    const { stream, remove } = createDraftStreamHarness({
+      accountId,
+      threadTs: "100.000",
+    });
+
+    stream.update("_looking into the original question_");
+    await stream.flush();
+    noteSlackDraftConversationMessage({
+      accountId,
+      channelId: "C123",
+      threadTs: "100.000",
+      messageTs: "111.333",
+      userId: "U_OWNER",
+      botUserId: "U_BOT",
+    });
+
+    expect(stream.messageId()).toBeUndefined();
+    await stream.clear();
+    await stream.dropDetachedMessages();
+
+    expect(remove).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledWith("C123", "111.222", {
+      token: "xoxb-test",
+      accountId,
+    });
+  });
+
+  it("does not remove a completed reply after a new message arrives", async () => {
+    const { stream, remove } = createDraftStreamHarness();
+
+    stream.update("finished");
+    await stream.flush();
+    await stream.finalizeMessage("111.222", async () => {});
+    stream.forceNewMessage();
+    await stream.dropDetachedMessages();
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it("continues below a human message that interrupts an in-progress Slack reply", async () => {
     const accountId = "interrupted-reply";
     const send = vi
