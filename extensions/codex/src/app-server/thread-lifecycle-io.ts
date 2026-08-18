@@ -53,6 +53,7 @@ import type {
 import {
   resolveCodexAppServerModelProvider,
   resolveCodexAppServerThreadModelSelection,
+  resolveSupervisedResumeReasoningConfig,
 } from "./thread-model-selection.js";
 import {
   attestCodexRestrictedToolSurfaceMcpServersDisabled,
@@ -176,6 +177,7 @@ export async function resumeExistingCodexThread(
         userMcpServersConfigPatch,
         pluginAppsConfigPatch,
         finalConfigPatch.configPatch,
+        resolveSupervisedResumeReasoningConfig(params.params, resumeBinding),
       ),
       nativeSkillIsolation,
     );

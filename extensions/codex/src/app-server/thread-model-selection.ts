@@ -1,5 +1,6 @@
 import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
+  readCodexSupportedReasoningEfforts,
   resolveCodexAppServerReasoningEffort,
   type CodexReasoningEffort,
 } from "./reasoning-effort.js";
@@ -146,4 +147,21 @@ export function resolveReasoningEffort(
     modelId,
     supportedReasoningEfforts,
   });
+}
+
+export function resolveSupervisedResumeReasoningConfig(
+  params: EmbeddedRunAttemptParams,
+  binding: Pick<CodexAppServerThreadBinding, "connectionScope" | "model">,
+): Record<string, string> | undefined {
+  if (binding.connectionScope !== "supervision") {
+    return undefined;
+  }
+  // Codex may omit effort from persisted rollout metadata. Reassert only an
+  // explicit supervised target; adaptive/off continues to preserve native config.
+  const effort = resolveReasoningEffort(
+    params.thinkLevel,
+    binding.model ?? params.modelId,
+    readCodexSupportedReasoningEfforts(params.model?.compat),
+  );
+  return effort ? { model_reasoning_effort: effort } : undefined;
 }
