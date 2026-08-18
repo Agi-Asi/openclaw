@@ -161,15 +161,17 @@ export async function resolveEmbeddedRunModelSetup(params: {
           },
         }
       : resolvedModel;
-  log.info("[thinking-handoff-diag] embedded model compat application", {
-    provider,
-    model: modelId,
-    routeChanged: modelSelectionChangedByHook,
-    receivedCompat: runParams.modelThinkingCompat != null,
-    receivedEfforts: runParams.modelThinkingCompat?.supportedReasoningEfforts,
-    appliedCompat: !modelSelectionChangedByHook && runParams.modelThinkingCompat != null,
-    resolvedEfforts: model.compat?.supportedReasoningEfforts,
-  });
+  log.info(
+    `[thinking-handoff-diag] embedded model compat application ${JSON.stringify({
+      provider,
+      model: modelId,
+      routeChanged: modelSelectionChangedByHook,
+      receivedCompat: runParams.modelThinkingCompat != null,
+      receivedEfforts: runParams.modelThinkingCompat?.supportedReasoningEfforts,
+      appliedCompat: !modelSelectionChangedByHook && runParams.modelThinkingCompat != null,
+      resolvedEfforts: model.compat?.supportedReasoningEfforts,
+    })}`,
+  );
 
   return {
     provider,

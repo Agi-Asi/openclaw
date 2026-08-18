@@ -542,12 +542,14 @@ export function runAgentAttempt(params: {
   onContextEngineTurnCandidate?: (facts: ContextEngineTurnAttemptFacts) => void;
   onLifecycleGenerationChanged?: (lifecycleGeneration: string) => void;
 }) {
-  log.info("[thinking-handoff-diag] runAgentAttempt received model compat", {
-    provider: params.providerOverride,
-    model: params.modelOverride,
-    compatPresent: params.modelThinkingCompat != null,
-    supportedEfforts: params.modelThinkingCompat?.supportedReasoningEfforts,
-  });
+  log.info(
+    `[thinking-handoff-diag] runAgentAttempt received model compat ${JSON.stringify({
+      provider: params.providerOverride,
+      model: params.modelOverride,
+      compatPresent: params.modelThinkingCompat != null,
+      supportedEfforts: params.modelThinkingCompat?.supportedReasoningEfforts,
+    })}`,
+  );
   const sessionAuthProfileId = params.sessionEntry?.authProfileOverride?.trim();
   const sessionAuthProfileSource = resolveSessionAuthProfileOverrideSource(params.sessionEntry);
   // An explicit session choice owns the conversation. Otherwise the profile

@@ -125,13 +125,15 @@ export async function prepareCodexAttemptTurnRequest(
       memoryCollaborationInstructions: workspaceBootstrapContext.memoryCollaborationInstructions,
       preserveNativeTurnSettings: usesSupervisionConnection,
     });
-    embeddedAgentLog.info("[thinking-handoff-diag] Codex turn reasoning metadata", {
-      thinkLevel: runtimeParams.thinkLevel,
-      modelCompatPresent: runtimeParams.model?.compat != null,
-      supportedEfforts: readCodexSupportedReasoningEfforts(runtimeParams.model?.compat),
-      turnEffort: turnStartParams.effort,
-      collaborationEffort: turnStartParams.collaborationMode?.settings.reasoning_effort,
-    });
+    embeddedAgentLog.info(
+      `[thinking-handoff-diag] Codex turn reasoning metadata ${JSON.stringify({
+        thinkLevel: runtimeParams.thinkLevel,
+        modelCompatPresent: runtimeParams.model?.compat != null,
+        supportedEfforts: readCodexSupportedReasoningEfforts(runtimeParams.model?.compat),
+        turnEffort: turnStartParams.effort,
+        collaborationEffort: turnStartParams.collaborationMode?.settings.reasoning_effort,
+      })}`,
+    );
     codexModelCallDiagnostics.setRequestPayloadBytes(utf8JsonByteLength(turnStartParams));
     state.latestStartupErrorNotification = undefined;
     state.rateLimitsRevisionBeforeLastTurnStart = readCodexRateLimitsRevision(resourceState.client);
