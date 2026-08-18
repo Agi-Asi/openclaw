@@ -10,9 +10,6 @@ const CODEX_REASONING_EFFORTS = [
   "ultra",
 ] as const;
 export type CodexReasoningEffort = (typeof CODEX_REASONING_EFFORTS)[number];
-type CodexReasoningModelCompat = NonNullable<EmbeddedRunAttemptParams["model"]["compat"]> & {
-  supportedReasoningEfforts: string[];
-};
 
 const LEGACY_PRO_REASONING_EFFORTS = ["medium", "high", "xhigh"] as const;
 const LEGACY_PRO_MODEL_ID_RE = /^gpt-5\.[45]-pro$/u;
@@ -38,36 +35,6 @@ export function readCodexSupportedReasoningEfforts(compat: unknown): string[] | 
     return undefined;
   }
   return efforts.filter((effort): effort is string => typeof effort === "string");
-}
-
-export function applyCachedCodexReasoningMetadata(params: {
-  model: EmbeddedRunAttemptParams["model"];
-  provider: string;
-  modelId: string;
-  catalog?: {
-    entries: ReadonlyArray<{ provider: string; id: string; compat?: unknown }>;
-  };
-}): EmbeddedRunAttemptParams["model"] {
-  const provider = params.provider.trim().toLowerCase();
-  const modelId = params.modelId.trim().toLowerCase();
-  const route = params.catalog?.entries.find(
-    (entry) =>
-      entry.provider.trim().toLowerCase() === provider &&
-      entry.id.trim().toLowerCase() === modelId,
-  );
-  const supportedReasoningEfforts = readCodexSupportedReasoningEfforts(route?.compat);
-  const compat: CodexReasoningModelCompat | undefined = supportedReasoningEfforts
-    ? {
-        ...params.model.compat,
-        supportedReasoningEfforts,
-      }
-    : undefined;
-  return compat
-    ? {
-        ...params.model,
-        compat,
-      }
-    : params.model;
 }
 
 function resolveSupportedReasoningEffort(params: {

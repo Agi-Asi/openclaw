@@ -19,7 +19,6 @@ import {
   shouldEnableCodexAppServerNativeToolSurface,
 } from "./dynamic-tool-build.js";
 import { resolveCodexProviderWebSearchSupport } from "./provider-capabilities.js";
-import { applyCachedCodexReasoningMetadata } from "./reasoning-effort.js";
 import { prewarmCodexAttemptClient } from "./run-attempt-client-prewarm.js";
 import type { CodexAttemptConnection } from "./run-attempt-connection.js";
 import {
@@ -87,14 +86,6 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
   const effectiveRuntimeModelId = usesSupervisionConnection
     ? (mutable.startupBinding?.model ?? "codex-native")
     : params.modelId;
-  const cachedReasoningModel = usesSupervisionConnection
-    ? params.model
-    : applyCachedCodexReasoningMetadata({
-        model: params.model,
-        provider: params.provider,
-        modelId: params.modelId,
-        catalog: params.preparedModelRuntime?.readFullModelCatalog?.(),
-      });
   const {
     authProfileId: _outerAuthProfileId,
     authoredContextTokenCap: _outerAuthoredContextTokenCap,
@@ -135,7 +126,6 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
       }
     : {
         ...params,
-        model: cachedReasoningModel,
         authProfileStore: attemptAuthProfileStore,
         sessionKey: contextSessionKey,
         ...(legacyScheduledAppRecoveryPrompt

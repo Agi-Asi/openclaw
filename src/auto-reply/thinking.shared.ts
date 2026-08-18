@@ -39,6 +39,29 @@ export type ThinkingCatalogEntry = {
   } | null;
 };
 
+type ThinkingCatalogCompat = NonNullable<ThinkingCatalogEntry["compat"]>;
+
+/** Keeps only thinking fields when a complete provider compatibility record crosses run owners. */
+export function projectThinkingCatalogCompat(compat: unknown): ThinkingCatalogCompat | undefined {
+  if (!compat || typeof compat !== "object" || Array.isArray(compat)) {
+    return undefined;
+  }
+  const record = compat as Record<string, unknown>;
+  const projected: ThinkingCatalogCompat = {};
+  if (typeof record.thinkingFormat === "string") {
+    projected.thinkingFormat = record.thinkingFormat;
+  }
+  if (record.supportedReasoningEfforts === null) {
+    projected.supportedReasoningEfforts = null;
+  } else if (
+    Array.isArray(record.supportedReasoningEfforts) &&
+    record.supportedReasoningEfforts.every((effort) => typeof effort === "string")
+  ) {
+    projected.supportedReasoningEfforts = [...record.supportedReasoningEfforts];
+  }
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
 /** Complete canonical level set accepted by user-facing thinking controls. */
 const ALL_THINKING_LEVELS: readonly ThinkLevel[] = [
   "off",

@@ -23,6 +23,7 @@ export {
   normalizeThinkLevel,
   normalizeUsageDisplay,
   normalizeVerboseLevel,
+  projectThinkingCatalogCompat,
   resolveEffectiveResponseUsage,
   resolveResponseUsageMode,
 } from "./thinking.shared.js";

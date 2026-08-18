@@ -22,6 +22,18 @@ const staticCatalogModel = {
   maxTokens: 64_000,
 };
 
+function createPreparedModelRuntime(config: object) {
+  return {
+    agentDir: "/tmp/agents/main/agent",
+    config,
+    workspaceDir: "/tmp/openclaw-model-resolution",
+    pluginRegistry: {},
+    configuredRuntimeModels: [],
+    inlineProviderModels: [],
+    createStores: () => ({ authStorage, modelRegistry: emptyModelRegistry }),
+  };
+}
+
 const resolveModelAsyncMock = vi.fn(
   async (
     provider: string,
@@ -162,15 +174,7 @@ describe("embedded model resolution consistency", () => {
       },
     };
     const target = resolveInitialEmbeddedRunModel({ config });
-    const preparedModelRuntime = {
-      agentDir: "/tmp/agents/main/agent",
-      config,
-      workspaceDir: "/tmp/openclaw-model-resolution",
-      pluginRegistry: {},
-      configuredRuntimeModels: [],
-      inlineProviderModels: [],
-      createStores: () => ({ authStorage, modelRegistry: emptyModelRegistry }),
-    };
+    const preparedModelRuntime = createPreparedModelRuntime(config);
 
     const chat = await resolveEmbeddedRunModelSetup({
       runParams: {
@@ -209,6 +213,38 @@ describe("embedded model resolution consistency", () => {
     expect(compaction.value.runtimeModel).toMatchObject({
       provider: PROVIDER,
       id: STATIC_MODEL_ID,
+    });
+  });
+
+  it("preserves scoped reasoning efforts on the resolved candidate model", async () => {
+    const config = {
+      agents: { defaults: { model: { primary: `${PROVIDER}/${STATIC_MODEL_ID}` } } },
+    };
+    const target = resolveInitialEmbeddedRunModel({ config });
+    const preparedModelRuntime = createPreparedModelRuntime(config);
+
+    const chat = await resolveEmbeddedRunModelSetup({
+      runParams: {
+        config,
+        prompt: "hello",
+        sessionId: "thinking-compat-session",
+        agentId: "main",
+        modelThinkingCompat: {
+          supportedReasoningEfforts: ["low", "medium", "high", "max"],
+        },
+      } as never,
+      ...target,
+      agentDir: preparedModelRuntime.agentDir,
+      workspaceDir: preparedModelRuntime.workspaceDir,
+      globalLane: "test",
+      hookRunner: undefined,
+      hookContext: {} as never,
+      onHooksResolved: vi.fn(),
+      preparedModelRuntime: preparedModelRuntime as never,
+    });
+
+    expect(chat.model.compat).toMatchObject({
+      supportedReasoningEfforts: ["low", "medium", "high", "max"],
     });
   });
 });
