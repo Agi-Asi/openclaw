@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import {
+  GatewayDrainingError,
+  markGatewayRestartDraining,
+  resetGatewayWorkAdmission,
+  runWithGatewayIndependentRootWorkAdmission,
+} from "../../process/gateway-work-admission.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
 import { sleep } from "../../utils/sleep.js";
 import {
@@ -97,6 +103,7 @@ function createMonitor(
 }
 
 afterEach(() => {
+  resetGatewayWorkAdmission();
   closeOpenClawStateDatabaseForTest();
   vi.restoreAllMocks();
 });
@@ -514,6 +521,110 @@ describe("channel ingress monitor", () => {
 
       await expect(monitor.waitForIdle()).resolves.toBeUndefined();
       await monitor.stop();
+    });
+  });
+
+  it("preserves restart-drained ingress for a fresh monitor without consuming retry budget", async () => {
+    await withQueue(async (queue) => {
+      resetGatewayWorkAdmission();
+      let markPruneStarted = () => {};
+      const pruneStarted = new Promise<void>((resolve) => {
+        markPruneStarted = resolve;
+      });
+      let releasePrune = () => {};
+      const pruneGate = new Promise<void>((resolve) => {
+        releasePrune = resolve;
+      });
+      const prune = queue.prune.bind(queue);
+      let pruneCalls = 0;
+      queue.prune = async (...args) => {
+        if (pruneCalls++ === 0) {
+          markPruneStarted();
+          await pruneGate;
+        }
+        return await prune(...args);
+      };
+
+      const observedErrors: unknown[] = [];
+      const createRestartMonitor = (deliver: Parameters<typeof createMonitor>[1]) =>
+        createChannelIngressMonitor<RawEvent, string, StoredEvent>({
+          queue,
+          inspect: (raw) => ({ eventId: raw.id, laneKey: `lane:${raw.lane}` }),
+          payload: {
+            storage: "raw-event",
+            version: 1,
+            serialize: (raw) => JSON.stringify(raw),
+            deserialize: (body) => JSON.parse(body) as RawEvent,
+            createClaimError: (kind) => new PermanentIngressError(kind),
+          },
+          deliver,
+          pollIntervalMs: 60_000,
+          retention: { pruneIntervalMs: 0 },
+          drain: {
+            adoptionStallTimeoutMs: 5_000,
+            retryPolicy: {
+              maxAttempts: 8,
+              deadLetterMinAgeMs: 0,
+              baseMs: 0,
+              maxMs: 0,
+            },
+          },
+        });
+
+      const original = createRestartMonitor(async (_raw, lifecycle) => {
+        try {
+          await runWithGatewayIndependentRootWorkAdmission(async () => {
+            await lifecycle.onAdopted();
+          });
+        } catch (error) {
+          observedErrors.push(error);
+          throw error;
+        }
+      });
+      let successor: ReturnType<typeof createRestartMonitor> | undefined;
+      original.start();
+      try {
+        await pruneStarted;
+        markGatewayRestartDraining();
+        await original.admit({ id: "event-restart", lane: "a", text: "during drain" });
+        releasePrune();
+
+        await vi.waitFor(() => expect(observedErrors.length).toBeGreaterThan(0));
+        expect(observedErrors[0]).toBeInstanceOf(GatewayDrainingError);
+        await vi.waitFor(async () => {
+          expect(await queue.listPending()).toEqual([
+            expect.objectContaining({
+              id: "event-restart",
+              attempts: 0,
+            }),
+          ]);
+        });
+        const [pending] = await queue.listPending();
+        expect(observedErrors).toHaveLength(1);
+        expect(pending).not.toHaveProperty("lastAttemptAt");
+        expect(pending).not.toHaveProperty("lastError");
+        await expect(queue.listFailed?.()).resolves.toEqual([]);
+
+        await original.stop();
+        resetGatewayWorkAdmission();
+        const delivered = vi.fn(
+          async (_raw: RawEvent, lifecycle: ChannelIngressMonitorLifecycle) => {
+            await lifecycle.onAdopted();
+          },
+        );
+        successor = createRestartMonitor(delivered);
+        successor.start();
+        await successor.waitForIdle();
+
+        expect(delivered).toHaveBeenCalledOnce();
+        await expect(
+          queue.enqueue("event-restart", { version: 1, rawEvent: "duplicate" }),
+        ).resolves.toMatchObject({ kind: "completed" });
+      } finally {
+        releasePrune();
+        await Promise.allSettled([original.stop(), successor?.stop()]);
+        resetGatewayWorkAdmission();
+      }
     });
   });
 
