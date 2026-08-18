@@ -82,6 +82,36 @@ describe("channel ingress drain watchdog", () => {
     });
   });
 
+  it("guillotines deferred work when queue ownership stops reporting progress", async () => {
+    await withTempState(async (stateDir) => {
+      let clock = 40_000;
+      const queue = createTestIngressQueue(stateDir, { now: () => clock });
+      await queue.enqueue("evt-def-orphan", { text: "x" }, { laneKey: "l1" });
+
+      const drain = createChannelIngressDrain<Payload>({
+        queue,
+        now: () => clock,
+        adoptionStallTimeoutMs: 5_000,
+        dispatchClaimedEvent: async (_event, lifecycle) => {
+          lifecycle.onDeferred();
+          return { kind: "deferred" };
+        },
+      });
+
+      try {
+        await drain.drainOnce();
+        clock += 5_000;
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(await queue.listFailed?.()).toEqual([
+          expect.objectContaining({ id: "evt-def-orphan", reason: "handler-timeout" }),
+        ]);
+      } finally {
+        drain.dispose();
+      }
+    });
+  });
+
   it("does not kill healthy long turns after adoption", async () => {
     await withTempState(async (stateDir) => {
       let clock = 20_000;
