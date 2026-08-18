@@ -312,13 +312,9 @@ openclaw-activity-page {
   text-decoration: none;
 }
 
-.activity-feed__session-row {
-  position: relative;
-}
-
-.activity-feed__session-row + .activity-feed__session-row,
-.activity-feed__automation-group + .activity-feed__session-row,
-.activity-feed__session-row + .activity-feed__automation-group {
+.activity-feed__session + .activity-feed__session,
+.activity-feed__automation-group + .activity-feed__session,
+.activity-feed__session + .activity-feed__automation-group {
   border-top: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
 }
 
@@ -360,46 +356,8 @@ openclaw-activity-page {
 }
 
 .activity-feed__session:hover,
-.activity-feed__session:focus-visible,
-.activity-feed__session-row:hover .activity-feed__session,
-.activity-feed__session-row:focus-within .activity-feed__session {
+.activity-feed__session:focus-visible {
   background: var(--bg-hover);
-  text-decoration: none;
-}
-
-.activity-feed__session-row:has(.activity-feed__inspect-run) .activity-feed__session {
-  padding-right: 118px;
-}
-
-.activity-feed__inspect-run {
-  position: absolute;
-  top: 50%;
-  right: var(--space-4);
-  z-index: 1;
-  padding: 4px 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  opacity: 0;
-  color: var(--muted);
-  background: var(--bg-elevated);
-  font-size: var(--control-ui-text-xs);
-  line-height: 1;
-  text-decoration: none;
-  pointer-events: none;
-  translate: 0 -50%;
-  transition: opacity var(--duration-fast) ease;
-}
-
-.activity-feed__session-row:hover .activity-feed__inspect-run,
-.activity-feed__session-row:focus-within .activity-feed__inspect-run {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.activity-feed__inspect-run:hover,
-.activity-feed__inspect-run:focus-visible {
-  border-color: var(--border-strong);
-  color: var(--text);
   text-decoration: none;
 }
 
@@ -452,27 +410,6 @@ openclaw-activity-page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.activity-feed__session-headline,
-.activity-feed__session-owner {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-feed__session-headline[data-health="grinding"] {
-  color: var(--accent);
-}
-
-.activity-feed__session-headline[data-health="stuck"],
-.activity-feed__session-headline[data-health="waiting-on-user"] {
-  color: var(--warn);
-}
-
-.activity-feed__session-headline[data-health="failed"] {
-  color: var(--danger);
 }
 
 .activity-feed__session-time {
@@ -814,13 +751,6 @@ openclaw-activity-page {
 
   .activity-stream {
     max-height: calc(100vh - 360px);
-  }
-}
-
-@media (pointer: coarse) {
-  .activity-feed__inspect-run {
-    opacity: 1;
-    pointer-events: auto;
   }
 }
 

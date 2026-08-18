@@ -195,7 +195,7 @@ describe("session activity live status", () => {
     document.body.innerHTML = "";
   });
 
-  it("uses the recorded active run and observer digest for the row status", () => {
+  it("uses only aggregate activity when no client owns an exact run identity", () => {
     const now = Date.now();
     const owner = { id: "owner", label: "Owner" };
     const observerDigest = {
@@ -226,73 +226,10 @@ describe("session activity live status", () => {
     const active = container.querySelector('[data-activity-session="Active session"]');
     const inactive = container.querySelector('[data-activity-session="Inactive session"]');
     expect(active?.querySelector(".activity-feed__run-dot")).not.toBeNull();
-    expect(active?.querySelector(".activity-feed__session-headline")?.textContent?.trim()).toBe(
-      "Waiting on a fake approval",
-    );
-    expect(
-      active?.querySelector(".activity-feed__session-headline")?.getAttribute("data-health"),
-    ).toBe("waiting-on-user");
+    expect(active?.querySelector(".activity-feed__session-headline")).toBeNull();
+    expect(active?.querySelector(".activity-feed__inspect-run")).toBeNull();
     expect(active?.textContent).toContain("Owner");
     expect(inactive?.querySelector(".activity-feed__run-dot")).toBeNull();
     expect(inactive?.querySelector(".activity-feed__session-headline")).toBeNull();
-  });
-
-  it("links active rows to their recorded run ids", () => {
-    const now = Date.now();
-    const owner = { id: "owner", label: "Owner" };
-    const base = props();
-    const context = { ...base.context, basePath: "/control" } as ApplicationContext;
-    const container = document.createElement("div");
-    document.body.append(container);
-
-    render(
-      renderSessionActivityView(
-        props({
-          context,
-          rows: [
-            row("Digest run", owner, now, {
-              activeRunIds: ["fallback-run", "digest run:a/b"],
-              hasActiveRun: true,
-              observerDigest: {
-                headline: "Running",
-                health: "on-track",
-                revision: 1,
-                runId: "digest run:a/b",
-                updatedAt: now,
-              },
-            }),
-            row("Stale digest", owner, now - 500, {
-              activeRunIds: ["current-run"],
-              hasActiveRun: true,
-              observerDigest: {
-                headline: "Running",
-                health: "on-track",
-                revision: 1,
-                runId: "ended-run",
-                updatedAt: now,
-              },
-            }),
-            row("Active run fallback", owner, now - 1_000, {
-              activeRunIds: ["fallback run:a/b"],
-              hasActiveRun: true,
-            }),
-            row("Inactive run", owner, now - 2_000, {
-              activeRunIds: ["inactive-run"],
-            }),
-          ],
-        }),
-      ),
-      container,
-    );
-
-    expect(
-      [...container.querySelectorAll<HTMLAnchorElement>(".activity-feed__inspect-run")].map(
-        (link) => link.getAttribute("href"),
-      ),
-    ).toEqual([
-      "/control/activity?view=run&run=digest%20run%3Aa%2Fb",
-      "/control/activity?view=run&run=current-run",
-      "/control/activity?view=run&run=fallback%20run%3Aa%2Fb",
-    ]);
   });
 });

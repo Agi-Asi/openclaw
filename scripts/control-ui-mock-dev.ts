@@ -329,15 +329,7 @@ function buildActivitySessionRows(baseTime: number) {
     sessionRow(`agent:activity:${key}`, label, baseTime - age, {
       ...(key === "archive-audit"
         ? {
-            activeRunIds: ["mock-activity-live-run"],
             hasActiveRun: true,
-            observerDigest: {
-              headline: "Waiting on a fictional mock approval",
-              health: "waiting-on-user",
-              revision: 1,
-              runId: "mock-activity-live-run",
-              updatedAt: baseTime - age,
-            },
             status: "running",
           }
         : {}),

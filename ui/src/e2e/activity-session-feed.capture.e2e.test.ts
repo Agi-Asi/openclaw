@@ -74,15 +74,7 @@ suite.define(() => {
                     actor: { type: "human", id: "profile-alice", label: "Alice Chen" },
                   },
                   participants: [{ type: "human", id: "profile-bob", label: "Bob Rivera" }],
-                  activeRunIds: ["mock run:a/b"],
                   hasActiveRun: true,
-                  observerDigest: {
-                    headline: "Waiting on a fictional mock approval",
-                    health: "waiting-on-user",
-                    revision: 1,
-                    runId: "mock run:a/b",
-                    updatedAt: now - 4 * 60_000,
-                  },
                   status: "running",
                   updatedAt: now - 4 * 60_000,
                 },
@@ -182,21 +174,7 @@ suite.define(() => {
 
         const liveRow = page.locator(`[data-activity-session="${releaseKey}"]`);
         await expect.poll(() => liveRow.locator(".activity-feed__run-dot").count()).toBe(1);
-        await expect
-          .poll(() => liveRow.locator(".activity-feed__session-headline").textContent())
-          .toContain("Waiting on a fictional mock approval");
-        const inspectRun = liveRow.locator("xpath=following-sibling::a");
-        await liveRow.hover();
-        await expect
-          .poll(() => inspectRun.evaluate((element) => getComputedStyle(element).opacity))
-          .toBe("1");
-        await inspectRun.focus();
-        await expect
-          .poll(() => inspectRun.evaluate((element) => document.activeElement === element))
-          .toBe(true);
-        expect(await inspectRun.getAttribute("href")).toBe(
-          "/activity?view=run&run=mock%20run%3Aa%2Fb",
-        );
+        await expect.poll(() => liveRow.locator(".activity-feed__inspect-run").count()).toBe(0);
         await page.screenshot({
           animations: "disabled",
           path: path.join(outputDir, "02-global-activity.png"),
