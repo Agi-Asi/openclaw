@@ -192,6 +192,9 @@ async function checkSnapshots() {
     }
     if (actual !== file.content) {
       mismatches.push(`${file.path}: differs from generated output`);
+      console.error(
+        `OPENCLAW_SNAPSHOT_EXPORT ${JSON.stringify({ path: file.path, content: Buffer.from(file.content).toString("base64") })}`,
+      );
     }
   }
   for (const snapshotPath of await listCommittedSnapshotArtifactPaths(repoRoot)) {
