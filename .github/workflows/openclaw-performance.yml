@@ -335,8 +335,14 @@ jobs:
 
           mkdir -p "$MANAGED_GATEWAY_DIAGNOSTICS_DIR"
           diagnostic_node_options="--heapsnapshot-signal=SIGUSR2 --report-on-signal --report-signal=SIGUSR2 --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
-          systemctl --user set-environment "NODE_OPTIONS=$diagnostic_node_options"
-          test "$(systemctl --user show-environment | sed -n 's/^NODE_OPTIONS=//p')" = "$diagnostic_node_options"
+          export NODE_OPTIONS="$diagnostic_node_options"
+          systemctl --user import-environment NODE_OPTIONS
+          rendered_node_options="$(systemctl --user show-environment | sed -n '/^NODE_OPTIONS=/p')"
+          case "$rendered_node_options" in
+            NODE_OPTIONS=*) eval "$rendered_node_options" ;;
+            *) exit 1 ;;
+          esac
+          test "$NODE_OPTIONS" = "$diagnostic_node_options"
 
           systemctl --user show-environment >/dev/null
 
