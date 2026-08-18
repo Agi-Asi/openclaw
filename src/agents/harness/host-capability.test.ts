@@ -131,7 +131,6 @@ describe("agent harness host capability", () => {
     const flush = vi.fn(async () => undefined);
     const { attempt } = await admittedAttempt("run-trajectory", {
       trajectoryRecorder: {
-        describeFlushState: () => undefined,
         recordEvent,
         flush,
       },

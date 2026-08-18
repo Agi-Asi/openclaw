@@ -19,7 +19,7 @@ type CodexTrajectoryInit = {
   cwd: string;
   developerInstructions?: string;
   prompt?: string;
-  trajectoryRecorder?: CodexHostTrajectoryRecorder | null;
+  trajectoryRecorder?: CodexTrajectoryRecorder | null;
   tools?: CodexDynamicToolSpec[];
   env?: NodeJS.ProcessEnv;
   warn?: (message: string, fields: Record<string, unknown>) => void;
@@ -36,11 +36,6 @@ const TRAJECTORY_RUNTIME_OVERSIZE_PRESERVED_DATA_KEYS = ["usage", "promptCache"]
 type CodexTrajectorySink = {
   flush: () => Promise<void>;
   write: (event: CodexTrajectoryEvent) => void;
-};
-
-export type CodexHostTrajectoryRecorder = {
-  recordEvent: (type: string, data?: Record<string, unknown>) => void;
-  flush: () => Promise<void>;
 };
 
 type CodexTrajectoryEvent = Record<string, unknown> & {
@@ -109,7 +104,7 @@ function boundedTrajectoryEvent(event: Record<string, unknown>): CodexTrajectory
 }
 
 function createCodexHostTrajectorySink(params: {
-  recorder: CodexHostTrajectoryRecorder;
+  recorder: CodexTrajectoryRecorder;
 }): CodexTrajectorySink {
   return {
     write: (event) => {
