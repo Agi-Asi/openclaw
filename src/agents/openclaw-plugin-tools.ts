@@ -142,6 +142,21 @@ export function resolveOpenClawPluginToolsForOptions(params: {
   const preparedModelRuntime = params.options?.preparedModelRuntime;
   const runtimeRegistry =
     getPluginRuntimeGatewayRequestScope()?.pluginRegistry ?? getActivePluginRegistry() ?? undefined;
+  if (process.env.OPENCLAW_DIAG_PLUGIN_TOOL_REGISTRY === "1") {
+    process.stderr.write(
+      `[diag-plugin-tools] ${JSON.stringify({
+        stage: "agent-input",
+        preparedRuntime: preparedModelRuntime !== undefined,
+        preparedLoadContext:
+          getPreparedPluginRuntimeLoadContext(preparedModelRuntime?.pluginRegistry) !== undefined,
+        preparedPlugins: preparedModelRuntime?.pluginRegistry?.plugins.length ?? 0,
+        preparedTools: preparedModelRuntime?.pluginRegistry?.tools.length ?? 0,
+        runtimeRegistry: runtimeRegistry !== undefined,
+        runtimePlugins: runtimeRegistry?.plugins.length ?? 0,
+        runtimeTools: runtimeRegistry?.tools.length ?? 0,
+      })}\n`,
+    );
+  }
   const pluginTools = resolvePluginTools({
     ...pluginToolInputs,
     context: {

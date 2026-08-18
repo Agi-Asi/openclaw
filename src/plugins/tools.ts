@@ -1105,6 +1105,19 @@ function resolvePluginToolRegistry(params: {
   onRetainRegistry?: (registry: PluginRegistry) => void;
 }) {
   const requestedPluginIds = params.onlyPluginIds;
+  if (process.env.OPENCLAW_DIAG_PLUGIN_TOOL_REGISTRY === "1") {
+    process.stderr.write(
+      `[diag-plugin-tools] ${JSON.stringify({
+        stage: "registry-select",
+        requestedCount: requestedPluginIds?.length ?? null,
+        requestedIds: requestedPluginIds?.slice(0, 20) ?? null,
+        retainedRegistry: params.retainedRegistry !== undefined,
+        retainedPlugins: params.retainedRegistry?.plugins.length ?? 0,
+        retainedTools: params.retainedRegistry?.tools.length ?? 0,
+        retainedScoped: registryHasScopedPluginTools(params.retainedRegistry, requestedPluginIds),
+      })}\n`,
+    );
+  }
   if (registryHasScopedPluginTools(params.retainedRegistry, requestedPluginIds)) {
     return params.retainedRegistry;
   }
@@ -1180,6 +1193,19 @@ function resolvePluginToolLoadState(params: {
   // The prepared runtime already owns one immutable Gateway plugin generation. Per-turn config
   // and workspace projections cannot invalidate that executable graph or reopen discovery.
   const usePreparedRuntime = preparedLoadContext !== undefined && env === preparedLoadContext.env;
+  if (process.env.OPENCLAW_DIAG_PLUGIN_TOOL_REGISTRY === "1") {
+    process.stderr.write(
+      `[diag-plugin-tools] ${JSON.stringify({
+        stage: "load-state",
+        preparedRuntime: params.preparedRuntime !== undefined,
+        preparedLoadContext: preparedLoadContext !== undefined,
+        envMatch: env === preparedLoadContext?.env,
+        requestedWorkspace: params.context.workspaceDir,
+        preparedWorkspace: preparedLoadContext?.workspaceDir,
+        usePreparedRuntime,
+      })}\n`,
+    );
+  }
   const context = usePreparedRuntime
     ? preparedLoadContext
     : resolvePluginRuntimeLoadContext({
@@ -1320,6 +1346,25 @@ export function resolvePluginTools(params: {
     context === params.preparedRuntime?.loadContext
       ? params.preparedRuntime.registry
       : params.runtimeRegistry;
+  if (process.env.OPENCLAW_DIAG_PLUGIN_TOOL_REGISTRY === "1") {
+    process.stderr.write(
+      `[diag-plugin-tools] ${JSON.stringify({
+        stage: "turn-registry",
+        source:
+          context === params.preparedRuntime?.loadContext ? "prepared" : "runtime-or-missing",
+        runtimePluginCount: runtimePluginIds.length,
+        runtimePluginIds: runtimePluginIds.slice(0, 20),
+        registry: preparedOrExplicitRegistry !== undefined,
+        registryPlugins: preparedOrExplicitRegistry?.plugins.length ?? 0,
+        registryTools: preparedOrExplicitRegistry?.tools.length ?? 0,
+        scoped: registryHasScopedPluginTools(
+          preparedOrExplicitRegistry,
+          runtimePluginIds,
+          snapshot.plugins,
+        ),
+      })}\n`,
+    );
+  }
   let registry = registryHasScopedPluginTools(
     preparedOrExplicitRegistry,
     runtimePluginIds,
