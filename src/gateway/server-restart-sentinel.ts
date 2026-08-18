@@ -57,8 +57,8 @@ import {
   sessionDeliveryOrigin,
 } from "../utils/delivery-context.shared.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
-import { deliverQueuedGeneratedMediaAgentTurn } from "./server-restart-sentinel-agent-delivery.js";
 import type { GatewayContextResolver } from "./server-plugin-in-process-dispatch.js";
+import { deliverQueuedGeneratedMediaAgentTurn } from "./server-restart-sentinel-agent-delivery.js";
 import {
   deliverRestartSentinelNotice,
   enqueueRestartSentinelNotice,
@@ -237,13 +237,12 @@ export async function deliverQueuedSessionDelivery(params: {
 
   if (
     await deliverQueuedGeneratedMediaAgentTurn({
+      ...params,
       entry: queuedEntry,
       canonicalKey,
       agentId,
       storePath,
       sessionEntry: entry,
-      ...(params.stateDir !== undefined ? { stateDir: params.stateDir } : {}),
-      resolveGatewayContext: params.resolveGatewayContext,
     })
   ) {
     return;
@@ -448,10 +447,9 @@ export async function recoverPendingRestartContinuationDeliveries(params: {
   await recoverPendingSessionDeliveries({
     deliver: (entry, context = {}) =>
       deliverQueuedSessionDelivery({
-        deps: params.deps,
+        ...params,
         entry,
         ...(context.stateDir !== undefined ? { stateDir: context.stateDir } : {}),
-        resolveGatewayContext: params.resolveGatewayContext,
       }),
     log: params.log ?? log,
     maxEnqueuedAt: params.maxEnqueuedAt,
