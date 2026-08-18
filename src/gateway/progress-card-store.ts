@@ -1,8 +1,5 @@
 import type { ProgressCard, ProgressCardStep } from "../../packages/gateway-protocol/src/index.js";
-import {
-  readSessionProgressCard,
-  writeSessionProgressCard,
-} from "../session-cards/progress-card-store.js";
+import { readSessionProgressCard, writeSessionProgressCard } from "../session-cards/progress-card-store.js";
 import { withOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
 import {
   openOpenClawAgentDatabase,
@@ -14,7 +11,7 @@ export type ProgressCardStore = {
   get(sessionKey: string): ProgressCard | null;
   put(
     sessionKey: string,
-    input: { markdown?: string; steps?: ProgressCardStep[] },
+    input: { markdown?: string; steps?: ProgressCardStep[]; expectedRevision?: number },
   ): { card: ProgressCard | null };
 };
 

@@ -156,7 +156,12 @@ suite.define(() => {
         },
         async ({ page }) => {
           const gateway = await installMockGateway(page, {
-            featureMethods: ["chat.metadata", "chat.startup", "progressCard.get"],
+            featureMethods: [
+              "chat.metadata",
+              "chat.startup",
+              "progressCard.get",
+              "progressCard.put",
+            ],
             methodResponses: {
               "progressCard.get": {
                 card: {
@@ -166,6 +171,7 @@ suite.define(() => {
                   updatedAt: 3,
                 },
               },
+              "progressCard.put": { card: null },
               "sessions.list": chatSessionListResponse([
                 {
                   key: sessionKey,
@@ -185,16 +191,22 @@ suite.define(() => {
           await card.locator("summary").click();
           await captureProof(page, `completed-${colorScheme}-before.png`);
 
-          if (colorScheme === "light") {
-            return;
-          }
           await card.getByRole("button", { name: "Dismiss progress card" }).click();
+          const dismissRequest = await gateway.waitForRequest("progressCard.put");
+          expect(dismissRequest.params).toEqual({ sessionKey, expectedRevision: 3 });
           await expect.poll(() => card.count()).toBe(0);
 
           await page.locator("textarea").fill("rerender");
           await expect.poll(() => card.count()).toBe(0);
+          await gateway.setMethodResponse("progressCard.get", { card: null });
+          const requestsBeforeReload = (await gateway.getRequests("progressCard.get")).length;
           await page.reload();
+          await expect
+            .poll(async () => (await gateway.getRequests("progressCard.get")).length)
+            .toBeGreaterThan(requestsBeforeReload);
           await expect.poll(() => card.count()).toBe(0);
+          expect(await gateway.getRequests("chat.send")).toHaveLength(0);
+          await captureProof(page, `completed-${colorScheme}-after.png`);
         },
       );
     }

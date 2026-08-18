@@ -18,7 +18,11 @@ function createHarness() {
   const store: ProgressCardStore = {
     get: (sessionKey) => cards.get(sessionKey) ?? null,
     put: (sessionKey, input) => {
+      const current = cards.get(sessionKey);
       if (!input.markdown && !input.steps?.length) {
+        if (input.expectedRevision !== undefined && current?.revision !== input.expectedRevision) {
+          return { card: current ?? null };
+        }
         cards.delete(sessionKey);
         return { card: null };
       }
@@ -35,7 +39,10 @@ function createHarness() {
   };
   const handlers = createProgressCardHandlers(store);
   const broadcast = vi.fn();
-  const invoke = async (method: "progressCard.get" | "progressCard.put", params: unknown) => {
+  const invoke = async (
+    method: "progressCard.get" | "progressCard.put",
+    params: unknown,
+  ) => {
     const respond = vi.fn<RespondFn>();
     await handlers[method]!({
       params,
@@ -152,6 +159,36 @@ describe("progress card gateway methods", () => {
     const clear = await invoke("progressCard.put", { sessionKey: "agent:main:main" });
 
     expect(clear).toHaveBeenCalledWith(true, { card: null }, undefined);
+    expect(broadcast).toHaveBeenCalledWith("progressCard.changed", {
+      sessionKey: "agent:main:main",
+      revision: null,
+    });
+  });
+
+  it("dismisses only the matching completed revision", async () => {
+    const { broadcast, invoke } = createHarness();
+    await invoke("progressCard.put", {
+      sessionKey: "agent:main:main",
+      plan: [{ step: "Done", status: "completed" }],
+    });
+    broadcast.mockClear();
+
+    const stale = await invoke("progressCard.put", {
+      sessionKey: "agent:main:main",
+      expectedRevision: 2,
+    });
+    const dismissed = await invoke("progressCard.put", {
+      sessionKey: "agent:main:main",
+      expectedRevision: 1,
+    });
+
+    expect(stale).toHaveBeenCalledWith(
+      true,
+      { card: expect.objectContaining({ revision: 1 }) },
+      undefined,
+    );
+    expect(dismissed).toHaveBeenCalledWith(true, { card: null }, undefined);
+    expect(broadcast).toHaveBeenCalledOnce();
     expect(broadcast).toHaveBeenCalledWith("progressCard.changed", {
       sessionKey: "agent:main:main",
       revision: null,
