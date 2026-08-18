@@ -1,4 +1,5 @@
 /** Shared normalization for thinking, verbosity, tracing, reasoning, and usage directives. */
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   type FastMode,
   normalizeFastMode,
@@ -43,21 +44,20 @@ type ThinkingCatalogCompat = NonNullable<ThinkingCatalogEntry["compat"]>;
 
 /** Keeps only thinking fields when a complete provider compatibility record crosses run owners. */
 export function projectThinkingCatalogCompat(compat: unknown): ThinkingCatalogCompat | undefined {
-  if (!compat || typeof compat !== "object" || Array.isArray(compat)) {
+  if (!isRecord(compat)) {
     return undefined;
   }
-  const record = compat as Record<string, unknown>;
   const projected: ThinkingCatalogCompat = {};
-  if (typeof record.thinkingFormat === "string") {
-    projected.thinkingFormat = record.thinkingFormat;
+  if (typeof compat.thinkingFormat === "string") {
+    projected.thinkingFormat = compat.thinkingFormat;
   }
-  if (record.supportedReasoningEfforts === null) {
+  if (compat.supportedReasoningEfforts === null) {
     projected.supportedReasoningEfforts = null;
   } else if (
-    Array.isArray(record.supportedReasoningEfforts) &&
-    record.supportedReasoningEfforts.every((effort) => typeof effort === "string")
+    Array.isArray(compat.supportedReasoningEfforts) &&
+    compat.supportedReasoningEfforts.every((effort) => typeof effort === "string")
   ) {
-    projected.supportedReasoningEfforts = [...record.supportedReasoningEfforts];
+    projected.supportedReasoningEfforts = [...compat.supportedReasoningEfforts];
   }
   return Object.keys(projected).length > 0 ? projected : undefined;
 }

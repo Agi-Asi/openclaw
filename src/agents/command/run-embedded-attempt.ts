@@ -1,5 +1,5 @@
 import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
-import { projectThinkingCatalogCompat } from "../../auto-reply/thinking.js";
+import { projectThinkingCatalogCompat } from "../../auto-reply/thinking.shared.js";
 import { resolveSessionAuthProfileOverrideSource } from "../../config/sessions/auth-profile-override-provenance.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { emitAgentEvent } from "../../infra/agent-events.js";
@@ -447,18 +447,14 @@ export async function runEmbeddedAgentAttempt(params: {
               sessionEntry: attemptSessionEntry,
               agentRuntime: candidateRuntime,
             }) ?? candidateRequestedThinkLevel;
-          const candidateCatalogEntry = findModelInCatalog(
-            thinkingCatalog ?? [],
-            providerOverride,
-            modelOverride,
-          );
+          const entry = findModelInCatalog(thinkingCatalog ?? [], providerOverride, modelOverride);
           effectiveTurnThinkLevel = candidateThinkLevel;
           return attemptExecutionRuntime.runAgentAttempt({
             preparedRunAdmission: params.preparedRunAdmission,
             providerOverride,
             modelOverride,
-            modelHasVision: modelSupportsInput(candidateCatalogEntry, "image"),
-            modelThinkingCompat: projectThinkingCatalogCompat(candidateCatalogEntry?.compat),
+            modelHasVision: modelSupportsInput(entry, "image"),
+            modelThinkingCompat: projectThinkingCatalogCompat(entry?.compat),
             configuredAuthProfileId,
             modelFallbacksOverride: effectiveFallbacksOverride,
             originalProvider: provider,
