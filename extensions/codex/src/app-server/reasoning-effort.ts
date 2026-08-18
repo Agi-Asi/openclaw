@@ -42,7 +42,7 @@ export function applyCachedCodexReasoningMetadata(params: {
   provider: string;
   modelId: string;
   catalog?: {
-    entries: readonly Array<{ provider: string; id: string; compat?: unknown }>;
+    entries: ReadonlyArray<{ provider: string; id: string; compat?: unknown }>;
   };
 }): EmbeddedRunAttemptParams["model"] {
   const provider = params.provider.trim().toLowerCase();
