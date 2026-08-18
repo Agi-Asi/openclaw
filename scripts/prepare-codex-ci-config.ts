@@ -59,4 +59,7 @@ if (path.basename(process.argv[1] ?? "") === "prepare-codex-ci-config.ts") {
     projectPath,
     ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
   });
+  console.log(
+    `[codex effort diagnostic] prepared model_reasoning_effort=${modelReasoningEffort ?? "low"}`,
+  );
 }

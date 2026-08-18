@@ -43,6 +43,7 @@ const CODEX_APP_SERVER_OVERLOADED_ERROR_CODE = -32_001;
 const CODEX_APP_SERVER_OVERLOAD_MAX_RETRIES = 3;
 const CODEX_APP_SERVER_OVERLOAD_RETRY_BASE_MS = 50;
 const CODEX_APP_SERVER_CLIENT_INSTANCE_IDS = new WeakMap<object, string>();
+const CODEX_THREAD_LIFECYCLE_METHODS = new Set(["thread/start", "thread/resume", "thread/fork"]);
 const UNPAIRED_SURROGATE_RE =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
@@ -52,6 +53,47 @@ type PendingRequest = {
   reject: (error: Error) => void;
   cleanup: () => void;
 };
+
+function readDiagnosticRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readDiagnosticString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function logCodexThreadLifecycleRequest(method: string, params: unknown): void {
+  if (!CODEX_THREAD_LIFECYCLE_METHODS.has(method)) {
+    return;
+  }
+  const request = readDiagnosticRecord(params);
+  const config = readDiagnosticRecord(request?.config);
+  embeddedAgentLog.info("codex effort diagnostic lifecycle request", {
+    method,
+    threadId: readDiagnosticString(request?.threadId),
+    model: readDiagnosticString(request?.model),
+    modelProvider: readDiagnosticString(request?.modelProvider),
+    configHasModelReasoningEffort: Object.hasOwn(config ?? {}, "model_reasoning_effort"),
+    configModelReasoningEffort: readDiagnosticString(config?.model_reasoning_effort),
+  });
+}
+
+function logCodexThreadLifecycleResponse(method: string, value: unknown): void {
+  if (!CODEX_THREAD_LIFECYCLE_METHODS.has(method)) {
+    return;
+  }
+  const response = readDiagnosticRecord(value);
+  const thread = readDiagnosticRecord(response?.thread);
+  embeddedAgentLog.info("codex effort diagnostic lifecycle response", {
+    method,
+    threadId: readDiagnosticString(thread?.id),
+    model: readDiagnosticString(response?.model),
+    modelProvider: readDiagnosticString(response?.modelProvider),
+    reasoningEffort: readDiagnosticString(response?.reasoningEffort),
+  });
+}
 
 /** Process-local generation fence for bindings tied to one app-server client instance. */
 export function getCodexAppServerClientInstanceId(client: object): string {
@@ -468,6 +510,7 @@ export class CodexAppServerClient {
     options: { timeoutMs?: number; signal?: AbortSignal },
     onWriteAttempt?: () => void,
   ): Promise<T> {
+    logCodexThreadLifecycleRequest(method, params);
     const deadline =
       options.timeoutMs !== undefined && Number.isFinite(options.timeoutMs)
         ? Date.now() + options.timeoutMs
@@ -481,7 +524,7 @@ export class CodexAppServerClient {
         throw new CodexAppServerLocalRequestCancellationError(method, "timed out", false);
       }
       try {
-        return await this.requestOnce<T>(
+        const value = await this.requestOnce<T>(
           method,
           params,
           {
@@ -490,6 +533,8 @@ export class CodexAppServerClient {
           },
           onWriteAttempt,
         );
+        logCodexThreadLifecycleResponse(method, value);
+        return value;
       } catch (error) {
         // Codex emits -32001 only when ingress rejects a request before enqueue,
         // so retrying mutating methods cannot duplicate server-side work.

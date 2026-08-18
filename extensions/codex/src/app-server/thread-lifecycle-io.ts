@@ -206,6 +206,14 @@ export async function resumeExistingCodexThread(
         disableLoginShell: params.disableLoginShell,
       }),
     );
+    embeddedAgentLog.info("codex effort diagnostic binding before resume", {
+      sessionKey: params.params.sessionKey,
+      action: "resuming",
+      threadId: resumeBinding.threadId,
+      connectionScope: resumeBinding.connectionScope ?? null,
+      preserveNativeModel: resumeBinding.preserveNativeModel === true,
+      reasoningEffort: resumeBinding.reasoningEffort ?? null,
+    });
     const requestModelProvider = resumeParams.modelProvider?.trim() || undefined;
     // Keep ownership accounting atomic with the resume request: a
     // pre-aborted request retains no subscription, so it must not reserve.
@@ -314,6 +322,12 @@ export async function resumeExistingCodexThread(
         "committing a resumed thread",
       );
     }
+    embeddedAgentLog.info("codex effort diagnostic binding after resume", {
+      sessionKey: params.params.sessionKey,
+      action: "resumed",
+      threadId: response.thread.id,
+      reasoningEffort: resumePatch.reasoningEffort ?? null,
+    });
     if (contextEngineBinding) {
       embeddedAgentLog.info("codex app-server wrote context-engine thread binding", {
         sessionId: params.params.sessionId,
@@ -486,6 +500,13 @@ export async function startFreshCodexThread(
       disableLoginShell: params.disableLoginShell,
     }),
   );
+  embeddedAgentLog.info("codex effort diagnostic binding before start", {
+    sessionKey: params.params.sessionKey,
+    action: rotatedContextEngineBinding ? "rotating" : "starting",
+    threadId: replacementPredecessor?.threadId ?? null,
+    preserveExistingBinding,
+    reasoningEffort: replacementPredecessor?.reasoningEffort ?? null,
+  });
   const requestModelProvider = startParams.modelProvider?.trim() || undefined;
   const threadStartResponse = await lifecycleTiming.measure("thread-start-request", async () => {
     try {
@@ -666,6 +687,13 @@ export async function startFreshCodexThread(
     }
   }
   lifecycleTiming.mark("thread-ready");
+  embeddedAgentLog.info("codex effort diagnostic binding after start", {
+    sessionKey: params.params.sessionKey,
+    action: rotatedContextEngineBinding ? "rotated" : "started",
+    threadId: response.thread.id,
+    persisted: !preserveExistingBinding,
+    reasoningEffort: response.reasoningEffort ?? null,
+  });
   lifecycleTiming.logSummary({
     runId: params.params.runId,
     sessionId: params.params.sessionId,

@@ -126,6 +126,13 @@ export async function materializePendingSupervisionBranch(
   let bindingCommitted = false;
   let provisionalCleanupSafe = true;
   try {
+    embeddedAgentLog.info("codex effort diagnostic binding before supervision materialization", {
+      sessionKey: params.attempt.sessionKey,
+      action: "materializing",
+      threadId: params.binding.threadId,
+      sourceThreadId: pending.sourceThreadId,
+      reasoningEffort: params.binding.reasoningEffort ?? null,
+    });
     const probeParams = buildPendingSupervisionProbeForkParams(params, pending);
     const rawProbeResponse = await params.lifecycleTiming.measure(
       "supervision-model-probe-fork",
@@ -347,6 +354,12 @@ export async function materializePendingSupervisionBranch(
     // This thread now belongs to the durable binding. Later diagnostics must
     // never route it through provisional artifact cleanup.
     bindingCommitted = true;
+    embeddedAgentLog.info("codex effort diagnostic binding after supervision materialization", {
+      sessionKey: params.attempt.sessionKey,
+      action: "materialized",
+      threadId: finalThreadId,
+      reasoningEffort: startResponse.reasoningEffort ?? null,
+    });
     params.lifecycleTiming.mark("thread-ready");
     params.lifecycleTiming.logSummary({
       runId: params.attempt.runId,
