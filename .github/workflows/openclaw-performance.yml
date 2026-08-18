@@ -756,7 +756,7 @@ jobs:
           fi
 
           mkdir -p "$SOURCE_PERF_DIR/gateway-cpu/cpu-profiles"
-          pnpm test:gateway:concurrency -- \
+          pnpm test:gateway:concurrency \
             --cpu-prof-dir "$SOURCE_PERF_DIR/gateway-cpu/cpu-profiles" \
             --output "$SOURCE_PERF_DIR/gateway-cpu/gateway-concurrency-bench.json" \
             --runs 1 \
