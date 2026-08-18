@@ -105,6 +105,7 @@ describe("spawnSignalDaemon", () => {
       configPath: "~/.openclaw/signal-cli",
       httpHost: "127.0.0.1",
       httpPort: 8080,
+      receiveMode: "manual",
     });
 
     expect(spawnMock).toHaveBeenCalledWith(
@@ -116,6 +117,8 @@ describe("spawnSignalDaemon", () => {
         "--http",
         "127.0.0.1:8080",
         "--no-receive-stdout",
+        "--receive-mode",
+        "manual",
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );

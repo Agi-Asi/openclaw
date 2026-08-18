@@ -1,4 +1,38 @@
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
+import { waitForTransportReady } from "openclaw/plugin-sdk/transport-ready-runtime";
+import { signalCheck } from "./client-adapter.js";
 import { formatSignalDaemonExit, type SignalDaemonHandle } from "./daemon.js";
+
+export async function waitForSignalDaemonReady(params: {
+  baseUrl: string;
+  abortSignal?: AbortSignal;
+  timeoutMs: number;
+  logAfterMs: number;
+  logIntervalMs?: number;
+  runtime: RuntimeEnv;
+  waitForTransportReadyFn?: typeof waitForTransportReady;
+}): Promise<void> {
+  const waitForTransportReadyFn = params.waitForTransportReadyFn ?? waitForTransportReady;
+  await waitForTransportReadyFn({
+    label: "signal daemon",
+    timeoutMs: params.timeoutMs,
+    logAfterMs: params.logAfterMs,
+    logIntervalMs: params.logIntervalMs,
+    pollIntervalMs: 150,
+    abortSignal: params.abortSignal,
+    runtime: params.runtime,
+    check: async () => {
+      const res = await signalCheck(params.baseUrl, 1000);
+      if (res.ok) {
+        return { ok: true };
+      }
+      return {
+        ok: false,
+        error: res.error ?? (res.status ? `HTTP ${res.status}` : "unreachable"),
+      };
+    },
+  });
+}
 
 export function createSignalDaemonLifecycle(params: { abortSignal?: AbortSignal }) {
   let daemonHandle: SignalDaemonHandle | null = null;
