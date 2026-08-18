@@ -53,10 +53,5 @@ export async function writeCiSafeCodexConfig(params: {
 if (path.basename(process.argv[1] ?? "") === "prepare-codex-ci-config.ts") {
   const outputPath = expectDefined(process.argv[2], "Codex CI config output path");
   const projectPath = process.argv[3] ?? process.cwd();
-  const modelReasoningEffort = process.argv[4];
-  await writeCiSafeCodexConfig({
-    outputPath,
-    projectPath,
-    ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
-  });
+  await writeCiSafeCodexConfig({ outputPath, projectPath });
 }
