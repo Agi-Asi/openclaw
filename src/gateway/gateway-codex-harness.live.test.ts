@@ -851,8 +851,8 @@ function recordCodexAttemptIdentity(params: {
   expect(turnStarting?.data).toMatchObject({ model: expectedModel });
   const actualEffort = turnStarting?.data?.effort;
   const actualCollaborationEffort = turnStarting?.data?.collaborationEffort;
-  // Native subagent supervision owns its thread settings. The live wrapper pins the same requested
-  // effort in Codex config; subsequent turn/start calls must preserve it by omitting overrides.
+  // Codex persists accepted turn settings on the thread. Subsequent calls that omit overrides
+  // must preserve and report the effective native setting.
   const expectedEffort = nativeSettingsSessionKeys.has(params.sessionKey)
     ? null
     : resolveCodexHarnessExpectedEffort(expectedModel);
@@ -870,9 +870,14 @@ function recordCodexAttemptIdentity(params: {
     typeof threadId === "string" && threadId.trim().length > 0,
     `expected Codex thread_ready identity for ${params.sessionKey}; events=${JSON.stringify(events)}`,
   ).toBe(true);
-  expect(threadReady?.data?.reasoningEffort ?? null).toBe(
-    resolveCodexHarnessExpectedNativeEffort(expectedModel),
-  );
+  const previousThreadId = observedCodexThreadIds.get(params.sessionKey);
+  if (previousThreadId === threadId) {
+    // The authoritative native setting update arrives during turn/start, after thread_ready.
+    // Its durable projection is observable when the same thread is prepared again.
+    expect(threadReady?.data?.reasoningEffort ?? null).toBe(
+      resolveCodexHarnessExpectedNativeEffort(expectedModel),
+    );
+  }
   observedCodexThreadIds.set(params.sessionKey, threadId as string);
   const clientId = threadReady?.data?.clientId;
   expect(

@@ -23,10 +23,12 @@ import {
   type JsonObject,
   type JsonValue,
 } from "./protocol.js";
+import { readCodexSupportedReasoningEfforts } from "./reasoning-effort.js";
 import {
   CODEX_NATIVE_PERSONALITY_NONE,
   resolveCodexAppServerModelProvider,
   resolveCodexAppServerRequestModelSelection,
+  resolveReasoningEffort,
 } from "./thread-model-selection.js";
 import { buildDeveloperInstructions } from "./thread-prompt.js";
 import { applyCodexManagedShellEnvironment } from "./thread-shell-environment.js";
@@ -187,6 +189,11 @@ export function buildThreadStartParams(
     agentDir: params.agentDir,
     config: params.config,
   });
+  const reasoningEffort = resolveReasoningEffort(
+    params.thinkLevel,
+    modelSelection.model,
+    readCodexSupportedReasoningEfforts(params.model?.compat),
+  );
   return {
     model: modelSelection.model,
     ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
@@ -203,19 +210,22 @@ export function buildThreadStartParams(
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     serviceName: "OpenClaw",
     ...(ringZeroActive ? { baseInstructions: CODEX_RING_ZERO_BASE_INSTRUCTIONS } : {}),
-    config: buildCodexRuntimeThreadConfigForRun(params, options.config, {
-      nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-      nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
-      nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
-      webSearchAllowed: options.webSearchAllowed,
-      appServer: options.appServer,
-      hostSystemAgentActive: options.hostSystemAgentActive,
-      restrictedToolSurfaceInheritedMcpServerNames:
-        options.restrictedToolSurfaceInheritedMcpServerNames,
-      shellEnvironment: options.shellEnvironment,
-      disableLoginShell: options.disableLoginShell,
-    }),
+    config: {
+      ...buildCodexRuntimeThreadConfigForRun(params, options.config, {
+        nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+        nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
+        nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+        directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
+        webSearchAllowed: options.webSearchAllowed,
+        appServer: options.appServer,
+        hostSystemAgentActive: options.hostSystemAgentActive,
+        restrictedToolSurfaceInheritedMcpServerNames:
+          options.restrictedToolSurfaceInheritedMcpServerNames,
+        shellEnvironment: options.shellEnvironment,
+        disableLoginShell: options.disableLoginShell,
+      }),
+      ...(reasoningEffort ? { model_reasoning_effort: reasoningEffort } : {}),
+    },
     ...resolveCodexThreadEnvironmentSelection(options),
     developerInstructions:
       options.developerInstructions ??
