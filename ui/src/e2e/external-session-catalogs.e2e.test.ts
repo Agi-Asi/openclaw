@@ -10,6 +10,17 @@ const suite = createControlUiE2eSuite({
   unavailableMessage: (executablePath) => `Playwright Chromium is unavailable at ${executablePath}`,
 });
 
+const SHARE_ROUTE = {
+  kind: "thread-id-prefix",
+  routeSegment: "beam",
+  hostId: "gateway",
+  identifierAlphabet: "lowercase-hex",
+  fullLength: 32,
+  minPrefixLength: 12,
+  lookup: "catalog-list-search-by-thread-id-prefix",
+  ambiguity: "multiple-results-or-next-cursor",
+} as const;
+
 suite.define(() => {
   it("opens and refreshes a base-path Beam share without replacing its pretty URL", async () => {
     const artifactDir = path.resolve(".artifacts/control-ui-e2e/beam-share-url");
@@ -36,7 +47,7 @@ suite.define(() => {
               id: "beam",
               label: "Beam",
               capabilities: { continueSession: false, archive: false },
-              shareRoute: { routeSegment: "beam", hostId: "gateway" },
+              shareRoute: SHARE_ROUTE,
               hosts: [
                 {
                   hostId: "gateway",
