@@ -560,12 +560,14 @@ async function assertCodexHarnessSessionSelection(params: {
       modelProvider?: string;
       agentRuntime?: { id?: string };
       thinkingLevel?: string;
+      thinkingLevels?: string[];
     }>;
   } = await params.client.request("sessions.list", {
     includeGlobal: true,
     limit: 200,
   });
   const row = result.sessions?.find((entry) => entry.key === params.sessionKey);
+  logCodexLiveStep("session-selection", row);
   expect(row, `expected sessions.list row for ${params.sessionKey}`).toBeDefined();
   expect(row?.modelProvider).toBe(expected.provider);
   expect(row?.model).toBe(expected.modelId);
@@ -847,6 +849,14 @@ function recordCodexAttemptIdentity(params: {
   const actualEffort = turnStarting?.data?.effort;
   const actualCollaborationEffort = turnStarting?.data?.collaborationEffort;
   const expectedEffort = resolveCodexHarnessExpectedEffort(expectedModel);
+  logCodexLiveStep("turn-starting", {
+    model: turnStarting?.data?.model,
+    effort: actualEffort ?? null,
+    collaborationEffort: actualCollaborationEffort ?? null,
+    requestedThinkingLevel: turnStarting?.data?.requestedThinkingLevel,
+    routeApi: turnStarting?.data?.routeApi,
+    routeSupportedReasoningEfforts: turnStarting?.data?.routeSupportedReasoningEfforts,
+  });
   expect(actualEffort ?? null).toBe(expectedEffort);
   expect(actualCollaborationEffort ?? null).toBe(actualEffort ?? null);
   if (CODEX_HARNESS_FULL_CONTEXT) {
