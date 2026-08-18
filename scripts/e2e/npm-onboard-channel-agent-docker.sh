@@ -214,7 +214,17 @@ node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-onboard-sta
 openclaw_e2e_assert_dep_absent "$DEP_SENTINEL" "$HOME/.openclaw"
 
 echo "Configuring $CHANNEL..."
-openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1
+channel_add_status=0
+openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1 || channel_add_status=$?
+if [ "$channel_add_status" -ne 0 ]; then
+  echo "channels add failed for $CHANNEL with exit code $channel_add_status" >&2
+  sed -E \
+    -e 's/openclaw-npm-onboard-discord-token/[REDACTED]/g' \
+    -e 's/xox[baprs]-[-_A-Za-z0-9.]+/[REDACTED]/g' \
+    -e 's/(^|[^[:alnum:]_])(sk|gh[a-z]|github_pat|glpat|AIza)[-_A-Za-z0-9.]+/\1[REDACTED]/g' \
+    /tmp/openclaw-channel-add.log >&2
+  exit "$channel_add_status"
+fi
 node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-channel-config "$CHANNEL" "${CHANNEL_CONFIG_TOKENS[@]}"
 
 echo "Checking status surfaces for $CHANNEL..."

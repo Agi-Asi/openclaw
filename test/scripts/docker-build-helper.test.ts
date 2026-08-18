@@ -2630,6 +2630,18 @@ docker_e2e_docker_run_cmd run demo
     expect(script).not.toContain('"$HOME/.openclaw/agents/main/agent/auth-profiles.json"');
   });
 
+  it("preserves redacted channel-add diagnostics outside the command redirection", () => {
+    const script = readFileSync(NPM_ONBOARD_CHANNEL_AGENT_DOCKER_E2E_PATH, "utf8");
+    expect(script).toContain(
+      'openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1 || channel_add_status=$?',
+    );
+    expect(script).toContain('echo "channels add failed for $CHANNEL with exit code $channel_add_status"');
+    expect(script).toContain("/tmp/openclaw-channel-add.log >&2");
+    expect(script).toContain('exit "$channel_add_status"');
+    expect(script).toContain("s/openclaw-npm-onboard-discord-token/[REDACTED]/g");
+    expect(script).toContain("s/xox[baprs]-[-_A-Za-z0-9.]+/[REDACTED]/g");
+  });
+
   it("keeps real-TTY onboarding drivers aligned with the first-agent prompt", () => {
     expectOrderedScriptFragments(readFileSync(RELEASE_TYPED_ONBOARDING_SCENARIO_PATH, "utf8"), [
       'wait_for_log "Continue?"',
