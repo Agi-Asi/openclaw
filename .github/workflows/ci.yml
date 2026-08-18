@@ -67,12 +67,36 @@ env:
   NODE_VERSION: "24.x"
 
 jobs:
+  shell-env-focused-proof:
+    name: shell-env-focused-proof
+    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.dispatch_id, 'pr125624-current-proof-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact diagnostic descendant
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.x"
+          install-bun: "false"
+          dependency-cache: "false"
+          use-actions-cache: "true"
+      - name: Verify canonical formatting
+        run: pnpm format docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts && git diff --exit-code -- docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts
+      - name: Run focused shell environment tests
+        run: node scripts/run-vitest.mjs src/infra/shell-env.test.ts
+
   # Preflight: establish routing truth and job matrices once, then let real
   # work fan out from a single source of truth.
   preflight:
     permissions:
       contents: read
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !(github.event_name == 'workflow_dispatch' && startsWith(inputs.dispatch_id, 'pr125624-current-proof-'))
     runs-on: ${{ (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid') && 'ubuntu-24.04' || github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04') }}
     timeout-minutes: 20
     outputs:
