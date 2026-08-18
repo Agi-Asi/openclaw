@@ -68,7 +68,7 @@ env:
 
 jobs:
   shell-env-format-diagnostic:
-    name: shell-env-format-diagnostic
+    name: shell-env-focused-proof
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.dispatch_id, 'pr125624-format-diagnostic-')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -90,6 +90,10 @@ jobs:
         run: pnpm format docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts
       - name: Print source-only formatting diff
         run: git diff -- docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts
+      - name: Verify canonical formatting
+        run: git diff --exit-code -- docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts
+      - name: Run focused shell environment tests
+        run: node scripts/run-vitest.mjs src/infra/shell-env.test.ts
       - name: Upload formatted source
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
