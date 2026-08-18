@@ -201,10 +201,7 @@ export async function resumeExistingCodexThread(
         disableLoginShell: params.disableLoginShell,
       }),
     );
-    const requestModelProvider =
-      typeof resumeParams.modelProvider === "string" && resumeParams.modelProvider.trim()
-        ? resumeParams.modelProvider
-        : undefined;
+    const requestModelProvider = resumeParams.modelProvider?.trim() || undefined;
     // Keep ownership accounting atomic with the resume request: a
     // pre-aborted request retains no subscription, so it must not reserve.
     throwIfAborted();
@@ -253,7 +250,6 @@ export async function resumeExistingCodexThread(
       }
     }
     throwIfAborted();
-    const boundAuthProfileId = authProfileId;
     const nextMcpServersFingerprint =
       params.mcpServersFingerprintEvaluated === true
         ? params.mcpServersFingerprint
@@ -264,11 +260,11 @@ export async function resumeExistingCodexThread(
       clientId: resolveCodexAppServerClientInstanceId(params.client),
       cwd: params.cwd,
       rolloutPath: resolveCodexThreadRolloutPath(response.thread) ?? resumeBinding.rolloutPath,
-      authProfileId: boundAuthProfileId,
+      authProfileId,
       model: response.model ?? resumeParams.model ?? params.params.modelId,
       preserveNativeModel: resumeBinding.preserveNativeModel === true ? true : undefined,
       modelProvider: normalizeBindingModelProvider(
-        boundAuthProfileId,
+        authProfileId,
         response.modelProvider ?? requestModelProvider ?? startModelProvider,
       ),
       reasoningEffort: response.reasoningEffort,
@@ -485,10 +481,7 @@ export async function startFreshCodexThread(
       disableLoginShell: params.disableLoginShell,
     }),
   );
-  const requestModelProvider =
-    typeof startParams.modelProvider === "string" && startParams.modelProvider.trim()
-      ? startParams.modelProvider
-      : undefined;
+  const requestModelProvider = startParams.modelProvider?.trim() || undefined;
   const threadStartResponse = await lifecycleTiming.measure("thread-start-request", async () => {
     try {
       return await params.client.request("thread/start", startParams, { signal: params.signal });
@@ -681,8 +674,7 @@ export async function startFreshCodexThread(
     ...(rolloutPath ? { rolloutPath } : {}),
     authProfileId: params.params.authProfileId,
     model: response.model ?? startParams.model ?? params.params.modelId,
-    modelProvider:
-      response.modelProvider ?? requestModelProvider ?? startModelProvider ?? modelProvider,
+    modelProvider: bindingModelProvider ?? modelProvider,
     reasoningEffort: response.reasoningEffort,
     dynamicToolsFingerprint,
     dynamicToolsContainDeferred,
