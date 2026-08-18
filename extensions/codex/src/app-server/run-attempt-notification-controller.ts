@@ -11,7 +11,7 @@ import {
   readRawResponseToolCallId,
 } from "./attempt-notifications.js";
 import { readCodexTurnCompletedNotification } from "./protocol-validators.js";
-import type { CodexServerNotification } from "./protocol.js";
+import { isJsonObject, type CodexServerNotification } from "./protocol.js";
 import type { CodexAttemptLifecycleController } from "./run-attempt-lifecycle-controller.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
 import {
@@ -31,7 +31,7 @@ export function createCodexAttemptNotificationController(
   const { context, turnState } = prompt;
   const { attemptTools, runtime } = context;
   const { connection } = runtime;
-  const { appServer, runAbortController } = connection;
+  const { appServer, runAbortController, bindingStore, bindingIdentity } = connection;
   const { allocateCodexToolOutcomeOrdinal } = attemptTools;
   const {
     state,
@@ -62,6 +62,24 @@ export function createCodexAttemptNotificationController(
       turnId: notificationTurnId,
     });
   const handleNotification = async (notification: CodexServerNotification) => {
+    const notificationParams =
+      notification.method === "thread/settings/updated" && isJsonObject(notification.params)
+        ? notification.params
+        : undefined;
+    const threadSettings =
+      notificationParams?.threadId === resourceState.thread.threadId &&
+      isJsonObject(notificationParams.threadSettings)
+        ? notificationParams.threadSettings
+        : undefined;
+    const reasoningEffort = threadSettings?.effort;
+    if (reasoningEffort === null || typeof reasoningEffort === "string") {
+      resourceState.thread.reasoningEffort = reasoningEffort;
+      await bindingStore.mutate(bindingIdentity, {
+        kind: "patch",
+        threadId: resourceState.thread.threadId,
+        patch: { reasoningEffort },
+      });
+    }
     const projector = projectorRef.current;
     const turnId = turnIdRef.current;
     const steeringQueue = steeringQueueRef.current;

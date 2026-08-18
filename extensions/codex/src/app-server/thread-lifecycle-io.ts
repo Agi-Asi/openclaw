@@ -176,11 +176,6 @@ export async function resumeExistingCodexThread(
         userMcpServersConfigPatch,
         pluginAppsConfigPatch,
         finalConfigPatch.configPatch,
-        resumeBinding.connectionScope === "supervision" &&
-          resumeBinding.preserveNativeModel === true &&
-          resumeBinding.reasoningEffort
-          ? { model_reasoning_effort: resumeBinding.reasoningEffort }
-          : undefined,
       ),
       nativeSkillIsolation,
     );
