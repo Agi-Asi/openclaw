@@ -651,6 +651,14 @@ jobs:
           # heap writer cannot hide whether the managed process accepted either hook.
           kill -WINCH "$gateway_pid"
           report_file=""
+          report_deadline=$((SECONDS + 30))
+          while (( SECONDS < report_deadline )); do
+            report_file="$(find "$MANAGED_GATEWAY_DIAGNOSTICS_DIR" -maxdepth 1 -type f -name "report.*.${gateway_pid}.*.json" -print -quit)"
+            [[ -n "$report_file" ]] && break
+            sleep 1
+          done
+
+          kill -USR2 "$gateway_pid"
           heap_file=""
           deadline=$((SECONDS + 180))
           while (( SECONDS < deadline )); do
