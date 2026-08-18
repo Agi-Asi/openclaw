@@ -302,40 +302,6 @@ describe("Slack durable ingress", () => {
     });
   });
 
-  it("releases a deferred lane while preserving its claim until adoption", async () => {
-    await withQueue(async (queue) => {
-      const starts: string[] = [];
-      let adoptDeferred: (() => void | Promise<void>) | undefined;
-      const processEvent = vi.fn(async (event: ReceiverEvent) => {
-        const eventId = (event.body as { event_id?: string }).event_id ?? "unknown";
-        starts.push(eventId);
-        const lifecycle = resolveSlackIngressTurnLifecycle(event.customProperties);
-        if (eventId === "Ev-deferred") {
-          adoptDeferred = lifecycle?.onAdopted;
-          lifecycle?.onDeferred();
-          return;
-        }
-        await lifecycle?.onAdopted();
-      });
-      const { ingress, receive } = attachIngress(queue, processEvent);
-      ingress.start();
-
-      await receive(createReceiverEvent("Ev-deferred"));
-      await vi.waitFor(() => expect(starts).toEqual(["Ev-deferred"]));
-      await receive(createReceiverEvent("Ev-next", undefined, { ts: "1700000000.000200" }));
-      await vi.waitFor(() => expect(starts).toEqual(["Ev-deferred", "Ev-next"]));
-
-      expect(await queue.listFailed?.()).toEqual([]);
-      expect((await queue.listClaims()).map((claim) => claim.id)).toEqual(["Ev-deferred"]);
-
-      await adoptDeferred?.();
-      await expect(queue.enqueue("Ev-deferred", {} as SlackIngressPayload)).resolves.toMatchObject({
-        kind: "completed",
-      });
-      await ingress.stop();
-    });
-  });
-
   it("serializes new-channel messages behind channel-ID migration", async () => {
     await withQueue(async (queue) => {
       let markMigrationStarted: () => void = () => {};

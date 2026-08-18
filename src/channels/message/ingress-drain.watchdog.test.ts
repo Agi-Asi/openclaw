@@ -47,34 +47,37 @@ describe("channel ingress drain watchdog", () => {
     });
   });
 
-  it("guillotines deferred stalls", async () => {
+  it("lets lifecycle-owned deferrals outlive the pre-adoption watchdog", async () => {
     await withTempState(async (stateDir) => {
       let clock = 30_000;
       const queue = createTestIngressQueue(stateDir, { now: () => clock });
       await queue.enqueue("evt-def-stall", { text: "x" }, { laneKey: "l1" });
+      let adoptDeferred: (() => void | Promise<void>) | undefined;
 
       const drain = createChannelIngressDrain<Payload>({
         queue,
         now: () => clock,
         adoptionStallTimeoutMs: 5_000,
         dispatchClaimedEvent: async (_event, lifecycle) => {
+          adoptDeferred = lifecycle.onAdopted;
           lifecycle.onDeferred();
-          // Stay deferred without adoption -- watchdog must still fire.
-          await new Promise(() => {});
+          return { kind: "deferred" };
         },
       });
 
       await drain.drainOnce();
       expect(await queue.listClaims()).toHaveLength(1);
-      clock += 5_000;
-      await vi.advanceTimersByTimeAsync(5_000);
-      await drain.waitForIdle();
+      clock += 60_000;
+      await vi.advanceTimersByTimeAsync(60_000);
 
-      const reenqueue = await queue.enqueue("evt-def-stall", { text: "x" });
-      expect(reenqueue.kind).toBe("failed");
-      if (reenqueue.kind === "failed") {
-        expect(reenqueue.record.reason).toBe("handler-timeout");
-      }
+      expect(await queue.listFailed?.()).toEqual([]);
+      expect((await queue.listClaims()).map((claim) => claim.id)).toEqual(["evt-def-stall"]);
+
+      await adoptDeferred?.();
+      await drain.waitForIdle();
+      await expect(queue.enqueue("evt-def-stall", { text: "x" })).resolves.toMatchObject({
+        kind: "completed",
+      });
       drain.dispose();
     });
   });
