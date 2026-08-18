@@ -24,12 +24,10 @@ import {
   type JsonObject,
   type JsonValue,
 } from "./protocol.js";
-import { readCodexSupportedReasoningEfforts } from "./reasoning-effort.js";
 import {
   CODEX_NATIVE_PERSONALITY_NONE,
   resolveCodexAppServerModelProvider,
   resolveCodexAppServerRequestModelSelection,
-  resolveReasoningEffort,
 } from "./thread-model-selection.js";
 import { buildDeveloperInstructions } from "./thread-prompt.js";
 import { applyCodexManagedShellEnvironment } from "./thread-shell-environment.js";
@@ -166,6 +164,7 @@ export function buildThreadStartParams(
     environmentSelection?: CodexTurnEnvironmentParams[];
     model?: string | null;
     modelProvider?: string | null;
+    reasoningEffort?: string | null;
     hostSystemAgentActive?: boolean;
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
@@ -190,11 +189,6 @@ export function buildThreadStartParams(
     agentDir: params.agentDir,
     config: params.config,
   });
-  const reasoningEffort = resolveReasoningEffort(
-    params.thinkLevel,
-    modelSelection.model,
-    readCodexSupportedReasoningEfforts(params.model?.compat),
-  );
   return {
     model: modelSelection.model,
     ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
@@ -225,7 +219,7 @@ export function buildThreadStartParams(
         shellEnvironment: options.shellEnvironment,
         disableLoginShell: options.disableLoginShell,
       }),
-      ...(reasoningEffort ? { model_reasoning_effort: reasoningEffort } : {}),
+      ...(options.reasoningEffort && { model_reasoning_effort: options.reasoningEffort }),
     },
     ...resolveCodexThreadEnvironmentSelection(options),
     developerInstructions:
