@@ -17,7 +17,7 @@ describe("syncPluginVersions", () => {
     cleanupTempDirs(tempDirs);
   });
 
-  it("preserves workspace openclaw devDependencies and plugin host floors", () => {
+  it("preserves workspace dependencies and intentional prerelease plugin API floors", () => {
     const rootDir = makeTempDir(tempDirs, "openclaw-sync-plugin-versions-");
 
     writeJson(path.join(rootDir, "package.json"), {
@@ -47,7 +47,7 @@ describe("syncPluginVersions", () => {
           minHostVersion: ">=2026.3.30",
         },
         compat: {
-          pluginApi: ">=2026.3.30",
+          pluginApi: ">=2026.4.1-beta.2",
         },
         build: {
           openclawVersion: "2026.3.30",
@@ -88,7 +88,7 @@ describe("syncPluginVersions", () => {
     expect(updatedPackage.devDependencies?.openclaw).toBe("workspace:*");
     expect(updatedPackage.peerDependencies?.openclaw).toBe(">=2026.4.1");
     expect(updatedPackage.openclaw?.install?.minHostVersion).toBe(">=2026.3.30");
-    expect(updatedPackage.openclaw?.compat?.pluginApi).toBe(">=2026.4.1");
+    expect(updatedPackage.openclaw?.compat?.pluginApi).toBe(">=2026.4.1-beta.2");
     expect(updatedPackage.openclaw?.build?.openclawVersion).toBe("2026.4.1");
   });
 

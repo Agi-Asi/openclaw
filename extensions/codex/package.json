@@ -35,7 +35,7 @@
       ]
     },
     "compat": {
-      "pluginApi": ">=2026.8.1"
+      "pluginApi": ">=2026.8.1-beta.3"
     },
     "build": {
       "openclawVersion": "2026.8.1"

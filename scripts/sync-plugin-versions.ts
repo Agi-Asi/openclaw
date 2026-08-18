@@ -54,7 +54,7 @@ function syncPluginApiVersion(pkg: PackageJson, targetVersion: string): boolean 
     return false;
   }
   const next = `>=${targetVersion}`;
-  if (current === next) {
+  if (current === next || current.startsWith(`${next}-`)) {
     return false;
   }
   compat.pluginApi = next;
