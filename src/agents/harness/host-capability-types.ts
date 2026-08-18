@@ -23,6 +23,13 @@ type AgentHarnessPreparedEnvironment = Readonly<{
   managedLocalIdentity: boolean;
 }>;
 
+type AgentHarnessHostTrajectoryRecorder = Readonly<{
+  /** Records one bounded runtime event into the host-owned session trajectory. */
+  recordEvent: (type: string, data?: Record<string, unknown>) => void;
+  /** Flushes events recorded by this admitted run before its capability closes. */
+  flush: () => Promise<void>;
+}>;
+
 export type AgentHarnessHostCapabilities = Readonly<{
   kind: "agent-harness-host-capability";
   version: 1;
@@ -30,6 +37,8 @@ export type AgentHarnessHostCapabilities = Readonly<{
   assertActive: () => void;
   /** Closure-bound non-secret maps prepared before harness placement. */
   preparedEnvironment?: () => AgentHarnessPreparedEnvironment;
+  /** Host-owned SQLite trajectory sink, present only when session identity was validated. */
+  trajectoryRecorder?: AgentHarnessHostTrajectoryRecorder;
   /** Applies the exact host caller binding to a plugin-built tool surface. */
   bindToolSurface: (tools: AnyAgentTool[], options?: Readonly<{ cwd?: string }>) => AnyAgentTool[];
   /** Core-owned byte binding for a native command approval, scoped to this admitted run. */

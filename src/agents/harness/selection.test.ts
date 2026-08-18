@@ -523,6 +523,41 @@ function registerTestCompactor(
 }
 
 describe("runAgentHarnessAttempt", () => {
+  it("projects the host trajectory recorder through the admitted capability", async () => {
+    const recordEvent = vi.fn();
+    const flush = vi.fn(async () => undefined);
+    const runAttempt = vi.fn<AgentHarness["runAttempt"]>(async (attempt) => {
+      expect(attempt).not.toHaveProperty("trajectoryRecorder");
+      const recorder = attempt.hostCapabilities?.trajectoryRecorder;
+      if (!recorder) {
+        throw new Error("expected projected trajectory recorder");
+      }
+      recorder.recordEvent("session.started");
+      await recorder.flush();
+      return createAttemptResult("codex");
+    });
+    registerAgentHarness(
+      {
+        id: "codex",
+        label: "Codex",
+        supports: () => ({ supported: true, priority: 100 }),
+        runAttempt,
+      },
+      { ownerPluginId: "codex" },
+    );
+    const params = createAttemptParams(providerRuntimeConfig("codex", "codex"));
+    params.trajectoryRecorder = {
+      describeFlushState: () => undefined,
+      recordEvent,
+      flush,
+    };
+
+    await runAgentHarnessAttempt(params);
+
+    expect(recordEvent).toHaveBeenCalledWith("session.started", undefined);
+    expect(flush).toHaveBeenCalledOnce();
+  });
+
   it("uses registry ownership rather than declared harness metadata for approvals", async () => {
     let observedApprovalOwner: string | undefined;
     mockCallGatewayTool.mockImplementationOnce(async () => {

@@ -126,6 +126,36 @@ describe("agent harness host capability", () => {
     mockCallGatewayTool.mockReset();
   });
 
+  it("gates the host trajectory recorder with admitted-run authority", async () => {
+    const recordEvent = vi.fn();
+    const flush = vi.fn(async () => undefined);
+    const { attempt } = await admittedAttempt("run-trajectory", {
+      trajectoryRecorder: {
+        describeFlushState: () => undefined,
+        recordEvent,
+        flush,
+      },
+    });
+    const host = createAgentHarnessHostCapabilities({ attempt, pluginId: "codex" });
+    const recorder = host.capabilities.trajectoryRecorder;
+    if (!recorder) {
+      throw new Error("expected host trajectory recorder");
+    }
+
+    recorder.recordEvent("session.started", { source: "codex" });
+    await recorder.flush();
+    expect(recordEvent).toHaveBeenCalledWith("session.started", { source: "codex" });
+    expect(flush).toHaveBeenCalledOnce();
+
+    host.close();
+    expect(() => recorder.recordEvent("session.ended")).toThrow(
+      "agent harness host capability is no longer active",
+    );
+    await expect(recorder.flush()).rejects.toThrow(
+      "agent harness host capability is no longer active",
+    );
+  });
+
   it("overwrites plugin policy fields with the host snapshot and revokes lexically", async () => {
     const { attempt, admission } = await admittedAttempt();
     const authority = getAdmittedRunDelegatedAuthority(attempt.admittedRunContext);
