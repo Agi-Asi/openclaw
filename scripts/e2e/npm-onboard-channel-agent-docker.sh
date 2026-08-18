@@ -181,6 +181,20 @@ dump_debug_logs() {
 }
 trap 'status=$?; dump_debug_logs "$status"; exit "$status"' ERR
 
+print_redacted_channel_add_log() {
+  node - /tmp/openclaw-channel-add.log <<'NODE'
+const fs = require("node:fs");
+const file = process.argv[2];
+const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "<channel add log missing>\n";
+const redacted = text
+  .replaceAll("openclaw-npm-onboard-discord-token", "[REDACTED]")
+  .replaceAll("xoxb-openclaw-npm-onboard-slack-token", "[REDACTED]")
+  .replaceAll("xapp-openclaw-npm-onboard-slack-token", "[REDACTED]")
+  .replace(/\b(?:sk|xox[a-z]?|gh[a-z]|github_pat|glpat|AIza)[-_A-Za-z0-9.]+\b/gu, "[REDACTED]");
+process.stdout.write(redacted);
+NODE
+}
+
 openclaw_e2e_install_package /tmp/openclaw-install.log
 
 command -v openclaw >/dev/null
@@ -214,7 +228,16 @@ node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-onboard-sta
 openclaw_e2e_assert_dep_absent "$DEP_SENTINEL" "$HOME/.openclaw"
 
 echo "Configuring $CHANNEL..."
-openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1
+if openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1; then
+  channel_add_status=0
+else
+  channel_add_status=$?
+fi
+if [ "$channel_add_status" -ne 0 ]; then
+  echo "channels add failed for $CHANNEL with exit code $channel_add_status" >&2
+  print_redacted_channel_add_log >&2
+  exit "$channel_add_status"
+fi
 node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-channel-config "$CHANNEL" "${CHANNEL_CONFIG_TOKENS[@]}"
 
 echo "Checking status surfaces for $CHANNEL..."
