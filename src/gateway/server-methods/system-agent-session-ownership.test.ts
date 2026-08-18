@@ -101,11 +101,13 @@ function makeClient(params: {
   authenticatedUserId?: string;
   profileId?: string;
   githubSyncPending?: boolean;
+  caps?: string[];
 }): GatewayClient {
   return {
     connId: params.connId,
     connect: {
       client: { id: "openclaw-control-ui", mode: "webchat" },
+      ...(params.caps ? { caps: params.caps } : {}),
       ...(params.deviceId ? { device: { id: params.deviceId } } : {}),
     },
     ...(params.authenticatedUserId ? { authenticatedUserId: params.authenticatedUserId } : {}),
@@ -439,6 +441,37 @@ describe("openclaw.chat session ownership", () => {
 });
 
 describe("openclaw.chat session responses", () => {
+  it("rejects an active QR rejoin from the same owner without QR capability", async () => {
+    const engine = makeEngine();
+    engine.decorateRejoinReply.mockResolvedValue({
+      text: "Scan to continue.",
+      wizardInputPending: true,
+      step: {
+        id: "signal-link",
+        type: "qr",
+        title: "Link Signal",
+        qrDataUrl: "data:image/png;base64,c2VjcmV0",
+        executor: "gateway",
+      },
+    });
+    const sessions = new Map<string, SystemAgentChatSession>([
+      ["qr-rejoin", seededSession({ engine, ownerKey: "user:owner@example.com" })],
+    ]);
+
+    const call = await callChat(
+      makeContext(sessions),
+      { sessionId: "qr-rejoin" },
+      makeClient({
+        connId: "conn-without-qr",
+        authenticatedUserId: "owner@example.com",
+        caps: [],
+      }),
+    );
+
+    expect(call).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(JSON.stringify(call)).not.toContain("data:image/png");
+  });
+
   it("returns the stored welcome when no message is sent", async () => {
     const sessions = new Map<string, SystemAgentChatSession>([["s1", seededSession()]]);
     const call = await callChat(makeContext(sessions), { sessionId: "s1" });

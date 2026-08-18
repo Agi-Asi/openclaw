@@ -74,6 +74,7 @@ type ChannelsAddWizardFlowParams = {
   prompter: WizardPrompter;
   initialChannel?: ChannelChoice;
   beforePersistentEffect?: () => Promise<void>;
+  signal?: AbortSignal;
   /**
    * The controlling client completes device linking itself after config is
    * written (e.g. the Control UI renders the WhatsApp QR via web.login.*), so
@@ -96,6 +97,7 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
     ...(params.beforePersistentEffect
       ? { beforePersistentEffect: params.beforePersistentEffect }
       : {}),
+    ...(params.signal ? { signal: params.signal } : {}),
   });
   let selection: ChannelChoice[] = [];
   const accountIds: Partial<Record<ChannelChoice, string>> = {};
@@ -274,6 +276,8 @@ export async function runChannelsSetupWizard(
     onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
     /** Revalidate/lock cancellation immediately before durable effects. */
     beforePersistentEffect?: () => Promise<void>;
+    /** Abort setup-owned transient work when the hosted wizard closes. */
+    signal?: AbortSignal;
   },
   runtime: RuntimeEnv,
   prompter: WizardPrompter,
@@ -298,5 +302,6 @@ export async function runChannelsSetupWizard(
     deferDeviceLinkToClient: true,
     ...(opts.onConfigured ? { onConfigured: opts.onConfigured } : {}),
     ...(opts.beforePersistentEffect ? { beforePersistentEffect: opts.beforePersistentEffect } : {}),
+    ...(opts.signal ? { signal: opts.signal } : {}),
   });
 }

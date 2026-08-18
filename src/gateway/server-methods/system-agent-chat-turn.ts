@@ -7,6 +7,10 @@ import type {
   SystemAgentChatResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SystemAgentChatEngine } from "../../system-agent/chat-engine.js";
+import {
+  assertWizardStepClientCapability,
+  WizardClientCapabilityError,
+} from "../../wizard/session.js";
 
 type SystemAgentChatReply = Awaited<ReturnType<SystemAgentChatEngine["handle"]>>;
 type SystemAgentChatEngineInput = Pick<
@@ -24,36 +28,51 @@ export function supportsSystemAgentWizardQr(caps: string[] | null | undefined): 
  * session still awaits; the stale welcome question only fills in when no live
  * interaction exists.
  */
-export async function buildSystemAgentRejoinResult(params: {
-  sessionId: string;
-  welcome: string;
-  welcomeQuestion?: SystemAgentChatResult["question"];
-  engine: {
-    decorateRejoinReply: (reply: { text: string; action: "none" }) => Promise<{
-      text: string;
-      sensitive?: boolean;
-      wizardInputPending?: boolean;
-      question?: SystemAgentChatResult["question"];
-      step?: SystemAgentChatResult["step"];
-    }>;
-  };
-}): Promise<SystemAgentChatResult> {
-  const rejoin = await params.engine.decorateRejoinReply({
-    text: params.welcome,
+export async function buildSystemAgentRejoinResult(
+  sessionId: string,
+  session: {
+    welcome: string;
+    welcomeQuestion?: SystemAgentChatResult["question"];
+    engine: {
+      decorateRejoinReply: (reply: { text: string; action: "none" }) => Promise<{
+        text: string;
+        sensitive?: boolean;
+        wizardInputPending?: boolean;
+        question?: SystemAgentChatResult["question"];
+        step?: SystemAgentChatResult["step"];
+      }>;
+    };
+  },
+  supportsQrCode: boolean,
+): Promise<{ result: SystemAgentChatResult } | { error: WizardClientCapabilityError }> {
+  const rejoin = await session.engine.decorateRejoinReply({
+    text: session.welcome,
     action: "none",
   });
+  if (rejoin.step) {
+    try {
+      assertWizardStepClientCapability(rejoin.step, supportsQrCode);
+    } catch (error) {
+      if (error instanceof WizardClientCapabilityError) {
+        return { error };
+      }
+      throw error;
+    }
+  }
   return {
-    sessionId: params.sessionId,
-    reply: rejoin.text || params.welcome,
-    action: "none",
-    ...(rejoin.sensitive === true ? { sensitive: true } : {}),
-    ...(rejoin.wizardInputPending === true ? { wizardInputPending: true } : {}),
-    ...(rejoin.step ? { step: rejoin.step } : {}),
-    ...(rejoin.question
-      ? { question: rejoin.question }
-      : !rejoin.step && params.welcomeQuestion
-        ? { question: params.welcomeQuestion }
-        : {}),
+    result: {
+      sessionId,
+      reply: rejoin.text || session.welcome,
+      action: "none",
+      ...(rejoin.sensitive === true ? { sensitive: true } : {}),
+      ...(rejoin.wizardInputPending === true ? { wizardInputPending: true } : {}),
+      ...(rejoin.step ? { step: rejoin.step } : {}),
+      ...(rejoin.question
+        ? { question: rejoin.question }
+        : !rejoin.step && session.welcomeQuestion
+          ? { question: session.welcomeQuestion }
+          : {}),
+    },
   };
 }
 
