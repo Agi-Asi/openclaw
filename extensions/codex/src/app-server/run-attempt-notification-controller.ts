@@ -11,7 +11,7 @@ import {
   readRawResponseToolCallId,
 } from "./attempt-notifications.js";
 import { readCodexTurnCompletedNotification } from "./protocol-validators.js";
-import type { CodexServerNotification } from "./protocol.js";
+import { isJsonObject, type CodexServerNotification } from "./protocol.js";
 import type { CodexAttemptLifecycleController } from "./run-attempt-lifecycle-controller.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
 import {
@@ -31,7 +31,7 @@ export function createCodexAttemptNotificationController(
   const { context, turnState } = prompt;
   const { attemptTools, runtime } = context;
   const { connection } = runtime;
-  const { appServer, runAbortController } = connection;
+  const { appServer, runAbortController, bindingStore, bindingIdentity } = connection;
   const { allocateCodexToolOutcomeOrdinal } = attemptTools;
   const {
     state,
@@ -62,6 +62,18 @@ export function createCodexAttemptNotificationController(
       turnId: notificationTurnId,
     });
   const handleNotification = async (notification: CodexServerNotification) => {
+    const threadSettings = readThreadSettingsUpdate(
+      notification,
+      resourceState.thread.threadId,
+    );
+    if (threadSettings) {
+      resourceState.thread.reasoningEffort = threadSettings.effort;
+      await bindingStore.mutate(bindingIdentity, {
+        kind: "patch",
+        threadId: resourceState.thread.threadId,
+        patch: { reasoningEffort: threadSettings.effort },
+      });
+    }
     const projector = projectorRef.current;
     const turnId = turnIdRef.current;
     const steeringQueue = steeringQueueRef.current;
@@ -285,6 +297,22 @@ export function createCodexAttemptNotificationController(
     enqueueNotification,
     drainNotificationQueue,
   };
+}
+
+function readThreadSettingsUpdate(
+  notification: CodexServerNotification,
+  threadId: string,
+): { effort: string | null } | undefined {
+  if (notification.method !== "thread/settings/updated" || !isJsonObject(notification.params)) {
+    return undefined;
+  }
+  const settings = notification.params.threadSettings;
+  if (notification.params.threadId !== threadId || !isJsonObject(settings)) {
+    return undefined;
+  }
+  return settings.effort === null || typeof settings.effort === "string"
+    ? { effort: settings.effort }
+    : undefined;
 }
 
 export type CodexAttemptNotificationController = ReturnType<
