@@ -266,7 +266,6 @@ suite.define(() => {
         chatSessionListResponse([
           {
             activeLeafEntryId: "leaf-active",
-            activeRunIds: ["active-run"],
             hasActiveRun: true,
             key: "global",
             kind: "global",
@@ -275,7 +274,6 @@ suite.define(() => {
           },
           {
             activeLeafEntryId: "leaf-active",
-            activeRunIds: ["active-run"],
             hasActiveRun: true,
             key: "main",
             kind: "direct",

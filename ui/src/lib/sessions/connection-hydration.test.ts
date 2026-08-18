@@ -34,7 +34,6 @@ function runningSessionsResult(): SessionsListResult {
         kind: "direct",
         updatedAt: 1,
         hasActiveRun: true,
-        activeRunIds: ["run-1"],
         status: "running",
         startedAt: 1,
       },

@@ -186,12 +186,12 @@ extension OpenClawChatViewModel {
                 current: self.sessionKey)
         } ?? false
         let isTerminal = phase == "end" || phase == "error"
+        let ownedRunIDsBeforeTerminal = self.pendingRuns
         let runID = isTerminal
             ? self.terminalRunID(
                 explicitRunID: change.runId,
                 sessionKey: eventSessionKey,
-                agentID: change.agentId,
-                includeAdvertisedRuns: true)
+                agentID: change.agentId)
             : Self.normalizedRunID(change.runId)
         let ownsCurrentRun = changesCurrentSession && runID.map {
             self.pendingRuns.contains($0) || self.ownsLiveTelemetryRun($0)
@@ -217,7 +217,11 @@ extension OpenClawChatViewModel {
 
         let mergeResult: LifecycleSessionMergeResult
         if change.session != nil {
-            mergeResult = self.mergeLifecycleSessionSnapshot(change, phase: phase, runID: runID)
+            mergeResult = self.mergeLifecycleSessionSnapshot(
+                change,
+                phase: phase,
+                runID: runID,
+                ownedRunIDsBeforeTerminal: ownedRunIDsBeforeTerminal)
         } else {
             if let projected = ChatSessionSidebarModel.applying(
                 sessionChange: change,
@@ -237,7 +241,8 @@ extension OpenClawChatViewModel {
     private func mergeLifecycleSessionSnapshot(
         _ change: OpenClawChatSessionsChangedEvent,
         phase: String,
-        runID: String?) -> LifecycleSessionMergeResult
+        runID: String?,
+        ownedRunIDsBeforeTerminal: Set<String>) -> LifecycleSessionMergeResult
     {
         guard let snapshot = change.session else { return .unavailable }
         guard self.lifecycleSnapshotMatchesEvent(snapshot, change: change) else { return .rejected }
@@ -248,7 +253,8 @@ extension OpenClawChatViewModel {
             snapshot: snapshot,
             existing: existing,
             phase: phase,
-            runID: runID)
+            runID: runID,
+            ownedRunIDsBeforeTerminal: ownedRunIDsBeforeTerminal)
         {
             return rejection
         }
@@ -299,7 +305,8 @@ extension OpenClawChatViewModel {
         snapshot: OpenClawChatSessionEntry,
         existing: OpenClawChatSessionEntry,
         phase: String,
-        runID: String?) -> LifecycleSessionMergeResult?
+        runID: String?,
+        ownedRunIDsBeforeTerminal: Set<String>) -> LifecycleSessionMergeResult?
     {
         if phase == "start" {
             guard let snapshotUpdatedAt = snapshot.updatedAt else { return .unavailable }
@@ -313,12 +320,11 @@ extension OpenClawChatViewModel {
             return .rejected
         }
 
-        guard phase == "end" || phase == "error", let runID else { return nil }
-        let activeRunIDs = existing.activeRunIds?.compactMap { Self.normalizedRunID($0) } ?? []
-        if !activeRunIDs.isEmpty {
-            return activeRunIDs == [runID] ? nil : .rejected
+        guard phase == "end" || phase == "error", existing.hasActiveRun == true else {
+            return nil
         }
-        return existing.hasActiveRun == true ? .rejected : nil
+        guard let runID, ownedRunIDsBeforeTerminal.contains(runID) else { return .rejected }
+        return ownedRunIDsBeforeTerminal.contains(where: { $0 != runID }) ? .rejected : nil
     }
 
     private static func mergedLifecycleSession(
@@ -328,7 +334,6 @@ extension OpenClawChatViewModel {
         runID: String?) -> OpenClawChatSessionEntry
     {
         let isTerminal = phase == "end" || phase == "error"
-        let existingActiveRunIDs = existing.activeRunIds?.compactMap { Self.normalizedRunID($0) } ?? []
         var merged = existing
         merged.updatedAt = snapshot.updatedAt ?? existing.updatedAt
         merged.status = snapshot.status ?? existing.status
@@ -339,16 +344,10 @@ extension OpenClawChatViewModel {
             merged.lastRunError = snapshot.lastRunError ?? existing.lastRunError
         }
 
-        if let activeRunIDs = snapshot.activeRunIds {
-            merged.activeRunIds = activeRunIDs
-        } else if phase == "start", let runID {
-            merged.activeRunIds = existingActiveRunIDs.contains(runID)
-                ? existingActiveRunIDs
-                : existingActiveRunIDs + [runID]
+        if snapshot.hasActiveRun == nil, phase == "start", runID != nil {
             merged.hasActiveRun = true
-        } else if isTerminal, let runID {
-            merged.activeRunIds = existingActiveRunIDs.filter { $0 != runID }
-            merged.hasActiveRun = merged.activeRunIds?.isEmpty == false
+        } else if snapshot.hasActiveRun == nil, isTerminal, runID != nil {
+            merged.hasActiveRun = false
         }
 
         switch phase {
@@ -374,8 +373,7 @@ extension OpenClawChatViewModel {
     private func terminalRunID(
         explicitRunID: String?,
         sessionKey: String?,
-        agentID: String?,
-        includeAdvertisedRuns: Bool) -> String?
+        agentID: String?) -> String?
     {
         if let explicitRunID = Self.normalizedRunID(explicitRunID) {
             return explicitRunID
@@ -391,10 +389,7 @@ extension OpenClawChatViewModel {
         else {
             return nil
         }
-        let ownedRunIDs = includeAdvertisedRuns
-            ? self.pendingRuns.union(Set(self.liveAdvertisedRunIDs))
-            : self.pendingRuns
-        return ownedRunIDs.count == 1 ? ownedRunIDs.first : nil
+        return self.pendingRuns.count == 1 ? self.pendingRuns.first : nil
     }
 
     private func requestSessionsRefresh() {
@@ -477,21 +472,14 @@ extension OpenClawChatViewModel {
             ? self.terminalRunID(
                 explicitRunID: explicitRunID,
                 sessionKey: chat.sessionKey,
-                agentID: chat.agentId,
-                includeAdvertisedRuns: false)
+                agentID: chat.agentId)
             : nil
         let ownsTerminalRun = terminalRunID.map { self.pendingRuns.contains($0) } == true
-        let settlesAdvertisedRun = matchesCurrentSession && explicitRunID.map {
-            self.activeSessionRunIDs.contains($0)
-        } == true
         let settlesBooleanOnlyRun =
             matchesCurrentSession && explicitRunID == nil && self.pendingRuns.isEmpty &&
-            self.activeSessionRunIDs.isEmpty && self.hasActiveSessionRunWithoutChatSnapshot
+            self.hasActiveSessionRunWithoutChatSnapshot
         if isTerminal {
             self.invalidateHistorySnapshots()
-            if settlesAdvertisedRun, !ownsTerminalRun {
-                self.retireTerminalRun(explicitRunID)
-            }
             if ownsTerminalRun || settlesBooleanOnlyRun {
                 self.updateActiveSessionRunWithoutChatSnapshot(false)
             }
@@ -621,14 +609,12 @@ extension OpenClawChatViewModel {
         }
 
         let isPendingRun = self.pendingRuns.contains(evt.runId)
-        let isAdvertisedRun = self.activeSessionRunIDs.contains(evt.runId)
         let isLegacySessionStream = self.pendingRuns.isEmpty && self.sessionId == evt.runId
         if evt.stream == "lifecycle" {
-            guard isPendingRun || isAdvertisedRun || isLegacySessionStream else { return }
+            guard isPendingRun || isLegacySessionStream else { return }
             self.handleAgentLifecycleEvent(
                 evt,
                 isPendingRun: isPendingRun,
-                isAdvertisedRun: isAdvertisedRun,
                 isSelectedRun: self.liveUsageRunID == evt.runId,
                 isLegacySessionStream: isLegacySessionStream)
             return
@@ -721,7 +707,6 @@ extension OpenClawChatViewModel {
     private func handleAgentLifecycleEvent(
         _ evt: OpenClawAgentEventPayload,
         isPendingRun: Bool,
-        isAdvertisedRun: Bool,
         isSelectedRun: Bool,
         isLegacySessionStream: Bool)
     {
@@ -747,7 +732,7 @@ extension OpenClawChatViewModel {
         } else if let sequence = evt.seq {
             self.applyLiveRunLifecycle(runID: evt.runId, sequence: sequence, terminal: true)
         } else {
-            isPendingRun || isAdvertisedRun || isSelectedRun
+            isPendingRun || isSelectedRun
         }
         guard acceptedLifecycle else { return }
 

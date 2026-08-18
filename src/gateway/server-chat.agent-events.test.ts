@@ -2190,8 +2190,8 @@ describe("agent event handler", () => {
     });
     const resolveSessionActiveRunState = vi
       .fn<NonNullable<AgentEventHandlerOptions["resolveSessionActiveRunState"]>>()
-      .mockReturnValueOnce({ active: true, runIds: ["run-finished"] })
-      .mockReturnValue({ active: false, runIds: [] });
+      .mockReturnValueOnce({ hasActiveRun: true })
+      .mockReturnValue({ hasActiveRun: false });
     const { broadcastToConnIds, sessionEventSubscribers, handler } = createHarness({
       resolveSessionKeyForRun: () => "session-finished",
       resolveSessionActiveRunState,
@@ -2238,13 +2238,11 @@ describe("agent event handler", () => {
       sessionKey: "session-finished",
       phase: "start",
       hasActiveRun: true,
-      activeRunIds: ["run-finished"],
     });
     expectPayloadFields(sessionsChangedCalls[1]?.[1], {
       sessionKey: "session-finished",
       phase: "end",
       hasActiveRun: false,
-      activeRunIds: [],
       status: "done",
       startedAt: 900,
       endedAt: 1_700,

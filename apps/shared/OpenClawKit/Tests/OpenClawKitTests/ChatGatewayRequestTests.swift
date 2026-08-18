@@ -490,7 +490,6 @@ struct ChatGatewayPayloadCodecTests {
                     "hasActiveRun": AnyCodable(false),
                     "runtimeMs": AnyCodable(30000),
                     "outputTokens": AnyCodable(42),
-                    "activeRunIds": AnyCodable([]),
                 ]),
             ]))
         guard case let .sessionsChanged(lifecycle) = OpenClawChatGatewayPayloadCodec.event(
@@ -506,7 +505,6 @@ struct ChatGatewayPayloadCodecTests {
         #expect(lifecycle.session?.status == "done")
         #expect(lifecycle.session?.runtimeMs == 30000)
         #expect(lifecycle.session?.outputTokens == 42)
-        #expect(lifecycle.session?.activeRunIds == [])
 
         let chat = EventFrame(
             type: "event",
@@ -677,7 +675,6 @@ struct ChatGatewayPayloadCodecTests {
             status: "running",
             lastRunError: "Previous warning",
             hasActiveRun: true,
-            activeRunIds: ["run-1"],
             startedAt: 50,
             endedAt: nil)
 

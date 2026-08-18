@@ -77,7 +77,6 @@ public struct OpenClawChatSessionsChangedEvent: Codable, Sendable, Equatable {
     public let status: String?
     public let lastRunError: String?
     public let hasActiveRun: Bool?
-    public let activeRunIds: [String]?
     public let startedAt: Double?
     public let endedAt: Double?
     public let swarmGroupId: String?
@@ -105,7 +104,6 @@ public struct OpenClawChatSessionsChangedEvent: Codable, Sendable, Equatable {
         status: String? = nil,
         lastRunError: String? = nil,
         hasActiveRun: Bool? = nil,
-        activeRunIds: [String]? = nil,
         startedAt: Double? = nil,
         endedAt: Double? = nil,
         swarmGroupId: String? = nil,
@@ -132,7 +130,6 @@ public struct OpenClawChatSessionsChangedEvent: Codable, Sendable, Equatable {
         self.status = status
         self.lastRunError = lastRunError
         self.hasActiveRun = hasActiveRun
-        self.activeRunIds = activeRunIds
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.swarmGroupId = swarmGroupId
@@ -179,7 +176,6 @@ public struct OpenClawChatSessionsChangedEvent: Codable, Sendable, Equatable {
         self.status = try decode(String.self, forKey: .status)
         self.lastRunError = try decode(String.self, forKey: .lastRunError)
         self.hasActiveRun = try decode(Bool.self, forKey: .hasActiveRun)
-        self.activeRunIds = try decode([String].self, forKey: .activeRunIds)
         self.startedAt = try decode(Double.self, forKey: .startedAt)
         self.endedAt = try decode(Double.self, forKey: .endedAt)
         self.swarmGroupId = try decode(String.self, forKey: .swarmGroupId)
@@ -209,7 +205,6 @@ public struct OpenClawChatSessionsChangedEvent: Codable, Sendable, Equatable {
         try container.encodeIfPresent(self.status, forKey: .status)
         try container.encodeIfPresent(self.lastRunError, forKey: .lastRunError)
         try container.encodeIfPresent(self.hasActiveRun, forKey: .hasActiveRun)
-        try container.encodeIfPresent(self.activeRunIds, forKey: .activeRunIds)
         try container.encodeIfPresent(self.startedAt, forKey: .startedAt)
         try container.encodeIfPresent(self.endedAt, forKey: .endedAt)
         try container.encodeIfPresent(self.swarmGroupId, forKey: .swarmGroupId)
@@ -235,7 +230,6 @@ public struct OpenClawChatSessionsChangedEvent: Codable, Sendable, Equatable {
         case status
         case lastRunError
         case hasActiveRun
-        case activeRunIds
         case startedAt
         case endedAt
         case swarmGroupId

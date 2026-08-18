@@ -799,7 +799,6 @@ describe("createLifecycleEventBroadcastHandler", () => {
       expect.objectContaining({
         sessionKey: "global",
         hasActiveRun: true,
-        activeRunIds: ["run-before-finalize"],
       }),
       new Set(["conn-1"]),
       { dropIfSlow: true },

@@ -220,9 +220,8 @@ public enum ChatSessionSidebarModel {
         return declaredAttention ?? failedAttention ?? statusNote ?? queued ?? observer ?? workSubtitle
     }
 
-    /// Live observer events are useful only after a server row names the
-    /// active run. This prevents a late event from a prior run taking over a
-    /// replacement run that reused the same session key.
+    /// Live observer events carry their own run identity; the session row owns
+    /// only the direct-activity fact.
     public static func applying(
         observerDigest digest: SessionObserverDigest,
         to sessions: [OpenClawChatSessionEntry],
@@ -242,10 +241,8 @@ public enum ChatSessionSidebarModel {
         }
         var session = scopedSessions[index]
         let candidate = OpenClawChatSessionObserverDigest(digest)
-        let activeRunIds = self.normalizedActiveRunIds(session.activeRunIds)
         guard self.isRunning(session),
-              let runId = normalized(candidate.runId),
-              activeRunIds.contains(runId)
+              self.normalized(candidate.runId) != nil
         else { return scopedSessions }
 
         if let previous = session.observerDigest,
@@ -384,9 +381,6 @@ public enum ChatSessionSidebarModel {
         if let hasActiveRun = change.hasActiveRun {
             session.hasActiveRun = hasActiveRun
         }
-        if let activeRunIds = change.activeRunIds {
-            session.activeRunIds = activeRunIds
-        }
         if let startedAt = change.startedAt {
             session.startedAt = startedAt
         }
@@ -394,16 +388,10 @@ public enum ChatSessionSidebarModel {
             session.endedAt = endedAt
         }
 
-        let activeRunIds = self.normalizedActiveRunIds(session.activeRunIds)
-        if self.isRunning(session),
-           self.normalized(session.observerDigest?.runId).map(activeRunIds.contains) != true
-        {
-            session.observerDigest = nil
-        }
         if observerDigestPresent {
             if let projected = projectedDigest {
                 let matchesActiveRun = !self.isRunning(session) ||
-                    self.normalized(projected.runId).map(activeRunIds.contains) == true
+                    self.normalized(projected.runId) != nil
                 if matchesActiveRun {
                     if let previous = session.observerDigest,
                        previous.runId == projected.runId
@@ -430,11 +418,7 @@ public enum ChatSessionSidebarModel {
     {
         guard let digest = session.observerDigest else { return nil }
         if self.isRunning(session) {
-            let activeRunIds = self.normalizedActiveRunIds(session.activeRunIds)
-            guard let runId = normalized(digest.runId),
-                  activeRunIds.contains(runId)
-            else { return nil }
-            return digest
+            return self.normalized(digest.runId) == nil ? nil : digest
         }
         let health = digest.health.lowercased()
         guard health == "done" || health == "failed",
@@ -478,10 +462,6 @@ public enum ChatSessionSidebarModel {
     private static func normalized(_ value: String?) -> String? {
         let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized?.isEmpty == false ? normalized : nil
-    }
-
-    private static func normalizedActiveRunIds(_ runIds: [String]?) -> Set<String> {
-        Set((runIds ?? []).compactMap(self.normalized))
     }
 
     public static func canDeleteSession(key: String, mainSessionKey: String) -> Bool {

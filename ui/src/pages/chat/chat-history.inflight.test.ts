@@ -69,7 +69,6 @@ function activeHistory(runId: string): ChatHistoryResult {
       kind: "direct",
       updatedAt: 1,
       hasActiveRun: true,
-      activeRunIds: [runId],
       status: "running",
     },
     inFlightRun: { runId, text: "" },
@@ -175,6 +174,15 @@ describe("chat history in-flight assistant recovery", () => {
     expect(state.chatStream).toBe("The response survived the reconnect.");
     expect(state.chatStreamStartedAt).toEqual(expect.any(Number));
     expect(state.chatRunStartup).toEqual({ state: "activity", runId: "run-reconnected" });
+  });
+
+  it("starts a fresh run-identity epoch on history reload", async () => {
+    const state = createState(activeHistory("run-current"));
+    state.activeChatRunIdsBySession = new Map([["main", new Set(["run-stale"])]]);
+
+    await loadChatHistory(state);
+
+    expect(state.activeChatRunIdsBySession).toEqual(new Map([["main", new Set(["run-current"])]]));
   });
 
   it("restores the authoritative run start even before assistant text exists", async () => {
@@ -526,15 +534,9 @@ describe("chat history in-flight assistant recovery", () => {
     expect(state.chatRunStartup).toEqual({ state: "activity", runId: "run-reconnected" });
   });
 
-  it.each([
-    { name: "a terminal run", sessionInfo: { hasActiveRun: false, activeRunIds: [] } },
-    {
-      name: "a different authoritative active run",
-      sessionInfo: { hasActiveRun: true, activeRunIds: ["run-newer"] },
-    },
-  ])("does not restore $name", async ({ sessionInfo }) => {
+  it("does not restore a terminal run", async () => {
     const history = activeHistory("run-reconnected");
-    history.sessionInfo = { ...history.sessionInfo!, ...sessionInfo };
+    history.sessionInfo = { ...history.sessionInfo!, hasActiveRun: false };
     const state = createState(history);
 
     await loadChatHistory(state);

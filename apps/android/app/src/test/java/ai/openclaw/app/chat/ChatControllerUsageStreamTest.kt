@@ -46,7 +46,8 @@ class ChatControllerUsageStreamTest {
     phase: String,
   ): String = """{"sessionKey":"main","runId":"$runId","seq":$sequence,"ts":11,"stream":"lifecycle","data":{"phase":"$phase"}}"""
 
-  private fun advertise(vararg runIds: String): String = """{"reason":"patch","session":{"key":"main","agentId":"main","hasActiveRun":${runIds.isNotEmpty()},"activeRunIds":[${runIds.joinToString(",") { "\"$it\"" }}]}}"""
+  private fun advertise(active: Boolean): String =
+    """{"reason":"patch","session":{"key":"main","agentId":"main","hasActiveRun":$active}}"""
 
   @Test
   @OptIn(ExperimentalCoroutinesApi::class)
@@ -101,7 +102,7 @@ class ChatControllerUsageStreamTest {
       val controller = ChatController(scope = backgroundScope, json = json, requestGateway = gateway::request)
       controller.handleGatewayEvent(
         "sessions.changed",
-        """{"reason":"patch","session":{"key":"main","agentId":"main","hasActiveRun":true,"activeRunIds":[]}}""",
+        """{"reason":"patch","session":{"key":"main","agentId":"main","hasActiveRun":true}}""",
       )
 
       val presentation = controller.selectedActiveRunPresentation.value
@@ -118,13 +119,13 @@ class ChatControllerUsageStreamTest {
       val controller = ChatController(scope = backgroundScope, json = json, requestGateway = gateway::request)
       controller.handleGatewayEvent(
         "sessions.changed",
-        """{"reason":"patch","session":{"key":"main","agentId":"main","status":"running","hasActiveRun":true,"activeRunIds":[],"startedAt":100}}""",
+        """{"reason":"patch","session":{"key":"main","agentId":"main","status":"running","hasActiveRun":true,"startedAt":100}}""",
       )
       val firstClockKey = controller.selectedActiveRunPresentation.value.clockKey
 
       controller.handleGatewayEvent(
         "sessions.changed",
-        """{"reason":"patch","session":{"key":"main","agentId":"main","status":"running","hasActiveRun":true,"activeRunIds":[],"startedAt":200}}""",
+        """{"reason":"patch","session":{"key":"main","agentId":"main","status":"running","hasActiveRun":true,"startedAt":200}}""",
       )
 
       assertEquals("main:active:100", firstClockKey)
@@ -133,38 +134,10 @@ class ChatControllerUsageStreamTest {
 
   @Test
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun terminalTombstoneIgnoresLaterStartAndUsageUntilOwnershipRemoval() =
-    runTest {
-      val gateway = ScriptedGateway(json)
-      val controller = ChatController(scope = backgroundScope, json = json, requestGateway = gateway::request)
-      controller.handleGatewayEvent("sessions.changed", advertise("server-run"))
-      controller.handleGatewayEvent("agent", usagePayload("server-run", 1L, "20"))
-      controller.handleGatewayEvent(
-        "agent",
-        """{"sessionKey":"main","runId":"server-run","seq":2,"ts":10,"stream":"assistant","data":{"text":"foreign"}}""",
-      )
-      assertNull(controller.streamingAssistantText.value)
-      controller.handleGatewayEvent("agent", lifecyclePayload("server-run", 2L, "end"))
-      controller.handleGatewayEvent("agent", lifecyclePayload("server-run", 3L, "start"))
-      controller.handleGatewayEvent("agent", usagePayload("server-run", 4L, "40"))
-
-      assertEquals(0, controller.selectedActiveRunPresentation.value.count)
-      assertNull(controller.selectedActiveRunPresentation.value.outputTokens)
-
-      controller.handleGatewayEvent("sessions.changed", advertise())
-      controller.handleGatewayEvent("sessions.changed", advertise("server-run"))
-      controller.handleGatewayEvent("agent", usagePayload("server-run", 1L, "40"))
-
-      assertEquals(1, controller.selectedActiveRunPresentation.value.count)
-      assertEquals(40L, controller.selectedActiveRunPresentation.value.outputTokens)
-    }
-
-  @Test
-  @OptIn(ExperimentalCoroutinesApi::class)
   fun sequenceGapForConcurrentAdvertisedRunPreservesLocalPendingOwnership() =
     runTest {
       val (controller, gateway, localRunId) = startRun()
-      controller.handleGatewayEvent("sessions.changed", advertise("server-run"))
+      controller.handleGatewayEvent("sessions.changed", advertise(true))
       controller.handleGatewayEvent("agent", usagePayload(localRunId, 1L, "15"))
       controller.handleGatewayEvent(
         "agent",

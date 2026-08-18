@@ -22,7 +22,6 @@ type TestRow = {
   key: string;
   hasActiveRun?: boolean;
   hasActiveSubagentRun?: boolean;
-  activeRunIds?: string[];
   status?: string;
   startedAt?: number;
 };
@@ -234,9 +233,7 @@ function makeHost(over: Partial<ReconcileHost> = {}): ReconcileHost {
     sessionKey: "s1",
     chatRunId: null,
     chatStream: null,
-    sessionsResult: makeSessionsResult([
-      { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
-    ]),
+    sessionsResult: makeSessionsResult([{ key: "s1", hasActiveRun: true, status: "running" }]),
     requestUpdate: () => {},
     ...over,
   };
@@ -303,10 +300,67 @@ describe("reconcileChatRunLifecycle yielded parent", () => {
     expect(host.chatRunStatus).toBeNull();
     expect(host.lastLocalTerminalReconcile).toBeNull();
     expect(host.sessionsResult?.sessions[0]).toMatchObject({
-      activeRunIds: [],
       hasActiveRun: false,
       status: "running",
     });
+  });
+});
+
+describe("reconcileChatRunLifecycle terminal ordering", () => {
+  it("keeps the row running when a predecessor terminates after its successor starts", () => {
+    const host = makeHost({
+      chatRunId: "run-b",
+      activeChatRunIdsBySession: new Map([["s1", new Set(["run-a", "run-b"])]]),
+    });
+
+    reconcileChatRunLifecycle(host, {
+      outcome: "done",
+      sessionStatus: "done",
+      runId: "run-a",
+      sessionKey: "s1",
+      publishRunStatus: false,
+    });
+
+    expect(rowActive(host)).toBe(true);
+    expect(host.chatRunId).toBe("run-b");
+    expect(host.activeChatRunIdsBySession?.get("s1")).toEqual(new Set(["run-b"]));
+  });
+
+  it("ends the row when the current run terminates", () => {
+    const host = makeHost({
+      chatRunId: "run-b",
+      activeChatRunIdsBySession: new Map([["s1", new Set(["run-b"])]]),
+    });
+
+    reconcileChatRunLifecycle(host, {
+      outcome: "done",
+      sessionStatus: "done",
+      runId: "run-b",
+      sessionKey: "s1",
+      clearLocalRun: true,
+      publishRunStatus: false,
+    });
+
+    expect(rowActive(host)).toBe(false);
+    expect(host.chatRunId).toBeNull();
+  });
+
+  it("ignores an unknown terminal run while the row is active", () => {
+    const host = makeHost({
+      chatRunId: "run-b",
+      activeChatRunIdsBySession: new Map([["s1", new Set(["run-b"])]]),
+    });
+
+    reconcileChatRunLifecycle(host, {
+      outcome: "done",
+      sessionStatus: "done",
+      runId: "run-unknown",
+      sessionKey: "s1",
+      publishRunStatus: false,
+    });
+
+    expect(rowActive(host)).toBe(true);
+    expect(host.chatRunId).toBe("run-b");
   });
 });
 
@@ -377,7 +431,6 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
         {
           key: "s1",
           hasActiveRun: true,
-          activeRunIds: ["run-before-terminal-event"],
           status: "running",
         },
       ]),
@@ -404,7 +457,6 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
         {
           key: "agent:main:main",
           hasActiveRun: true,
-          activeRunIds: ["r1"],
           status: "running",
         },
       ]),
@@ -440,7 +492,7 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     expect(host.lastLocalTerminalReconcile?.runId).toBe("r1");
 
     host.sessionsResult = makeSessionsResult([
-      { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
+      { key: "s1", hasActiveRun: true, status: "running" },
     ]);
     expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(true);
     expect(rowActive(host)).toBe(false);
@@ -496,7 +548,7 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     });
     expect(host.lastLocalTerminalReconcile ?? null).toBeNull();
     host.sessionsResult = makeSessionsResult([
-      { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
+      { key: "s1", hasActiveRun: true, status: "running" },
     ]);
     expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(false);
     expect(rowActive(host)).toBe(true);
@@ -518,33 +570,15 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     expect(rowActive(host)).toBe(true);
   });
 
-  it("does not suppress a different active run id", () => {
-    const host = makeHost({
-      sessionsResult: makeSessionsResult([
-        {
-          key: "s1",
-          hasActiveRun: true,
-          activeRunIds: ["r2"],
-          status: "running",
-          startedAt: Date.now() - 60_000,
-        },
-      ]),
-      lastLocalTerminalReconcile: makeLocalTerminalReconcile(),
-    });
-    expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(false);
-    expect(rowActive(host)).toBe(true);
-    expect(host.lastLocalTerminalReconcile).toBeNull();
-  });
-
-  it("does not suppress an active row without run identity", () => {
+  it("reapplies an event-local terminal to a stale active row", () => {
     const host = makeHost({
       sessionsResult: makeSessionsResult([{ key: "s1", hasActiveRun: true, status: "running" }]),
       lastLocalTerminalReconcile: makeLocalTerminalReconcile(),
     });
 
-    expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(false);
-    expect(rowActive(host)).toBe(true);
-    expect(host.lastLocalTerminalReconcile).toBeNull();
+    expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(true);
+    expect(rowActive(host)).toBe(false);
+    expect(host.lastLocalTerminalReconcile).not.toBeNull();
   });
 
   it("clears selected agent-main alias runs from canonical global history rows", () => {
@@ -621,7 +655,6 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
         {
           key: "global",
           hasActiveRun: true,
-          activeRunIds: ["run-global"],
           status: "running",
         },
       ]),
@@ -687,16 +720,14 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     const host = makeHost({
       chatRunId: "r1",
       chatStream: "partial...",
-      sessionsResult: makeSessionsResult([
-        { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
-      ]),
+      sessionsResult: makeSessionsResult([{ key: "s1", hasActiveRun: true, status: "running" }]),
     });
     completeLocalRun(host, false);
     expect(host.lastLocalTerminalReconcile?.sessionKey).toBe("s1");
     expect(host.chatRunId ?? null).toBeNull();
     // A racing sessions.list refresh re-introduces a stale active row.
     host.sessionsResult = makeSessionsResult([
-      { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
+      { key: "s1", hasActiveRun: true, status: "running" },
     ]);
     expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(true);
     expect(rowActive(host)).toBe(false);
@@ -709,38 +740,13 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
       const host = makeHost({ chatRunId: "r1", chatStream: "partial..." });
       completeLocalRun(host);
       host.sessionsResult = makeSessionsResult([
-        { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
+        { key: "s1", hasActiveRun: true, status: "running" },
       ]);
 
       vi.advanceTimersByTime(CHAT_RUN_STATUS_TOAST_DURATION_MS);
 
       expect(host.chatRunStatus).toBeNull();
       expect(rowActive(host)).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("preserves a newer run id even when the Gateway clock trails the browser", () => {
-    vi.useFakeTimers();
-    try {
-      const host = makeHost({ chatRunId: "r1", chatStream: "partial..." });
-      completeLocalRun(host);
-      host.sessionsResult = makeSessionsResult([
-        {
-          key: "s1",
-          hasActiveRun: true,
-          activeRunIds: ["r2"],
-          status: "running",
-          startedAt: Date.now() - 60_000,
-        },
-      ]);
-
-      vi.advanceTimersByTime(CHAT_RUN_STATUS_TOAST_DURATION_MS);
-
-      expect(host.chatRunStatus).toBeNull();
-      expect(rowActive(host)).toBe(true);
-      expect(host.lastLocalTerminalReconcile).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -787,7 +793,7 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
 
     expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(true);
     host.sessionsResult = makeSessionsResult([
-      { key: "s1", hasActiveRun: true, activeRunIds: ["r1"], status: "running" },
+      { key: "s1", hasActiveRun: true, status: "running" },
     ]);
     expect(reconcileChatRunFromCurrentSessionRow(host)).toBe(true);
     expect(rowActive(host)).toBe(false);

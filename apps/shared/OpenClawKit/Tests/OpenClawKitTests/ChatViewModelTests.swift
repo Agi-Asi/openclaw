@@ -71,7 +71,6 @@ private func historyPayload(
     messages: [AnyCodable] = [],
     supportsActiveRunState: Bool = true,
     hasActiveRun: Bool? = nil,
-    activeRunIds: [String]? = nil,
     inFlightRun: OpenClawChatInFlightRun? = nil) -> OpenClawChatHistoryPayload
 {
     OpenClawChatHistoryPayload(
@@ -81,8 +80,7 @@ private func historyPayload(
         thinkingLevel: "off",
         sessionInfo: supportsActiveRunState
             ? OpenClawChatSessionInfo(
-                hasActiveRun: hasActiveRun ?? (inFlightRun != nil),
-                activeRunIds: activeRunIds ?? inFlightRun.map { [$0.runId] })
+                hasActiveRun: hasActiveRun ?? (inFlightRun != nil))
             : nil,
         inFlightRun: inFlightRun)
 }
@@ -149,7 +147,6 @@ private func lifecycleSessionEntry(
     updatedAt: Double,
     status: String,
     hasActiveRun: Bool,
-    activeRunIds: [String],
     startedAt: Double? = nil,
     endedAt: Double? = nil,
     runtimeMs: Double? = nil,
@@ -177,7 +174,6 @@ private func lifecycleSessionEntry(
         contextTokens: nil,
         status: status,
         hasActiveRun: hasActiveRun,
-        activeRunIds: activeRunIds,
         startedAt: startedAt,
         endedAt: endedAt,
         runtimeMs: runtimeMs)
@@ -2483,14 +2479,10 @@ struct ChatViewModelTests {
         #expect(fraction(total: 25, fresh: nil, context: 100) == 0.25)
     }
 
-    @Test @MainActor func `live usage is ordered monotonic and telemetry-only for advertised runs`() {
+    @Test @MainActor func `live usage is ordered monotonic and request-local`() {
         let viewModel = OpenClawChatViewModel(
             sessionKey: "main",
             transport: TestChatTransport(historyResponses: []))
-        var session = sessionEntry(key: "main", updatedAt: 1)
-        session.hasActiveRun = true
-        session.activeRunIds = ["remote-z", "remote-a"]
-        viewModel.sessions = [session]
         viewModel.pendingRuns.insert("local-run")
 
         viewModel.handleTransportEvent(.agent(usageEvent(
@@ -2502,6 +2494,7 @@ struct ChatViewModelTests {
             runId: "remote-z",
             outputTokens: 12,
             seq: 1)))
+        #expect(viewModel.liveRunStateByRunID["remote-z"] == nil)
         viewModel.handleTransportEvent(.agent(usageEvent(
             runId: "local-run",
             outputTokens: 4,
@@ -2539,14 +2532,11 @@ struct ChatViewModelTests {
         #expect(viewModel.pendingToolCalls.isEmpty)
     }
 
-    @Test @MainActor func `sequence gap invalidates incomplete advertised usage`() {
+    @Test @MainActor func `sequence gap invalidates incomplete local usage`() {
         let viewModel = OpenClawChatViewModel(
             sessionKey: "main",
             transport: TestChatTransport(historyResponses: []))
-        var running = sessionEntry(key: "main", updatedAt: 1)
-        running.hasActiveRun = true
-        running.activeRunIds = ["remote-run"]
-        viewModel.sessions = [running]
+        viewModel.pendingRuns.insert("remote-run")
         viewModel.handleTransportEvent(.agent(usageEvent(
             runId: "remote-run",
             outputTokens: 12,
@@ -2555,27 +2545,11 @@ struct ChatViewModelTests {
 
         viewModel.handleTransportEvent(.seqGap)
 
-        #expect(viewModel.liveRunStateByRunID["remote-run"]?.sequence == 1)
+        #expect(viewModel.liveRunStateByRunID["remote-run"] == nil)
         #expect(viewModel.liveRunOutputTokens == nil)
     }
 
-    @Test @MainActor func `session switch clears advertised runs when the row is missing`() {
-        let viewModel = OpenClawChatViewModel(
-            sessionKey: "main",
-            transport: TestChatTransport(historyResponses: []))
-        var running = sessionEntry(key: "main", updatedAt: 1)
-        running.hasActiveRun = true
-        running.activeRunIds = ["remote-run"]
-        viewModel.sessions = [running]
-        #expect(viewModel.activeSessionRunIDs == ["remote-run"])
-
-        viewModel.switchSession(to: "missing")
-
-        #expect(viewModel.activeSessionRunIDs.isEmpty)
-        #expect(!viewModel.hasAdvertisedLiveRun)
-    }
-
-    @Test @MainActor func `remote lifecycle merges terminal recap metadata`() {
+    @Test @MainActor func `owned lifecycle merges terminal recap metadata`() {
         let viewModel = OpenClawChatViewModel(
             sessionKey: "main",
             transport: TestChatTransport(historyResponses: []))
@@ -2583,12 +2557,8 @@ struct ChatViewModelTests {
         running.status = "running"
         running.lastRunError = "previous failure"
         running.hasActiveRun = true
-        running.activeRunIds = ["remote-run"]
         viewModel.sessions = [running]
-        viewModel.handleTransportEvent(.agent(usageEvent(
-            runId: "remote-run",
-            outputTokens: 8,
-            seq: 1)))
+        viewModel.pendingRuns.insert("remote-run")
 
         viewModel.handleTransportEvent(.sessionsChanged(.init(
             sessionKey: "main",
@@ -2599,7 +2569,6 @@ struct ChatViewModelTests {
                 updatedAt: 2,
                 status: "done",
                 hasActiveRun: false,
-                activeRunIds: [],
                 endedAt: 2000,
                 runtimeMs: 1000,
                 outputTokens: 42))))
@@ -2610,19 +2579,17 @@ struct ChatViewModelTests {
         #expect(merged?.endedAt == 2000)
         #expect(merged?.runtimeMs == 1000)
         #expect(merged?.outputTokens == 42)
-        #expect(merged?.activeRunIds == [])
         #expect(viewModel.liveRunOutputTokens == nil)
         #expect(!viewModel.hasBlockingRunActivity)
     }
 
-    @Test @MainActor func `terminal lifecycle retires matching pending run despite stale snapshot`() {
+    @Test @MainActor func `late predecessor terminal keeps successor row running`() {
         let viewModel = OpenClawChatViewModel(
             sessionKey: "main",
             transport: TestChatTransport(historyResponses: []))
         var running = sessionEntry(key: "main", updatedAt: 20)
         running.status = "running"
         running.hasActiveRun = true
-        running.activeRunIds = ["run-a", "run-b"]
         viewModel.sessions = [running]
         viewModel.pendingRuns = ["run-a", "run-b"]
         viewModel.handleTransportEvent(.agent(usageEvent(
@@ -2636,10 +2603,9 @@ struct ChatViewModelTests {
             runId: "run-a",
             session: lifecycleSessionEntry(
                 key: "main",
-                updatedAt: 10,
+                updatedAt: 30,
                 status: "done",
                 hasActiveRun: false,
-                activeRunIds: [],
                 endedAt: 10,
                 runtimeMs: 5,
                 outputTokens: 5))))
@@ -2647,8 +2613,35 @@ struct ChatViewModelTests {
         #expect(viewModel.pendingRuns == ["run-b"])
         #expect(viewModel.liveRunStateByRunID["run-a"]?.terminal == true)
         #expect(viewModel.currentSessionEntry()?.updatedAt == 20)
-        #expect(viewModel.activeSessionRunIDs == ["run-a", "run-b"])
+        #expect(viewModel.currentSessionEntry()?.hasActiveRun == true)
+        #expect(viewModel.currentSessionEntry()?.status == "running")
         #expect(viewModel.liveUsageRunID == "run-b")
+    }
+
+    @Test @MainActor func `unknown lifecycle terminal keeps owned row running`() {
+        let viewModel = OpenClawChatViewModel(
+            sessionKey: "main",
+            transport: TestChatTransport(historyResponses: []))
+        var running = sessionEntry(key: "main", updatedAt: 1)
+        running.status = "running"
+        running.hasActiveRun = true
+        viewModel.sessions = [running]
+        viewModel.pendingRuns.insert("run-b")
+
+        viewModel.handleTransportEvent(.sessionsChanged(.init(
+            sessionKey: "main",
+            phase: "end",
+            runId: "run-unknown",
+            session: lifecycleSessionEntry(
+                key: "main",
+                updatedAt: 2,
+                status: "done",
+                hasActiveRun: false,
+                endedAt: 2))))
+
+        #expect(viewModel.pendingRuns == ["run-b"])
+        #expect(viewModel.currentSessionEntry()?.hasActiveRun == true)
+        #expect(viewModel.currentSessionEntry()?.status == "running")
     }
 
     @Test @MainActor func `unsequenced lifecycle terminal retires a pending run`() {
@@ -2666,47 +2659,6 @@ struct ChatViewModelTests {
 
         #expect(viewModel.pendingRuns.isEmpty)
         #expect(viewModel.liveRunStateByRunID["legacy-run"]?.terminal == true)
-    }
-
-    @Test @MainActor func `unsequenced lifecycle terminal retires a nonselected advertised run`() {
-        let viewModel = OpenClawChatViewModel(
-            sessionKey: "main",
-            transport: TestChatTransport(historyResponses: []))
-        var running = sessionEntry(key: "main", updatedAt: 1)
-        running.hasActiveRun = true
-        running.activeRunIds = ["remote-a", "remote-b"]
-        viewModel.sessions = [running]
-        #expect(viewModel.liveUsageRunID == "remote-a")
-
-        viewModel.handleTransportEvent(.agent(OpenClawAgentEventPayload(
-            runId: "remote-b",
-            seq: nil,
-            stream: "lifecycle",
-            ts: 1,
-            data: ["phase": AnyCodable("end")])))
-
-        #expect(viewModel.liveRunStateByRunID["remote-b"]?.terminal == true)
-        #expect(viewModel.liveUsageRunID == "remote-a")
-    }
-
-    @Test @MainActor func `advertised terminal chat retires the run without clearing local work`() {
-        let viewModel = OpenClawChatViewModel(
-            sessionKey: "main",
-            transport: TestChatTransport(historyResponses: []))
-        var running = sessionEntry(key: "main", updatedAt: 1)
-        running.hasActiveRun = true
-        running.activeRunIds = ["remote-run"]
-        viewModel.sessions = [running]
-
-        viewModel.handleTransportEvent(.chat(OpenClawChatEventPayload(
-            runId: "remote-run",
-            sessionKey: "main",
-            state: "final",
-            message: nil,
-            errorMessage: nil)))
-
-        #expect(viewModel.liveRunStateByRunID["remote-run"]?.terminal == true)
-        #expect(!viewModel.hasBlockingRunActivity)
     }
 
     @Test @MainActor func `idless terminal chat clears boolean-only current activity`() {
@@ -3359,7 +3311,6 @@ struct ChatViewModelTests {
         var selected = sessionEntry(key: "global", updatedAt: 100)
         selected.status = "running"
         selected.hasActiveRun = true
-        selected.activeRunIds = ["run-work"]
         selected.observerDigest = OpenClawChatSessionObserverDigest(
             agentId: "work",
             runId: "run-work",
@@ -3381,12 +3332,10 @@ struct ChatViewModelTests {
                 headline: "Foreign owner",
                 health: "stuck"),
             status: "running",
-            hasActiveRun: true,
-            activeRunIds: ["run-work"])))
+            hasActiveRun: true)))
 
         #expect(vm.sessions[0].observerDigest?.agentId == "work")
         #expect(vm.sessions[0].observerDigest?.headline == "Selected owner")
-        #expect(vm.sessions[0].activeRunIds == ["run-work"])
         #expect(vm.sessions[0].updatedAt == 900)
 
         vm.handleTransportEvent(.sessionsChanged(.init(
@@ -3400,8 +3349,7 @@ struct ChatViewModelTests {
                 headline: "Legacy selected owner",
                 health: "on-track"),
             status: "running",
-            hasActiveRun: true,
-            activeRunIds: ["run-work"])))
+            hasActiveRun: true)))
 
         #expect(vm.sessions[0].observerDigest?.agentId == "work")
         #expect(vm.sessions[0].observerDigest?.headline == "Legacy selected owner")

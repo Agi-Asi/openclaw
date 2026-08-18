@@ -47,9 +47,9 @@ it("projects admitted work as queued until execution starts", () => {
       agentId: "main",
     });
 
-  expect(state()).toEqual({ active: true, runIds: [runId], status: "queued" });
+  expect(state()).toEqual({ hasActiveRun: true, hasProjectedRun: false, status: "queued" });
   expect(registration.markExecutionStarted()).toBe(true);
-  expect(state()).toEqual({ active: true, runIds: [runId] });
+  expect(state()).toEqual({ hasActiveRun: true, hasProjectedRun: false });
   expect(registration.markExecutionStarted()).toBe(false);
   registration.cleanup({ force: true });
 });
@@ -127,7 +127,7 @@ it("matches session-id-only gateway runs during archive admission", () => {
       canonicalKey: "agent:main:child",
       sessionId: "session-1",
       defaultAgentId: "main",
-    }).active,
+    }).hasActiveRun,
   ).toBe(true);
 });
 
@@ -163,7 +163,7 @@ it("excludes the replacement run from an internal active-session check", () => {
   ).toBe(true);
 });
 
-it("returns deterministic visible run ids for the selected session", () => {
+it("collapses matching tracked runs to the direct activity fact", () => {
   const context = {
     chatAbortControllers: new Map([
       ["run-z", { sessionKey: "main" }],
@@ -181,7 +181,7 @@ it("returns deterministic visible run ids for the selected session", () => {
       agentId: "main",
       defaultAgentId: "main",
     }),
-  ).toEqual({ active: true, runIds: ["run-a", "run-z"] });
+  ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
 });
 
 it("projects a lifecycle-owned worker run without widening event visibility", () => {
@@ -199,7 +199,7 @@ it("projects a lifecycle-owned worker run without widening event visibility", ()
         canonicalKey: "agent:main:worker",
         sessionId: "worker-session",
       }),
-    ).toEqual({ active: true, runIds: [] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: true });
   } finally {
     clearAgentRunContext("worker-run");
   }
@@ -224,7 +224,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [], status: "queued" });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false, status: "queued" });
 
     operation.markWaitingForGlobalLane();
     expect(
@@ -234,7 +234,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [], status: "queued" });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false, status: "queued" });
     operation.markGlobalLaneWaitEnded();
 
     operation.setPhase("running");
@@ -246,7 +246,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [], status: "queued" });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false, status: "queued" });
     operation.markGlobalLaneWaitEnded();
     markReplyOperationExecutionStarted(operation);
     expect(
@@ -256,7 +256,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
     operation.markWaitingForGlobalLane();
     expect(
       resolveVisibleActiveSessionRunState({
@@ -265,7 +265,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
     operation.markGlobalLaneWaitEnded();
     expect(operation.abortByUser()).toBe(true);
     expect(isEmbeddedAgentRunActive(sessionId)).toBe(true);
@@ -276,7 +276,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: false, runIds: [] });
+    ).toEqual({ hasActiveRun: false, hasProjectedRun: false });
 
     setActiveEmbeddedRun(sessionId, replacementHandle, sessionKey);
     expect(
@@ -286,7 +286,7 @@ it("projects reply lifecycle state without hiding independent embedded work", ()
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
   } finally {
     clearActiveEmbeddedRun(sessionId, replacementHandle, sessionKey);
     operation.complete();
@@ -310,7 +310,7 @@ it("preserves an independent lifecycle-owned worker while a reply operation sett
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: true });
   } finally {
     operation.complete();
     clearAgentRunContext("worker-overlap-run");
@@ -342,7 +342,7 @@ it("does not project an aborted embedded handle retained for cleanup as active",
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: [] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
 
     expect(abortEmbeddedAgentRun(sessionId)).toBe(true);
     expect(isEmbeddedAgentRunActive(sessionId)).toBe(true);
@@ -353,7 +353,7 @@ it("does not project an aborted embedded handle retained for cleanup as active",
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: false, runIds: [] });
+    ).toEqual({ hasActiveRun: false, hasProjectedRun: false });
 
     expect(
       resolveVisibleActiveSessionRunState({
@@ -364,7 +364,7 @@ it("does not project an aborted embedded handle retained for cleanup as active",
         canonicalKey: sessionKey,
         sessionId,
       }),
-    ).toEqual({ active: true, runIds: ["new-run"] });
+    ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
   } finally {
     clearActiveEmbeddedRun(sessionId, handle, sessionKey);
   }
@@ -434,7 +434,7 @@ it("matches colliding bare active runs by stable owner", () => {
       agentId: "ops",
       defaultAgentId: "ops",
     }),
-  ).toEqual({ active: true, runIds: ["run-ownerless"] });
+  ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
   expect(
     resolveVisibleActiveSessionRunState({
       context,
@@ -443,7 +443,7 @@ it("matches colliding bare active runs by stable owner", () => {
       agentId: "research",
       defaultAgentId: "ops",
     }),
-  ).toEqual({ active: true, runIds: ["run-research"] });
+  ).toEqual({ hasActiveRun: true, hasProjectedRun: false });
 });
 
 it("keeps projected bare runs agent-scoped", () => {
@@ -463,7 +463,7 @@ it("keeps projected bare runs agent-scoped", () => {
         sessionId: "shared-id",
         agentId: "research",
         projectedAgentRunIndex: index,
-      }).active,
+      }).hasActiveRun,
     ).toBe(false);
     expect(
       resolveVisibleActiveSessionRunState({
@@ -473,7 +473,7 @@ it("keeps projected bare runs agent-scoped", () => {
         sessionId: "shared-id",
         agentId: "ops",
         projectedAgentRunIndex: index,
-      }).active,
+      }).hasActiveRun,
     ).toBe(true);
   } finally {
     clearAgentRunContext("projected-ops");
@@ -497,7 +497,7 @@ it("resolves projected ownerless bare runs through the stable default owner", ()
         agentId: "ops",
         defaultAgentId: "ops",
         projectedAgentRunIndex: index,
-      }).active,
+      }).hasActiveRun,
     ).toBe(true);
     expect(
       resolveVisibleActiveSessionRunState({
@@ -508,7 +508,7 @@ it("resolves projected ownerless bare runs through the stable default owner", ()
         agentId: "research",
         defaultAgentId: "ops",
         projectedAgentRunIndex: index,
-      }).active,
+      }).hasActiveRun,
     ).toBe(false);
   } finally {
     clearAgentRunContext("projected-ownerless");

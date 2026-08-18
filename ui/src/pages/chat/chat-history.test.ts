@@ -57,7 +57,6 @@ function activeHistory(runId: string): ChatHistoryResult {
       kind: "direct",
       updatedAt: 1,
       hasActiveRun: true,
-      activeRunIds: [runId],
       status: "running",
     },
     inFlightRun: {

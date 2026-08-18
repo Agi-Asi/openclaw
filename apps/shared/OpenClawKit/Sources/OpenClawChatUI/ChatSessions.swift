@@ -389,7 +389,6 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
     public var status: String?
     public var lastRunError: String?
     public var hasActiveRun: Bool?
-    public var activeRunIds: [String]?
     public var hasActiveSubagentRun: Bool?
     public var subagentRunState: String?
     public var swarmGroupId: String?
@@ -469,7 +468,6 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         status: String? = nil,
         lastRunError: String? = nil,
         hasActiveRun: Bool? = nil,
-        activeRunIds: [String]? = nil,
         hasActiveSubagentRun: Bool? = nil,
         subagentRunState: String? = nil,
         swarmGroupId: String? = nil,
@@ -519,7 +517,6 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         self.status = status
         self.lastRunError = lastRunError
         self.hasActiveRun = hasActiveRun
-        self.activeRunIds = activeRunIds
         self.hasActiveSubagentRun = hasActiveSubagentRun
         self.subagentRunState = subagentRunState
         self.swarmGroupId = swarmGroupId

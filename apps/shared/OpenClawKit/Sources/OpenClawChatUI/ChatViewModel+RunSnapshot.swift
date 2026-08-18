@@ -12,11 +12,6 @@ extension OpenClawChatViewModel {
             return
         }
         self.latestAppliedRunSnapshotRequestID = request.id
-        if let activeRunIDs = payload.sessionInfo?.activeRunIds {
-            self.updateActiveSessionRunIDs(activeRunIDs)
-        } else if payload.sessionInfo?.hasActiveRun == false {
-            self.updateActiveSessionRunIDs([])
-        }
         guard let snapshot = payload.inFlightRun,
               let runId = Self.normalizedRunID(snapshot.runId),
               self.liveRunStateByRunID[runId]?.terminal != true

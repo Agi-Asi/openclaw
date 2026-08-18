@@ -938,17 +938,11 @@ internal fun sessionListSubtitle(
       ?.takeIf { it.isNotEmpty() && (runStatus == "failed" || runStatus == "timeout") && (session.lastReadAt ?: 0L) < failureAt }
   val digest = session.observerDigest
   val running = session.hasActiveRun == true || runStatus == "running"
-  val digestMatchesActiveRun =
-    digest
-      ?.runId
-      ?.trim()
-      ?.takeIf(String::isNotEmpty)
-      ?.let { runId -> session.activeRunIds.orEmpty().any { it.trim() == runId } } == true
   val finalDigestUnread =
     digest != null &&
       (digest.health == "done" || digest.health == "failed") &&
       (session.lastReadAt ?: 0L) < digest.updatedAt
-  val observer = digest?.headline?.takeIf { (running && digestMatchesActiveRun) || (!running && finalDigestUnread) }
+  val observer = digest?.headline?.takeIf { running || finalDigestUnread }
   val queued = nativeString("Waiting for a concurrency slot").takeIf { runStatus == "queued" }
   return declaredAttention ?: failedAttention ?: agentStatus?.note ?: queued ?: observer ?: fallback
 }

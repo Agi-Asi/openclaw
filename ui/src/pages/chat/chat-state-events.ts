@@ -34,6 +34,11 @@ import {
 import { flushChatQueueForEvent, resumeStoredChatOutboxes } from "./chat-send-actions.ts";
 import { preserveQueuedUserTurn } from "./chat-send-support.ts";
 import { recordChatSendServerTiming } from "./chat-send-timing.ts";
+import {
+  resetTrackedChatSessionRuns,
+  settleTrackedChatSessionRun,
+  trackChatSessionRun,
+} from "./chat-session-run-tracker.ts";
 import { refreshCurrentChatSessionList } from "./chat-session.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { requestChatPageUpdate } from "./chat-state-render.ts";
@@ -208,6 +213,7 @@ function handleSessionsChangedEvent(state: ChatPageHost, payload: unknown) {
   }
   const resetsSelectedSession = matchesChat && resetsSession;
   if (resetsSelectedSession) {
+    resetTrackedChatSessionRuns(state);
     const scope = readChatSessionProjectionScope(state, { agentId: resolveChatAgentId(state) });
     // Reset keeps the public session ID; the explicit reducer event is the
     // only proof that its old live and pending transcript no longer exists.
@@ -227,7 +233,13 @@ function handleSessionsChangedEvent(state: ChatPageHost, payload: unknown) {
   if (event && matchesChat && event.archived !== null) {
     state.selectedChatSessionArchived = event.archived;
   }
+  if (event && matchesChat && source?.phase === "start") {
+    trackChatSessionRun(state, event.runId);
+  }
   const result = reconcileSessionEvent(state, payload);
+  if (event && matchesChat && (source?.phase === "end" || source?.phase === "error")) {
+    settleTrackedChatSessionRun(state, event.runId, [state.sessionKey, event.key]);
+  }
   if (resetsSelectedSession) {
     void loadChatHistory(state).finally(() => state.requestUpdate?.());
     return;
@@ -387,9 +399,7 @@ function observerDigestMatchesAuthoritativeRun(
     return digest.runId === state.chatRunId;
   }
   const session = selectedChatSessionRow(state);
-  return Boolean(
-    session?.hasActiveRun && digest.runId && session.activeRunIds?.includes(digest.runId),
-  );
+  return Boolean(session?.hasActiveRun && digest.runId);
 }
 
 export function handlePageGatewayEvent(state: ChatPageHost, event: GatewayEventFrame) {

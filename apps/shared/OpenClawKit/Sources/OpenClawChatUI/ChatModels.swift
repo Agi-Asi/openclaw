@@ -659,12 +659,10 @@ public struct OpenClawChatInFlightRun: Codable, Sendable {
 
 public struct OpenClawChatSessionInfo: Codable, Sendable {
     public let hasActiveRun: Bool?
-    public let activeRunIds: [String]?
 
     // periphery:ignore - package tests construct history fixtures; app consumers decode this payload.
-    public init(hasActiveRun: Bool?, activeRunIds: [String]? = nil) {
+    public init(hasActiveRun: Bool?) {
         self.hasActiveRun = hasActiveRun
-        self.activeRunIds = activeRunIds
     }
 }
 

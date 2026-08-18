@@ -291,7 +291,7 @@ async function mutateSessionAtMessage(
           sessionId: initialSessionId,
           agentId: requestedAgent.agentId,
           defaultAgentId: tryResolveSessionCompatibilityOwnerAgentId(cfg, sessionKey),
-        }).active;
+        }).hasActiveRun;
     },
     run: async () => {
       if (!targetStillCurrent) {

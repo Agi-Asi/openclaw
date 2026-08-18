@@ -587,13 +587,11 @@ suite.define(() => {
       await gateway.setHistoryMessages(messages);
       proofMessageSequence += 1;
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [],
         hasActiveRun: false,
         message: messages[0],
         messageId: `managed-image-cache-proof-${proofMessageSequence}`,
         messageSeq: proofMessageSequence,
         session: {
-          activeRunIds: [],
           hasActiveRun: false,
           key: "main",
           kind: "direct",

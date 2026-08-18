@@ -345,7 +345,6 @@ suite.define(() => {
         .waitFor({ state: "detached", timeout: 10_000 });
       await gateway.emitChatFinal({ runId: activeRunId, text: "Initial run completed." });
       await gateway.emitGatewayEvent("sessions.changed", {
-        activeRunIds: [],
         agentId: "main",
         hasActiveRun: false,
         key: "global",

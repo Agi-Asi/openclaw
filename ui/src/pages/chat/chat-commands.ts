@@ -31,6 +31,7 @@ import { executeSlashCommand } from "./chat-command-executor.ts";
 import { clearChatHistory } from "./chat-history.ts";
 import { enqueuePendingRunMessage } from "./chat-queue.ts";
 import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
+import { trackChatSessionRun } from "./chat-session-run-tracker.ts";
 import { handleAbortChat } from "./run-lifecycle.ts";
 import { scheduleChatScroll, type ChatScrollHost } from "./scroll.ts";
 
@@ -450,6 +451,7 @@ export async function dispatchChatSlashCommand(
 
   if (result.trackRunId && targetIsCurrent()) {
     host.chatRunId = result.trackRunId;
+    trackChatSessionRun(host, result.trackRunId);
     host.chatStream = "";
     host.chatSending = false;
   }

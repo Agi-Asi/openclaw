@@ -314,7 +314,7 @@ export type ControlUiMockGatewayScenario = {
     events: Array<{ event: "agent" | "session.observer" | "session.tool"; payload: unknown }>;
     intervalMs?: number;
   };
-  /** Session run state served alongside history (hasActiveRun/activeRunIds). */
+  /** Session run state served alongside history. */
   sessionInfo?: Record<string, unknown> | null;
   /** Partition sessions.list fixtures by archived state after applying patches. */
   sessionArchiveFiltering?: boolean;

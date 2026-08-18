@@ -628,7 +628,7 @@ describe("assistant commentary grouping", () => {
       },
     );
     const runId = resolveChatProjectionRunId({
-      activeRunIds: ["run-restored"],
+      hasActiveRun: true,
       queue: [reconnectingSend],
     });
     const items = buildCachedChatItems(

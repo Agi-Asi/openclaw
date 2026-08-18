@@ -20,7 +20,6 @@ describe("reconcileSessionRunTerminal yielded parent", () => {
         kind: "direct",
         updatedAt: 1,
         hasActiveRun: true,
-        activeRunIds: ["run-1"],
         status: "running",
         startedAt: 100,
       },
@@ -30,6 +29,8 @@ describe("reconcileSessionRunTerminal yielded parent", () => {
       reconcileSessionRunTerminal(result, {
         sessionKeys: ["main"],
         runId: "run-1",
+        currentRunId: "run-1",
+        startedRunIds: ["run-1"],
         status: "running",
         endedAt: 160,
       }),
@@ -38,45 +39,11 @@ describe("reconcileSessionRunTerminal yielded parent", () => {
       sessions: [
         {
           ...result.sessions[0],
-          activeRunIds: [],
           hasActiveRun: false,
           status: "running",
           endedAt: 160,
           runtimeMs: 60,
           abortedLastRun: false,
-        },
-      ],
-    });
-  });
-
-  it("preserves overlapping active runs when one model turn yields", () => {
-    const result = sessionsResult([
-      {
-        key: "agent:main:main",
-        kind: "direct",
-        updatedAt: 1,
-        hasActiveRun: true,
-        activeRunIds: ["run-1", "run-2"],
-        status: "running",
-        startedAt: 100,
-      },
-    ]);
-
-    expect(
-      reconcileSessionRunTerminal(result, {
-        sessionKeys: ["main"],
-        runId: "run-1",
-        status: "running",
-        endedAt: 160,
-      }),
-    ).toEqual({
-      ...result,
-      sessions: [
-        {
-          ...result.sessions[0],
-          activeRunIds: ["run-2"],
-          hasActiveRun: true,
-          status: "running",
         },
       ],
     });

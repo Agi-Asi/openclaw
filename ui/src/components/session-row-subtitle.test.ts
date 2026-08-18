@@ -54,7 +54,6 @@ describe("resolveSidebarSessionSubtitle", () => {
     const session: SidebarRecentSession = {
       ...workSession(),
       hasActiveRun: true,
-      activeRunIds: ["run-1"],
       status: "running",
       agentStatusNote: "Waiting for deployment",
       attention: { kind: "question" },
@@ -98,11 +97,10 @@ describe("resolveSidebarSessionSubtitle", () => {
     ).toEqual({ subtitle: "Using test runner", narration: "Using test runner" });
   });
 
-  it("suppresses missing and stale projected digests for an active run", () => {
+  it("requires an event-local run id for an active digest", () => {
     const session: SidebarRecentSession = {
       ...workSession(),
       hasActiveRun: true,
-      activeRunIds: ["run-2"],
       status: "running",
     };
     const resolve = (runId: string | undefined) =>
@@ -125,10 +123,7 @@ describe("resolveSidebarSessionSubtitle", () => {
       subtitle: "Using test runner",
       narration: "Using test runner",
     });
-    expect(resolve("run-1")).toEqual({
-      subtitle: "Using test runner",
-      narration: "Using test runner",
-    });
+    expect(resolve("run-1")).toEqual({ subtitle: "Old digest", narration: undefined });
     expect(resolve("run-2")).toEqual({ subtitle: "Old digest", narration: undefined });
   });
 
@@ -211,7 +206,6 @@ describe("resolveSidebarSessionSubtitle", () => {
     const session = {
       ...workSession(),
       hasActiveRun: true,
-      activeRunIds: ["run-1"],
       lastMessagePreview: "Reply from the previous run",
     };
 

@@ -252,12 +252,8 @@ async function refreshChat(
       host.sessionsResult = sessionsResult;
     }
     const snapshotRunId = history.inFlightRun?.runId?.trim();
-    const activeRunIds = history.sessionInfo.activeRunIds;
     const snapshotConfirmsCurrentRun = Boolean(
-      snapshotRunId &&
-      host.chatRunId === snapshotRunId &&
-      isSessionRunActive(history.sessionInfo) &&
-      (!Array.isArray(activeRunIds) || activeRunIds.includes(snapshotRunId)),
+      snapshotRunId && host.chatRunId === snapshotRunId && isSessionRunActive(history.sessionInfo),
     );
     if (snapshotConfirmsCurrentRun) {
       // History just adopted this authoritative active run. A newer catalog

@@ -19,6 +19,11 @@ import {
 } from "../../lib/sessions/session-key.ts";
 import type { ChatRunStartupState } from "./chat-run-startup.ts";
 import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
+import {
+  readTrackedChatSessionRuns,
+  settleTrackedChatSessionRun,
+  type ChatSessionRunTrackerHost,
+} from "./chat-session-run-tracker.ts";
 import { formatConnectError } from "./connect-error.ts";
 import { resetChatInputHistoryNavigation, type ChatInputHistoryState } from "./input-history.ts";
 // Control UI chat module implements run lifecycle behavior.
@@ -71,7 +76,7 @@ type RunLifecycleHost = Omit<
   sessions?: Partial<Pick<SessionCapability, "reconcileRunTerminal" | "setModelOverride">>;
   lastLocalTerminalReconcile?: LocalTerminalReconcile | null;
   requestUpdate?: () => void;
-};
+} & ChatSessionRunTrackerHost;
 
 type ReconcileOptions = {
   outcome?: ChatRunUiStatus["phase"];
@@ -395,6 +400,7 @@ function reconcileSessionRows(
   host: RunLifecycleHost,
   options: ReconcileOptions,
   occurredAt: number,
+  ownership?: { currentRunId: string | null; startedRunIds: readonly string[] },
 ) {
   if (!options.outcome) {
     return;
@@ -408,6 +414,8 @@ function reconcileSessionRows(
   const terminal: SessionRunTerminal = {
     sessionKeys: [...keys],
     runId: options.runId ?? host.chatRunId ?? null,
+    currentRunId: ownership?.currentRunId ?? host.chatRunId ?? null,
+    startedRunIds: ownership?.startedRunIds ?? [...readTrackedChatSessionRuns(host, [...keys])],
     status,
     endedAt: occurredAt,
   };
@@ -415,19 +423,24 @@ function reconcileSessionRows(
     host.sessionsResult = reconcileSessionRunTerminal(host.sessionsResult, terminal);
   }
   host.sessions?.reconcileRunTerminal?.(terminal);
+  settleTrackedChatSessionRun(host, terminal.runId, [...keys]);
 }
 
 function reconcileYieldedSessionRows(
   host: RunLifecycleHost,
   options: ReconcileOptions,
   occurredAt: number,
+  ownership?: { currentRunId: string | null; startedRunIds: readonly string[] },
 ) {
   if (!options.yielded) {
     return;
   }
+  const sessionKeys = [...sessionKeysFor(host, options)];
   const terminal: SessionRunTerminal = {
-    sessionKeys: [...sessionKeysFor(host, options)],
+    sessionKeys,
     runId: options.runId ?? host.chatRunId ?? null,
+    currentRunId: ownership?.currentRunId ?? host.chatRunId ?? null,
+    startedRunIds: ownership?.startedRunIds ?? [...readTrackedChatSessionRuns(host, sessionKeys)],
     status: "running",
     endedAt: occurredAt,
   };
@@ -435,12 +448,18 @@ function reconcileYieldedSessionRows(
     host.sessionsResult = reconcileSessionRunTerminal(host.sessionsResult, terminal);
   }
   host.sessions?.reconcileRunTerminal?.(terminal);
+  settleTrackedChatSessionRun(host, terminal.runId, terminal.sessionKeys);
 }
 
 export function reconcileChatRunLifecycle(host: RunLifecycleHost, options: ReconcileOptions = {}) {
   const occurredAt = Date.now();
   const runId = options.runId ?? host.chatRunId ?? null;
   const sessionKey = toSessionKey(options.sessionKey) ?? host.sessionKey;
+  const trackedSessionKeys = [...sessionKeysFor(host, options)];
+  const ownership = {
+    currentRunId: host.chatRunId ?? null,
+    startedRunIds: [...readTrackedChatSessionRuns(host, trackedSessionKeys)],
+  };
 
   if (options.clearIndicators ?? true) {
     clearRunIndicators(host, runId);
@@ -462,7 +481,7 @@ export function reconcileChatRunLifecycle(host: RunLifecycleHost, options: Recon
       sessionKey,
       occurredAt,
     };
-    reconcileSessionRows(host, options, occurredAt);
+    reconcileSessionRows(host, options, occurredAt, ownership);
     if (options.armLocalTerminalReconcile) {
       host.lastLocalTerminalReconcile = {
         sessionKey,
@@ -476,7 +495,7 @@ export function reconcileChatRunLifecycle(host: RunLifecycleHost, options: Recon
       scheduleRunStatusClear(host, status);
     }
   } else if (options.yielded) {
-    reconcileYieldedSessionRows(host, options, occurredAt);
+    reconcileYieldedSessionRows(host, options, occurredAt, ownership);
     host.lastLocalTerminalReconcile = null;
     clearChatRunStatus(host);
   } else if (options.clearRunStatus) {
@@ -517,13 +536,9 @@ function reconcileStaleSelectedSessionRunAfterLocalCompletion(host: RunLifecycle
     // revive the completed run.
     return false;
   }
-  // Browser and Gateway clocks can differ. Only an exact active-run identity
-  // proves this row still describes the locally completed run.
-  if (
-    recent.runId == null ||
-    row.activeRunIds?.length !== 1 ||
-    row.activeRunIds[0] !== recent.runId
-  ) {
+  // Browser and Gateway clocks can differ. The terminal event supplies the
+  // run identity; the row supplies only the direct-activity fact.
+  if (recent.runId == null || row.hasActiveRun !== true) {
     host.lastLocalTerminalReconcile = null;
     return false;
   }
@@ -536,6 +551,7 @@ function reconcileStaleSelectedSessionRunAfterLocalCompletion(host: RunLifecycle
       runId: recent.runId,
     },
     Date.now(),
+    { currentRunId: recent.runId, startedRunIds: [] },
   );
   host.requestUpdate?.();
   return true;

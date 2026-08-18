@@ -88,7 +88,6 @@ function row(key: string, overrides?: Partial<GatewaySessionRow>): GatewaySessio
     ...(active
       ? {
           hasActiveRun: true,
-          activeRunIds: ["active-run"],
           activeLeafEntryId: "leaf-active",
         }
       : {}),

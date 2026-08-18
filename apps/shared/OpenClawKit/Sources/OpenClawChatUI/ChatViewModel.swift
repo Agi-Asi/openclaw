@@ -98,7 +98,6 @@ public final class OpenClawChatViewModel {
     var questionRefreshRetryTask: Task<Void, Never>?
     var questionRefreshRetryDelaysMs: [Int64] = [1000, 2000, 4000]
     var hasActiveSessionRunWithoutChatSnapshot = false
-    var activeSessionRunIDs: [String] = []
     var liveRunStateByRunID: [String: ChatLiveRunState] = [:]
     public internal(set) var progressCard: ProgressCard?
     var progressCardStoreAvailable: Bool?
@@ -112,7 +111,6 @@ public final class OpenClawChatViewModel {
     public private(set) var sessionKey: String {
         didSet {
             syncContextUsageFraction()
-            syncActiveSessionRunIDsFromCurrentSession()
         }
     }
 
@@ -127,7 +125,6 @@ public final class OpenClawChatViewModel {
     public internal(set) var sessions: [OpenClawChatSessionEntry] = [] {
         didSet {
             syncContextUsageFraction()
-            syncActiveSessionRunIDsFromCurrentSession()
         }
     }
 
@@ -1263,7 +1260,6 @@ extension OpenClawChatViewModel {
         self.updateStreamingAssistantText(nil)
         self.clearProgressCard()
         self.updateActiveSessionRunWithoutChatSnapshot(false)
-        self.activeSessionRunIDs = []
         self.liveRunStateByRunID.removeAll()
         resetSlashCommandCatalog()
         self.sessionBranches = []

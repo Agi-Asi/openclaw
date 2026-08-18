@@ -344,7 +344,6 @@ struct ChatViewModelTranscriptCacheTests {
         var active = cacheSessionEntry(key: "active", updatedAt: 2000)
         active.status = "running"
         active.hasActiveRun = true
-        active.activeRunIds = ["run-active"]
         active.hasActiveSubagentRun = true
         active.startedAt = 1000
         active.endedAt = 2000
@@ -354,7 +353,6 @@ struct ChatViewModelTranscriptCacheTests {
         let projected = OpenClawChatViewModel.durableSessionCacheProjection(active)
         #expect(projected.status == nil)
         #expect(projected.hasActiveRun == nil)
-        #expect(projected.activeRunIds == nil)
         #expect(projected.hasActiveSubagentRun == nil)
         #expect(projected.startedAt == nil)
         #expect(projected.endedAt == 2000)
@@ -364,7 +362,6 @@ struct ChatViewModelTranscriptCacheTests {
         var terminal = active
         terminal.status = "done"
         terminal.hasActiveRun = false
-        terminal.activeRunIds = []
         terminal.hasActiveSubagentRun = false
         let terminalProjection = OpenClawChatViewModel.durableSessionCacheProjection(terminal)
         #expect(terminalProjection.status == "done")

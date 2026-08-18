@@ -37,6 +37,10 @@ export type SessionChangedResult = {
 export type SessionRunTerminal = {
   sessionKeys: readonly string[];
   runId?: string | null;
+  /** Runs observed locally since the latest authoritative history load. */
+  startedRunIds?: readonly string[];
+  /** Pane-owned run when the terminal event arrived, before local cleanup. */
+  currentRunId?: string | null;
   /** Latest session status after this owned model run leaves the active registry. */
   status: SessionRunStatus;
   endedAt: number;
@@ -608,26 +612,32 @@ export function reconcileSessionRunTerminal(
     return result;
   }
   const runId = terminal.runId?.trim() || null;
+  const currentRunId = terminal.currentRunId?.trim() || null;
+  const startedRunIds = new Set(
+    terminal.startedRunIds?.map((id) => id.trim()).filter(Boolean) ?? [],
+  );
   let changed = false;
   const sessions = result.sessions.map((row): GatewaySessionRow => {
     if (!keys.some((key) => areUiSessionKeysEquivalent(row.key, key))) {
       return row;
     }
     if (row.hasActiveRun === true || isSessionRunActive(row)) {
-      // Active identity belongs to the originating model run, not a newer overlap.
-      if (!runId || !row.activeRunIds?.includes(runId)) {
+      const ownsCurrentRun = runId !== null && runId === currentRunId;
+      const ownsTrackedRun = runId !== null && startedRunIds.has(runId);
+      if (!ownsCurrentRun && !ownsTrackedRun) {
         return row;
       }
-    }
-    const remainingRunIds = runId ? row.activeRunIds?.filter((id) => id !== runId) : [];
-    if (remainingRunIds?.length) {
-      changed = true;
-      return { ...row, activeRunIds: remainingRunIds, hasActiveRun: true, status: "running" };
+      if (!ownsCurrentRun && runId) {
+        const remainingRuns = new Set(startedRunIds);
+        remainingRuns.delete(runId);
+        if (remainingRuns.size > 0) {
+          return row;
+        }
+      }
     }
     const endedAt = row.endedAt ?? terminal.endedAt;
     const runtimeMs =
       typeof row.startedAt === "number" ? Math.max(0, endedAt - row.startedAt) : row.runtimeMs;
-    const activeRunIds = row.activeRunIds?.length ? [] : row.activeRunIds;
     const abortedLastRun =
       terminal.status === "killed"
         ? true
@@ -639,7 +649,6 @@ export function reconcileSessionRunTerminal(
       row.status === terminal.status &&
       row.endedAt === endedAt &&
       row.runtimeMs === runtimeMs &&
-      row.activeRunIds === activeRunIds &&
       row.abortedLastRun === abortedLastRun
     ) {
       return row;
@@ -647,7 +656,6 @@ export function reconcileSessionRunTerminal(
     changed = true;
     return {
       ...row,
-      activeRunIds,
       hasActiveRun: false,
       status: terminal.status,
       endedAt,

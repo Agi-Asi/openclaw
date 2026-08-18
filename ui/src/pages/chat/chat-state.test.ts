@@ -1008,7 +1008,7 @@ describe("ChatStateController render lifecycle", () => {
     expect(requestUpdate).not.toHaveBeenCalled();
   });
 
-  it("accepts only the row-active observer run when attaching mid-run", () => {
+  it("accepts an event-local observer run when attaching mid-run", () => {
     const projectedDigest = {
       sessionKey: "agent:main:current",
       runId: "r1",
@@ -1026,7 +1026,6 @@ describe("ChatStateController render lifecycle", () => {
           {
             key: projectedDigest.sessionKey,
             hasActiveRun: true,
-            activeRunIds: ["r1"],
           },
         ],
       },
@@ -1048,11 +1047,7 @@ describe("ChatStateController render lifecycle", () => {
 
     handlePageGatewayEvent(state, observerEvent());
     handlePageGatewayEvent(state, observerEvent("r2"));
-    expect(state.observerDigest).toBe(projectedDigest);
-    expect(requestUpdate).not.toHaveBeenCalled();
-
-    handlePageGatewayEvent(state, observerEvent("r1"));
-    expect(state.observerDigest?.headline).toBe("Live status r1");
+    expect(state.observerDigest?.headline).toBe("Live status r2");
     expect(requestUpdate).toHaveBeenCalledOnce();
   });
 
@@ -1170,7 +1165,6 @@ describe("ChatStateController render lifecycle", () => {
           {
             key: "global",
             hasActiveRun: true,
-            activeRunIds: ["run-work"],
             observerDigest: {
               agentId: "work",
               runId: "run-work",
@@ -1209,7 +1203,6 @@ describe("ChatStateController render lifecycle", () => {
     }
     const sanitized = selectedChatSessionRow(state);
     expect(sanitized?.key).toBe("global");
-    expect(sanitized?.activeRunIds).toEqual(["run-work"]);
     expect(sanitized?.observerDigest).toBeUndefined();
 
     state.sessionsResultAgentId = "main";

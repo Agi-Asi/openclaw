@@ -149,7 +149,7 @@ export function resolveVisibleActiveSessionRunState(params: {
   defaultAgentId?: string;
   trackedActiveRuns?: readonly TrackedActiveSessionRun[];
   projectedAgentRunIndex?: ProjectedAgentRunIndex;
-}): { active: boolean; runIds: string[]; status?: "queued" } {
+}): { hasActiveRun: boolean; hasProjectedRun: boolean; status?: "queued" } {
   const sessionId = params.sessionId?.trim();
   const resolvedAgentId =
     params.agentId ??
@@ -179,7 +179,6 @@ export function resolveVisibleActiveSessionRunState(params: {
           params.defaultAgentId,
         )),
   );
-  const runIds = matchingTrackedRuns.map((active) => active.runId).toSorted();
   const hasProjectedRun = hasProjectedAgentRunForSession({
     sessionKeys: [params.requestedKey, params.canonicalKey],
     ...(sessionId ? { sessionId } : {}),
@@ -196,5 +195,9 @@ export function resolveVisibleActiveSessionRunState(params: {
     hasProjectedRun ||
     embeddedRunState === "running";
   const active = running || matchingTrackedRuns.length > 0 || embeddedRunState === "queued";
-  return { active, runIds, ...(active && !running ? { status: "queued" as const } : {}) };
+  return {
+    hasActiveRun: active,
+    hasProjectedRun,
+    ...(active && !running ? { status: "queued" as const } : {}),
+  };
 }

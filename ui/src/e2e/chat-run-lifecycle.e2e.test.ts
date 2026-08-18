@@ -36,7 +36,6 @@ suite.define(() => {
       ],
       inFlightRun: { runId: "run-continuing", text: "" },
       sessionInfo: {
-        activeRunIds: ["run-continuing"],
         hasActiveRun: true,
         key: "main",
       },
@@ -83,7 +82,6 @@ suite.define(() => {
         text: "Saved opening. Still working after reconnect.",
       },
       sessionInfo: {
-        activeRunIds: ["run-reconnected"],
         hasActiveRun: true,
         key: "main",
       },
@@ -188,7 +186,6 @@ suite.define(() => {
     const activeUpdatedAt = Date.now();
     const activeStartedAt = activeUpdatedAt - 1_000;
     await gateway.emitGatewayEvent("sessions.changed", {
-      activeRunIds: [runId],
       hasActiveRun: true,
       key: "main",
       kind: "direct",
@@ -212,7 +209,6 @@ suite.define(() => {
       path: "",
       sessions: [
         {
-          activeRunIds: [runId],
           displayName: staleActiveLabel,
           hasActiveRun: true,
           key: "main",
@@ -234,7 +230,6 @@ suite.define(() => {
     const sessionListsBeforeStaleActive = (await gateway.getRequests("sessions.list")).length;
     await gateway.deferNext("sessions.list");
     await gateway.emitGatewayEvent("sessions.changed", {
-      activeRunIds: [runId],
       hasActiveRun: true,
       key: "main",
       kind: "direct",
@@ -280,7 +275,6 @@ suite.define(() => {
     const sessionListsBeforeLateStaleActive = (await gateway.getRequests("sessions.list")).length;
     await gateway.deferNext("sessions.list");
     await gateway.emitGatewayEvent("sessions.changed", {
-      activeRunIds: [runId],
       hasActiveRun: true,
       key: "main",
       kind: "direct",
@@ -333,7 +327,6 @@ suite.define(() => {
     const sessionListsBeforeActive = (await gateway.getRequests("sessions.list")).length;
     await gateway.deferNext("sessions.list");
     await gateway.emitGatewayEvent("sessions.changed", {
-      activeRunIds: [runId],
       hasActiveRun: true,
       key: "main",
       kind: "direct",

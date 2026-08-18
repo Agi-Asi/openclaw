@@ -180,14 +180,12 @@ async function finishRunAndSettle(
   // The Gateway persists the assistant turn and publishes it with a terminal
   // session row; this is what triggers the authoritative history reload.
   await gateway.emitGatewayEvent("session.message", {
-    activeRunIds: [],
     clientRunId: runId,
     hasActiveRun: false,
     message: finalMessage,
     messageId: "pending-handoff-final-1",
     messageSeq: 3,
     session: {
-      activeRunIds: [],
       hasActiveRun: false,
       key: "main",
       kind: "direct",
@@ -294,14 +292,12 @@ suite.define(() => {
         await gateway.setHistoryMessages([...BASE_HISTORY, userEcho]);
         const historyRequestsBefore = (await gateway.getRequests("chat.history")).length;
         await gateway.emitGatewayEvent("session.message", {
-          activeRunIds: [runId],
           clientRunId: runId,
           hasActiveRun: true,
           message: userEcho,
           messageId: "pending-handoff-echo-1",
           messageSeq: 2,
           session: {
-            activeRunIds: [runId],
             hasActiveRun: true,
             key: "main",
             kind: "direct",

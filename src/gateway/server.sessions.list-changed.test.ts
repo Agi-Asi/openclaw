@@ -260,7 +260,6 @@ async function expectListedSessionActiveRun(
   const payload = expectRespondPayload(respond);
   const session = findSession(payload, "agent:main:main");
   expect(session.hasActiveRun).toBe(expected);
-  expect(session.activeRunIds).toEqual(expected ? ["run-1"] : undefined);
   expect(session.status).toBe(expectedStatus);
 }
 
@@ -743,7 +742,7 @@ test("sessions.list replaces a previous terminal status when execution starts", 
   );
 });
 
-test("sessions.changed publishes visible active run ids", async () => {
+test("sessions.changed publishes direct activity", async () => {
   await writeMainSessionStore();
   const result = await invokeSessionMutation({
     method: "sessions.patch",
@@ -758,7 +757,6 @@ test("sessions.changed publishes visible active run ids", async () => {
     reason: "patch",
     status: "running",
     hasActiveRun: true,
-    activeRunIds: ["run-1"],
   });
 });
 
@@ -779,7 +777,6 @@ test("sessions.changed publishes queued status before execution starts", async (
     reason: "patch",
     status: "queued",
     hasActiveRun: true,
-    activeRunIds: ["run-1"],
   });
 });
 

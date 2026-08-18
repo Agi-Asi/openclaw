@@ -372,7 +372,7 @@ export type AgentEventHandlerOptions = {
     canonicalKey: string;
     sessionId?: string;
     agentId?: string;
-  }) => { active: boolean; runIds: string[] };
+  }) => { hasActiveRun: boolean };
 };
 
 type AgentEventHandler = ((event: AgentEventPayload) => void) & {
@@ -602,11 +602,7 @@ export function createAgentEventHandler({
           ...(agentId ? { agentId } : {}),
         })
       : undefined;
-    // Agent lifecycle broadcasts merge into cached session rows in the UI.
-    // Always replace run identity so a newer start cannot inherit a completed run.
-    const activeRunFields = activeRunState
-      ? { hasActiveRun: activeRunState.active, activeRunIds: activeRunState.runIds }
-      : {};
+    const activeRunFields = activeRunState ? { hasActiveRun: activeRunState.hasActiveRun } : {};
     const clearsLastRunError =
       Object.hasOwn(lifecyclePatch, "lastRunError") && lifecyclePatch.lastRunError === undefined;
     const projectedRow = row

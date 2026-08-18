@@ -77,8 +77,7 @@ class ChatControllerReconnectRestoreTest {
     messages: List<ReplayHistoryMessage>,
     inFlightRun: Pair<String, String>? = null,
     hasActiveRun: Boolean? = inFlightRun?.let { true },
-    activeRunIds: List<String>? = inFlightRun?.let { listOf(it.first) },
-  ): String = historyResponse("session-1", messages, inFlightRun, hasActiveRun, activeRunIds)
+  ): String = historyResponse("session-1", messages, inFlightRun, hasActiveRun)
 
   private val userTurn = ReplayHistoryMessage("user", "keep working", 1_000)
 

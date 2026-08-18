@@ -1484,13 +1484,11 @@ async function createChatPickerScenario(
         ]
       : []),
     sessionRow("agent:main:main", "Molty", baseTime - 1_000, {
-      activeRunIds: [PLAN_DEMO_RUN_ID],
       childSessions: ["agent:main:lisbon-trip", ...swarmChildRows.map((row) => row.key)],
       hasActiveRun: true,
     }),
     ...swarmChildRows,
     sessionRow(OBSERVER_DEMO_SESSION_KEY, "Session observer demo", baseTime - 3_000, {
-      activeRunIds: [OBSERVER_DEMO_RUN_ID],
       hasActiveRun: true,
       lastReadAt: baseTime + 2_000,
       observerDigest: {
@@ -1615,7 +1613,6 @@ async function createChatPickerScenario(
   });
   const historyMessages = buildScrollableChatHistory(baseTime);
   const planSessionInfo = {
-    activeRunIds: [PLAN_DEMO_RUN_ID],
     hasActiveRun: true,
     key: "agent:main:main",
   };

@@ -497,7 +497,6 @@ suite.define(() => {
             messages: [authoritative],
             sessionId: "single-image-prompt",
             sessionInfo: {
-              activeRunIds: [runId],
               hasActiveRun: true,
               key: sessionKey,
               status: "running",
@@ -529,14 +528,12 @@ suite.define(() => {
       const durableBubble = page.locator('.chat-bubble[data-entry-id="persisted-image-prompt"]');
       await expect.poll(() => promptBubbles.count()).toBe(1);
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [runId],
         clientRunId: runId,
         hasActiveRun: true,
         message: authoritative,
         messageId: "persisted-image-prompt",
         messageSeq: 1,
         session: {
-          activeRunIds: [runId],
           hasActiveRun: true,
           key: sessionKey,
           kind: "direct",

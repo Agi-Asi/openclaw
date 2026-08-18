@@ -48,7 +48,6 @@ function createAbortDiagnosticState(runId = "run-validation-abort"): AbortDiagno
           kind: "direct",
           updatedAt: 1,
           hasActiveRun: true,
-          activeRunIds: [runId],
           status: "running",
           startedAt: 100,
         },
@@ -90,7 +89,6 @@ describe("aborted chat diagnostics", () => {
     });
     expect(state.lastLocalTerminalReconcile?.sessionStatus).toBe("killed");
     expect(state.sessionsResult?.sessions[0]).toMatchObject({
-      activeRunIds: [],
       hasActiveRun: false,
       status: "killed",
     });

@@ -17,6 +17,7 @@ import { formatUnknownText, truncateText } from "../../lib/format.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
 import { uiSessionEventMatches } from "../../lib/sessions/session-key.ts";
 import type { ChatRunStartupState } from "./chat-run-startup.ts";
+import { settleTrackedChatSessionRun, trackChatSessionRun } from "./chat-session-run-tracker.ts";
 import { rolloverChatStream } from "./stream-causal-boundary.ts";
 import { buildToolStreamIdentity } from "./tool-stream-identity.ts";
 
@@ -83,6 +84,7 @@ export type ToolStreamHost = {
   guardianNotices?: ChatGuardianNotice[];
   toolStreamSyncTimer: number | null;
   knownAgentRunIds?: Set<string>;
+  activeChatRunIdsBySession?: Map<string, Set<string>>;
   waitingApprovalStatuses?: Map<string, WaitingApprovalStatus>;
   waitingApprovalResolvedIds?: Set<string>;
   requestUpdate?: () => void;
@@ -412,39 +414,28 @@ export type WaitingApprovalStatus = {
 
 export function resolveActiveRunOutputTokens(params: {
   localRunId?: string | null;
-  activeRunIds?: readonly string[];
   usageByRun?: ReadonlyMap<string, number>;
 }): number | null {
   const localUsage = params.localRunId ? params.usageByRun?.get(params.localRunId) : undefined;
-  if (localUsage !== undefined) {
-    return localUsage;
-  }
-  for (const runId of params.activeRunIds ?? []) {
-    const usage = params.usageByRun?.get(runId);
-    if (usage !== undefined) {
-      return usage;
-    }
-  }
-  return null;
+  return localUsage ?? null;
 }
 
 export function resolveChatProjectionRunId(params: {
   localRunId?: string | null;
-  activeRunIds?: readonly string[];
+  hasActiveRun?: boolean;
   queue?: readonly ChatQueueItem[];
 }): string | null {
   if (params.localRunId) {
     return params.localRunId;
   }
-  const activeRunIds = new Set(params.activeRunIds ?? []);
+  if (!params.hasActiveRun) {
+    return null;
+  }
   // A session row can lag local completion. Restore its run identity only when
-  // the durable outbox independently proves that the same send is reconnecting.
+  // the durable outbox owns a request-local reconnect handle.
   return (
     params.queue?.find(
-      (item) =>
-        item.sendState === "waiting-reconnect" &&
-        typeof item.sendRunId === "string" &&
-        activeRunIds.has(item.sendRunId),
+      (item) => item.sendState === "waiting-reconnect" && typeof item.sendRunId === "string",
     )?.sendRunId ?? null
   );
 }
@@ -975,6 +966,15 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
 
   if (payload.stream === "lifecycle") {
     const phase = payload.data?.phase;
+    if (phase === "start") {
+      trackChatSessionRun(host, payload.runId);
+    } else if (phase === "end" || phase === "error") {
+      settleTrackedChatSessionRun(
+        host,
+        payload.runId,
+        [host.sessionKey, sessionKey].filter((key): key is string => Boolean(key)),
+      );
+    }
     if (
       (phase === "start" || phase === "end" || phase === "error") &&
       host.chatRunUsageById?.has(payload.runId)

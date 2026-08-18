@@ -24,7 +24,6 @@ struct ChatSessionSidebarModelTests {
         status: String? = nil,
         lastRunError: String? = nil,
         hasActiveRun: Bool? = nil,
-        activeRunIds: [String]? = nil,
         agentStatus: OpenClawChatSessionAgentStatus? = nil,
         observerDigest: OpenClawChatSessionObserverDigest? = nil,
         endedAt: Double? = nil,
@@ -65,7 +64,6 @@ struct ChatSessionSidebarModelTests {
             status: status,
             lastRunError: lastRunError,
             hasActiveRun: hasActiveRun,
-            activeRunIds: activeRunIds,
             hasActiveSubagentRun: hasActiveSubagentRun,
             endedAt: endedAt)
     }
@@ -579,12 +577,11 @@ struct ChatSessionSidebarModelTests {
             mainSessionKey: "agent:main:main"))
     }
 
-    @Test func `observer events require the server run and advance monotonically`() throws {
+    @Test func `observer events carry their run and advance monotonically`() throws {
         let running = self.entry(
             key: "agent:main:work",
             status: "running",
-            hasActiveRun: true,
-            activeRunIds: [" run-1 "])
+            hasActiveRun: true)
         let revision2 = SessionObserverDigest(
             sessionkey: running.key,
             runid: "run-1",
@@ -603,16 +600,6 @@ struct ChatSessionSidebarModelTests {
                 headline: "Stale",
                 health: .grinding),
             to: sessions)
-        sessions = ChatSessionSidebarModel.applying(
-            observerDigest: SessionObserverDigest(
-                sessionkey: running.key,
-                runid: "run-old",
-                revision: 3,
-                updatedat: 400,
-                headline: "Wrong run",
-                health: .stuck),
-            to: sessions)
-
         #expect(sessions[0].observerDigest?.headline == "Second")
         #expect(ChatSessionSidebarModel.subtitle(for: sessions[0], workSubtitle: "Work") == "Second")
 
@@ -627,8 +614,7 @@ struct ChatSessionSidebarModelTests {
                     headline: "Projected",
                     health: "wrapping-up"),
                 status: "running",
-                hasActiveRun: true,
-                activeRunIds: ["run-1"]),
+                hasActiveRun: true),
             to: sessions))
         #expect(sessions[0].observerDigest?.headline == "Projected")
     }
@@ -638,7 +624,6 @@ struct ChatSessionSidebarModelTests {
             key: "global",
             status: "running",
             hasActiveRun: true,
-            activeRunIds: ["run-work"],
             observerDigest: .init(
                 agentId: "work",
                 runId: "run-work",
@@ -686,7 +671,6 @@ struct ChatSessionSidebarModelTests {
             key: "agent:main:work",
             status: "running",
             hasActiveRun: true,
-            activeRunIds: ["run-1"],
             observerDigest: .init(
                 runId: "run-1",
                 revision: 8,
@@ -699,7 +683,7 @@ struct ChatSessionSidebarModelTests {
                 reason: "run-start",
                 status: "running",
                 hasActiveRun: true,
-                activeRunIds: ["run-2"]),
+                observerDigestPresent: true),
             to: [existing]))
 
         #expect(rolled[0].observerDigest == nil)
@@ -744,7 +728,6 @@ struct ChatSessionSidebarModelTests {
             status: "running",
             lastRunError: "Previous warning",
             hasActiveRun: true,
-            activeRunIds: ["run-1"],
             agentStatus: agentStatus,
             observerDigest: observerDigest)
 
@@ -794,7 +777,6 @@ struct ChatSessionSidebarModelTests {
             status: "failed",
             lastRunError: "Needs approval",
             hasActiveRun: true,
-            activeRunIds: ["run-1"],
             agentStatus: agent,
             observerDigest: digest,
             endedAt: 500)
@@ -808,7 +790,6 @@ struct ChatSessionSidebarModelTests {
                 key: "work",
                 status: "running",
                 hasActiveRun: true,
-                activeRunIds: ["run-1"],
                 agentStatus: agent,
                 observerDigest: digest),
             workSubtitle: "Work",
@@ -843,11 +824,9 @@ struct ChatSessionSidebarModelTests {
         #expect(ChatSessionSidebarModel.subtitle(for: session, workSubtitle: "Work") == "Finished")
         session.status = "running"
         session.hasActiveRun = true
-        session.activeRunIds = ["run-2"]
         #expect(ChatSessionSidebarModel.subtitle(for: session, workSubtitle: "Work") == "Work")
         session.status = "done"
         session.hasActiveRun = false
-        session.activeRunIds = []
         #expect(ChatSessionSidebarModel.subtitle(for: session, workSubtitle: "Work") == "Finished")
 
         let rolled = try #require(ChatSessionSidebarModel.applying(
@@ -856,7 +835,7 @@ struct ChatSessionSidebarModelTests {
                 reason: "run-start",
                 status: "running",
                 hasActiveRun: true,
-                activeRunIds: ["run-2"]),
+                observerDigestPresent: true),
             to: [session]))
         #expect(rolled[0].observerDigest == nil)
     }

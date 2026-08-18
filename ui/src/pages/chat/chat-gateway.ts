@@ -17,6 +17,7 @@ import {
   type ChatEventPayload,
   type ChatState,
 } from "./chat-history.ts";
+import { trackChatSessionRun } from "./chat-session-run-tracker.ts";
 import {
   getChatSessionProjection,
   publishChatSessionProjectionMessages,
@@ -229,6 +230,14 @@ function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       }
     }
     return null;
+  }
+  if (
+    typeof payload.runId === "string" &&
+    payload.state !== "final" &&
+    payload.state !== "aborted" &&
+    payload.state !== "error"
+  ) {
+    trackChatSessionRun(state, payload.runId);
   }
   const scope = readChatSessionProjectionScope(state);
   const publishVisibleFinal = (

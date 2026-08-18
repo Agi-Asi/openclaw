@@ -86,7 +86,6 @@ function activeRunSnapshot(
     ],
     sessionId: "active-turn-recovery-session",
     sessionInfo: {
-      activeRunIds: [runId],
       hasActiveRun: true,
       key: "main",
       kind: "direct",

@@ -56,6 +56,7 @@ import {
   registerChatSendTiming,
   updateChatSendAckTiming,
 } from "./chat-send-timing.ts";
+import { settleTrackedChatSessionRun, trackChatSessionRun } from "./chat-session-run-tracker.ts";
 import { getPendingChatPickerPatch, refreshChatSessionListForTarget } from "./chat-session.ts";
 import {
   INTERRUPTED_SETTINGS_WAIT_ERROR,
@@ -319,6 +320,12 @@ async function sendQueuedChatMessage(
       return "pending";
     }
     updateChatSendAckTiming(host, runId, ack, sendingItem, requestStartedAtMs);
+    if (isVisible()) {
+      if (ack.runId !== runId) {
+        settleTrackedChatSessionRun(host, runId, [host.sessionKey, sessionKey]);
+      }
+      trackChatSessionRun(host, ack.runId);
+    }
     recordChatSendTiming(host, sendingItem, "ack", sendingItem.sendSubmittedAtMs, {
       ackStatus: ack.status,
       requestDurationMs: roundedControlUiDurationMs(controlUiNowMs() - requestStartedAtMs),

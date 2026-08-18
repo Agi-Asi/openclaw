@@ -640,7 +640,6 @@ describe("refreshChat", () => {
           messages: [],
           inFlightRun: { runId, text: "Still working after navigation." },
           sessionInfo: row("main", {
-            activeRunIds: [runId],
             hasActiveRun: true,
             status: "running",
             updatedAt: 1,
@@ -3898,7 +3897,6 @@ describe("handleSendChat", () => {
       sessionsResult: createSessionsResult([
         row("agent:main:main", {
           hasActiveRun: true,
-          activeRunIds: ["active-run"],
           activeLeafEntryId: "leaf-active",
           status: "running",
         }),
@@ -3963,7 +3961,6 @@ describe("handleSendChat", () => {
       sessionsResult: createSessionsResult([
         row("agent:main:main", {
           hasActiveRun: true,
-          activeRunIds: ["active-run"],
           activeLeafEntryId: "leaf-active",
           status: "running",
         }),
@@ -8204,7 +8201,6 @@ describe("handleSendChat", () => {
       sessionsResult: createSessionsResult([
         row("agent:main:main", {
           activeLeafEntryId: "leaf-active",
-          activeRunIds: ["run-1"],
           hasActiveRun: true,
           status: "running",
         }),

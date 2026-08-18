@@ -226,7 +226,7 @@ export const sessionCompactHandlers: GatewayRequestHandlers = {
               sessionId,
               agentId: requestedAgentId,
               defaultAgentId: compatibilityDefaultAgentId,
-            }).active;
+            }).hasActiveRun;
           // Accepted work can live only in its command lane; waiting behind it
           // while holding the lifecycle fence would deadlock or drop that turn.
           blockedByQueuedWork =

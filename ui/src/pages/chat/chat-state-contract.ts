@@ -38,6 +38,8 @@ export type ChatState = {
   chatAttachments: ChatAttachment[];
   chatQueue: ChatQueueItem[];
   chatRunId: string | null;
+  /** Event-local run identities since the latest authoritative history load. */
+  activeChatRunIdsBySession?: Map<string, Set<string>>;
   chatRunUsageById?: Map<string, number>;
   chatStream: string | null;
   chatStreamStartedAt: number | null;

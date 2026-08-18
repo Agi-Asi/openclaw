@@ -206,7 +206,6 @@ internal fun historyResponse(
   messages: List<ReplayHistoryMessage>,
   inFlightRun: Pair<String, String>? = null,
   hasActiveRun: Boolean? = inFlightRun?.let { true },
-  activeRunIds: List<String>? = inFlightRun?.let { listOf(it.first) },
 ): String =
   buildJsonObject {
     put("sessionId", JsonPrimitive(sessionId))
@@ -219,14 +218,11 @@ internal fun historyResponse(
         },
       )
     }
-    if (hasActiveRun != null || activeRunIds != null) {
+    if (hasActiveRun != null) {
       put(
         "sessionInfo",
         buildJsonObject {
-          hasActiveRun?.let { put("hasActiveRun", JsonPrimitive(it)) }
-          activeRunIds?.let { ids ->
-            put("activeRunIds", JsonArray(ids.map(::JsonPrimitive)))
-          }
+          put("hasActiveRun", JsonPrimitive(hasActiveRun))
         },
       )
     }

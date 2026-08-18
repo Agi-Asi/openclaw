@@ -3,7 +3,7 @@ import OpenClawProtocol
 import Testing
 
 struct MacSessionObserverDigestTests {
-    @Test func `native chat sidebar accepts only the server reported run`() {
+    @Test func `native chat sidebar accepts event-local run identity`() {
         let session = OpenClawChatSessionEntry(
             key: "agent:main:work",
             kind: nil,
@@ -25,15 +25,7 @@ struct MacSessionObserverDigestTests {
             model: nil,
             contextTokens: nil,
             status: "running",
-            hasActiveRun: true,
-            activeRunIds: ["run-1"])
-        let wrongRun = SessionObserverDigest(
-            sessionkey: session.key,
-            runid: "run-old",
-            revision: 5,
-            updatedat: 500,
-            headline: "Wrong run",
-            health: .stuck)
+            hasActiveRun: true)
         let accepted = SessionObserverDigest(
             sessionkey: session.key,
             runid: "run-1",
@@ -42,10 +34,8 @@ struct MacSessionObserverDigestTests {
             headline: "On track",
             health: .onTrack)
 
-        let rejected = ChatSessionSidebarModel.applying(observerDigest: wrongRun, to: [session])
-        let updated = ChatSessionSidebarModel.applying(observerDigest: accepted, to: rejected)
+        let updated = ChatSessionSidebarModel.applying(observerDigest: accepted, to: [session])
 
-        #expect(rejected[0].observerDigest == nil)
         #expect(updated[0].observerDigest?.headline == "On track")
         #expect(ChatSessionSidebarModel.subtitle(for: updated[0], workSubtitle: "Work") == "On track")
     }
@@ -72,8 +62,7 @@ struct MacSessionObserverDigestTests {
             model: nil,
             contextTokens: nil,
             status: "running",
-            hasActiveRun: true,
-            activeRunIds: ["run-work"])
+            hasActiveRun: true)
         let other = SessionObserverDigest(
             sessionkey: "global",
             agentid: "main",
@@ -138,8 +127,7 @@ struct MacSessionObserverDigestTests {
             model: nil,
             contextTokens: nil,
             status: "running",
-            hasActiveRun: true,
-            activeRunIds: ["run-main"])
+            hasActiveRun: true)
         session.observerDigest = OpenClawChatSessionObserverDigest(
             agentId: "main",
             runId: "run-main",

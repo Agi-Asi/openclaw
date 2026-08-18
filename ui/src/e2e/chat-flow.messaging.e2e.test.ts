@@ -87,7 +87,6 @@ suite.define(() => {
       await userRow.waitFor({ timeout: 10_000 });
 
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [runId],
         clientRunId: runId,
         hasActiveRun: true,
         message: {
@@ -98,7 +97,6 @@ suite.define(() => {
         messageId: "browser-local-authoritative-user",
         messageSeq: 1,
         session: {
-          activeRunIds: [runId],
           hasActiveRun: true,
           key: "main",
           kind: "direct",
@@ -148,7 +146,6 @@ suite.define(() => {
       await page.goto(`${suite.server.baseUrl}chat`);
       await gateway.waitForRequest("chat.startup");
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [],
         clientRunId: previousRunId,
         hasActiveRun: false,
         message: {
@@ -159,7 +156,6 @@ suite.define(() => {
         messageId: "previous-user",
         messageSeq: 1,
         session: {
-          activeRunIds: [],
           hasActiveRun: false,
           key: "main",
           kind: "direct",
@@ -177,7 +173,6 @@ suite.define(() => {
         "current chat run id",
       );
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [currentRunId],
         clientRunId: currentRunId,
         hasActiveRun: true,
         message: {
@@ -188,7 +183,6 @@ suite.define(() => {
         messageId: "current-user",
         messageSeq: 3,
         session: {
-          activeRunIds: [currentRunId],
           hasActiveRun: true,
           key: "main",
           kind: "direct",
@@ -210,7 +204,6 @@ suite.define(() => {
         state: "delta",
       });
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [currentRunId],
         clientRunId: previousRunId,
         hasActiveRun: true,
         message: {
@@ -221,7 +214,6 @@ suite.define(() => {
         messageId: "previous-final",
         messageSeq: 2,
         session: {
-          activeRunIds: [currentRunId],
           hasActiveRun: true,
           key: "main",
           kind: "direct",
@@ -274,14 +266,12 @@ suite.define(() => {
       const emitPersistedMessage = async (index: number) => {
         const message = persistedMessages[index];
         await gateway.emitGatewayEvent("session.message", {
-          activeRunIds: [],
           hasActiveRun: false,
           message,
           // Persisted metadata is authoritative when a transport envelope disagrees.
           messageId: `conflicting-envelope-${index + 1}`,
           messageSeq: 100 + index,
           session: {
-            activeRunIds: [],
             hasActiveRun: false,
             key: "main",
             kind: "direct",
@@ -379,14 +369,12 @@ suite.define(() => {
         });
 
         const sharedUserEvent = {
-          activeRunIds: [runId],
           clientRunId: includeMessageMetadata ? "conflicting-envelope-run" : runId,
           hasActiveRun: true,
           message: userMessage,
           messageId: "shared-session-user",
           messageSeq: 1,
           session: {
-            activeRunIds: [runId],
             hasActiveRun: true,
             key: "main",
             kind: "direct",
@@ -515,14 +503,12 @@ suite.define(() => {
         await gateway.setHistoryMessages([userMessage, assistantMessage]);
         await gateway.deferNext("chat.history");
         await gateway.emitGatewayEvent("session.message", {
-          activeRunIds: [],
           clientRunId: runId,
           hasActiveRun: false,
           message: userMessage,
           messageId: "finalized-run-user",
           messageSeq: 1,
           session: {
-            activeRunIds: [],
             hasActiveRun: false,
             key: "main",
             kind: "direct",
@@ -679,14 +665,12 @@ suite.define(() => {
       ]);
       const historyRequestsBefore = (await gateway.getRequests("chat.history")).length;
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [],
         clientRunId: runId,
         hasActiveRun: false,
         message: authoritative,
         messageId,
         messageSeq: 2,
         session: {
-          activeRunIds: [],
           hasActiveRun: false,
           key: "main",
           kind: "direct",
@@ -805,7 +789,6 @@ suite.define(() => {
         "sessions.list",
         chatSessionListResponse([
           {
-            activeRunIds: [],
             hasActiveRun: false,
             key: channelSessionKey,
             kind: "direct",
@@ -816,7 +799,6 @@ suite.define(() => {
         ]),
       );
       await gateway.emitGatewayEvent("sessions.changed", {
-        activeRunIds: [],
         hasActiveRun: false,
         reason: "abort",
         sessionKey: channelSessionKey,
@@ -903,7 +885,6 @@ suite.define(() => {
           "sessions.list": chatSessionListResponse([
             {
               hasActiveRun: true,
-              activeRunIds: ["active-run"],
               activeLeafEntryId: "leaf-before-steer",
               key: "agent:main:main",
               kind: "direct",

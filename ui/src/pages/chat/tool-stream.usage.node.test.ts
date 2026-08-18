@@ -60,7 +60,7 @@ describe("app-tool-stream run usage", () => {
 });
 
 describe("active run output usage selection", () => {
-  it("prefers local client-run usage and falls back to a server active run", () => {
+  it("uses only locally correlated run usage", () => {
     const usageByRun = new Map([
       ["client-run", 12],
       ["engine-run", 30],
@@ -69,16 +69,14 @@ describe("active run output usage selection", () => {
     expect(
       resolveActiveRunOutputTokens({
         localRunId: "client-run",
-        activeRunIds: ["engine-run"],
         usageByRun,
       }),
     ).toBe(12);
     expect(
       resolveActiveRunOutputTokens({
         localRunId: "missing-client-run",
-        activeRunIds: ["missing-engine-run", "engine-run"],
         usageByRun,
       }),
-    ).toBe(30);
+    ).toBeNull();
   });
 });

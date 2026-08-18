@@ -56,7 +56,6 @@ suite.define(() => {
             kind: "direct",
             label: "First running session",
             updatedAt: 2,
-            activeRunIds: ["run-first"],
             hasActiveRun: true,
             status: "running",
           },
@@ -65,7 +64,6 @@ suite.define(() => {
             kind: "direct",
             label: "Second running session",
             updatedAt: 1,
-            activeRunIds: ["run-second"],
             hasActiveRun: true,
             status: "running",
           },
@@ -142,7 +140,6 @@ suite.define(() => {
         kind: "direct",
         label: "Sidebar metadata repair",
         updatedAt: Date.now(),
-        activeRunIds: [runId],
         hasActiveRun: true,
         status: "running",
         observerDigest: {
@@ -161,7 +158,6 @@ suite.define(() => {
         kind: "direct",
         label: "Sidebar metadata repair",
         updatedAt: Date.now() + 1,
-        activeRunIds: [],
         hasActiveRun: false,
         status: "done",
         lastMessagePreview: "The repaired sidebar now shows the final reply.",
@@ -193,7 +189,6 @@ suite.define(() => {
       await gateway.setMethodResponse("sessions.list", completed);
       const listCount = (await gateway.getRequests("sessions.list")).length;
       await gateway.emitGatewayEvent("session.message", {
-        activeRunIds: [],
         hasActiveRun: false,
         message: {
           content: [{ type: "text", text: "The repaired sidebar now shows the final reply." }],
@@ -339,7 +334,6 @@ suite.define(() => {
             kind: "direct",
             label: "Terminal tab bar redesign proposal",
             updatedAt: 2,
-            activeRunIds: ["run-busy-session"],
             hasActiveRun: true,
             observerDigest: {
               agentId: "main",

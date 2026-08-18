@@ -208,15 +208,14 @@ export class ChatPane extends ChatPaneLayoutRender {
       presenceEntries: readPresenceEntries(gatewaySnapshot.hello?.snapshot),
       presenceInstanceId: gatewaySnapshot.client?.instanceId,
     });
-    const runOutputTokens = resolveActiveRunOutputTokens({
-      localRunId: state.chatRunId,
-      activeRunIds: selectedSession?.activeRunIds,
-      usageByRun: state.chatRunUsageById,
-    });
     const projectionRunId = resolveChatProjectionRunId({
       localRunId: state.chatRunId,
-      activeRunIds: selectedSession?.activeRunIds,
+      hasActiveRun: selectedSession?.hasActiveRun,
       queue: state.chatQueue,
+    });
+    const runOutputTokens = resolveActiveRunOutputTokens({
+      localRunId: projectionRunId,
+      usageByRun: state.chatRunUsageById,
     });
     const attachmentReads = this.chatState.attachmentReads;
     const attachmentReadSignal = attachmentReads.readSignal;

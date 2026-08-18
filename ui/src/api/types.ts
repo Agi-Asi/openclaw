@@ -466,7 +466,6 @@ export type GatewaySessionRow = SessionRow & {
   reasoningLevel?: string;
   elevatedLevel?: string;
   hasActiveRun?: boolean;
-  activeRunIds?: string[];
   /** An enabled cron job is bound to this session (runs in it or delivers to it). */
   hasAutomation?: boolean;
   subagentRunState?: SubagentRunState;

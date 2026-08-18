@@ -145,10 +145,9 @@ current in-memory run state:
    rows with the returned `messages` projection.
 3. If `inFlightRun` is present, adopt its `runId`, buffered `text`, and optional
    `plan`. Adopt the run even when `text` is empty.
-4. Read `sessionInfo.hasActiveRun` and `sessionInfo.activeRunIds`. Prefer exact
-   membership in `activeRunIds` when deciding whether a retained run still owns
-   the streaming UI. A true `hasActiveRun` with no listed ID can represent another
-   active runtime projection.
+4. Read `sessionInfo.hasActiveRun` for direct session activity. Use only the
+   `inFlightRun.runId` snapshot or a request-local run ID to retain ownership of
+   streaming UI; aggregate runtime activity does not establish run identity.
 5. Reconcile subsequent `agent` events by `payload.runId` and `payload.seq`.
    Maintain the highest accepted sequence independently for each run, ignore an
    already-seen or lower sequence, and treat a forward gap as a reason to reload

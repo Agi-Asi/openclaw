@@ -31,12 +31,10 @@ vi.mock("../session-event-payload.js", () => ({
   buildGatewaySessionEventFields: ({
     sessionRow,
     hasActiveRun,
-    activeRunIds,
   }: {
     sessionRow: { key: string; label: string };
     hasActiveRun?: boolean;
-    activeRunIds?: string[];
-  }) => ({ key: sessionRow.key, label: sessionRow.label, hasActiveRun, activeRunIds }),
+  }) => ({ key: sessionRow.key, label: sessionRow.label, hasActiveRun }),
 }));
 
 const { emitSessionsChanged, flushPendingSessionsChangedEvents, readSessionsMutationVersion } =
@@ -156,7 +154,7 @@ describe("sessions.changed coalescing", () => {
 
     expect(context.broadcastToConnIds).toHaveBeenCalledWith(
       "sessions.changed",
-      expect.objectContaining({ hasActiveRun: false, activeRunIds: [] }),
+      expect.objectContaining({ hasActiveRun: false }),
       expect.anything(),
       expect.anything(),
     );
@@ -194,7 +192,6 @@ describe("sessions.changed coalescing", () => {
     expect(context.broadcastToConnIds).toHaveBeenCalledWith(
       "sessions.changed",
       expect.objectContaining({
-        activeRunIds: ["ops-global-run"],
         hasActiveRun: true,
       }),
       expect.anything(),

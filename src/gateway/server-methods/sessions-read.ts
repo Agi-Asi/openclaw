@@ -400,14 +400,11 @@ export const sessionReadHandlers: GatewayRequestHandlers = {
                         }),
                       }
                     : {}),
-                  hasActiveRun: activeRunState.active,
-                  ...(activeRunState.active
+                  hasActiveRun: activeRunState.hasActiveRun,
+                  ...(activeRunState.hasActiveRun
                     ? { status: activeRunState.status ?? ("running" as const) }
                     : {}),
                   ...projectPlacement(session.sessionId),
-                  ...(activeRunState.runIds.length > 0
-                    ? { activeRunIds: activeRunState.runIds }
-                    : {}),
                 });
               });
             },

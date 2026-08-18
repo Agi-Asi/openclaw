@@ -501,9 +501,8 @@ async function handleChatHistoryRequest({
     ...(activeRunAgentId ? { agentId: activeRunAgentId } : {}),
     defaultAgentId: compatibilityOwnerAgentId,
   });
-  sessionInfo.hasActiveRun = activeRunState.active;
-  sessionInfo.activeRunIds = activeRunState.runIds;
-  if (activeRunState.active) {
+  sessionInfo.hasActiveRun = activeRunState.hasActiveRun;
+  if (activeRunState.hasActiveRun) {
     sessionInfo.status = activeRunState.status ?? "running";
   }
   // Clients merge this row into the same store sessions.list fills, so it must
@@ -551,8 +550,7 @@ async function handleChatHistoryRequest({
       sessionRow: deltaSessionRow,
       agentId: sessionAgentId,
       includeSession: true,
-      hasActiveRun: activeRunState.active,
-      activeRunIds: activeRunState.runIds,
+      hasActiveRun: activeRunState.hasActiveRun,
     });
     let delta: ReturnType<typeof readChatHistoryDelta>;
     try {

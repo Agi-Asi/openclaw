@@ -124,7 +124,6 @@ function createStateWithRunningSession(overrides: Partial<ChatState>): SessionTe
         kind: "direct",
         updatedAt: 1,
         hasActiveRun: true,
-        activeRunIds: ["run-1"],
         status: "running",
         startedAt: 100,
       },
@@ -1030,7 +1029,6 @@ describe("handleChatGatewayEvent", () => {
             ?.status,
         ).toBe(projectionStatus);
         expect(state.sessionsResult.sessions[0]).toMatchObject({
-          activeRunIds: [],
           hasActiveRun: false,
           status: sessionStatus,
         });
@@ -1130,7 +1128,6 @@ describe("handleChatGatewayEvent", () => {
       expect(state.chatRunStatus).toBeNull();
       expect(state.sessionsResult.sessions[0]).toMatchObject({
         hasActiveRun: false,
-        activeRunIds: [],
         status: "running",
       });
     } finally {

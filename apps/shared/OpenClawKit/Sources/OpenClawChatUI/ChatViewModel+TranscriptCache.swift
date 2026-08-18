@@ -26,11 +26,9 @@ extension OpenClawChatViewModel {
         var projected = session
         let wasActive =
             projected.hasActiveRun == true ||
-            projected.activeRunIds?.isEmpty == false ||
             projected.hasActiveSubagentRun == true ||
             projected.status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "running"
         projected.hasActiveRun = nil
-        projected.activeRunIds = nil
         projected.hasActiveSubagentRun = nil
         if wasActive {
             projected.startedAt = nil

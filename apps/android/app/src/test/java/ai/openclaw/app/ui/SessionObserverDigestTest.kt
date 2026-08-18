@@ -13,13 +13,12 @@ import org.junit.Test
 
 class SessionObserverDigestTest {
   @Test
-  fun observerEventsRequireTheServerRunAndAdvanceMonotonically() {
+  fun observerEventsCarryTheirRunAndAdvanceMonotonically() {
     val running =
       ChatSessionEntry(
         key = "agent:main:work",
         updatedAtMs = 100,
         hasActiveRun = true,
-        activeRunIds = listOf(" run-1 "),
         status = "running",
       )
     var sessions =
@@ -32,12 +31,6 @@ class SessionObserverDigestTest {
         sessions,
         digest(runId = "run-1", revision = 1, updatedAt = 300, headline = "Stale"),
       )
-    sessions =
-      applySessionObserverDigest(
-        sessions,
-        digest(runId = "run-old", revision = 3, updatedAt = 400, headline = "Wrong run"),
-      )
-
     assertEquals("Second", sessions.single().observerDigest?.headline)
     assertEquals("Second", sessionListSubtitle(sessions.single(), fallback = "Work", nowMs = 1_000))
 
@@ -48,45 +41,11 @@ class SessionObserverDigestTest {
         observerDigest = digest(runId = "run-1", revision = 3, updatedAt = 500, headline = "Projected"),
         hasObserverDigestMetadata = true,
         hasActiveRun = true,
-        activeRunIds = listOf("run-1"),
         hasActiveRunMetadata = true,
         status = "running",
         hasRunMetadata = true,
       )
     assertEquals("Projected", mergeChatSessionEntry(sessions.single(), projected).observerDigest?.headline)
-  }
-
-  @Test
-  fun sessionProjectionClearsDigestOnRunRollover() {
-    val existing =
-      ChatSessionEntry(
-        key = "agent:main:work",
-        updatedAtMs = 100,
-        hasActiveRun = true,
-        activeRunIds = listOf("run-1"),
-        status = "running",
-        observerDigest = digest(runId = "run-1", revision = 8, updatedAt = 800, headline = "Old run"),
-      )
-    val replacement =
-      ChatSessionEntry(
-        key = existing.key,
-        updatedAtMs = 900,
-        hasActiveRun = true,
-        activeRunIds = listOf("run-2"),
-        hasActiveRunMetadata = true,
-        status = "running",
-        hasRunMetadata = true,
-      )
-
-    val rolled = mergeChatSessionEntry(existing, replacement)
-
-    assertNull(rolled.observerDigest)
-    val accepted =
-      applySessionObserverDigest(
-        listOf(rolled),
-        digest(runId = "run-2", revision = 1, updatedAt = 901, headline = "New run"),
-      )
-    assertEquals("New run", accepted.single().observerDigest?.headline)
   }
 
   @Test
@@ -97,7 +56,6 @@ class SessionObserverDigestTest {
         updatedAtMs = 100,
         observerDigest = digest(runId = "run-1", revision = 4, updatedAt = 400, headline = "Stale"),
         hasActiveRun = true,
-        activeRunIds = listOf("run-1"),
         status = "running",
       )
     val explicitClear =
@@ -107,7 +65,6 @@ class SessionObserverDigestTest {
         observerDigest = null,
         hasObserverDigestMetadata = true,
         hasActiveRun = true,
-        activeRunIds = listOf("run-1"),
         hasActiveRunMetadata = true,
         status = "running",
         hasRunMetadata = true,
@@ -123,7 +80,6 @@ class SessionObserverDigestTest {
         key = "global",
         updatedAtMs = 100,
         hasActiveRun = true,
-        activeRunIds = listOf("run-work"),
         status = "running",
       )
     val wrongOwner =
@@ -177,7 +133,6 @@ class SessionObserverDigestTest {
         key = "global",
         updatedAtMs = 100,
         hasActiveRun = true,
-        activeRunIds = listOf("run-work"),
         status = "running",
         observerDigest = current,
       )
@@ -215,7 +170,6 @@ class SessionObserverDigestTest {
         key = "global",
         updatedAtMs = 100,
         hasActiveRun = true,
-        activeRunIds = listOf("run-main"),
         status = "running",
         observerDigest =
           SessionObserverDigest(
@@ -304,7 +258,6 @@ class SessionObserverDigestTest {
         agentStatus = agentStatus,
         observerDigest = liveDigest,
         hasActiveRun = true,
-        activeRunIds = listOf("run-1"),
         status = "failed",
         lastRunError = "Needs approval",
         endedAt = 500,

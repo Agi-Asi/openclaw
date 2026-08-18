@@ -46,6 +46,7 @@ import {
   sleep,
 } from "./chat-history-retry.ts";
 import type { ChatRunStartupPhase } from "./chat-run-startup.ts";
+import { resetTrackedChatSessionRuns, trackChatSessionRun } from "./chat-session-run-tracker.ts";
 import type { ChatState } from "./chat-state-contract.ts";
 import { persistChatComposerState } from "./composer-persistence.ts";
 import {
@@ -173,6 +174,7 @@ export function resetChatHistoryProjection(state: ChatState, agentId?: string): 
   requests.historyVersion += 1;
   requests.inFlightHistory = undefined;
   state.chatLoading = false;
+  resetTrackedChatSessionRuns(state);
   const scope = readChatSessionProjectionScope(state, { agentId });
   // Destructive operations keep the public session key, so only an explicit
   // reducer reset can prevent old live or pending rows from crossing epochs.
@@ -1470,6 +1472,9 @@ async function loadChatHistoryUncached(
   method: "chat.history" | "chat.startup",
   deltaCursor: string | undefined,
 ): Promise<ChatHistoryResult | undefined> {
+  // A history request starts a new authoritative run-identity epoch. Live
+  // starts received after this point repopulate the tracker while it awaits.
+  resetTrackedChatSessionRuns(state);
   const ownership = beginChatHistoryRequest(
     state,
     client,
@@ -1742,7 +1747,6 @@ async function loadChatHistoryUncached(
     }
 
     const inFlightRunId = res.inFlightRun?.runId?.trim();
-    const activeRunIds = res.sessionInfo?.activeRunIds;
     const projectedInFlightRun = inFlightRunId ? historyProjection.runs[inFlightRunId] : undefined;
     const sameRunContinued = Boolean(
       inFlightRunId &&
@@ -1757,9 +1761,11 @@ async function loadChatHistoryUncached(
     const inFlightRunIsActive = Boolean(
       inFlightRunId &&
       isSessionRunActive(res.sessionInfo ?? {}) &&
-      (!Array.isArray(activeRunIds) || activeRunIds.includes(inFlightRunId)) &&
       (!projectedInFlightRun || projectedInFlightRun.status === "streaming"),
     );
+    if (inFlightRunIsActive) {
+      trackChatSessionRun(state, inFlightRunId);
+    }
     const canAdoptInFlightRun = Boolean(
       inFlightRunId &&
       inFlightRunIsActive &&

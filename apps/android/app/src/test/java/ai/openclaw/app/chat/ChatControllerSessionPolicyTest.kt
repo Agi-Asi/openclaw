@@ -265,42 +265,61 @@ class ChatControllerSessionPolicyTest {
     assertEquals(null, merged.outputTokens)
   }
 
-  @Test
-  fun activeRunSelectionPrefersAdvertisedOverlapThenDeterministicLocalThenAdvertised() {
-    assertEquals(
-      "local-b",
-      resolvePreferredActiveRunId(
-        localRunIds = listOf("local-a", "local-b"),
-        advertisedRunIds = listOf("server", "local-b", "local-a"),
+  private fun mergeTerminalProjection(
+    terminalRunId: String,
+    startedRunIds: Set<String>,
+  ): ChatSessionEntry {
+    val current =
+      ChatSessionEntry(
+        key = "main",
+        updatedAtMs = 1L,
+        hasActiveRun = true,
+        status = "running",
+        hasRunMetadata = true,
+      )
+    val terminal =
+      ChatSessionEntry(
+        key = "main",
+        updatedAtMs = 2L,
+        hasActiveRun = false,
+        hasActiveRunMetadata = true,
+        status = "done",
+        endedAt = 2L,
+        hasRunMetadata = true,
+      )
+    return mergeChatSessionEntry(
+      current,
+      preserveActiveSessionForTerminalOrdering(
+        current = current,
+        incoming = terminal,
+        terminalRunId = terminalRunId,
+        startedRunIds = startedRunIds,
       ),
     )
-    assertEquals(
-      "local-a",
-      resolvePreferredActiveRunId(
-        localRunIds = listOf("local-b", "local-a"),
-        advertisedRunIds = listOf("server"),
-      ),
-    )
-    assertEquals("server", resolvePreferredActiveRunId(emptyList(), listOf("server", "later")))
   }
 
   @Test
-  fun activeRunCountIncludesBooleanFallbackWithoutAnId() {
-    assertEquals(
-      1,
-      resolveSelectedActiveRunCount(
-        localRunIds = emptyList(),
-        advertisedRunIds = emptyList(),
-        hasAdvertisedRun = true,
-      ),
-    )
-    assertEquals(
-      3,
-      resolveSelectedActiveRunCount(
-        localRunIds = listOf("local", "overlap"),
-        advertisedRunIds = listOf("overlap", "server"),
-        hasAdvertisedRun = true,
-      ),
-    )
+  fun latePredecessorTerminalKeepsSuccessorRunning() {
+    val merged = mergeTerminalProjection("run-a", setOf("run-a", "run-b"))
+
+    assertEquals(true, merged.hasActiveRun)
+    assertEquals("running", merged.status)
   }
+
+  @Test
+  fun currentTerminalEndsTheSessionRow() {
+    val merged = mergeTerminalProjection("run-b", setOf("run-b"))
+
+    assertEquals(false, merged.hasActiveRun)
+    assertEquals("done", merged.status)
+  }
+
+  @Test
+  fun unknownTerminalKeepsOwnedRunRunning() {
+    val merged = mergeTerminalProjection("run-unknown", setOf("run-b"))
+
+    assertEquals(true, merged.hasActiveRun)
+    assertEquals("running", merged.status)
+  }
+
 }

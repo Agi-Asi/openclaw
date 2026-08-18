@@ -184,6 +184,7 @@ export function createPageState(
     chatEffectiveQueueMode: undefined,
     chatAttachments: [],
     chatRunId: null,
+    activeChatRunIdsBySession: new Map(),
     chatRunUsageById: new Map<string, number>(),
     chatStream: null,
     chatStreamStartedAt: null,

@@ -2804,34 +2804,13 @@ class ChatController internal constructor(
 
   private fun currentSelectedSession(): ChatSessionEntry? = _sessions.value.firstOrNull { it.key == _sessionKey.value }
 
-  private fun advertisedRunIds(session: ChatSessionEntry? = currentSelectedSession()): List<String> =
-    session
-      ?.activeRunIds
-      .orEmpty()
-      .mapNotNull { it.trim().takeIf(String::isNotEmpty) }
-      .distinct()
-
   private fun publishRunPresentation() {
     val localRunIds = synchronized(pendingRuns) { pendingRuns.toSet() }
     val session = currentSelectedSession()
-    val rawAdvertisedRunIds = advertisedRunIds(session)
     val telemetry = synchronized(liveRunTelemetryLock) { liveRunTelemetryByRunId.toMap() }
     val liveLocalRunIds = localRunIds.filterTo(mutableSetOf()) { telemetry[it]?.terminal != true }
-    val liveAdvertisedRunIds = rawAdvertisedRunIds.filter { telemetry[it]?.terminal != true }
-    val selectedRunId =
-      resolvePreferredActiveRunId(
-        localRunIds = liveLocalRunIds,
-        advertisedRunIds = liveAdvertisedRunIds,
-      )
-    val hasUnknownAdvertisedRun =
-      session?.hasActiveRun == true &&
-        (rawAdvertisedRunIds.isEmpty() || liveAdvertisedRunIds.isNotEmpty())
-    val activeCount =
-      resolveSelectedActiveRunCount(
-        localRunIds = liveLocalRunIds,
-        advertisedRunIds = liveAdvertisedRunIds,
-        hasAdvertisedRun = hasUnknownAdvertisedRun,
-      )
+    val selectedRunId = liveLocalRunIds.minOrNull()
+    val activeCount = maxOf(liveLocalRunIds.size, if (session?.hasActiveRun == true) 1 else 0)
     val clockKey =
       when {
         selectedRunId != null && selectedRunId in liveLocalRunIds ->
@@ -2857,16 +2836,14 @@ class ChatController internal constructor(
     val session = currentSelectedSession() ?: return
     if (!session.hasActiveRunMetadata) return
     val localRunIds = synchronized(pendingRuns) { pendingRuns.toSet() }
-    val authoritativeRunIds = advertisedRunIds(session).toSet()
     synchronized(liveRunTelemetryLock) {
-      liveRunTelemetryByRunId.keys.removeAll { it !in localRunIds && it !in authoritativeRunIds }
+      liveRunTelemetryByRunId.keys.removeAll { it !in localRunIds }
     }
   }
 
   private fun clearUnownedNonterminalTelemetry(runId: String) {
-    val advertised = runId in advertisedRunIds()
     synchronized(liveRunTelemetryLock) {
-      if (!advertised && liveRunTelemetryByRunId[runId]?.terminal != true) {
+      if (!isLocallyOwnedRun(runId) && liveRunTelemetryByRunId[runId]?.terminal != true) {
         liveRunTelemetryByRunId.remove(runId)
       }
     }
@@ -5742,11 +5719,23 @@ class ChatController internal constructor(
         ?.trim()
         ?.takeIf(String::isNotEmpty)
         ?.takeIf { phase == "end" || phase == "error" }
+    val startedRunIds = synchronized(pendingRuns) { pendingRuns.toSet() }
     val terminalWasLocal = terminalRunId?.let(::isLocallyOwnedRun) == true
-    val terminalWasAdvertised = terminalRunId?.let { it in advertisedRunIds() } == true
-    val settlesSelectedRun = terminalRunId != null && (terminalWasLocal || terminalWasAdvertised)
+    val settlesSelectedRun = terminalRunId != null && terminalWasLocal
+    val terminalSafeEntry =
+      preserveActiveSessionForTerminalOrdering(
+        current = _sessions.value.firstOrNull { sameOutboxSession(it.key, entry.key) },
+        incoming = ownedEntry,
+        terminalRunId = terminalRunId,
+        startedRunIds = startedRunIds,
+      )
     upsertSessionEntry(
-      entry = if (ownedEntry.ownerAgentId == eventOwner) ownedEntry else ownedEntry.copy(ownerAgentId = eventOwner),
+      entry =
+        if (terminalSafeEntry.ownerAgentId == eventOwner) {
+          terminalSafeEntry
+        } else {
+          terminalSafeEntry.copy(ownerAgentId = eventOwner)
+        },
       clearedFields = parseExplicitSessionClears(eventObject),
       publishRunState = !settlesSelectedRun,
     )
@@ -5773,7 +5762,7 @@ class ChatController internal constructor(
 
   private fun isLocallyOwnedRun(runId: String): Boolean = synchronized(pendingRuns) { runId in pendingRuns } || unresolvedRepliesByRunId.containsKey(runId)
 
-  private fun ownsLiveRunTelemetry(runId: String): Boolean = isLocallyOwnedRun(runId) || runId in advertisedRunIds()
+  private fun ownsLiveRunTelemetry(runId: String): Boolean = isLocallyOwnedRun(runId)
 
   private fun parseAgentEventSequence(payload: JsonObject): Long? {
     val raw = payload["seq"] as? JsonPrimitive ?: return null
@@ -6653,11 +6642,7 @@ class ChatController internal constructor(
           "totalTokensFresh" in obj ||
           "contextTokens" in obj,
       hasActiveRun = obj["hasActiveRun"].asBooleanOrNull(),
-      activeRunIds =
-        obj["activeRunIds"]
-          .asArrayOrNull()
-          ?.mapNotNull { it.asStringOrNull()?.trim()?.takeIf(String::isNotEmpty) },
-      hasActiveRunMetadata = "hasActiveRun" in obj || "activeRunIds" in obj,
+      hasActiveRunMetadata = "hasActiveRun" in obj,
       parentSessionKey = obj["parentSessionKey"].asStringOrNull()?.trim(),
       spawnedBy = obj["spawnedBy"].asStringOrNull()?.trim(),
       hasActiveSubagentRun = obj["hasActiveSubagentRun"].asBooleanOrNull(),
@@ -7507,27 +7492,6 @@ private fun parseChatDiffStat(
   )
 }
 
-internal fun resolvePreferredActiveRunId(
-  localRunIds: Collection<String>,
-  advertisedRunIds: List<String>,
-): String? =
-  advertisedRunIds.firstOrNull(localRunIds::contains)
-    ?: localRunIds.minOrNull()
-    ?: advertisedRunIds.firstOrNull()
-
-internal fun resolveSelectedActiveRunCount(
-  localRunIds: Collection<String>,
-  advertisedRunIds: Collection<String>,
-  hasAdvertisedRun: Boolean,
-): Int =
-  maxOf(
-    buildSet {
-      addAll(localRunIds)
-      addAll(advertisedRunIds)
-    }.size,
-    if (hasAdvertisedRun) 1 else 0,
-  )
-
 internal fun mergeChatSessionEntry(
   existing: ChatSessionEntry,
   next: ChatSessionEntry,
@@ -7535,15 +7499,11 @@ internal fun mergeChatSessionEntry(
 ): ChatSessionEntry {
   val preserveExistingContextUsage = preserveExistingContextUsageWithoutTotal && next.totalTokens == null
   val hasActiveRun = if (next.hasActiveRunMetadata) next.hasActiveRun else existing.hasActiveRun
-  val activeRunIds = if (next.hasActiveRunMetadata) next.activeRunIds else existing.activeRunIds
   val observerDigest =
     reconcileSessionObserverDigest(
       existing = existing.observerDigest,
       next = next.observerDigest,
       hasNextProjection = next.hasObserverDigestMetadata,
-      hasActiveRun = hasActiveRun,
-      activeRunIds = activeRunIds,
-      status = if (next.hasRunMetadata) next.status else existing.status,
     )
   return existing.copy(
     // Partial events may omit identity; retain the last observed occurrence until
@@ -7598,7 +7558,6 @@ internal fun mergeChatSessionEntry(
         else -> next.hasContextUsageMetadata
       },
     hasActiveRun = hasActiveRun,
-    activeRunIds = activeRunIds,
     hasActiveRunMetadata = existing.hasActiveRunMetadata || next.hasActiveRunMetadata,
     parentSessionKey = next.parentSessionKey ?: existing.parentSessionKey,
     spawnedBy = next.spawnedBy ?: existing.spawnedBy,
@@ -7615,6 +7574,31 @@ internal fun mergeChatSessionEntry(
     runtimeMs = if (next.hasRunMetadata) next.runtimeMs else existing.runtimeMs,
     outputTokens = if (next.hasRunMetadata) next.outputTokens else existing.outputTokens,
     hasRunMetadata = existing.hasRunMetadata || next.hasRunMetadata,
+  )
+}
+
+internal fun preserveActiveSessionForTerminalOrdering(
+  current: ChatSessionEntry?,
+  incoming: ChatSessionEntry,
+  terminalRunId: String?,
+  startedRunIds: Set<String>,
+): ChatSessionEntry {
+  val runId = terminalRunId?.trim()?.takeIf(String::isNotEmpty) ?: return incoming
+  val currentIsActive =
+    current?.hasActiveRun == true || current?.status?.trim()?.lowercase() == "running"
+  val terminalIsOwned = runId in startedRunIds
+  val hasSuccessor = startedRunIds.any { it != runId }
+  if (!currentIsActive || (terminalIsOwned && !hasSuccessor)) return incoming
+  return incoming.copy(
+    hasActiveRun = null,
+    hasActiveRunMetadata = false,
+    status = null,
+    lastRunError = null,
+    startedAt = null,
+    endedAt = null,
+    runtimeMs = null,
+    outputTokens = null,
+    hasRunMetadata = false,
   )
 }
 
@@ -7638,8 +7622,7 @@ internal fun applySessionObserverDigest(
   val session = scopedSessions[index]
   val runId = digest.runId?.trim()?.takeIf { it.isNotEmpty() } ?: return scopedSessions
   val isRunning = session.hasActiveRun == true || session.status?.trim()?.lowercase() == "running"
-  val matchesActiveRun = session.activeRunIds.orEmpty().any { it.trim() == runId }
-  if (!isRunning || !matchesActiveRun) return scopedSessions
+  if (!isRunning) return scopedSessions
   val previous = session.observerDigest
   if (previous?.runId == runId && !observerDigestIsNewer(digest, previous)) return scopedSessions
   return scopedSessions.toMutableList().also {
@@ -7697,27 +7680,16 @@ private fun reconcileSessionObserverDigest(
   existing: SessionObserverDigest?,
   next: SessionObserverDigest?,
   hasNextProjection: Boolean,
-  hasActiveRun: Boolean?,
-  activeRunIds: List<String>?,
-  status: String?,
 ): SessionObserverDigest? {
-  val isRunning = hasActiveRun == true || status?.trim()?.lowercase() == "running"
-  val activeIds = activeRunIds.orEmpty().mapNotNull { it.trim().takeIf(String::isNotEmpty) }.toSet()
   var resolved = existing
-  if (isRunning && resolved?.runId?.trim()?.let(activeIds::contains) != true) {
-    resolved = null
-  }
   if (next != null) {
-    val matchesActiveRun = !isRunning || next.runId?.trim()?.let(activeIds::contains) == true
-    if (matchesActiveRun) {
-      val previous = resolved
-      resolved =
-        if (previous != null && previous.runId == next.runId && !observerDigestIsNewer(next, previous)) {
-          previous
-        } else {
-          next
-        }
-    }
+    val previous = resolved
+    resolved =
+      if (previous != null && previous.runId == next.runId && !observerDigestIsNewer(next, previous)) {
+        previous
+      } else {
+        next
+      }
   } else if (hasNextProjection) {
     resolved = null
   }

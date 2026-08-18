@@ -25,8 +25,7 @@ extension OpenClawChatViewModel {
     }
 
     var hasBlockingRunActivity: Bool {
-        pendingRunCount > 0 || self.hasAdvertisedLiveRun ||
-            hasActiveSessionRunWithoutChatSnapshot || isSwitchingSessionBranch
+        pendingRunCount > 0 || hasActiveSessionRunWithoutChatSnapshot || isSwitchingSessionBranch
     }
 
     var workingIndicatorIdentity: String {

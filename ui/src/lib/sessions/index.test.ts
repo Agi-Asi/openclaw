@@ -8,7 +8,7 @@ import {
 } from "../../api/gateway.ts";
 import type { SessionsListResult } from "../../api/types.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
-import { createSessionCapability, reconcileSessionRunTerminal } from "./index.ts";
+import { createSessionCapability } from "./index.ts";
 import { createGatewayHarness, sessionsResult } from "./session-capability.test-support.ts";
 
 function sessionChangedEvent(key: string): GatewayEventFrame {
@@ -751,7 +751,6 @@ describe("createSessionCapability", () => {
             kind: "direct",
             updatedAt: 1,
             hasActiveRun: true,
-            activeRunIds: ["run-1"],
             status: "running",
             startedAt: 100,
           },
@@ -784,59 +783,11 @@ describe("createSessionCapability", () => {
     expect(sessions.state.result?.sessions[0]).toMatchObject({
       key,
       hasActiveRun: false,
-      activeRunIds: [],
       status: "done",
       endedAt: 160,
       runtimeMs: 60,
     });
 
-    expect(
-      sessions.reconcile({
-        key,
-        kind: "direct",
-        updatedAt: 2,
-        hasActiveRun: true,
-        activeRunIds: ["run-2"],
-        status: "running",
-        startedAt: 200,
-      }),
-    ).toBe(true);
-    expect(
-      sessions.reconcileRunTerminal({
-        sessionKeys: ["main"],
-        runId: "run-1",
-        status: "done",
-        endedAt: 260,
-      }),
-    ).toBe(false);
-    expect(sessions.state.result?.sessions[0]).toMatchObject({
-      hasActiveRun: true,
-      activeRunIds: ["run-2"],
-      status: "running",
-    });
-
-    expect(
-      sessions.reconcile({
-        key,
-        kind: "direct",
-        updatedAt: 3,
-        hasActiveRun: true,
-        status: "running",
-        startedAt: 300,
-      }),
-    ).toBe(true);
-    expect(
-      sessions.reconcileRunTerminal({
-        sessionKeys: ["main"],
-        runId: "run-1",
-        status: "done",
-        endedAt: 360,
-      }),
-    ).toBe(false);
-    expect(sessions.state.result?.sessions[0]).toMatchObject({
-      hasActiveRun: true,
-      status: "running",
-    });
     expect(
       sessions.reconcileRunTerminal({
         sessionKeys: ["main"],
@@ -845,30 +796,6 @@ describe("createSessionCapability", () => {
       }),
     ).toBe(false);
     sessions.dispose();
-  });
-
-  it("preserves registry-active terminal rows without matching run identity", () => {
-    const result = sessionsResult(
-      [
-        {
-          key: "agent:main:main",
-          kind: "direct",
-          updatedAt: 1,
-          hasActiveRun: true,
-          status: "done",
-        },
-      ],
-      1,
-    );
-
-    expect(
-      reconcileSessionRunTerminal(result, {
-        sessionKeys: ["main"],
-        runId: "run-1",
-        status: "done",
-        endedAt: 160,
-      }),
-    ).toBe(result);
   });
 
   it("refreshes instead of inserting hidden sessions after configured-only lists", async () => {

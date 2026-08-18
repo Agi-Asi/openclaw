@@ -37,7 +37,6 @@ suite.define(() => {
       messages: [],
       sessionId: active ? "main-global-session" : "work-global-session",
       sessionInfo: {
-        activeRunIds: active ? ["main-active-run"] : [],
         hasActiveRun: active,
         key: "global",
         status: active ? "running" : "done",
@@ -47,7 +46,6 @@ suite.define(() => {
     const sessionsResponse = (active: boolean) =>
       chatSessionListResponse([
         {
-          activeRunIds: active ? ["main-active-run"] : [],
           hasActiveRun: active,
           key: "global",
           kind: "global",
@@ -141,7 +139,6 @@ suite.define(() => {
         ],
       });
       await gateway.emitGatewayEvent("sessions.changed", {
-        activeRunIds: ["main-active-run"],
         agentId: "main",
         hasActiveRun: true,
         key: "global",

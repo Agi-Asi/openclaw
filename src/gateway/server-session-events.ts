@@ -83,7 +83,6 @@ export function buildGatewaySessionSnapshot(params: {
   parentSessionKey?: string;
   status?: GatewaySessionRow["status"];
   hasActiveRun?: boolean;
-  activeRunIds?: string[];
 }): Record<string, unknown> {
   const { sessionRow } = params;
   if (!sessionRow) {
@@ -108,9 +107,6 @@ export function buildGatewaySessionSnapshot(params: {
   if (session && params.hasActiveRun !== undefined) {
     session.hasActiveRun = params.hasActiveRun;
   }
-  if (session && params.activeRunIds !== undefined) {
-    session.activeRunIds = params.activeRunIds;
-  }
   return {
     ...(session ? { session } : {}),
     ...buildGatewaySessionEventFields({
@@ -121,7 +117,6 @@ export function buildGatewaySessionSnapshot(params: {
       parentSessionKey: params.parentSessionKey,
       status: params.status,
       hasActiveRun: params.hasActiveRun,
-      activeRunIds: params.activeRunIds,
     }),
     subagentRunState: sessionRow.subagentRunState,
     hasActiveSubagentRun: sessionRow.hasActiveSubagentRun,
@@ -342,9 +337,8 @@ async function handleTranscriptUpdateBroadcast(
     sessionRow,
     agentId: routingAgentId,
     includeSession: true,
-    status: activeRunState?.active ? (activeRunState.status ?? "running") : undefined,
-    hasActiveRun: activeRunState?.active,
-    activeRunIds: activeRunState?.runIds,
+    status: activeRunState?.hasActiveRun ? (activeRunState.status ?? "running") : undefined,
+    hasActiveRun: activeRunState?.hasActiveRun,
   });
   if (update.message === undefined) {
     // A committed batch without individually proven cursors must invalidate
@@ -453,8 +447,7 @@ export function createLifecycleEventBroadcastHandler(params: {
           label: event.label,
           displayName: event.displayName,
           parentSessionKey: event.parentSessionKey,
-          hasActiveRun: activeRunState?.active,
-          activeRunIds: activeRunState?.runIds,
+          hasActiveRun: activeRunState?.hasActiveRun,
         }),
         ...(swarmEvent.swarmGroupId
           ? {

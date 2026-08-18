@@ -30,17 +30,9 @@ export function resolveSidebarSessionSubtitle(params: {
   const agentStatus = session.agentStatusNote || undefined;
   const running = session.hasActiveRun;
   const queued = session.status === "queued" ? t("sessionsView.waitingForConcurrency") : undefined;
-  const activeRunIds = session.activeRunIds ?? [];
-  const digestMatchesActiveRun = (
-    digest: typeof params.observerDigest,
-  ): digest is NonNullable<typeof digest> =>
-    Boolean(digest?.runId && activeRunIds.includes(digest.runId));
-  const liveCandidate = digestMatchesActiveRun(params.observerDigest)
-    ? params.observerDigest
-    : undefined;
-  const rowCandidate = digestMatchesActiveRun(session.observerDigest)
-    ? session.observerDigest
-    : undefined;
+  const liveCandidate = running && params.observerDigest?.runId ? params.observerDigest : undefined;
+  const rowCandidate =
+    running && session.observerDigest?.runId ? session.observerDigest : undefined;
   const projectedDigest = running
     ? pickFreshestObserverDigest(liveCandidate, rowCandidate)
     : pickFreshestObserverDigest(params.observerDigest, session.observerDigest);
