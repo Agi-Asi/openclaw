@@ -7,6 +7,7 @@ import type {
   ExecApprovalRecord,
 } from "../exec-approval-manager.js";
 import { ADMIN_SCOPE, APPROVALS_SCOPE } from "../method-scopes.js";
+import { emitApprovalDeliveryDiagnostic } from "./approval-delivery-diagnostics.js";
 import type { GatewayClient, RespondFn } from "./types.js";
 
 const APPROVAL_NOT_FOUND_DETAILS = {
@@ -44,35 +45,61 @@ export function isApprovalRecordVisibleToClient<TPayload>(params: {
   client: GatewayClient | null;
 }): boolean {
   const scopes = Array.isArray(params.client?.connect?.scopes) ? params.client.connect.scopes : [];
+  const caps = Array.isArray(params.client?.connect?.caps) ? params.client.connect.caps : [];
+  const approvalReviewerDeviceIds = normalizeApprovalIdentities(
+    params.record.approvalReviewerDeviceIds,
+  );
+  const clientDeviceId = normalizeApprovalIdentity(params.client?.connect?.device?.id);
+  const clientSnapshot = {
+    clientId: params.client?.connect?.client?.id ?? null,
+    mode: params.client?.connect?.client?.mode ?? null,
+    hasDevice: Boolean(clientDeviceId),
+    caps: [...caps].toSorted(),
+    scopes: [...scopes].toSorted(),
+    reviewerDeviceCount: approvalReviewerDeviceIds.length,
+    reviewerDeviceMatch: Boolean(
+      clientDeviceId && approvalReviewerDeviceIds.includes(clientDeviceId),
+    ),
+  };
+  const resolve = (visible: boolean, reason: string): boolean => {
+    emitApprovalDeliveryDiagnostic({
+      stage: "visibility",
+      visible,
+      reason,
+      ...clientSnapshot,
+    });
+    return visible;
+  };
   if (scopes.includes(ADMIN_SCOPE)) {
-    return true;
+    return resolve(true, "admin-scope");
   }
   const requestedByDeviceId = normalizeApprovalIdentity(params.record.requestedByDeviceId);
   const requestedByClientId = normalizeApprovalIdentity(params.record.requestedByClientId);
   const hasApprovalsScope = scopes.includes(APPROVALS_SCOPE);
   if (hasApprovalsScope && params.client?.internal?.approvalRuntime === true) {
-    return true;
+    return resolve(true, "trusted-approval-runtime");
   }
-  const approvalReviewerDeviceIds = normalizeApprovalIdentities(
-    params.record.approvalReviewerDeviceIds,
-  );
-  const clientDeviceId = normalizeApprovalIdentity(params.client?.connect?.device?.id);
   if (hasApprovalsScope && clientDeviceId && approvalReviewerDeviceIds.includes(clientDeviceId)) {
-    return true;
+    return resolve(true, "reviewer-device-match");
   }
   // Legacy adapters retain exact requester connection/device authority.
   if (requestedByDeviceId) {
-    return requestedByDeviceId === clientDeviceId;
+    const matches = requestedByDeviceId === clientDeviceId;
+    return resolve(matches, matches ? "requester-device-match" : "requester-device-mismatch");
   }
   const requestedByConnId = normalizeApprovalIdentity(params.record.requestedByConnId);
   if (requestedByConnId) {
-    return requestedByConnId === normalizeApprovalIdentity(params.client?.connId);
+    const matches = requestedByConnId === normalizeApprovalIdentity(params.client?.connId);
+    return resolve(
+      matches,
+      matches ? "requester-connection-match" : "requester-connection-mismatch",
+    );
   }
   if (requestedByClientId || approvalReviewerDeviceIds.length > 0) {
-    return false;
+    return resolve(false, "bound-to-another-client");
   }
   // Pre-binding pending approvals remain operable after upgrades and restarts.
-  return true;
+  return resolve(true, "legacy-unbound-record");
 }
 
 export function listVisiblePendingApprovalRequests<TPayload>(params: {

@@ -17,7 +17,9 @@ import {
   getCliBackendPortBlock,
 } from "./gateway-cli-backend.live-helpers.js";
 import { restoreLiveEnv, snapshotLiveEnv, type LiveEnvSnapshot } from "./live-env-test-helpers.js";
-import { ADMIN_SCOPE } from "./method-scopes.js";
+import {
+  setApprovalDeliveryDiagnosticSinkForTest,
+} from "./server-methods/approval-delivery-diagnostics.js";
 import { loadSessionEntry } from "./session-utils.js";
 import { extractPayloadText } from "./test-helpers.agent-results.js";
 
@@ -137,7 +139,6 @@ async function connectGatewayClient(params: {
     token: params.token,
     deviceIdentity,
     caps: [GATEWAY_CLIENT_CAPS.EXEC_APPROVALS],
-    scopes: [ADMIN_SCOPE],
     timeoutMs: GATEWAY_CONNECT_TIMEOUT_MS,
     requestTimeoutMs: 60_000,
     tickWatchTimeoutMs: AGENT_REQUEST_TIMEOUT_MS + 120_000,
@@ -458,6 +459,12 @@ describeLive("gateway live trajectory export", () => {
   it(
     "exports a combined runtime and transcript trajectory bundle through the live gateway",
     async () => {
+      setApprovalDeliveryDiagnosticSinkForTest((event) => {
+        console.error(`[trajectory-approval-diagnostic] ${JSON.stringify(event)}`);
+      });
+      cleanup.push(async () => {
+        setApprovalDeliveryDiagnosticSinkForTest(undefined);
+      });
       const { clearRuntimeConfigSnapshot } = await import("../config/config.js");
       const { startGatewayServer } = await import("./server.js");
 
