@@ -96,12 +96,16 @@ jobs:
       - name: Capture exact-patch text-draft reload proof
         env:
           OPENCLAW_UI_E2E_ARTIFACT_DIR: .artifacts/pr125637-text-draft
-        run: >-
-          node scripts/run-vitest.mjs run
-          --config test/vitest/vitest.ui-e2e.config.ts
-          --configLoader runner
-          ui/src/e2e/new-session-page.prompt-attachments.e2e.test.ts
-          --testNamePattern "restores a text-only prompt in a fresh page"
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            echo "[pr125637-diagnostic] attempt=${attempt}"
+            node scripts/run-vitest.mjs run \
+              --config test/vitest/vitest.ui-e2e.config.ts \
+              --configLoader runner \
+              ui/src/e2e/new-session-page.prompt-attachments.e2e.test.ts \
+              --testNamePattern "restores a text-only prompt in a fresh page"
+          done
       - name: Upload sanitized visual proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
