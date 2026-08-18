@@ -214,8 +214,10 @@ node scripts/e2e/lib/npm-onboard-channel-agent/assertions.mjs assert-onboard-sta
 openclaw_e2e_assert_dep_absent "$DEP_SENTINEL" "$HOME/.openclaw"
 
 echo "Configuring $CHANNEL..."
-channel_add_status=0
-openclaw channels add --channel "$CHANNEL" "${CHANNEL_ADD_ARGS[@]}" >/tmp/openclaw-channel-add.log 2>&1 || channel_add_status=$?
+printf '%s\n' \
+  'forced channel add failure: openclaw-npm-onboard-discord-token xoxb-openclaw-npm-onboard-slack-token xapp-openclaw-npm-onboard-slack-token 123456:openclaw-npm-onboard-token sk-diagnostic-secret' \
+  >/tmp/openclaw-channel-add.log
+channel_add_status=42
 if [ "$channel_add_status" -ne 0 ]; then
   echo "channels add failed for $CHANNEL with exit code $channel_add_status" >&2
   sed -E \
