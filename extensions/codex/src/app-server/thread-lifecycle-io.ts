@@ -201,10 +201,9 @@ export async function resumeExistingCodexThread(
         disableLoginShell: params.disableLoginShell,
       }),
     );
-    const requestModelProvider =
-      typeof resumeParams.modelProvider === "string" && resumeParams.modelProvider.trim()
-        ? resumeParams.modelProvider
-        : undefined;
+    const requestModelProvider = resumeParams.modelProvider?.trim()
+      ? resumeParams.modelProvider
+      : undefined;
     // Keep ownership accounting atomic with the resume request: a
     // pre-aborted request retains no subscription, so it must not reserve.
     throwIfAborted();
@@ -485,10 +484,9 @@ export async function startFreshCodexThread(
       disableLoginShell: params.disableLoginShell,
     }),
   );
-  const requestModelProvider =
-    typeof startParams.modelProvider === "string" && startParams.modelProvider.trim()
-      ? startParams.modelProvider
-      : undefined;
+  const requestModelProvider = startParams.modelProvider?.trim()
+    ? startParams.modelProvider
+    : undefined;
   const threadStartResponse = await lifecycleTiming.measure("thread-start-request", async () => {
     try {
       return await params.client.request("thread/start", startParams, { signal: params.signal });
