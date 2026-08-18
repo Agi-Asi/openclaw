@@ -6,8 +6,10 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { clampThinkingLevel } from "@openclaw/ai/internal/runtime";
-import { resolveThinkingDefaultForModel } from "../../auto-reply/thinking.js";
-import { projectThinkingCatalogCompat } from "../../auto-reply/thinking.shared.js";
+import {
+  resolveThinkingDefaultForModel,
+  type ThinkingCatalogEntry,
+} from "../../auto-reply/thinking.js";
 import { createSessionEntryWithTranscript } from "../../config/sessions/session-accessor.js";
 import { bindStreamLlmRuntime } from "../../llm/model-runtime-binding.js";
 import type { Message, Model } from "../../llm/types.js";
@@ -50,6 +52,28 @@ import {
   createWriteTool,
   type ToolName,
 } from "./tools/index.js";
+
+type ThinkingCatalogCompat = NonNullable<ThinkingCatalogEntry["compat"]>;
+
+function projectThinkingCatalogCompat(compat: Model["compat"]) {
+  if (!compat || typeof compat !== "object") {
+    return undefined;
+  }
+  const record = compat as Record<string, unknown>;
+  const projected: ThinkingCatalogCompat = {};
+  if (typeof record.thinkingFormat === "string") {
+    projected.thinkingFormat = record.thinkingFormat;
+  }
+  if (record.supportedReasoningEfforts === null) {
+    projected.supportedReasoningEfforts = null;
+  } else if (
+    Array.isArray(record.supportedReasoningEfforts) &&
+    record.supportedReasoningEfforts.every((effort) => typeof effort === "string")
+  ) {
+    projected.supportedReasoningEfforts = record.supportedReasoningEfforts;
+  }
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
 
 export interface CreateAgentSessionOptions {
   /** Working directory for project-local discovery. Default: process.cwd() */

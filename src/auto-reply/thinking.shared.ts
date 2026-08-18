@@ -1,5 +1,4 @@
 /** Shared normalization for thinking, verbosity, tracing, reasoning, and usage directives. */
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   type FastMode,
   normalizeFastMode,
@@ -39,28 +38,6 @@ export type ThinkingCatalogEntry = {
     supportedReasoningEfforts?: readonly string[] | null;
   } | null;
 };
-
-type ThinkingCatalogCompat = NonNullable<ThinkingCatalogEntry["compat"]>;
-
-/** Keeps only thinking fields when a complete provider compatibility record crosses run owners. */
-export function projectThinkingCatalogCompat(compat: unknown): ThinkingCatalogCompat | undefined {
-  if (!isRecord(compat)) {
-    return undefined;
-  }
-  const projected: ThinkingCatalogCompat = {};
-  if (typeof compat.thinkingFormat === "string") {
-    projected.thinkingFormat = compat.thinkingFormat;
-  }
-  if (compat.supportedReasoningEfforts === null) {
-    projected.supportedReasoningEfforts = null;
-  } else if (
-    Array.isArray(compat.supportedReasoningEfforts) &&
-    compat.supportedReasoningEfforts.every((effort) => typeof effort === "string")
-  ) {
-    projected.supportedReasoningEfforts = [...compat.supportedReasoningEfforts];
-  }
-  return Object.keys(projected).length > 0 ? projected : undefined;
-}
 
 /** Complete canonical level set accepted by user-facing thinking controls. */
 const ALL_THINKING_LEVELS: readonly ThinkLevel[] = [

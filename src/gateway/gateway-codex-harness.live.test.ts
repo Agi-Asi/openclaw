@@ -231,6 +231,7 @@ const CODEX_FULL_CONTEXT_STANDARD_WINDOW = 272_000;
 const observedCodexThreadIds = new Map<string, string>();
 const observedCodexClientIds = new Map<string, string>();
 const observedCodexThreadActions = new Map<string, string>();
+const nativeSettingsSessionKeys = new Set<string>();
 
 type GuardianPluginApprovalDecision = "allow-once" | "allow-always" | "deny";
 type CodexHarnessThinkingLevel =
@@ -846,7 +847,11 @@ function recordCodexAttemptIdentity(params: {
   expect(turnStarting?.data).toMatchObject({ model: expectedModel });
   const actualEffort = turnStarting?.data?.effort;
   const actualCollaborationEffort = turnStarting?.data?.collaborationEffort;
-  const expectedEffort = resolveCodexHarnessExpectedEffort(expectedModel);
+  // Native subagent supervision owns its thread settings. The live wrapper pins the same requested
+  // effort in Codex config; subsequent turn/start calls must preserve it by omitting overrides.
+  const expectedEffort = nativeSettingsSessionKeys.has(params.sessionKey)
+    ? null
+    : resolveCodexHarnessExpectedEffort(expectedModel);
   expect(actualEffort ?? null).toBe(expectedEffort);
   expect(actualCollaborationEffort ?? null).toBe(actualEffort ?? null);
   if (CODEX_HARNESS_FULL_CONTEXT) {
@@ -2029,6 +2034,7 @@ async function verifyCodexNativeSubagentBridgeProbe(params: {
       text,
     )}; events=${JSON.stringify(events)}; tasks=${JSON.stringify(codexNativeTasks)}`,
   ).toBeDefined();
+  nativeSettingsSessionKeys.add(params.sessionKey);
 
   function listCodexNativeTasks() {
     return listTaskRecords().filter(
@@ -2149,6 +2155,7 @@ describeLive("gateway live (Codex harness)", () => {
       observedCodexThreadIds.clear();
       observedCodexClientIds.clear();
       observedCodexThreadActions.clear();
+      nativeSettingsSessionKeys.clear();
 
       try {
         server = await startGatewayServer(port, {

@@ -136,8 +136,8 @@ export async function resolveEmbeddedRunModelSetup(params: {
     });
   }
   provider = resolvedModelProvider;
-  const { model: resolvedModel, error, authStorage, modelRegistry } = modelResolution;
-  if (!resolvedModel) {
+  const { model, error, authStorage, modelRegistry } = modelResolution;
+  if (!model) {
     throw new FailoverError(error ?? `Unknown model: ${provider}/${modelId}`, {
       reason: "model_not_found",
       provider,
@@ -146,20 +146,6 @@ export async function resolveEmbeddedRunModelSetup(params: {
       lane: params.globalLane,
     });
   }
-  // Candidate admission owns scoped capability discovery. Apply only to that unchanged route so
-  // a hook-selected model cannot inherit stale provider metadata.
-  const model =
-    !modelSelectionChangedByHook && runParams.modelThinkingCompat
-      ? {
-          ...resolvedModel,
-          compat: {
-            ...(resolvedModel.compat && typeof resolvedModel.compat === "object"
-              ? resolvedModel.compat
-              : {}),
-            ...runParams.modelThinkingCompat,
-          },
-        }
-      : resolvedModel;
 
   return {
     provider,

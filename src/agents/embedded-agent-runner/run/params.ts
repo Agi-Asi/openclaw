@@ -10,12 +10,7 @@ import type {
 } from "../../../auto-reply/get-reply-options.types.js";
 import type { ReplyPayload } from "../../../auto-reply/reply-payload.js";
 import type { ReplyOperation } from "../../../auto-reply/reply/reply-run-registry.js";
-import type {
-  ReasoningLevel,
-  ThinkLevel,
-  ThinkingCatalogEntry,
-  VerboseLevel,
-} from "../../../auto-reply/thinking.js";
+import type { ReasoningLevel, ThinkLevel, VerboseLevel } from "../../../auto-reply/thinking.js";
 import type { ChatType } from "../../../channels/chat-type.js";
 import type { InboundEventKind } from "../../../channels/inbound-event/kind.js";
 import type { SessionEntry, SessionToolOverrides } from "../../../config/sessions/types.js";
@@ -246,8 +241,6 @@ export type RunEmbeddedAgentParams = {
   model?: string;
   /** Vision capability resolved by the run owner from its prepared model catalog. */
   modelHasVision?: boolean;
-  /** Bounded thinking compatibility resolved for this exact candidate route. */
-  modelThinkingCompat?: ThinkingCatalogEntry["compat"];
   /** Effective model fallback chain for this session attempt. Undefined uses config defaults. */
   modelFallbacksOverride?: string[];
   /** Session-pinned embedded harness id. Prevents runtime hot-switching. */

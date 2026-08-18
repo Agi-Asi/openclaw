@@ -19,7 +19,7 @@ import {
   setChannelSourceTurnSameThreadRequired,
 } from "../../auto-reply/reply/source-turn-id.js";
 import { messageToolOwnsVisibleReply } from "../../auto-reply/source-reply-delivery-mode.js";
-import type { ThinkLevel, ThinkingCatalogEntry, VerboseLevel } from "../../auto-reply/thinking.js";
+import type { ThinkLevel, VerboseLevel } from "../../auto-reply/thinking.js";
 import { resolveSessionAuthProfileOverrideSource } from "../../config/sessions/auth-profile-override-provenance.js";
 import {
   persistSessionTranscriptTurn,
@@ -488,7 +488,6 @@ export function runAgentAttempt(params: {
   providerOverride: string;
   modelOverride: string;
   modelHasVision?: boolean;
-  modelThinkingCompat?: ThinkingCatalogEntry["compat"];
   configuredAuthProfileId?: string;
   originalProvider: string;
   cfg: OpenClawConfig;
@@ -1163,7 +1162,6 @@ export function runAgentAttempt(params: {
     provider: embeddedAgentProvider,
     model: params.modelOverride,
     modelHasVision: params.modelHasVision,
-    modelThinkingCompat: params.modelThinkingCompat,
     modelFallbacksOverride: params.modelFallbacksOverride,
     authProfileId,
     authProfileIdSource: authProfileId ? harnessAuthSelection.authProfileIdSource : undefined,

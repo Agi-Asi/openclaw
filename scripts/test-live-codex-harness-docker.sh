@@ -232,6 +232,14 @@ fi
 run_codex_harness_target() {
   local model="${1:?model required}"
   local thinking="${2:?thinking required}"
+  local native_effort="$thinking"
+  if [ "$native_effort" = "off" ]; then
+    native_effort="none"
+  fi
+  if [ "${OPENCLAW_LIVE_CODEX_HARNESS_USE_CI_SAFE_CODEX_CONFIG:-1}" = "1" ]; then
+    node --import tsx "$trusted_scripts_dir/prepare-codex-ci-config.ts" \
+      "$HOME/.codex/config.toml" "$tmp_dir" "$native_effort"
+  fi
   export OPENCLAW_LIVE_CODEX_HARNESS_MODEL="$model"
   export OPENCLAW_LIVE_CODEX_HARNESS_THINKING="$thinking"
   echo "==> Codex harness target: model=$model thinking=$thinking"
