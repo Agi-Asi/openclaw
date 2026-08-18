@@ -343,7 +343,6 @@ jobs:
             *) exit 1 ;;
           esac
           test "$NODE_OPTIONS" = "$diagnostic_node_options"
-          echo "NODE_OPTIONS=$diagnostic_node_options" >> "$GITHUB_ENV"
 
           systemctl --user show-environment >/dev/null
 
@@ -616,7 +615,7 @@ jobs:
 
           report_json="$(node "$PERFORMANCE_HELPER_DIR/scripts/lib/kova-report-selector.mjs" --report-dir "$REPORT_DIR")"
           env_name="$(jq -r '.records[0].envName // empty' "$report_json")"
-          gateway_pid="$(jq -r '.records[0].failureDiagnostics.service.childPid // empty' "$report_json")"
+          gateway_pid="$(jq -r '.records[0].failureDiagnostics.service.childPid // .records[0].finalMetrics.service.childPid // empty' "$report_json")"
           if [[ -z "$env_name" || ! "$gateway_pid" =~ ^[1-9][0-9]*$ || ! -d "/proc/$gateway_pid" ]]; then
             echo "::error::Kova did not retain the exact managed Gateway process for diagnostics."
             exit 1
