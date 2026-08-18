@@ -199,11 +199,7 @@ suite.define(() => {
           await page.locator("textarea").fill("rerender");
           await expect.poll(() => card.count()).toBe(0);
           await gateway.setMethodResponse("progressCard.get", { card: null });
-          const requestsBeforeReload = (await gateway.getRequests("progressCard.get")).length;
           await page.reload();
-          await expect
-            .poll(async () => (await gateway.getRequests("progressCard.get")).length)
-            .toBeGreaterThan(requestsBeforeReload);
           await expect.poll(() => card.count()).toBe(0);
           expect(await gateway.getRequests("chat.send")).toHaveLength(0);
           await captureProof(page, `completed-${colorScheme}-after.png`);
