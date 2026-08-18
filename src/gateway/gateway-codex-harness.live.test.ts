@@ -560,12 +560,20 @@ async function assertCodexHarnessSessionSelection(params: {
       modelProvider?: string;
       agentRuntime?: { id?: string };
       thinkingLevel?: string;
+      thinkingLevels?: Array<{ id?: string; label?: string }>;
     }>;
   } = await params.client.request("sessions.list", {
     includeGlobal: true,
     limit: 200,
   });
   const row = result.sessions?.find((entry) => entry.key === params.sessionKey);
+  logCodexLiveStep("session-selection", {
+    model: row?.model,
+    modelProvider: row?.modelProvider,
+    runtime: row?.agentRuntime?.id,
+    thinkingLevel: row?.thinkingLevel,
+    thinkingLevels: row?.thinkingLevels,
+  });
   expect(row, `expected sessions.list row for ${params.sessionKey}`).toBeDefined();
   expect(row?.modelProvider).toBe(expected.provider);
   expect(row?.model).toBe(expected.modelId);

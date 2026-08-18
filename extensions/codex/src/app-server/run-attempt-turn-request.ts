@@ -12,6 +12,7 @@ import { resolveCodexExplicitSkillInputs } from "./explicit-skill-input.js";
 import { assertCodexTurnStartResponse } from "./protocol-validators.js";
 import type { CodexTurnStartResponse } from "./protocol.js";
 import { readCodexRateLimitsRevision } from "./rate-limit-cache.js";
+import { readCodexSupportedReasoningEfforts } from "./reasoning-effort.js";
 import {
   emitCodexAppServerEvent,
   withCodexAppServerFastModeServiceTier,
@@ -134,6 +135,11 @@ export async function prepareCodexAttemptTurnRequest(
         phase: "turn_starting",
         threadId: resourceState.thread.threadId,
         model: turnStartParams.model,
+        requestedThinkingLevel: runtimeParams.thinkLevel,
+        routeApi: runtimeParams.model.api,
+        routeSupportedReasoningEfforts: readCodexSupportedReasoningEfforts(
+          runtimeParams.model.compat,
+        ),
         effort: turnStartParams.effort,
         collaborationEffort: turnStartParams.collaborationMode?.settings.reasoning_effort,
         serviceTier: turnStartParams.serviceTier,
