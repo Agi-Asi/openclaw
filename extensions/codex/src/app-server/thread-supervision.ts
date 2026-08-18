@@ -126,13 +126,15 @@ export async function materializePendingSupervisionBranch(
   let bindingCommitted = false;
   let provisionalCleanupSafe = true;
   try {
-    embeddedAgentLog.info("codex effort diagnostic binding before supervision materialization", {
-      sessionKey: params.attempt.sessionKey,
-      action: "materializing",
-      threadId: params.binding.threadId,
-      sourceThreadId: pending.sourceThreadId,
-      reasoningEffort: params.binding.reasoningEffort ?? null,
-    });
+    embeddedAgentLog.info(
+      `codex effort diagnostic binding before supervision materialization ${JSON.stringify({
+        sessionKey: params.attempt.sessionKey,
+        action: "materializing",
+        threadId: params.binding.threadId,
+        sourceThreadId: pending.sourceThreadId,
+        reasoningEffort: params.binding.reasoningEffort ?? null,
+      })}`,
+    );
     const probeParams = buildPendingSupervisionProbeForkParams(params, pending);
     const rawProbeResponse = await params.lifecycleTiming.measure(
       "supervision-model-probe-fork",
@@ -160,6 +162,22 @@ export async function materializePendingSupervisionBranch(
     pending = await trackPendingSupervisionArtifacts(params, pending, [probeThreadId]);
     params.throwIfAborted();
     const probeResponse = assertCodexThreadForkResponse(rawProbeResponse);
+    const configRead = await params.client.request(
+      "config/read",
+      { cwd: params.cwd, includeLayers: false },
+      { signal: params.signal },
+    );
+    embeddedAgentLog.info(
+      `codex effort diagnostic effective config during supervision materialization ${JSON.stringify({
+        homeScope: params.appServer.start.homeScope ?? null,
+        configuredCodexHome: Boolean(params.appServer.start.env?.CODEX_HOME?.trim()),
+        modelReasoningEffort:
+          typeof configRead.config.model_reasoning_effort === "string"
+            ? configRead.config.model_reasoning_effort
+            : null,
+        probeReasoningEffort: probeResponse.reasoningEffort ?? null,
+      })}`,
+    );
     if (params.restrictedToolSurface) {
       await params.lifecycleTiming.measure("restricted-tool-surface-mcp-attestation", () =>
         attestCodexRestrictedToolSurfaceMcpServersDisabled(
@@ -354,12 +372,14 @@ export async function materializePendingSupervisionBranch(
     // This thread now belongs to the durable binding. Later diagnostics must
     // never route it through provisional artifact cleanup.
     bindingCommitted = true;
-    embeddedAgentLog.info("codex effort diagnostic binding after supervision materialization", {
-      sessionKey: params.attempt.sessionKey,
-      action: "materialized",
-      threadId: finalThreadId,
-      reasoningEffort: startResponse.reasoningEffort ?? null,
-    });
+    embeddedAgentLog.info(
+      `codex effort diagnostic binding after supervision materialization ${JSON.stringify({
+        sessionKey: params.attempt.sessionKey,
+        action: "materialized",
+        threadId: finalThreadId,
+        reasoningEffort: startResponse.reasoningEffort ?? null,
+      })}`,
+    );
     params.lifecycleTiming.mark("thread-ready");
     params.lifecycleTiming.logSummary({
       runId: params.attempt.runId,

@@ -1,3 +1,4 @@
+import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
   closeCodexStartupClientBestEffort,
@@ -134,6 +135,18 @@ export async function tryReuseCodexLiveThread(
     userMcpServersConfigPatch,
   } = options;
 
+  embeddedAgentLog.info(
+    `codex effort diagnostic warm reuse candidate ${JSON.stringify({
+      sessionKey: params.params.sessionKey,
+      action: "warm-reuse-candidate",
+      threadId: binding.threadId,
+      connectionScope: binding.connectionScope ?? null,
+      preserveNativeModel: binding.preserveNativeModel === true,
+      reasoningEffort: binding.reasoningEffort ?? null,
+      clientMatches: Boolean(binding.clientId && binding.clientId === clientId),
+    })}`,
+  );
+
   if (
     !binding.clientId ||
     binding.clientId !== clientId ||
@@ -244,6 +257,14 @@ export async function tryReuseCodexLiveThread(
     }
     throwIfAborted();
     lifecycleTiming.mark("thread-ready");
+    embeddedAgentLog.info(
+      `codex effort diagnostic warm reuse result ${JSON.stringify({
+        sessionKey: params.params.sessionKey,
+        action: "warm-reused",
+        threadId: binding.threadId,
+        reasoningEffort: binding.reasoningEffort ?? null,
+      })}`,
+    );
     lifecycleTiming.logSummary({
       runId: params.params.runId,
       sessionId: params.params.sessionId,

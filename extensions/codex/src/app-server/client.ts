@@ -70,14 +70,16 @@ function logCodexThreadLifecycleRequest(method: string, params: unknown): void {
   }
   const request = readDiagnosticRecord(params);
   const config = readDiagnosticRecord(request?.config);
-  embeddedAgentLog.info("codex effort diagnostic lifecycle request", {
-    method,
-    threadId: readDiagnosticString(request?.threadId),
-    model: readDiagnosticString(request?.model),
-    modelProvider: readDiagnosticString(request?.modelProvider),
-    configHasModelReasoningEffort: Object.hasOwn(config ?? {}, "model_reasoning_effort"),
-    configModelReasoningEffort: readDiagnosticString(config?.model_reasoning_effort),
-  });
+  embeddedAgentLog.info(
+    `codex effort diagnostic lifecycle request ${JSON.stringify({
+      method,
+      threadId: readDiagnosticString(request?.threadId),
+      model: readDiagnosticString(request?.model),
+      modelProvider: readDiagnosticString(request?.modelProvider),
+      configHasModelReasoningEffort: Object.hasOwn(config ?? {}, "model_reasoning_effort"),
+      configModelReasoningEffort: readDiagnosticString(config?.model_reasoning_effort),
+    })}`,
+  );
 }
 
 function logCodexThreadLifecycleResponse(method: string, value: unknown): void {
@@ -86,13 +88,15 @@ function logCodexThreadLifecycleResponse(method: string, value: unknown): void {
   }
   const response = readDiagnosticRecord(value);
   const thread = readDiagnosticRecord(response?.thread);
-  embeddedAgentLog.info("codex effort diagnostic lifecycle response", {
-    method,
-    threadId: readDiagnosticString(thread?.id),
-    model: readDiagnosticString(response?.model),
-    modelProvider: readDiagnosticString(response?.modelProvider),
-    reasoningEffort: readDiagnosticString(response?.reasoningEffort),
-  });
+  embeddedAgentLog.info(
+    `codex effort diagnostic lifecycle response ${JSON.stringify({
+      method,
+      threadId: readDiagnosticString(thread?.id),
+      model: readDiagnosticString(response?.model),
+      modelProvider: readDiagnosticString(response?.modelProvider),
+      reasoningEffort: readDiagnosticString(response?.reasoningEffort),
+    })}`,
+  );
 }
 
 /** Process-local generation fence for bindings tied to one app-server client instance. */

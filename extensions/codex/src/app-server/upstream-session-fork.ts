@@ -2,6 +2,7 @@ import type {
   AgentHarnessSessionForkParams,
   AgentHarnessSessionForkResult,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import {
@@ -127,6 +128,16 @@ export async function forkCodexUpstreamSession(
         throw error;
       }
       const threadId = response.thread.id.trim();
+      embeddedAgentLog.info(
+        `codex effort diagnostic upstream fork response ${JSON.stringify({
+          sessionKey: params.targetKey,
+          action: "forked-upstream",
+          threadId,
+          model: response.model,
+          modelProvider: response.modelProvider ?? null,
+          reasoningEffort: response.reasoningEffort ?? null,
+        })}`,
+      );
       if (!threadId) {
         throw new Error("Codex thread/fork response did not include a thread id");
       }
@@ -209,6 +220,14 @@ export async function forkCodexUpstreamSession(
             if (!attached) {
               throw new Error("Codex session binding changed before the fork could be attached");
             }
+            embeddedAgentLog.info(
+              `codex effort diagnostic upstream fork binding ${JSON.stringify({
+                sessionKey: params.targetKey,
+                action: "bound-upstream-fork",
+                threadId,
+                reasoningEffort: response.reasoningEffort ?? null,
+              })}`,
+            );
             return { pluginExtensions: entry.entry.pluginExtensions };
           },
         });
