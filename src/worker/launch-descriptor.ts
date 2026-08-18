@@ -50,6 +50,8 @@ type WorkerLaunchPermissionContext =
 type WorkerLaunchAssignment = WorkerLaunchPermissionContext & {
   /** Host placement namespace used for worker-local policy, hooks, and audit attribution. */
   agentId: string;
+  /** Gateway-admitted memory posture. The worker must not rediscover this from scratch state. */
+  memoryReadEnforced: boolean;
   operationalRunInstance: OperationalRunInstanceRef;
   /** Opaque host-signed runtime envelope; worker code never parses private identity. */
   agentRuntimeIdentityToken: string;
@@ -174,6 +176,7 @@ function parseAssignment(value: unknown): WorkerLaunchAssignment | undefined {
       value,
       [
         "agentId",
+        "memoryReadEnforced",
         "runId",
         "operationalRunInstance",
         "agentRuntimeIdentityToken",
@@ -207,6 +210,7 @@ function parseAssignment(value: unknown): WorkerLaunchAssignment | undefined {
   }
   if (
     !isIdentifier(value.agentId) ||
+    typeof value.memoryReadEnforced !== "boolean" ||
     !isIdentifier(value.runId) ||
     !isRecord(value.operationalRunInstance) ||
     !isIdentifier(value.operationalRunInstance.instanceId) ||

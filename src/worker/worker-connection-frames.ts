@@ -33,6 +33,14 @@ import {
   validateWorkerInferenceEventFrame,
   validateWorkerInferenceTerminalFrame,
 } from "../../packages/gateway-protocol/src/schema/worker-inference.js";
+import {
+  type WorkerMemoryReadParams,
+  type WorkerMemoryReadResponseFrame,
+  WorkerMemoryReadResponseFrameSchema,
+  type WorkerMemorySearchParams,
+  type WorkerMemorySearchResponseFrame,
+  WorkerMemorySearchResponseFrameSchema,
+} from "../../packages/gateway-protocol/src/schema/worker-memory.js";
 import { notifyListeners } from "../shared/listeners.js";
 import {
   createPendingRequestRegistry,
@@ -72,6 +80,14 @@ const WORKER_REQUEST_SPECS = {
     method: "worker.inference.cancel",
     responseSchema: WorkerInferenceCancelResponseFrameSchema,
   },
+  "memory-search": {
+    method: "worker.memory.search",
+    responseSchema: WorkerMemorySearchResponseFrameSchema,
+  },
+  "memory-read": {
+    method: "worker.memory.read",
+    responseSchema: WorkerMemoryReadResponseFrameSchema,
+  },
 } as const;
 
 type WorkerRequestKind = keyof typeof WORKER_REQUEST_SPECS;
@@ -83,6 +99,8 @@ type WorkerRequestParams = {
   "sessions-send": WorkerSessionsSendParams;
   "inference-start": WorkerInferenceStartParams;
   "inference-cancel": WorkerInferenceCancelParams;
+  "memory-search": WorkerMemorySearchParams;
+  "memory-read": WorkerMemoryReadParams;
 };
 type WorkerResponseFrames = {
   heartbeat: WorkerHeartbeatResponseFrame;
@@ -92,6 +110,8 @@ type WorkerResponseFrames = {
   "sessions-send": WorkerSessionsSendResponseFrame;
   "inference-start": WorkerInferenceStartResponseFrame;
   "inference-cancel": WorkerInferenceCancelResponseFrame;
+  "memory-search": WorkerMemorySearchResponseFrame;
+  "memory-read": WorkerMemoryReadResponseFrame;
 };
 type WorkerResponseFrame = WorkerResponseFrames[WorkerRequestKind];
 type PendingRequestValue = {

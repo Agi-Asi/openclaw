@@ -8,6 +8,7 @@ import {
   getAgentRunContext,
   retainQueuedAgentRunContext,
 } from "../../../infra/agent-run-registry.js";
+import { isMemoryIsolationCutoverAgent } from "../../../plugins/memory-cutover.js";
 import { enqueueCommandInLane, getCommandLaneSnapshot } from "../../../process/command-queue.js";
 import type { CommandQueueEnqueueOptions } from "../../../process/command-queue.types.js";
 import { withSessionPlacementTurnAdmission } from "../../session-placement-admission.js";
@@ -169,6 +170,9 @@ export function createEmbeddedRunLaneController<TParams extends LaneParams>(opti
           {
             sessionId: params.sessionId,
             ...(params.agentId ? { agentId: params.agentId } : {}),
+            ...(params.agentId && isMemoryIsolationCutoverAgent(params.agentId)
+              ? { requiresProcessIsolation: true as const }
+              : {}),
             ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
             runId: params.runId,
           },

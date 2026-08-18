@@ -21,6 +21,8 @@ import {
   type WorkerTranscriptCommitResult,
   WORKER_LIVE_EVENT_PROTOCOL_FEATURE,
   WORKER_SESSION_TOOLS_PROTOCOL_FEATURE,
+  WORKER_MEMORY_METHODS,
+  WORKER_MEMORY_PROTOCOL_FEATURE,
   WORKER_PROTOCOL_MAX_FRAME_ID_LENGTH,
   WORKER_PROTOCOL_MAX_METHOD_LENGTH,
   WORKER_PROTOCOL_MAX_PAYLOAD_BYTES,
@@ -32,6 +34,8 @@ import {
   validateWorkerLiveEventParams,
   validateWorkerSessionsSendParams,
   validateWorkerSessionsSpawnParams,
+  validateWorkerMemoryReadParams,
+  validateWorkerMemorySearchParams,
   validateWorkerTranscriptCommitParams,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import {
@@ -48,6 +52,10 @@ import {
   validateWorkerInferenceCancelParams,
   validateWorkerInferenceStartParams,
 } from "../../../../packages/gateway-protocol/src/schema/worker-inference.js";
+import type {
+  WorkerMemoryReadParams,
+  WorkerMemorySearchParams,
+} from "../../../../packages/gateway-protocol/src/schema/worker-memory.js";
 import { GATEWAY_STARTUP_RETRY_AFTER_MS } from "../../../../packages/gateway-protocol/src/startup-unavailable.js";
 import { rawDataByteLength } from "../../../infra/ws.js";
 import {
@@ -104,6 +112,14 @@ export type WorkerConnectionService = {
 };
 
 type WorkerInferenceConnectionService = WorkerConnectionService & {
+  searchMemory?: (
+    identity: WorkerConnectionIdentity,
+    request: WorkerMemorySearchParams,
+  ) => Promise<WorkerServiceResult<unknown, { reason: string }>>;
+  readMemory?: (
+    identity: WorkerConnectionIdentity,
+    request: WorkerMemoryReadParams,
+  ) => Promise<WorkerServiceResult<unknown, { reason: string }>>;
   startInference?: (
     identity: WorkerConnectionIdentity,
     request: WorkerInferenceStartParams,
@@ -224,6 +240,64 @@ async function dispatchWorkerRequest(params: {
       return;
     }
     params.respond(false, undefined, workerInferenceError(outcome.reason));
+    return;
+  }
+  if (params.request.method === WORKER_MEMORY_METHODS[0]) {
+    if (!params.identity.protocolFeatures.includes(WORKER_MEMORY_PROTOCOL_FEATURE)) {
+      rejectWorkerRequest({ ...params, reason: "method-not-allowed" });
+      return;
+    }
+    if (!validateWorkerMemorySearchParams(params.request.params)) {
+      params.respond(false, undefined, workerProtocolError("invalid-frame"));
+      return;
+    }
+    if (!service.searchMemory) {
+      rejectWorkerRequest({ ...params, reason: "method-not-allowed" });
+      return;
+    }
+    const outcome = await service.searchMemory(params.identity, params.request.params);
+    if (outcome.ok) {
+      params.respond(true, outcome.result);
+      return;
+    }
+    if ("closeReason" in outcome) {
+      rejectWorkerRequest({ ...params, reason: outcome.closeReason });
+      return;
+    }
+    params.respond(
+      false,
+      undefined,
+      workerProtocolError("gateway-unavailable", { code: ErrorCodes.UNAVAILABLE }),
+    );
+    return;
+  }
+  if (params.request.method === WORKER_MEMORY_METHODS[1]) {
+    if (!params.identity.protocolFeatures.includes(WORKER_MEMORY_PROTOCOL_FEATURE)) {
+      rejectWorkerRequest({ ...params, reason: "method-not-allowed" });
+      return;
+    }
+    if (!validateWorkerMemoryReadParams(params.request.params)) {
+      params.respond(false, undefined, workerProtocolError("invalid-frame"));
+      return;
+    }
+    if (!service.readMemory) {
+      rejectWorkerRequest({ ...params, reason: "method-not-allowed" });
+      return;
+    }
+    const outcome = await service.readMemory(params.identity, params.request.params);
+    if (outcome.ok) {
+      params.respond(true, outcome.result);
+      return;
+    }
+    if ("closeReason" in outcome) {
+      rejectWorkerRequest({ ...params, reason: outcome.closeReason });
+      return;
+    }
+    params.respond(
+      false,
+      undefined,
+      workerProtocolError("gateway-unavailable", { code: ErrorCodes.UNAVAILABLE }),
+    );
     return;
   }
   if (params.request.method === WORKER_INFERENCE_METHODS[1]) {
@@ -562,6 +636,8 @@ export function attachWorkerWsMessageHandler(params: WorkerWsMessageHandlerParam
       parsed.method === WORKER_PROTOCOL_METHODS[2] ||
       parsed.method === WORKER_PROTOCOL_METHODS[3] ||
       parsed.method === WORKER_PROTOCOL_METHODS[4] ||
+      parsed.method === WORKER_MEMORY_METHODS[0] ||
+      parsed.method === WORKER_MEMORY_METHODS[1] ||
       parsed.method === WORKER_INFERENCE_METHODS[0] ||
       parsed.method === WORKER_INFERENCE_METHODS[1]
     ) {

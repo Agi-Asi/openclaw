@@ -1803,8 +1803,18 @@ allow.
 
 **Deliverables**
 
-- Move the broker and content-bearing index behind authenticated local IPC in a
-  separately permissioned process, or deploy separate Gateway cells.
+- Use a Gateway-owned local broker child for the selected memory plugin,
+  content-bearing index, and controlled artifact roots. The worker calls only
+  the closed Gateway worker protocol; it never receives a broker socket or
+  credential. Gateway derives live identity and capability facts for every
+  operation, signs a single-use, expiry-bound broker envelope, and sends it
+  over authenticated local IPC. The broker verifies its epoch, request digest,
+  nonce, identity/capability/policy binding, and current expiry before touching
+  content.
+- Phase 5 assigns bounded admission, cancellation, startup repair, health,
+  restart, upgrade, backup, and recovery to this broker lifecycle. A restart
+  rotates its epoch and rejects every pre-restart envelope; Gateway must
+  re-authorize rather than reuse a continuation.
 - Run agent processes in per-session sandboxes with only authorized virtual
   mounts. The agent never receives the broker database handle or real artifact
   root.
@@ -1813,6 +1823,20 @@ allow.
 - Add OS permission, compromised non-broker agent/tool plugin, IPC replay,
   confused deputy, and denial-of-service tests. The selected memory plugin,
   broker backend, Gateway, and operator remain in the trusted computing base.
+
+The concrete intended trusted computing base is the Gateway process, its local
+`memory-broker` child, the selected `memory-core` plugin and its SQLite/index/
+artifact state, and the deployment operator. The per-session Docker or Podman
+agent container is outside that boundary: it receives only the Gateway worker
+protocol and read-only virtual projections, never a broker socket, database
+handle, artifact root, encryption key, or reusable broker credential.
+
+This is the chosen topology, not a current deployment claim. Until the
+separate-process and OS-permission scenarios pass on the supported platforms,
+deployments remain at their previously tested cooperative or model-adversarial
+level. Separate Gateway/process/credential/storage cells remain mandatory for
+hostile tenants; a local broker does not turn one Gateway into a tenant
+boundary.
 
 A "compromised plugin" test at this stage means model-facing plugin or tool
 code running inside the constrained agent process. A malicious Gateway-hosted

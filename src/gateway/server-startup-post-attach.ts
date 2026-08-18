@@ -76,6 +76,10 @@ const loadGatewayRestartSentinelModule = createLazyRuntimeModule(
   () => import("./server-restart-sentinel.js"),
 );
 
+const loadMemoryBrokerRuntimeModule = createLazyRuntimeModule(
+  () => import("../plugins/memory-broker-runtime.js"),
+);
+
 export type GatewayPostReadySidecarHandle = { stop: () => Awaitable<void> };
 
 /** Measure provider-auth warming without letting event-loop stalls hide in wall time. */
@@ -1333,6 +1337,24 @@ export async function startGatewayPostAttachRuntime(
             skipStartupLog();
             return emptySidecarResult();
           }
+          const { resolveSelectedMemoryCapabilityRegistration } =
+            await import("../plugins/memory-state.js");
+          const selectedMemory = resolveSelectedMemoryCapabilityRegistration(pluginRegistry);
+          // Enforced callers have no raw-runtime fallback. Establish the selected child before any
+          // startup-gated Gateway method is released, so a broken broker fails readiness rather
+          // than becoming a first-request outage after agents have begun work.
+          const memoryBrokerSupervisor = selectedMemory?.capability.broker
+            ? await measureStartup(params.startupTrace, "memory-broker.ready", async () => {
+                const { startBrokeredMemoryRuntimeSupervisor } =
+                  await loadMemoryBrokerRuntimeModule();
+                return await startBrokeredMemoryRuntimeSupervisor(selectedMemory.capability);
+              })
+            : undefined;
+          if (params.isClosing?.()) {
+            await memoryBrokerSupervisor?.stop();
+            skipStartupLog();
+            return emptySidecarResult();
+          }
           const startupLog = startStartupLog();
           const startupOutcomes = createGatewayStartupOutcomeRecorder({
             cfg: params.gatewayPluginConfigAtStart,
@@ -1342,6 +1364,7 @@ export async function startGatewayPostAttachRuntime(
             ? null
             : ((await params.startWorkerEnvironmentRuntime?.()) ?? null);
           if (params.isClosing?.()) {
+            await memoryBrokerSupervisor?.stop();
             return emptySidecarResult();
           }
           params.log.info("starting channels and sidecars...");
@@ -1387,6 +1410,7 @@ export async function startGatewayPostAttachRuntime(
                   `worker environment cleanup after sidecar startup failure failed: ${String(cleanupError)}`,
                 );
               }
+              await memoryBrokerSupervisor?.stop();
               throw error;
             }
           })();
@@ -1401,6 +1425,7 @@ export async function startGatewayPostAttachRuntime(
                 params.stopRegisteredGatewayLifetimeSidecars,
                 () => result.pluginServices?.stop(),
                 params.stopRegisteredPostReadySidecars,
+                () => memoryBrokerSupervisor?.stop(),
               ].map(async (stop) => await stop()),
             );
             if (result.pluginServices && cleanupResults[1]?.status === "fulfilled") {

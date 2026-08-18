@@ -1220,6 +1220,9 @@
       "types": "./dist/plugin-sdk/memory-authorization-conformance.d.ts",
       "default": "./dist/plugin-sdk/memory-authorization-conformance.js"
     },
+    "./plugin-sdk/memory-broker-runtime": {
+      "default": "./dist/plugin-sdk/memory-broker-runtime.js"
+    },
     "./plugin-sdk/memory-enterprise-audit-runtime": {
       "default": "./dist/plugin-sdk/memory-enterprise-audit-runtime.js"
     },

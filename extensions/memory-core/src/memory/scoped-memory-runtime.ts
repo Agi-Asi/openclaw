@@ -363,6 +363,68 @@ function createPlan(
   });
 }
 
+/**
+ * Plans cross the broker IPC boundary as JSON, so object identity cannot be the authority check.
+ * Compare every externally representable field before looking up broker-local state; otherwise a
+ * reconstructed plan could retarget a request or every valid serialized plan would fail closed.
+ */
+function hasSameAuthorizedPlan(left: AuthorizedMemoryPlan, right: AuthorizedMemoryPlan): boolean {
+  if (
+    left.version !== right.version ||
+    left.planId !== right.planId ||
+    left.contextFingerprint !== right.contextFingerprint ||
+    left.runId !== right.runId ||
+    left.agentId !== right.agentId ||
+    left.sessionId !== right.sessionId ||
+    left.sessionIdentityRevision !== right.sessionIdentityRevision ||
+    left.subjectRevision !== right.subjectRevision ||
+    left.memoryPolicyRevision !== right.memoryPolicyRevision ||
+    left.deliveryRevision !== right.deliveryRevision ||
+    left.operation !== right.operation ||
+    left.expiresAt !== right.expiresAt ||
+    left.mounts.length !== right.mounts.length ||
+    left.bootstrapResourceHandles.length !== right.bootstrapResourceHandles.length ||
+    left.allowedEgressAudiences.length !== right.allowedEgressAudiences.length
+  ) {
+    return false;
+  }
+  return (
+    left.mounts.every((mount, index) => {
+      const candidate = right.mounts[index];
+      return (
+        candidate !== undefined &&
+        mount.version === candidate.version &&
+        mount.agentId === candidate.agentId &&
+        mount.mountHandle === candidate.mountHandle &&
+        mount.audienceRevision === candidate.audienceRevision &&
+        mount.capabilities.length === candidate.capabilities.length &&
+        mount.capabilities.every(
+          (capability, capabilityIndex) => capability === candidate.capabilities[capabilityIndex],
+        )
+      );
+    }) &&
+    left.bootstrapResourceHandles.every((handle, index) => {
+      const candidate = right.bootstrapResourceHandles[index];
+      return (
+        candidate !== undefined &&
+        handle.version === candidate.version &&
+        handle.handleId === candidate.handleId &&
+        handle.planId === candidate.planId &&
+        handle.contextFingerprint === candidate.contextFingerprint &&
+        handle.resourceRevision === candidate.resourceRevision &&
+        handle.policyRevision === candidate.policyRevision &&
+        handle.expiresAt === candidate.expiresAt
+      );
+    }) &&
+    left.allowedEgressAudiences.every((audience, index) => {
+      const candidate = right.allowedEgressAudiences[index];
+      return (
+        candidate !== undefined && audience.kind === candidate.kind && audience.id === candidate.id
+      );
+    })
+  );
+}
+
 function readPlan(params: {
   context: MemoryAccessContext;
   plan: AuthorizedMemoryPlan;
@@ -371,7 +433,7 @@ function readPlan(params: {
   const nowMs = Date.now();
   if (
     !state ||
-    state.plan !== params.plan ||
+    !hasSameAuthorizedPlan(state.plan, params.plan) ||
     state.expiresAtMs <= nowMs ||
     state.contextFingerprint !== params.context.contextFingerprint ||
     state.context.agentId !== params.context.agentId ||

@@ -2,7 +2,7 @@ import type { SessionPlacementTurnParams } from "../../agents/session-placement-
 import { resolveManifestActivationPluginIds } from "../../plugins/activation-planner.js";
 import type { WorkerDesktopEndpoint } from "../../plugins/types.js";
 import type { WorkerBrowserLaunchDescriptor } from "../../worker/launch-descriptor.js";
-import type { WorkerToolAuthority } from "../../worker/tool-authority.js";
+import type { WorkerMemoryToolName, WorkerToolAuthority } from "../../worker/tool-authority.js";
 import { resolveWorkerToolAuthority } from "./worker-tool-authority.js";
 
 /** Plans the optional Browser surface from persisted provider metadata and normal tool policy. */
@@ -10,12 +10,15 @@ export function resolveWorkerBrowserLaunchPlan(params: {
   desktop: WorkerDesktopEndpoint | null;
   modelRef: { provider: string; model: string };
   turn: SessionPlacementTurnParams;
+  memoryReadEnforced?: boolean;
+  availableMemoryToolNames?: readonly WorkerMemoryToolName[];
 }): {
   browser?: WorkerBrowserLaunchDescriptor;
   toolAuthority: WorkerToolAuthority;
 } {
   const browserApp = params.desktop?.apps?.find((app) => app.id === "browser");
   const browserAvailable =
+    params.memoryReadEnforced !== true &&
     browserApp !== undefined &&
     params.turn.config?.browser?.enabled !== false &&
     resolveManifestActivationPluginIds({
@@ -26,7 +29,11 @@ export function resolveWorkerBrowserLaunchPlan(params: {
   const toolAuthority = resolveWorkerToolAuthority({
     modelRef: params.modelRef,
     turn: params.turn,
+    memoryReadEnforced: params.memoryReadEnforced,
     ...(browserAvailable ? { availableOptionalToolNames: ["browser"] } : {}),
+    ...(params.availableMemoryToolNames
+      ? { availableMemoryToolNames: params.availableMemoryToolNames }
+      : {}),
   });
   return {
     toolAuthority,

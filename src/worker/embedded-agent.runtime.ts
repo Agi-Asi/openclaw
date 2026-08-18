@@ -38,14 +38,15 @@ import {
   toWorkerInferenceContext,
 } from "./embedded-agent-transcript.runtime.js";
 import type { WorkerBrowserLaunchDescriptor } from "./launch-descriptor.js";
+import { createWorkerMemoryTools } from "./memory-tools.runtime.js";
 import {
   WORKER_LOCAL_TOOL_NAMES,
   WORKER_REQUIRED_LOCAL_TOOL_NAMES,
   WORKER_SESSION_TOOL_NAMES,
-  WORKER_TOOL_NAMES,
   type WorkerToolName,
 } from "./tool-authority.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "./transcript-message.js";
+import type { WorkerMemoryClient } from "./worker-rpc-memory-client.js";
 import { createWorkerSessionTools } from "./worker-session-tools.js";
 
 function toWorkerAgentError(value: unknown, fallback: string): Error {
@@ -99,6 +100,7 @@ type RunWorkerEmbeddedTurnParams = {
   browser?: WorkerBrowserLaunchDescriptor;
   browserRuntime?: WorkerBrowserRuntime;
   memoryIsolationCutover: boolean;
+  memory?: WorkerMemoryClient;
   signal?: AbortSignal;
 };
 
@@ -163,13 +165,22 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
   const availableToolNames = params.memoryIsolationCutover
     ? ([] as const)
     : WORKER_LOCAL_TOOL_NAMES;
-  const activeToolNames = availableToolNames.filter(
+  const activeLocalToolNames = availableToolNames.filter(
     (name) => allowedToolNameSet.has(name) && !omittedToolNames?.has(name),
   );
   const localToolNameSet = new Set<string>(availableToolNames);
   const headlessApprovalText = params.permissionMode
     ? `Exec denied (approval_required) in worker ${params.permissionMode} permission mode. Run this command locally for interactive approval, or ask an administrator to clear the session permission mode.`
     : undefined;
+  const memoryTools =
+    params.memoryIsolationCutover && params.memory
+      ? createWorkerMemoryTools(params.memory).filter((tool) => allowedToolNameSet.has(tool.name))
+      : [];
+  const activeToolNames = [
+    ...activeLocalToolNames,
+    ...memoryTools.map((tool) => tool.name),
+    ...WORKER_SESSION_TOOL_NAMES.filter((name) => allowedToolNameSet.has(name)),
+  ];
   const coreTools = createCoreCodingTools({
     codingRoot: params.cwd,
     containmentRoot: params.workerContainmentRoot,
@@ -253,7 +264,8 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
           signedAgentRuntimeIdentityToken: params.agentRuntimeIdentityToken,
         }),
       );
-      const discoveredToolNames = new Set(localTools.map((tool) => tool.name));
+      const workerTools = [...localTools, ...memoryTools];
+      const discoveredToolNames = new Set(workerTools.map((tool) => tool.name));
       const requiredToolNames = [
         ...(params.memoryIsolationCutover ? [] : WORKER_REQUIRED_LOCAL_TOOL_NAMES),
         ...(browserRuntime ? ["browser"] : []),
@@ -288,6 +300,7 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
         tools: [...activeToolNames],
         customTools: toToolDefinitions([
           ...localTools.filter((tool) => allowedToolNameSet.has(tool.name)),
+          ...memoryTools,
           ...sessionTools,
         ]),
         noTools: "all",

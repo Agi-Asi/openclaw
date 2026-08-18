@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   getAcpSessionManager: vi.fn(() => ({})),
   fenceSessionSuspensionWritesForGatewayShutdown: vi.fn(),
   closePluginStateDatabase: vi.fn(async () => undefined),
+  closeBrokeredMemoryRuntimes: vi.fn(async () => undefined),
 }));
 const WEBSOCKET_CLOSE_GRACE_MS = 1_000;
 const WEBSOCKET_CLOSE_FORCE_CONTINUE_MS = 250;
@@ -110,6 +111,10 @@ vi.mock("../plugin-state/plugin-state-store.js", async () => ({
     "../plugin-state/plugin-state-store.js",
   )),
   closePluginStateDatabase: mocks.closePluginStateDatabase,
+}));
+
+vi.mock("../plugins/memory-broker-runtime.js", () => ({
+  closeBrokeredMemoryRuntimes: mocks.closeBrokeredMemoryRuntimes,
 }));
 
 vi.mock("../logging/subsystem.js", () => ({
@@ -226,6 +231,8 @@ describe("createGatewayCloseHandler", () => {
     mocks.fenceSessionSuspensionWritesForGatewayShutdown.mockReset();
     mocks.closePluginStateDatabase.mockReset();
     mocks.closePluginStateDatabase.mockResolvedValue(undefined);
+    mocks.closeBrokeredMemoryRuntimes.mockReset();
+    mocks.closeBrokeredMemoryRuntimes.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1630,6 +1637,9 @@ describe("createGatewayCloseHandler", () => {
     mocks.disposeAgentHarnesses.mockImplementation(async () => {
       closeOrder.push("agent-harnesses");
     });
+    mocks.closeBrokeredMemoryRuntimes.mockImplementation(async () => {
+      closeOrder.push("memory-broker");
+    });
     mocks.closeProviderTransportDispatcherPool.mockImplementation(async () => {
       closeOrder.push("provider-transport-dispatchers");
     });
@@ -1680,6 +1690,7 @@ describe("createGatewayCloseHandler", () => {
     expect(closeOrder).toEqual([
       "code-mode-runs",
       "agent-harnesses",
+      "memory-broker",
       "provider-transport-dispatchers",
       "bundle-mcp",
       "bundle-lsp",

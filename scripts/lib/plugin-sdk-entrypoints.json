@@ -254,6 +254,7 @@
   "qa-runner-runtime",
   "memory-authorization",
   "memory-authorization-conformance",
+  "memory-broker-runtime",
   "memory-enterprise-audit-runtime",
   "memory-postbox-runtime",
   "memory-sharing-control-runtime",

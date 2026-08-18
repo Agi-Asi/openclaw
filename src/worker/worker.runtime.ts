@@ -3,14 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { isPathInside } from "../infra/path-guards.js";
 import { registerSecretValueForRedaction } from "../logging/secret-redaction-registry.js";
-import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
-import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import type { WorkerBrowserRuntime } from "./browser-runtime.js";
 import { buildWorkerConnectParams, type WorkerLaunchDescriptor } from "./launch-descriptor.js";
 import { createWorkerConnection, type WorkerConnectionState } from "./worker-connection.js";
 import {
   WorkerInferenceProxyClient,
   WorkerLiveEventClient,
+  WorkerMemoryClient,
   WorkerTranscriptCommitClient,
 } from "./worker-rpc-clients.js";
 
@@ -79,9 +78,9 @@ export async function runWorkerDescriptor(
       "worker workspace path escapes its assigned containment root; reprovision the worker workspace and retry",
     );
   }
-  // Workers replace their state directory below. Resolve the durable P1C posture first so the
-  // isolated runtime cannot reinterpret an enforced agent as legacy because its scratch DB is empty.
-  const memoryIsolationCutover = isMemoryIsolationCutoverAgent(DEFAULT_AGENT_ID);
+  // The Gateway decides this before credential delivery. Worker scratch state is intentionally
+  // empty, so rediscovering cutover here could reopen local tools for a non-default agent.
+  const memoryIsolationCutover = descriptor.assignment.memoryReadEnforced;
   const stateDir = await mkdtemp(path.join(tmpdir(), "openclaw-worker-"));
   await chmod(stateDir, 0o700);
   const previousStateDir = process.env.OPENCLAW_STATE_DIR;
@@ -123,6 +122,7 @@ export async function runWorkerDescriptor(
     initialAckedSeq: descriptor.assignment.liveEvents.ackedSeq,
   });
   const inference = new WorkerInferenceProxyClient(connection);
+  const memory = new WorkerMemoryClient(connection);
   const unsubscribeState = connection.onStateChange((state) => {
     if (state.kind === "fenced") {
       abortController.abort(new Error(`worker fenced: ${state.reason}`));
@@ -180,6 +180,7 @@ export async function runWorkerDescriptor(
         ...(descriptor.assignment.browser ? { browser: descriptor.assignment.browser } : {}),
         ...(options.browserRuntime ? { browserRuntime: options.browserRuntime } : {}),
         memoryIsolationCutover,
+        ...(memoryIsolationCutover ? { memory } : {}),
         inference: { stream },
         transcript: {
           commit: async (messages) => {

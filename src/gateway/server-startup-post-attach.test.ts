@@ -90,6 +90,9 @@ const hoisted = vi.hoisted(() => {
     stop: vi.fn(async () => {}),
   };
   const createTranscriptsAutoStartService = vi.fn(() => transcriptsAutoStartService);
+  const memoryBrokerSupervisor = { stop: vi.fn(async () => {}) };
+  const startBrokeredMemoryRuntimeSupervisor = vi.fn(async () => memoryBrokerSupervisor);
+  const closeBrokeredMemoryRuntimes = vi.fn(async () => {});
   return {
     startPluginServices,
     startGmailWatcherWithLogs,
@@ -125,6 +128,9 @@ const hoisted = vi.hoisted(() => {
     setAuthProfileFailureHook,
     transcriptsAutoStartService,
     createTranscriptsAutoStartService,
+    memoryBrokerSupervisor,
+    startBrokeredMemoryRuntimeSupervisor,
+    closeBrokeredMemoryRuntimes,
   };
 });
 
@@ -178,6 +184,11 @@ vi.mock("../plugins/hook-runner-global.js", () => ({
 
 vi.mock("../plugins/services.js", () => ({
   startPluginServices: hoisted.startPluginServices,
+}));
+
+vi.mock("../plugins/memory-broker-runtime.js", () => ({
+  startBrokeredMemoryRuntimeSupervisor: hoisted.startBrokeredMemoryRuntimeSupervisor,
+  closeBrokeredMemoryRuntimes: hoisted.closeBrokeredMemoryRuntimes,
 }));
 
 vi.mock("../acp/control-plane/manager.js", () => ({
@@ -523,6 +534,10 @@ describe("startGatewayPostAttachRuntime", () => {
     hoisted.transcriptsAutoStartService.stop.mockClear();
     hoisted.transcriptsAutoStartService.stop.mockResolvedValue(undefined);
     hoisted.createTranscriptsAutoStartService.mockClear();
+    hoisted.memoryBrokerSupervisor.stop.mockClear();
+    hoisted.startBrokeredMemoryRuntimeSupervisor.mockClear();
+    hoisted.startBrokeredMemoryRuntimeSupervisor.mockResolvedValue(hoisted.memoryBrokerSupervisor);
+    hoisted.closeBrokeredMemoryRuntimes.mockClear();
   });
 
   afterEach(async () => {
@@ -823,6 +838,70 @@ describe("startGatewayPostAttachRuntime", () => {
     await vi.advanceTimersByTimeAsync(750);
 
     expect(hoisted.scheduleRestartSentinelWake).not.toHaveBeenCalled();
+  });
+
+  it("starts the selected memory broker before releasing startup-gated methods", async () => {
+    const unavailableGatewayMethods = new Set(STARTUP_UNAVAILABLE_GATEWAY_METHODS);
+    const selectedCapability = {
+      broker: {
+        version: 1 as const,
+        kind: "local-child" as const,
+        moduleUrl: "file:///memory-broker-entry.js",
+      },
+    };
+    const startGatewaySidecars = vi.fn(async () => {
+      expect(hoisted.startBrokeredMemoryRuntimeSupervisor).toHaveBeenCalledWith(selectedCapability);
+      expect(unavailableGatewayMethods).toEqual(new Set(STARTUP_UNAVAILABLE_GATEWAY_METHODS));
+      return { pluginServices: null, postReadySidecars: [] };
+    });
+
+    await startGatewayPostAttachRuntime(
+      createPostAttachParams({
+        unlockStartupMethods: createStartupMethodUnlocker(unavailableGatewayMethods),
+        pluginRegistry: {
+          plugins: [{ id: "memory-core", status: "loaded", memorySlotSelected: true }],
+          typedHooks: [],
+          memoryCapabilities: [{ pluginId: "memory-core", capability: selectedCapability }],
+        } as never,
+      }),
+      createPostAttachRuntimeDeps({ startGatewaySidecars }),
+    );
+
+    expect(unavailableGatewayMethods).toEqual(new Set());
+  });
+
+  it("fails startup instead of releasing work when the selected broker is unavailable", async () => {
+    hoisted.startBrokeredMemoryRuntimeSupervisor.mockRejectedValueOnce(
+      new Error("selected memory broker did not become ready"),
+    );
+    const unavailableGatewayMethods = new Set(STARTUP_UNAVAILABLE_GATEWAY_METHODS);
+
+    await expect(
+      startGatewayPostAttachRuntime(
+        createPostAttachParams({
+          unlockStartupMethods: createStartupMethodUnlocker(unavailableGatewayMethods),
+          pluginRegistry: {
+            plugins: [{ id: "memory-core", status: "loaded", memorySlotSelected: true }],
+            typedHooks: [],
+            memoryCapabilities: [
+              {
+                pluginId: "memory-core",
+                capability: {
+                  broker: {
+                    version: 1,
+                    kind: "local-child",
+                    moduleUrl: "file:///memory-broker-entry.js",
+                  },
+                },
+              },
+            ],
+          } as never,
+        }),
+        createPostAttachRuntimeDeps(),
+      ),
+    ).rejects.toThrow("selected memory broker did not become ready");
+
+    expect(unavailableGatewayMethods).toEqual(new Set(STARTUP_UNAVAILABLE_GATEWAY_METHODS));
   });
 
   it("starts sidecars while startup logging is pending and waits for both", async () => {

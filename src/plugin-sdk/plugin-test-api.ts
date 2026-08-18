@@ -89,6 +89,8 @@ export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPlugi
     registerMemoryPromptSupplement() {},
     registerMemoryPromptPreparation() {},
     registerMemoryCorpusSupplement() {},
+    registerMemoryEmbeddingProvider() {},
+    registerEnterpriseIdentityProvider() {},
     resolvePath(input: string) {
       return input;
     },

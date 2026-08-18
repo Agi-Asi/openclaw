@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { mapThinkingLevelForProvider } from "../../agents/embedded-agent-runner/utils.js";
+import { createAuthorizedMemoryReadHost } from "../../agents/memory-authorized-read-host.js";
 import type { SandboxContext } from "../../agents/sandbox/types.js";
 import {
   withSessionPlacementForcedTerminalSettlement,
@@ -13,6 +14,8 @@ import { SessionManager } from "../../agents/sessions/session-manager.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { emitAgentRunStatusEvent } from "../../infra/agent-run-status-events.js";
 import { redactSensitiveText } from "../../logging/redact.js";
+import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
+import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { parseWorkerLaunchPlan } from "../../worker/launch-descriptor.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "../../worker/transcript-message.js";
 import {
@@ -20,6 +23,7 @@ import {
   StaleWorkerBuildError,
   supportsWorkerExecutionContextLaunch,
 } from "./admission.js";
+import { registerWorkerMemoryHost } from "./memory-host.js";
 import { placementTurnOwner } from "./placement-record.js";
 import { createRemoteExecPlacementSandbox } from "./placement-sandbox.js";
 import type {
@@ -197,10 +201,32 @@ async function executeWorkerTurn(params: {
     timeoutMs: turn.timeoutMs,
   });
   const reasoning = mapThinkingLevelForProvider(turn.thinkLevel);
+  const memoryReadEnforced = isMemoryIsolationCutoverAgent(placement.agentId);
+  const memoryHost = memoryReadEnforced
+    ? createAuthorizedMemoryReadHost({
+        agentId: placement.agentId,
+        sessionKey: placement.sessionKey,
+        sessionId: placement.sessionId,
+        runId: turn.runId,
+        deliveryContext: normalizeDeliveryContext({
+          channel: turn.messageChannel ?? turn.messageProvider,
+          to: turn.messageTo ?? turn.currentMessagingTarget ?? turn.currentChannelId,
+          accountId: turn.agentAccountId,
+          threadId: turn.messageThreadId ?? turn.currentThreadTs,
+        }),
+        messageChannel: turn.messageChannel ?? turn.messageProvider,
+        agentAccountId: turn.agentAccountId,
+      })
+    : undefined;
+  if (memoryReadEnforced && !memoryHost) {
+    throw new WorkerTurnExecutionError("Enforced memory could not create a trusted worker host");
+  }
   const { browser, toolAuthority } = resolveWorkerBrowserLaunchPlan({
     desktop: environment.desktop,
     modelRef,
     turn,
+    memoryReadEnforced,
+    ...(memoryHost ? { availableMemoryToolNames: ["memory_search", "memory_get"] } : {}),
   });
   params.placements.authorizeWorkerTurnTools(params.turnClaim, toolAuthority.allowedToolNames);
   const { operationalRunInstance, runtimeIdentity } = await prepareWorkerAgentRuntimeIdentity({
@@ -229,6 +255,7 @@ async function executeWorkerTurn(params: {
         },
         assignment: {
           agentId: placement.agentId,
+          memoryReadEnforced,
           operationalRunInstance,
           agentRuntimeIdentityToken,
           runId: turn.runId,
@@ -268,6 +295,23 @@ async function executeWorkerTurn(params: {
     throw new WorkerTurnExecutionError(WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE);
   }
   const plan = launchPlan.plan;
+  const unregisterMemoryHost = memoryHost
+    ? registerWorkerMemoryHost(
+        {
+          environmentId: placement.environmentId,
+          sessionId: placement.sessionId,
+          runId: turn.runId,
+          ownerEpoch: placement.activeOwnerEpoch,
+        },
+        {
+          host: memoryHost,
+          allowedToolNames: toolAuthority.allowedToolNames.filter(
+            (name): name is "memory_search" | "memory_get" =>
+              name === "memory_search" || name === "memory_get",
+          ),
+        },
+      )
+    : undefined;
   turn.userTurnTranscriptRecorder?.markSentToProvider?.();
   turn.onExecutionPhase?.({ phase: "attempt_dispatch", backend: "cloud-worker" });
   const handoffAbort = new AbortController();
@@ -294,16 +338,22 @@ async function executeWorkerTurn(params: {
   if (!tunnel.launchTurn) {
     throw new Error("Worker tunnel does not support worker turns");
   }
-  const processPromise = tunnel.launchTurn({
-    plan,
-    turnClaim: params.turnClaim,
-    timeoutMs: turn.timeoutMs,
-    signal: turn.abortSignal
-      ? AbortSignal.any([turn.abortSignal, handoffAbort.signal])
-      : handoffAbort.signal,
-    onDispatchReady,
-  });
-  const processResult = await processPromise;
+  const processResult = await (async () => {
+    try {
+      return await tunnel.launchTurn({
+        plan,
+        turnClaim: params.turnClaim,
+        timeoutMs: turn.timeoutMs,
+        signal: turn.abortSignal
+          ? AbortSignal.any([turn.abortSignal, handoffAbort.signal])
+          : handoffAbort.signal,
+        onDispatchReady,
+      });
+    } finally {
+      // A completed or failed process must not retain memory authority for a later turn.
+      unregisterMemoryHost?.();
+    }
+  })();
   if (handoffError) {
     throw handoffError;
   }
@@ -453,6 +503,9 @@ export function createWorkerSessionTurnPlacementProvider(options: WorkerTurnLaun
     },
     async executeTurn(claim, turn, runLocal, onAdmitted) {
       const current = options.placements.get(claim.sessionId);
+      if (claim.requiresProcessIsolation === true && (!current || current.state === "local")) {
+        throw new Error("enforced memory requires a non-local worker placement");
+      }
       if (!current && turn.modelRun === true && !claim.sessionKey?.trim()) {
         return await runLocal();
       }

@@ -3,6 +3,7 @@ import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "../client-info.js";
 import { closedObject } from "./closed-object.js";
 import { FailoverReasonSchema } from "./failover-reason.js";
 import { withSince } from "./since.js";
+import { WORKER_MEMORY_PROTOCOL_FEATURE } from "./worker-memory.js";
 import {
   LiveIntegerSchema,
   LiveSequenceSchema,
@@ -52,6 +53,7 @@ export const WORKER_PROTOCOL_FEATURES = [
   WORKER_EXECUTION_CONTEXT_PROTOCOL_FEATURE,
   WORKER_SESSION_TOOLS_PROTOCOL_FEATURE,
   "worker-inference-v1",
+  WORKER_MEMORY_PROTOCOL_FEATURE,
 ] as const;
 export const WORKER_PROTOCOL_MAX_METHOD_LENGTH = 64;
 export const WORKER_PROTOCOL_MAX_FEATURES = 64;

@@ -6,6 +6,7 @@ import { resolveUserPath } from "../utils.js";
 import { normalizePluginsConfig } from "./config-state.js";
 import { loadPluginRegistryHandle, resolvePluginRegistryLoadCacheKey } from "./loader.js";
 import { observeMemoryAuthorizationShadowSurface } from "./memory-authorization-shadow.js";
+import { closeBrokeredMemoryRuntimes } from "./memory-broker-runtime.js";
 import { isMemoryIsolationCutoverAgent } from "./memory-cutover.js";
 import {
   resolveSelectedMemoryCapabilityRegistration,
@@ -232,6 +233,7 @@ export async function closeActiveMemorySearchManagersCore(cfg?: OpenClawConfig):
       }),
     ),
   );
+  await closeBrokeredMemoryRuntimes();
   standaloneMemoryRegistrySlot?.retiredRuntimes.clear();
   setStandaloneMemoryManagerActive(false);
 }

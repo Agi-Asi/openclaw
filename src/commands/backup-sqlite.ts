@@ -77,7 +77,12 @@ export async function backupSqliteCreateCommand(
   const repositoryPath = resolveRequiredPath(options.repository, "--repository");
   try {
     const database = await resolveSnapshotDatabase(options);
-    const result = await createLocalSqliteSnapshotProvider({ repositoryPath }).create(database);
+    // A selected broker owns memory writes. Ask it to drain before the trusted Gateway snapshots
+    // an agent database, then always reopen admission; workers never receive a DB path or broker IPC.
+    const { withBrokeredMemoryMaintenance } = await import("../plugins/memory-broker-runtime.js");
+    const result = await withBrokeredMemoryMaintenance(
+      async () => await createLocalSqliteSnapshotProvider({ repositoryPath }).create(database),
+    );
     const report: BackupSqliteCreateResult = {
       ok: true,
       snapshotPath: result.ref.path,

@@ -69,6 +69,12 @@ const loadScopedMemorySharingModule = createLazyRuntimeModule(
   () => import("./src/memory/scoped-memory-sharing.js"),
 );
 
+// Source-checkout workers inherit the TypeScript loader; packaged brokers load the emitted JS.
+const memoryBrokerEntryUrl = new URL(
+  import.meta.url.endsWith(".ts") ? "./src/memory/broker-entry.ts" : "./src/memory/broker-entry.js",
+  import.meta.url,
+).href;
+
 function getToolConfig(options: MemoryToolOptions): OpenClawConfig | undefined {
   return options.getConfig?.() ?? options.config;
 }
@@ -435,6 +441,11 @@ export default definePluginEntry({
       promptBuilder: buildPromptSection,
       flushPlanResolver: buildMemoryFlushPlan,
       runtime: memoryRuntime,
+      broker: {
+        version: 1,
+        kind: "local-child",
+        moduleUrl: memoryBrokerEntryUrl,
+      },
       publicArtifacts: {
         async listArtifacts(params) {
           const { listMemoryCorePublicArtifacts } = await import("./src/public-artifacts.js");

@@ -9,6 +9,9 @@ type JsonlSocketRequest<T> = {
   socketPath: string;
   requestLine: string;
   timeoutMs: number;
+  /** Keep the write side open when the server must distinguish request completion from abort. */
+  keepWriteOpen?: boolean;
+  signal?: AbortSignal;
   accept: (msg: unknown) => T | null | undefined;
 };
 
@@ -23,11 +26,12 @@ async function requestJsonlSocketWithMaxLineBytes<T>(
   params: JsonlSocketRequest<T>,
   maxLineBytes: number,
 ): Promise<T | null> {
-  const { socketPath, requestLine, accept } = params;
+  const { socketPath, requestLine, accept, keepWriteOpen, signal } = params;
   const timeoutMs = resolveJsonlSocketTimeoutMs(params.timeoutMs);
   return await new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
+    let timer: ReturnType<typeof setNodeTimeout> | undefined;
     // Keep raw bytes until a line is complete so chunk boundaries cannot split
     // a UTF-8 code point before JSON parsing.
     let lineChunks: Buffer[] = [];
@@ -38,7 +42,10 @@ async function requestJsonlSocketWithMaxLineBytes<T>(
         return;
       }
       settled = true;
-      clearNodeTimeout(timer);
+      if (timer) {
+        clearNodeTimeout(timer);
+      }
+      signal?.removeEventListener("abort", abort);
       try {
         client.destroy();
       } catch {
@@ -66,13 +73,24 @@ async function requestJsonlSocketWithMaxLineBytes<T>(
       return line;
     };
 
-    const timer = setNodeTimeout(() => finish(null), timeoutMs);
+    const abort = () => finish(null);
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+    timer = setNodeTimeout(() => finish(null), timeoutMs);
 
     client.on("error", () => finish(null));
     client.on("end", () => finish(null));
     client.on("close", () => finish(null));
     client.connect(socketPath, () => {
-      client.end(`${requestLine}\n`);
+      const line = `${requestLine}\n`;
+      if (keepWriteOpen) {
+        client.write(line);
+      } else {
+        client.end(line);
+      }
     });
     client.on("data", (data: Buffer) => {
       let offset = 0;

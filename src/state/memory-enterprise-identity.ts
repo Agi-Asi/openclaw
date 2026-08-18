@@ -6,7 +6,6 @@ import {
   getNodeSqliteKysely,
 } from "../infra/kysely-sync.js";
 import { generateSecureUuid } from "../infra/secure-random.js";
-import { runSqliteImmediateTransactionSync } from "../infra/sqlite-transaction.js";
 import { ensureMemoryIdentitySchema } from "./memory-identity.js";
 import {
   openOpenClawStateDatabase,

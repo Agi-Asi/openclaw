@@ -2,10 +2,15 @@ import type {
   WorkerSessionsSendParams,
   WorkerSessionsSpawnParams,
   WorkerSessionToolResult,
+  WorkerProtocolCloseReason,
   WorkerTranscriptCommitErrorReason,
   WorkerTranscriptCommitParams,
   WorkerTranscriptCommitResult,
 } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
+import type {
+  WorkerMemoryReadParams,
+  WorkerMemorySearchParams,
+} from "../../../packages/gateway-protocol/src/schema/worker-memory.js";
 import { onSessionIdentityMutation } from "../../config/sessions/session-accessor.js";
 import { withTimeout } from "../../infra/fs-safe.js";
 import { KeyedAsyncQueue } from "../../plugin-sdk/keyed-async-queue.js";
@@ -23,6 +28,7 @@ import {
 import type { WorkerInferenceStore } from "./inference-store.js";
 import { createWorkerInferenceManager, type WorkerInferenceExecutor } from "./inference.js";
 import type { WorkerLiveEventReceiver } from "./live-events.js";
+import { resolveWorkerMemoryHost } from "./memory-host.js";
 import type { NodeWorkerTunnelManager } from "./node-worker-tunnel.js";
 import type { WorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import { createWorkerProviderLifecycle } from "./provider-lifecycle.js";
@@ -100,6 +106,11 @@ type WorkerEnvironmentServiceOptions = WorkerProviderLifecycleInputOptions & {
         },
   ) => Promise<WorkerSessionToolResult>;
 };
+
+type WorkerMemoryServiceResult =
+  | { ok: true; result: unknown }
+  | { ok: false; reason: "memory-unavailable" | "session-not-attached" }
+  | { ok: false; closeReason: WorkerProtocolCloseReason };
 
 export function createWorkerEnvironmentService(options: WorkerEnvironmentServiceOptions) {
   const { store } = options;
@@ -297,6 +308,85 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
     withLock,
   });
 
+  const validateMemoryRequest = (
+    identity: WorkerConnectionIdentity,
+  ):
+    | { ok: true }
+    | { ok: false; reason: "session-not-attached" }
+    | {
+        ok: false;
+        closeReason: WorkerProtocolCloseReason;
+      } => {
+    const closeReason = turnRpc.validateWorkerConnection(identity);
+    if (closeReason) {
+      return { ok: false, closeReason };
+    }
+    const environment = store.get(identity.environmentId);
+    const credential = store.getCredential(identity.environmentId);
+    if (
+      !environment ||
+      environment.state !== "attached" ||
+      !identity.sessionId ||
+      credential?.sessionId !== identity.sessionId ||
+      environment.attachedSessionIds.length !== 1 ||
+      environment.attachedSessionIds[0] !== identity.sessionId
+    ) {
+      return { ok: false, reason: "session-not-attached" };
+    }
+    return { ok: true };
+  };
+
+  const searchMemory = async (
+    identity: WorkerConnectionIdentity,
+    request: WorkerMemorySearchParams,
+  ): Promise<WorkerMemoryServiceResult> => {
+    const binding = validateMemoryRequest(identity);
+    if (!binding.ok) {
+      return binding;
+    }
+    const host = resolveWorkerMemoryHost(identity);
+    if (!host || !host.allowedToolNames.includes("memory_search")) {
+      return { ok: false, reason: "memory-unavailable" };
+    }
+    const result = await host.host.search({
+      query: request.query,
+      ...(request.limit === undefined ? {} : { limit: request.limit }),
+    });
+    const current = validateMemoryRequest(identity);
+    if (!current.ok) {
+      return current;
+    }
+    return "unavailable" in result
+      ? { ok: false, reason: "memory-unavailable" }
+      : { ok: true, result };
+  };
+
+  const readMemory = async (
+    identity: WorkerConnectionIdentity,
+    request: WorkerMemoryReadParams,
+  ): Promise<WorkerMemoryServiceResult> => {
+    const binding = validateMemoryRequest(identity);
+    if (!binding.ok) {
+      return binding;
+    }
+    const host = resolveWorkerMemoryHost(identity);
+    if (!host || !host.allowedToolNames.includes("memory_get")) {
+      return { ok: false, reason: "memory-unavailable" };
+    }
+    const result = await host.host.read({
+      handleId: request.handleId,
+      ...(request.from === undefined ? {} : { from: request.from }),
+      ...(request.lines === undefined ? {} : { lines: request.lines }),
+    });
+    const current = validateMemoryRequest(identity);
+    if (!current.ok) {
+      return current;
+    }
+    return "unavailable" in result
+      ? { ok: false, reason: "memory-unavailable" }
+      : { ok: true, result };
+  };
+
   const reconcileEnvironment = async (environmentId: string) => {
     if (stopping) {
       return;
@@ -459,6 +549,8 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
     commitTranscript: turnRpc.commitTranscript,
     pushLiveEvent: turnRpc.pushLiveEvent,
     executeSessionTool: turnRpc.executeSessionTool,
+    searchMemory,
+    readMemory,
     startInference: turnRpc.startInference,
     cancelInference: turnRpc.cancelInference,
     cancelInferenceForSession: turnRpc.cancelInferenceForSession,

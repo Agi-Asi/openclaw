@@ -29,6 +29,8 @@ import {
   admitMemoryAuthorizationRuntime,
   type AdmittedAuthorizedMemoryReadRuntime,
 } from "./memory-authorization-runtime.js";
+import { resolveBrokeredMemoryRuntime } from "./memory-broker-runtime.js";
+import { isMemoryIsolationCutoverAgent } from "./memory-cutover.js";
 import {
   hydrateMemoryRunExposureFromLedger,
   persistMemoryRunExposureBeforeContent,
@@ -189,9 +191,7 @@ function isDeriveMemoryAccessContext(
   return context.operation === "derive";
 }
 
-function readCurrentContext(
-  state: InvocationState,
-): MemoryContentAccessContext | undefined {
+function readCurrentContext(state: InvocationState): MemoryContentAccessContext | undefined {
   const current = materializeTrustedMemoryAccessContext(state.trustedContext);
   if (!current || (current.operation !== "read" && current.operation !== "derive")) {
     return undefined;
@@ -467,9 +467,17 @@ async function createAuthorizedMemoryContentInvocation(params: {
     logMemoryInvocationDiagnostic("admission-rejected");
     return MEMORY_INVOCATION_UNAVAILABLE;
   }
+  const brokeredRuntime = isMemoryIsolationCutoverAgent(context.agentId)
+    ? await resolveBrokeredMemoryRuntime(capability)
+    : undefined;
+  if (isMemoryIsolationCutoverAgent(context.agentId) && !brokeredRuntime) {
+    logMemoryInvocationDiagnostic("admission-rejected");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  const runtime = brokeredRuntime ?? admission.runtime;
   try {
     const authorizationStartedAtMs = Date.now();
-    const plan = (await admission.runtime.authorize(context)) as AuthorizedMemoryPlan &
+    const plan = (await runtime.authorize(context)) as AuthorizedMemoryPlan &
       Readonly<{ operation: MemoryContentAccessOperation }>;
     if (!isCurrentPlan({ context, plan, nowMs: Date.now() })) {
       logMemoryInvocationDiagnostic("invalid-plan");
@@ -483,8 +491,8 @@ async function createAuthorizedMemoryContentInvocation(params: {
         context,
         plan,
         authorizationStartedAtMs,
-        runtime: admission.runtime,
-        ...(admission.runtime.virtualView ? { virtualView: admission.runtime.virtualView } : {}),
+        runtime,
+        ...(runtime.virtualView ? { virtualView: runtime.virtualView } : {}),
         virtualViews: new Map(),
         handles: new Map(),
         sourcePolicySetIds: new Set<string>(),
@@ -540,8 +548,16 @@ export async function createAuthorizedMemoryWriteInvocation(params: {
     logMemoryInvocationDiagnostic("admission-rejected");
     return MEMORY_INVOCATION_UNAVAILABLE;
   }
+  const brokeredRuntime = isMemoryIsolationCutoverAgent(context.agentId)
+    ? await resolveBrokeredMemoryRuntime(capability)
+    : undefined;
+  if (isMemoryIsolationCutoverAgent(context.agentId) && !brokeredRuntime) {
+    logMemoryInvocationDiagnostic("admission-rejected");
+    return MEMORY_INVOCATION_UNAVAILABLE;
+  }
+  const runtime = brokeredRuntime ?? admission.runtime;
   try {
-    const plan = await admission.runtime.authorize(context);
+    const plan = await runtime.authorize(context);
     if (!isCurrentPlan({ context, plan, nowMs: Date.now() })) {
       logMemoryInvocationDiagnostic("invalid-plan");
       return MEMORY_INVOCATION_UNAVAILABLE;
@@ -553,7 +569,7 @@ export async function createAuthorizedMemoryWriteInvocation(params: {
         trustedContext: params.context,
         context,
         plan,
-        runtime: admission.runtime,
+        runtime,
       }),
     );
     return invocation;

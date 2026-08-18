@@ -334,6 +334,17 @@ export type MemoryPluginPublicArtifactsProvider = {
 };
 
 /**
+ * A selected memory plugin may move its content-bearing runtime behind the Gateway-owned broker.
+ * The module URL is resolved by the plugin itself, so core neither knows a bundled plugin id nor
+ * reaches into a plugin package's private source tree.
+ */
+export type MemoryPluginBrokerEntry = Readonly<{
+  version: 1;
+  kind: "local-child";
+  moduleUrl: string;
+}>;
+
+/**
  * Selected-memory-only virtual projection. The implementation owns artifact
  * access and returns an opaque, read-only view; core only mounts the returned
  * projection and never derives paths from resource metadata.
@@ -361,6 +372,7 @@ export type MemoryPluginCapability = {
   promptBuilder?: MemoryPromptSectionBuilder;
   flushPlanResolver?: MemoryFlushPlanResolver;
   runtime?: MemoryPluginRuntime;
+  broker?: MemoryPluginBrokerEntry;
   publicArtifacts?: MemoryPluginPublicArtifactsProvider;
 };
 

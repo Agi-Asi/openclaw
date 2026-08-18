@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   hydrateExposure: vi.fn(() => true),
   logWarn: vi.fn(),
   persistExposure: vi.fn(() => true),
+  resolveBrokeredRuntime: vi.fn(),
+  isCutoverAgent: vi.fn(() => false),
 }));
 
 vi.mock("../state/memory-access-context.js", async (importOriginal) => ({
@@ -29,6 +31,14 @@ vi.mock("../state/memory-access-context.js", async (importOriginal) => ({
 vi.mock("./memory-authorization-runtime.js", () => ({
   admitMemoryAuthorizationReadRuntime: mocks.admit,
   admitMemoryAuthorizationRuntime: mocks.admit,
+}));
+
+vi.mock("./memory-broker-runtime.js", () => ({
+  resolveBrokeredMemoryRuntime: mocks.resolveBrokeredRuntime,
+}));
+
+vi.mock("./memory-cutover.js", () => ({
+  isMemoryIsolationCutoverAgent: mocks.isCutoverAgent,
 }));
 
 vi.mock("./memory-run-exposure-ledger.js", () => ({
@@ -210,6 +220,9 @@ describe("authorized memory read invocation", () => {
     mocks.logWarn.mockReset();
     mocks.persistExposure.mockReset();
     mocks.persistExposure.mockReturnValue(true);
+    mocks.resolveBrokeredRuntime.mockReset();
+    mocks.isCutoverAgent.mockReset();
+    mocks.isCutoverAgent.mockReturnValue(false);
   });
 
   it("returns only an unavailable result when backend admission fails", async () => {
@@ -222,6 +235,23 @@ describe("authorized memory read invocation", () => {
         capability: { authorization: COMPLETE_MEMORY_AUTHORIZATION_CAPABILITIES },
       }),
     ).resolves.toBe(MEMORY_INVOCATION_UNAVAILABLE);
+  });
+
+  it("fails closed for a cutover agent when its broker is unavailable", async () => {
+    const inProcessRuntime = { authorize: vi.fn() };
+    mocks.materialize.mockReturnValue(createContext());
+    mocks.admit.mockResolvedValue({ ok: true, runtime: inProcessRuntime });
+    mocks.isCutoverAgent.mockReturnValue(true);
+    mocks.resolveBrokeredRuntime.mockResolvedValue(undefined);
+
+    await expect(
+      createAuthorizedMemoryReadInvocation({
+        context: {} as never,
+        capability: { authorization: COMPLETE_MEMORY_AUTHORIZATION_CAPABILITIES },
+      }),
+    ).resolves.toBe(MEMORY_INVOCATION_UNAVAILABLE);
+    expect(mocks.resolveBrokeredRuntime).toHaveBeenCalledOnce();
+    expect(inProcessRuntime.authorize).not.toHaveBeenCalled();
   });
 
   it("emits fixed diagnostics without memory access facts or backend error content", async () => {
@@ -985,6 +1015,9 @@ describe("authorized memory write invocation", () => {
     mocks.admit.mockReset();
     mocks.materialize.mockReset();
     mocks.logWarn.mockReset();
+    mocks.resolveBrokeredRuntime.mockReset();
+    mocks.isCutoverAgent.mockReset();
+    mocks.isCutoverAgent.mockReturnValue(false);
   });
 
   it("uses only a trusted append context and closed mutation DTO for a selected runtime", async () => {
@@ -1067,7 +1100,10 @@ describe("authorized memory write invocation", () => {
     mocks.materialize.mockReturnValue(createDeriveContext());
     mocks.admit.mockResolvedValue({ ok: true, runtime: deriveRuntime });
     const deriveInvocation = await createAuthorizedMemoryWriteInvocation({ context: {} as never });
-    assertMemoryInvocationAvailable(deriveInvocation, "fixture failed to create a derive invocation");
+    assertMemoryInvocationAvailable(
+      deriveInvocation,
+      "fixture failed to create a derive invocation",
+    );
     const transcriptSource = {
       kind: "transcript" as const,
       sessionId: "session-1",
@@ -1097,7 +1133,10 @@ describe("authorized memory write invocation", () => {
     mocks.materialize.mockReturnValue(createWriteContext());
     mocks.admit.mockResolvedValue({ ok: true, runtime: appendRuntime });
     const appendInvocation = await createAuthorizedMemoryWriteInvocation({ context: {} as never });
-    assertMemoryInvocationAvailable(appendInvocation, "fixture failed to create an append invocation");
+    assertMemoryInvocationAvailable(
+      appendInvocation,
+      "fixture failed to create an append invocation",
+    );
     await expect(
       stageAuthorizedMemorySealedCompactionForInvocation({
         invocation: appendInvocation,

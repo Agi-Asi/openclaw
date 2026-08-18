@@ -27,6 +27,7 @@ function launchDescriptor(): WorkerLaunchDescriptor {
     },
     assignment: {
       agentId: "agent-1",
+      memoryReadEnforced: false,
       operationalRunInstance: { instanceId: "instance-run-1", runId: "run-1" },
       agentRuntimeIdentityToken: "signed-runtime-token",
       runId: "run-1",
@@ -158,6 +159,10 @@ describe("worker launch descriptor", () => {
       },
       {
         ...descriptor,
+        assignment: { ...descriptor.assignment, memoryReadEnforced: "true" },
+      },
+      {
+        ...descriptor,
         assignment: {
           ...descriptor.assignment,
           operationalRunInstance: { instanceId: "instance-run-1", runId: "other-run" },
@@ -240,6 +245,9 @@ describe("worker launch descriptor", () => {
 
     descriptor.assignment.toolAuthority.allowedToolNames = ["browser"];
     expect(parseWorkerLaunchDescriptor(structuredClone(descriptor))).toEqual(descriptor);
+
+    descriptor.assignment.toolAuthority.allowedToolNames = ["memory_search", "memory_get"];
+    expect(parseWorkerLaunchDescriptor(structuredClone(descriptor))).toEqual(descriptor);
   });
 
   it("accepts only a closed absolute loopback browser attachment descriptor", () => {
@@ -297,6 +305,16 @@ describe("worker launch descriptor", () => {
         }),
       ).toThrow("invalid worker launch descriptor");
     }
+  });
+
+  it("requires the Gateway-admitted memory posture", () => {
+    const descriptor = launchDescriptor();
+    const { memoryReadEnforced: _memoryReadEnforced, ...assignmentWithoutPosture } =
+      descriptor.assignment;
+
+    expect(() =>
+      parseWorkerLaunchDescriptor({ ...descriptor, assignment: assignmentWithoutPosture }),
+    ).toThrow("invalid worker launch descriptor");
   });
 
   it("rejects non-absolute paths, unattached sessions, and discontinuous event sequences", () => {

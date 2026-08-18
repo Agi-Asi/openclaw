@@ -608,6 +608,10 @@ async function disposeRuntimeWithShutdownGrace(params: {
   disposeTimeout.clear();
 }
 
+async function closeBrokeredMemoryRuntimesOnDemand(): Promise<void> {
+  const { closeBrokeredMemoryRuntimes } = await import("../plugins/memory-broker-runtime.js");
+  await closeBrokeredMemoryRuntimes();
+}
 export async function runGatewayClosePrelude(params: {
   stopDiagnostics?: () => void;
   clearSkillsRefreshTimer?: () => void;
@@ -917,6 +921,9 @@ export function createGatewayCloseHandler(
         graceMs: AGENT_HARNESS_CLOSE_GRACE_MS,
         warnings,
       });
+      // Selected-memory children can serve active harness calls, so retire them only
+      // after harness drain and before their broader runtime dependencies disappear.
+      await shutdownStep("memory-broker", () => closeBrokeredMemoryRuntimesOnDemand(), warnings);
       await shutdownStep("ai-session-resources", () => cleanupSessionResources(), warnings);
       await shutdownStep(
         "provider-transport-dispatchers",

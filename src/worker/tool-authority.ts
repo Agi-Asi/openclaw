@@ -9,6 +9,9 @@ export const WORKER_REQUIRED_LOCAL_TOOL_NAMES = [
 
 const WORKER_OPTIONAL_LOCAL_TOOL_NAMES = ["browser"] as const;
 
+/** Gateway-proxied tools have no local implementation or durable authority in the worker. */
+export const WORKER_MEMORY_TOOL_NAMES = ["memory_search", "memory_get"] as const;
+
 export const WORKER_LOCAL_TOOL_NAMES = [
   ...WORKER_REQUIRED_LOCAL_TOOL_NAMES,
   ...WORKER_OPTIONAL_LOCAL_TOOL_NAMES,
@@ -20,10 +23,12 @@ export const WORKER_SESSION_TOOL_NAMES = ["sessions_spawn", "sessions_send"] as 
 export const WORKER_TOOL_NAMES = [
   ...WORKER_LOCAL_TOOL_NAMES,
   ...WORKER_SESSION_TOOL_NAMES,
+  ...WORKER_MEMORY_TOOL_NAMES,
 ] as const;
 
 export type WorkerOptionalLocalToolName = (typeof WORKER_OPTIONAL_LOCAL_TOOL_NAMES)[number];
 export type WorkerSessionToolName = (typeof WORKER_SESSION_TOOL_NAMES)[number];
+export type WorkerMemoryToolName = (typeof WORKER_MEMORY_TOOL_NAMES)[number];
 export type WorkerToolName = (typeof WORKER_TOOL_NAMES)[number];
 
 const WORKER_TOOL_NAME_SET = new Set<string>(WORKER_TOOL_NAMES);

@@ -1,8 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { isMemoryIsolationCutoverAgent } from "../plugins/memory-cutover.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import type { RunEmbeddedAgentParams } from "./embedded-agent-runner/run/params.js";
 import type { EmbeddedAgentRunResult } from "./embedded-agent-runner/types.js";
+import { resolveSandboxConfigForAgent } from "./sandbox/config.js";
+import { resolveSandboxRuntimeStatus } from "./sandbox/runtime-status.js";
 import type { SandboxContext } from "./sandbox/types.js";
 
 export type LocalTurnPlacementClaim = {
@@ -10,6 +13,8 @@ export type LocalTurnPlacementClaim = {
   agentId?: string;
   sessionKey?: string;
   runId: string;
+  /** Enforced memory cannot execute in the Gateway process or a local worker placement. */
+  requiresProcessIsolation?: true;
 };
 
 export type SessionPlacementTurnParams = RunEmbeddedAgentParams & { sessionFile: string };
@@ -76,6 +81,36 @@ export function installSessionPlacementAdmissionProvider(
   };
 }
 
+function assertProcessIsolatedMemorySandbox(
+  claim: LocalTurnPlacementClaim,
+  params: SessionPlacementTurnParams,
+): void {
+  const agentId = claim.agentId ?? params.agentId;
+  const sessionKey =
+    params.sandboxSessionKey?.trim() ||
+    claim.sessionKey?.trim() ||
+    params.sessionKey?.trim() ||
+    claim.sessionId;
+  const sandbox = resolveSandboxConfigForAgent(params.config, agentId);
+  const runtime = resolveSandboxRuntimeStatus({
+    cfg: params.config,
+    agentId,
+    sessionKey,
+  });
+  // Authorized virtual memory projections are read-only Docker/Podman mounts. A process-isolated
+  // agent must not silently run with an agent/shared scope, an unsandboxed main session, or a
+  // transport that cannot mount the issued view.
+  if (
+    sandbox.scope !== "session" ||
+    !runtime.sandboxed ||
+    (sandbox.backend !== "docker" && sandbox.backend !== "podman")
+  ) {
+    throw new Error(
+      "enforced memory requires a session-scoped Docker or Podman sandbox with authorized projections",
+    );
+  }
+}
+
 export async function withSessionPlacementTurnAdmission(
   claim: LocalTurnPlacementClaim,
   params: SessionPlacementTurnParams,
@@ -96,17 +131,33 @@ export async function withSessionPlacementTurnAdmission(
     admitTurn();
     return task();
   };
+  const requiresProcessIsolation = claim.requiresProcessIsolation === true;
+  const admittedClaim = requiresProcessIsolation
+    ? { ...claim, requiresProcessIsolation: true as const }
+    : claim;
   const provider = state.provider;
   if (!provider) {
+    if (requiresProcessIsolation) {
+      throw new Error("enforced memory requires an isolated worker placement");
+    }
     return await runAdmittedLocalTurn();
   }
-  return await provider.executeTurn(claim, params, runAdmittedLocalTurn, admitTurn);
+  if (requiresProcessIsolation) {
+    assertProcessIsolatedMemorySandbox(admittedClaim, params);
+  }
+  return await provider.executeTurn(admittedClaim, params, runAdmittedLocalTurn, admitTurn);
 }
 
 export async function withLocalSessionPlacementTurnAdmission<T>(
   claim: LocalTurnPlacementClaim,
   task: () => Promise<T>,
 ): Promise<T> {
+  if (
+    claim.requiresProcessIsolation === true ||
+    (claim.agentId !== undefined && isMemoryIsolationCutoverAgent(claim.agentId))
+  ) {
+    throw new Error("enforced memory cannot execute through a local CLI placement");
+  }
   const provider = state.provider;
   if (!provider) {
     return await task();

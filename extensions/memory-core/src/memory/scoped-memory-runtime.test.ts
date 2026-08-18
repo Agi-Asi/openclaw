@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
+  AuthorizedMemoryPlan,
   MemoryAccessContext,
   MemoryContentAccessContext,
 } from "openclaw/plugin-sdk/memory-authorization";
@@ -27,6 +28,7 @@ import {
   registerAgentRunContext,
   resetAgentRunRegistryForTest,
 } from "../../../../src/infra/agent-run-registry.js";
+import { startMemoryBrokerProcess } from "../../../../src/memory-broker/process.js";
 import { admitMemoryAuthorizationReadRuntime } from "../../../../src/plugins/memory-authorization-runtime.js";
 import { resetMemoryIsolationCutoverForTest } from "../../../../src/plugins/memory-cutover.js";
 import {
@@ -512,6 +514,115 @@ describe("builtin scoped authorized runtime", () => {
         handle: { ...hit.resourceHandle, resourceRevision: "forged" },
       }),
     ).rejects.toThrow("unavailable");
+  });
+
+  it("accepts the exact serialized broker plan but rejects an altered reconstruction", async () => {
+    createPrivateResource("alice", "SERIALIZED_BROKER_PLAN_ONLY");
+    const context = createContext("alice");
+    const plan = await builtinScopedMemoryAuthorizedRuntime.authorize(context);
+    const serializedPlan = structuredClone(plan);
+
+    await expect(
+      builtinScopedMemoryAuthorizedRuntime.searchAuthorized({
+        context,
+        plan: serializedPlan,
+        query: "SERIALIZED_BROKER_PLAN_ONLY",
+        limit: 10,
+      }),
+    ).resolves.toMatchObject({ value: [{ snippet: "SERIALIZED_BROKER_PLAN_ONLY" }] });
+
+    await expect(
+      builtinScopedMemoryAuthorizedRuntime.searchAuthorized({
+        context,
+        plan: { ...serializedPlan, memoryPolicyRevision: "forged-policy-revision" },
+        query: "SERIALIZED_BROKER_PLAN_ONLY",
+        limit: 10,
+      }),
+    ).rejects.toThrow("unavailable");
+  });
+
+  it("keeps the selected runtime plan state in a real broker child across IPC", async () => {
+    createPrivateResource("alice", "BROKER_CHILD_SERIALIZED_PLAN_ONLY");
+    const context = createContext("alice");
+    const broker = await startMemoryBrokerProcess({
+      brokerId: "memory-core-test-broker",
+      handlerModuleUrl: new URL("./broker-entry.ts", import.meta.url).href,
+    });
+    try {
+      const authorizationBinding = {
+        agentId: context.agentId,
+        sessionId: context.sessionId,
+        runId: context.runId,
+        contextFingerprint: context.contextFingerprint,
+        subjectRevision: context.subjectRevision,
+        actorRevision: context.actor.evidenceRevision,
+        capabilitySnapshotId: context.delegation?.capabilitySnapshotId ?? context.hostFactsRevision,
+        policyRevision: context.hostFactsRevision,
+        deliveryRevision: context.delivery.deliveryRevision,
+      };
+      const plan = await broker.client.request<AuthorizedMemoryPlan>({
+        binding: authorizationBinding,
+        method: "memory.authorize",
+        payload: { context },
+        expiresAtMs: Date.now() + 30_000,
+      });
+      expect(plan).toBeDefined();
+      if (!plan) {
+        throw new Error("broker did not authorize the test memory context");
+      }
+
+      // The signed frame is Gateway-issued, but the worker-controlled payload still crosses a
+      // process boundary. The selected broker must reject an attempt to repurpose Alice's plan
+      // for a different actor or a stale Gateway policy snapshot before it reads content.
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: plan.memoryPolicyRevision },
+          method: "memory.search",
+          payload: {
+            context: {
+              ...context,
+              actor: { ...context.actor, evidenceRevision: "revoked-actor-evidence" },
+            },
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: "stale-policy-revision" },
+          method: "memory.search",
+          payload: {
+            context,
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: plan.memoryPolicyRevision },
+          method: "memory.search",
+          payload: {
+            context,
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toMatchObject({
+        value: [{ snippet: "BROKER_CHILD_SERIALIZED_PLAN_ONLY" }],
+      });
+    } finally {
+      await broker.close();
+    }
   });
 
   it("requires current principal-bound evidence before mounting a role store", async () => {

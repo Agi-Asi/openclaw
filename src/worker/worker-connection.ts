@@ -22,6 +22,12 @@ import type {
   WorkerInferenceStartResponseFrame,
   WorkerInferenceTerminalFrame,
 } from "../../packages/gateway-protocol/src/schema/worker-inference.js";
+import type {
+  WorkerMemoryReadParams,
+  WorkerMemoryReadResponseFrame,
+  WorkerMemorySearchParams,
+  WorkerMemorySearchResponseFrame,
+} from "../../packages/gateway-protocol/src/schema/worker-memory.js";
 import { computeBackoff, sleepWithAbort, type BackoffPolicy } from "../infra/backoff.js";
 import { notifyListeners } from "../shared/listeners.js";
 import {
@@ -249,6 +255,14 @@ export class WorkerConnection {
     params: WorkerInferenceCancelParams,
   ): Promise<WorkerInferenceCancelResponseFrame> {
     return this.frames.request("inference-cancel", params);
+  }
+
+  requestMemorySearch(params: WorkerMemorySearchParams): Promise<WorkerMemorySearchResponseFrame> {
+    return this.frames.request("memory-search", params);
+  }
+
+  requestMemoryRead(params: WorkerMemoryReadParams): Promise<WorkerMemoryReadResponseFrame> {
+    return this.frames.request("memory-read", params);
   }
 
   private async connectUntilReady(): Promise<WorkerHelloOk> {

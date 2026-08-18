@@ -67,6 +67,25 @@ describe("resolveWorkerToolAuthority", () => {
     expect(authority({ toolsAllow: ["browser"] })).toEqual([]);
   });
 
+  it("grants an enforced worker only the Gateway-proxied memory tools", () => {
+    expect(
+      resolveWorkerToolAuthority({
+        modelRef: { provider: "openai", model: "gpt-test" },
+        turn: turn(),
+        memoryReadEnforced: true,
+        availableMemoryToolNames: ["memory_search", "memory_get"],
+      }).allowedToolNames,
+    ).toEqual(["memory_search", "memory_get"]);
+    expect(
+      resolveWorkerToolAuthority({
+        modelRef: { provider: "openai", model: "gpt-test" },
+        turn: turn({ toolsAllow: ["memory_search"] }),
+        memoryReadEnforced: true,
+        availableMemoryToolNames: ["memory_search", "memory_get"],
+      }).allowedToolNames,
+    ).toEqual(["memory_search"]);
+  });
+
   it("projects runtime caps with canonical write-to-apply_patch semantics", () => {
     expect(authority({ toolsAllow: ["write"] })).toEqual(["write", "apply_patch"]);
     expect(authority({ toolsAllow: [] })).toEqual([]);

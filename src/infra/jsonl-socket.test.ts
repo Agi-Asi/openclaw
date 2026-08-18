@@ -92,6 +92,40 @@ describe.runIf(process.platform !== "win32")("requestJsonlSocket", () => {
     });
   });
 
+  it("keeps the write side open when a server needs a cancellation signal", async () => {
+    await withTempDir({ prefix: "openclaw-jsonl-socket-" }, async (dir) => {
+      const socketPath = path.join(dir, "socket.sock");
+      let ended = false;
+      const server = net.createServer({ allowHalfOpen: true }, (socket) => {
+        socket.on("end", () => {
+          ended = true;
+        });
+        socket.on("data", () => {
+          socket.end('{"type":"done","value":8}\n');
+        });
+      });
+      const listening = await listenOnSocket(server, socketPath);
+      if (!listening) {
+        return;
+      }
+
+      try {
+        await expect(
+          requestJsonlSocket({
+            socketPath,
+            requestLine: '{"hello":"world"}',
+            timeoutMs: 500,
+            keepWriteOpen: true,
+            accept: acceptDoneValue,
+          }),
+        ).resolves.toBe(8);
+        expect(ended).toBe(false);
+      } finally {
+        server.close();
+      }
+    });
+  });
+
   it("returns null on timeout and on socket errors", async () => {
     await withTestDir({ prefix: "openclaw-jsonl-socket-" }, async (dir) => {
       const socketPath = path.join(dir, "socket.sock");

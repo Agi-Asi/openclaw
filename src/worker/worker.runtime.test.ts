@@ -39,14 +39,6 @@ import {
 import { createDeferred, withTestTimeout } from "../../test/helpers/promise.js";
 import { createOperationalRunInstanceRef } from "../agents/admitted-run-context.js";
 import { listRunningSessions } from "../agents/bash-process-registry.js";
-import {
-  enableMemoryShadowReadOnlyMode,
-  resetMemoryIsolationCutoverForTest,
-} from "../plugins/memory-cutover.js";
-import {
-  closeOpenClawAgentDatabasesForTest,
-  openOpenClawAgentDatabase,
-} from "../state/openclaw-agent-db.js";
 import { buildWorkerConnectParams, type WorkerLaunchDescriptor } from "./launch-descriptor.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "./transcript-message.js";
 import { WorkerAdmissionDeadlineExceededError } from "./worker-connection-contract.js";
@@ -850,6 +842,7 @@ function descriptor(socketPath: string, workspaceDir: string): WorkerLaunchDescr
     },
     assignment: {
       agentId: "worker-agent",
+      memoryReadEnforced: false,
       runId: RUN_ID,
       operationalRunInstance: createOperationalRunInstanceRef(RUN_ID),
       agentRuntimeIdentityToken: "test-agent-runtime-token",
@@ -969,40 +962,26 @@ describe("worker runtime", () => {
     ]);
   });
 
-  it("keeps an enforced agent's worker tool surface free of raw filesystem tools after state isolation", async () => {
-    const memoryStateDir = await mkdtemp(path.join(tmpdir(), "openclaw-worker-memory-state-"));
-    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
-    process.env.OPENCLAW_STATE_DIR = memoryStateDir;
-    try {
-      resetMemoryIsolationCutoverForTest();
-      const database = openOpenClawAgentDatabase({ agentId: "main" });
-      database.db
-        .prepare(
-          `INSERT INTO session_memory_subjects
-           (session_key, binding_id, principal_id, subject_kind, subject_revision, created_at)
-           VALUES ('agent:main:pilot', NULL, 'principal-alice', 'agent', 'test-revision', 1)`,
-        )
-        .run();
-      expect(enableMemoryShadowReadOnlyMode({ agentId: "main", nowMs: 1 })).toBe(
-        "shadow-read-only",
-      );
-      closeOpenClawAgentDatabasesForTest();
+  it("keeps an enforced non-default agent's worker tool surface free of raw filesystem tools", async () => {
+    const { gateway, launch } = await setup();
+    launch.assignment.memoryReadEnforced = true;
 
-      const { gateway, launch } = await setup();
-      await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
+    await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
 
-      expect(browserRuntimeMocks.createWorkerBrowserToolRuntime).not.toHaveBeenCalled();
-      expect(gateway.inferenceRequests[0]?.context.tools?.map((tool) => tool.name)).toEqual([]);
-    } finally {
-      resetMemoryIsolationCutoverForTest();
-      closeOpenClawAgentDatabasesForTest();
-      if (previousStateDir === undefined) {
-        delete process.env.OPENCLAW_STATE_DIR;
-      } else {
-        process.env.OPENCLAW_STATE_DIR = previousStateDir;
-      }
-      await rm(memoryStateDir, { recursive: true, force: true });
-    }
+    expect(browserRuntimeMocks.createWorkerBrowserToolRuntime).not.toHaveBeenCalled();
+    expect(gateway.inferenceRequests[0]?.context.tools?.map((tool) => tool.name)).toEqual([]);
+  });
+
+  it("exposes only Gateway-authorized brokered memory tools for an enforced worker", async () => {
+    const { gateway, launch } = await setup();
+    launch.assignment.memoryReadEnforced = true;
+    launch.assignment.toolAuthority.allowedToolNames = ["memory_search", "memory_get"];
+    await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
+
+    expect(gateway.inferenceRequests[0]?.context.tools?.map((tool) => tool.name)).toEqual([
+      "memory_search",
+      "memory_get",
+    ]);
   });
 
   it("runs with no tools when the Gateway authority is empty", async () => {

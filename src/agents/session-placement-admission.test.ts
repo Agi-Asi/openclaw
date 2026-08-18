@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const memoryCutover = vi.hoisted(() => vi.fn<(agentId: string) => boolean>(() => false));
+
+vi.mock("../plugins/memory-cutover.js", () => ({
+  isMemoryIsolationCutoverAgent: memoryCutover,
+}));
+
 import { createTestAdmittedRunContext } from "./admitted-run-context.test-support.js";
 import {
   installSessionPlacementAdmissionProvider,
@@ -17,6 +24,7 @@ const executeLocalTurn: SessionPlacementAdmissionProvider["executeLocalTurn"] = 
 afterEach(() => {
   uninstallProvider?.();
   uninstallProvider = undefined;
+  memoryCutover.mockReset().mockReturnValue(false);
 });
 
 describe("local turn placement admission", () => {
@@ -110,6 +118,139 @@ describe("local turn placement admission", () => {
     );
 
     expect(events).toEqual(["admitted", "turn"]);
+  });
+
+  it("refuses an explicitly process-isolated turn when no worker placement provider exists", async () => {
+    const turn = vi.fn(async () => ({ meta: { durationMs: 1 } }));
+    await expect(
+      withSessionPlacementTurnAdmission(
+        { sessionId: "session-isolated", runId: "run-isolated", requiresProcessIsolation: true },
+        { ...turnParams, sessionId: "session-isolated", runId: "run-isolated" },
+        turn,
+      ),
+    ).rejects.toThrow("enforced memory requires an isolated worker placement");
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cutover turn unless its effective sandbox is session-scoped and projection-capable", async () => {
+    const turn = vi.fn(async () => ({ meta: { durationMs: 1 } }));
+    const executeTurn = vi.fn<SessionPlacementAdmissionProvider["executeTurn"]>(
+      async (_claim, _params, runLocal) => await runLocal(),
+    );
+    uninstallProvider = installSessionPlacementAdmissionProvider({ executeLocalTurn, executeTurn });
+
+    await expect(
+      withSessionPlacementTurnAdmission(
+        {
+          sessionId: "session-isolated-sandbox",
+          agentId: "main",
+          sessionKey: "agent:main:isolated-sandbox",
+          runId: "run-isolated-sandbox",
+          requiresProcessIsolation: true,
+        },
+        {
+          ...turnParams,
+          sessionId: "session-isolated-sandbox",
+          sessionKey: "agent:main:isolated-sandbox",
+          runId: "run-isolated-sandbox",
+          config: {
+            agents: { defaults: { sandbox: { mode: "all", scope: "agent", backend: "docker" } } },
+          },
+        },
+        turn,
+      ),
+    ).rejects.toThrow("session-scoped Docker or Podman sandbox");
+
+    await expect(
+      withSessionPlacementTurnAdmission(
+        {
+          sessionId: "session-isolated-ssh",
+          agentId: "main",
+          sessionKey: "agent:main:isolated-ssh",
+          runId: "run-isolated-ssh",
+          requiresProcessIsolation: true,
+        },
+        {
+          ...turnParams,
+          sessionId: "session-isolated-ssh",
+          sessionKey: "agent:main:isolated-ssh",
+          runId: "run-isolated-ssh",
+          config: {
+            agents: { defaults: { sandbox: { mode: "all", scope: "session", backend: "ssh" } } },
+          },
+        },
+        turn,
+      ),
+    ).rejects.toThrow("session-scoped Docker or Podman sandbox");
+
+    expect(executeTurn).not.toHaveBeenCalled();
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it("admits a cutover turn only after its session-scoped projection sandbox is configured", async () => {
+    const turn = vi.fn(async () => ({ meta: { durationMs: 1 } }));
+    const executeTurn = vi.fn<SessionPlacementAdmissionProvider["executeTurn"]>(
+      async (_claim, _params, runLocal) => await runLocal(),
+    );
+    uninstallProvider = installSessionPlacementAdmissionProvider({ executeLocalTurn, executeTurn });
+
+    await expect(
+      withSessionPlacementTurnAdmission(
+        {
+          sessionId: "session-isolated-docker",
+          agentId: "main",
+          sessionKey: "agent:main:isolated-docker",
+          runId: "run-isolated-docker",
+          requiresProcessIsolation: true,
+        },
+        {
+          ...turnParams,
+          sessionId: "session-isolated-docker",
+          sessionKey: "agent:main:isolated-docker",
+          runId: "run-isolated-docker",
+          config: {
+            agents: { defaults: { sandbox: { mode: "all", scope: "session", backend: "docker" } } },
+          },
+        },
+        turn,
+      ),
+    ).resolves.toEqual({ meta: { durationMs: 1 } });
+
+    expect(executeTurn).toHaveBeenCalledOnce();
+    expect(turn).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a process-isolated CLI turn even when a placement provider is installed", async () => {
+    const turn = vi.fn(async () => ({ kind: "cli" }));
+    uninstallProvider = installSessionPlacementAdmissionProvider({
+      executeLocalTurn,
+      executeTurn: async (_claim, _params, runLocal) => await runLocal(),
+    });
+
+    await expect(
+      withLocalSessionPlacementTurnAdmission(
+        {
+          sessionId: "session-isolated-cli",
+          runId: "run-isolated-cli",
+          requiresProcessIsolation: true,
+        },
+        turn,
+      ),
+    ).rejects.toThrow("enforced memory cannot execute through a local CLI placement");
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it("derives the local CLI denial from the admitted agent's cutover posture", async () => {
+    memoryCutover.mockImplementation((agentId) => agentId === "enforced-agent");
+    const turn = vi.fn(async () => ({ kind: "cli" }));
+
+    await expect(
+      withLocalSessionPlacementTurnAdmission(
+        { sessionId: "session-derived-cli", agentId: "enforced-agent", runId: "run-derived-cli" },
+        turn,
+      ),
+    ).rejects.toThrow("enforced memory cannot execute through a local CLI placement");
+    expect(turn).not.toHaveBeenCalled();
   });
 
   it("admits once when a provider signals before calling the local turn", async () => {

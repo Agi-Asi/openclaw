@@ -66,6 +66,7 @@
   "markdown-table-runtime",
   "media-generation-runtime",
   "memory-enterprise-audit-runtime",
+  "memory-broker-runtime",
   "memory-postbox-runtime",
   "memory-sharing-control-runtime",
   "memory-core-host-embedding-registry",
