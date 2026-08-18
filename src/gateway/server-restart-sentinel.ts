@@ -1,5 +1,4 @@
-// Gateway restart sentinel recovery.
-// Resumes pending restart continuations and outbound delivery after process restart.
+// Resumes Gateway restart continuations and outbound delivery after process restart.
 import {
   resolveCorrelatedSubagentDelivery,
   settleCorrelatedSubagentDelivery,
@@ -514,8 +513,7 @@ async function loadRestartSentinelStartupTask(params: {
         !payload.deliveryContext &&
         payload.threadId == null;
       if (controlPlaneOnlyConfigRestart) {
-        // A targetless config acknowledgement has no agent turn to resume.
-        // Synthesizing a main-session wake races real restart recovery and spends a model turn.
+        // A targetless config acknowledgement cannot resume an agent without racing real recovery.
         const consumed = await clearRestartSentinelIfRevision(sentinelRevision);
         if (!consumed) {
           log.info(`${summary}: newer restart sentinel preserved while consuming config restart`);
@@ -737,6 +735,7 @@ async function scheduleRestartSentinelWakeAttempt(params: { deps: CliDeps; attem
 export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   await scheduleRestartSentinelWakeAttempt({ ...params, attempt: 0 });
 }
+
 export async function refreshLatestUpdateRestartSentinel(): Promise<RestartSentinelPayload | null> {
   const current = await readRestartSentinel();
   if (
