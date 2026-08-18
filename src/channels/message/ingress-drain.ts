@@ -380,8 +380,9 @@ export function createChannelIngressDrain<
   const armStallWatchdog = (state: ActiveHandlerState<TPayload, TMetadata>) => {
     clearStallTimer(state);
     state.stallTimer = setTimeout(() => {
-      // Pre-adoption only (dispatching OR deferred). Timer is not cleared by deferral.
-      if (state.phase !== "dispatching" && state.phase !== "deferred") {
+      // Pre-handoff only. Deferred work has an explicit lifecycle owner that
+      // completes, releases, or fails the claim while its lease stays refreshed.
+      if (state.phase !== "dispatching") {
         return;
       }
       const ageMs = now() - state.startedAt;
@@ -457,8 +458,10 @@ export function createChannelIngressDrain<
         if (state.phase !== "dispatching") {
           return;
         }
-        // Deferred holds the claim; watchdog remains armed until adoption or abandon.
+        // The reply queue now owns settlement. Keep the durable claim and lease,
+        // but end the ingress deadline so valid queue waits can outlive it.
         state.phase = "deferred";
+        clearStallTimer(state);
         if (deferredLaneOccupancy === "release") {
           if (laneOwnerByKey.get(state.laneKey) === state) {
             laneOwnerByKey.delete(state.laneKey);

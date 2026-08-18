@@ -9,7 +9,8 @@ export type ChannelIngressDispatchLifecycle = {
   onAdopted: () => void | Promise<void>;
   /**
    * Turn ownership deferred to reply-lane admission (queued followup).
-   * Claim remains held until adopted or abandoned.
+   * Claim remains held and leased until adopted or abandoned; the reply
+   * lifecycle owns settlement after this handoff, not the ingress watchdog.
    */
   onDeferred: () => void;
   /**

@@ -276,20 +276,24 @@ describe("channel ingress drain", () => {
     }
   });
 
-  it("keeps heartbeat and watchdog ownership after releasing a deferred lane", async () => {
+  it("keeps heartbeat while deferred work owns timeout settlement", async () => {
     await withTempState(async (stateDir) => {
       let clock = 1_000;
       const queue = createTestIngressQueue(stateDir, { now: () => clock });
       await queue.enqueue("released-stall", { text: "x" }, { laneKey: "shared" });
       const refreshClaim = vi.fn(async () => true);
       queue.refreshClaim = refreshClaim;
+      let adoptDeferred: (() => void | Promise<void>) | undefined;
       const drain = createChannelIngressDrain<Payload>({
         queue,
         now: () => clock,
         claimLeaseMs: 3_000,
         adoptionStallTimeoutMs: 2_000,
         deferredLaneOccupancy: "release",
-        dispatchClaimedEvent: async () => ({ kind: "deferred" }),
+        dispatchClaimedEvent: async (_event, lifecycle) => {
+          adoptDeferred = lifecycle.onAdopted;
+          return { kind: "deferred" };
+        },
       });
 
       await drain.drainOnce();
@@ -300,9 +304,15 @@ describe("channel ingress drain", () => {
 
       clock += 1_000;
       await vi.advanceTimersByTimeAsync(1_000);
-      await vi.waitFor(async () => expect(await queue.listFailed?.()).toHaveLength(1));
-      const failed = await queue.listFailed?.();
-      expect(failed?.[0]).toMatchObject({ id: "released-stall", reason: "handler-timeout" });
+      expect(refreshClaim).toHaveBeenCalledTimes(2);
+      expect(await queue.listFailed?.()).toEqual([]);
+      expect((await queue.listClaims()).map((claim) => claim.id)).toEqual(["released-stall"]);
+
+      await adoptDeferred?.();
+      await drain.waitForIdle();
+      await expect(queue.enqueue("released-stall", { text: "x" })).resolves.toMatchObject({
+        kind: "completed",
+      });
       drain.dispose();
     });
   });
