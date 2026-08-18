@@ -4,6 +4,7 @@ import { ensureSelectedAgentHarnessPlugin } from "../../harness/runtime-plugin.j
 import { selectAgentHarness } from "../../harness/selection.js";
 import { resolveSelectedOpenAIRuntimeProvider } from "../../openai-routing.js";
 import type { PreparedModelRuntimeSnapshot } from "../../prepared-model-runtime.js";
+import { log } from "../logger.js";
 import { resolveTieredModel } from "../model-resolution.js";
 import { createEmptyAgentDiscoveryStores } from "../model.js";
 import type { RunEmbeddedAgentParams } from "./params.js";
@@ -160,6 +161,15 @@ export async function resolveEmbeddedRunModelSetup(params: {
           },
         }
       : resolvedModel;
+  log.info("[thinking-handoff-diag] embedded model compat application", {
+    provider,
+    model: modelId,
+    routeChanged: modelSelectionChangedByHook,
+    receivedCompat: runParams.modelThinkingCompat != null,
+    receivedEfforts: runParams.modelThinkingCompat?.supportedReasoningEfforts,
+    appliedCompat: !modelSelectionChangedByHook && runParams.modelThinkingCompat != null,
+    resolvedEfforts: model.compat?.supportedReasoningEfforts,
+  });
 
   return {
     provider,

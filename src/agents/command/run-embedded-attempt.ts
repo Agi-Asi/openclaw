@@ -448,13 +448,22 @@ export async function runEmbeddedAgentAttempt(params: {
               agentRuntime: candidateRuntime,
             }) ?? candidateRequestedThinkLevel;
           const entry = findModelInCatalog(thinkingCatalog ?? [], providerOverride, modelOverride);
+          const projectedCompat = projectThinkingCatalogCompat(entry?.compat);
+          log.info("[thinking-handoff-diag] scoped candidate catalog metadata", {
+            provider: providerOverride,
+            model: modelOverride,
+            catalogEntryFound: Boolean(entry),
+            catalogCompatPresent: entry?.compat != null,
+            catalogEfforts: entry?.compat?.supportedReasoningEfforts,
+            projectedEfforts: projectedCompat?.supportedReasoningEfforts,
+          });
           effectiveTurnThinkLevel = candidateThinkLevel;
           return attemptExecutionRuntime.runAgentAttempt({
             preparedRunAdmission: params.preparedRunAdmission,
             providerOverride,
             modelOverride,
             modelHasVision: modelSupportsInput(entry, "image"),
-            modelThinkingCompat: projectThinkingCatalogCompat(entry?.compat),
+            modelThinkingCompat: projectedCompat,
             configuredAuthProfileId,
             modelFallbacksOverride: effectiveFallbacksOverride,
             originalProvider: provider,
