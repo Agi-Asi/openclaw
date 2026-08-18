@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { constants as zlibConstants } from "node:zlib";
 import * as tar from "tar";
 import { root as fsSafeRoot } from "../infra/fs-safe.js";
 import {
@@ -24,9 +25,6 @@ import { isSafeClawRelativePath } from "./schema-portability.js";
 import { MAX_MANAGED_FILE_BYTES } from "./source-limits.js";
 
 export const CLAW_BUILD_RESULT_SCHEMA_VERSION = "openclaw.clawBuild.v1" as const;
-
-// zlib's public numeric API defines Z_FILTERED as strategy 1.
-const ZLIB_FILTERED_STRATEGY = 1;
 
 type ClawBuildResult = {
   schemaVersion: typeof CLAW_BUILD_RESULT_SCHEMA_VERSION;
@@ -187,8 +185,8 @@ export async function buildClawProject(
       {
         cwd: stagingRoot,
         file: temporaryArtifact,
-        // Stabilize supported zlib output without disabling normal match compression.
-        gzip: { level: 9, portable: true, strategy: ZLIB_FILTERED_STRATEGY },
+        // Native zlib match selection varies by version; Huffman-only keeps artifact bytes portable.
+        gzip: { level: 9, portable: true, strategy: zlibConstants.Z_HUFFMAN_ONLY },
         mtime: new Date(0),
         portable: true,
         prefix: "package",

@@ -9,7 +9,18 @@ import { ClawProjectError, createClawProject, validateClawProject } from "./proj
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const GOLDEN_ARTIFACT_INTEGRITY =
-  "sha256:10b8890c5e5b062c94ff79b1d424859c6a5572548535eec6e31ee0c6d7c08a3b";
+  "sha256:5fba54933e519f4fc12422a3d555d076ce373be993eed3f6b3575a89aaa62618";
+
+async function writeCaseVariantIfDistinct(path: string, content: string): Promise<void> {
+  try {
+    await writeFile(path, content, { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return;
+    }
+    throw error;
+  }
+}
 
 async function writeRichProject(root: string): Promise<void> {
   await mkdir(join(root, "workspace"), { recursive: true });
@@ -426,52 +437,49 @@ describe("Claw projects", () => {
     });
   });
 
-  it.runIf(process.platform !== "win32")(
-    "rejects a workspace source that portably collides with CLAW.md",
-    async () => {
-      const project = tempDirs.make("openclaw-claw-manifest-case-collision-");
-      await writeRichProject(project);
-      const manifest = await readFile(join(project, "CLAW.md"), "utf8");
-      await writeFile(join(project, "claw.md"), "# Conflicting source\n");
-      await writeFile(
-        join(project, "CLAW.md"),
-        manifest.replace("workspace/reference.md", "claw.md"),
-      );
+  it("rejects a workspace source that portably collides with CLAW.md", async () => {
+    const project = tempDirs.make("openclaw-claw-manifest-case-collision-");
+    await writeRichProject(project);
+    const manifest = await readFile(join(project, "CLAW.md"), "utf8");
+    await writeFile(
+      join(project, "CLAW.md"),
+      manifest.replace("workspace/reference.md", "claw.md"),
+    );
+    await writeCaseVariantIfDistinct(join(project, "claw.md"), "# Conflicting source\n");
 
-      await expect(validateClawProject(project)).resolves.toMatchObject({
-        ok: false,
-        diagnostics: [expect.objectContaining({ code: "project_path_collision" })],
-      });
-    },
-  );
+    await expect(validateClawProject(project)).resolves.toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: "project_path_collision" })],
+    });
+  });
 
-  it.runIf(process.platform !== "win32")(
-    "rejects a workspace source that portably collides with a custom profile",
-    async () => {
-      const project = tempDirs.make("openclaw-claw-profile-case-collision-");
-      await writeRichProject(project);
-      await rename(
-        join(project, "profiles", "openclaw.yml"),
-        join(project, "profiles", "custom.yaml"),
-      );
-      await writeFile(join(project, "profiles", "CUSTOM.yaml"), "schemaVersion: 1\nagent: {}\n");
-      const manifest = await readFile(join(project, "CLAW.md"), "utf8");
-      await writeFile(
-        join(project, "CLAW.md"),
-        manifest
-          .replace(
-            "agent:\n  id: demo-claw",
-            "agent:\n  id: demo-claw\nmetadata:\n  openclaw.config: profiles/custom.yaml",
-          )
-          .replace("workspace/reference.md", "profiles/CUSTOM.yaml"),
-      );
+  it("rejects a workspace source that portably collides with a custom profile", async () => {
+    const project = tempDirs.make("openclaw-claw-profile-case-collision-");
+    await writeRichProject(project);
+    await rename(
+      join(project, "profiles", "openclaw.yml"),
+      join(project, "profiles", "custom.yaml"),
+    );
+    await writeCaseVariantIfDistinct(
+      join(project, "profiles", "CUSTOM.yaml"),
+      "schemaVersion: 1\nagent: {}\n",
+    );
+    const manifest = await readFile(join(project, "CLAW.md"), "utf8");
+    await writeFile(
+      join(project, "CLAW.md"),
+      manifest
+        .replace(
+          "agent:\n  id: demo-claw",
+          "agent:\n  id: demo-claw\nmetadata:\n  openclaw.config: profiles/custom.yaml",
+        )
+        .replace("workspace/reference.md", "profiles/CUSTOM.yaml"),
+    );
 
-      await expect(validateClawProject(project)).resolves.toMatchObject({
-        ok: false,
-        diagnostics: [expect.objectContaining({ code: "project_path_collision" })],
-      });
-    },
-  );
+    await expect(validateClawProject(project)).resolves.toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: "project_path_collision" })],
+    });
+  });
 
   it.runIf(process.platform !== "win32")(
     "rejects Unicode-normalization collisions between workspace sources",
