@@ -94,3 +94,57 @@ describe("SessionCatalogLiveState", () => {
     expect(live.sawChange).toBe(false);
   });
 });
+
+describe("SessionCatalogLiveState presence refreshes", () => {
+  it("ignores mode-less and explicit non-node presence churn", () => {
+    const live = new SessionCatalogLiveState();
+
+    expect(live.observePresence({ presence: [{ deviceId: "legacy-client" }] })).toBe(false);
+    expect(
+      live.observePresence({ presence: [{ deviceId: "operator-client", mode: "operator" }] }),
+    ).toBe(false);
+    expect(
+      live.observePresence({ presence: [{ deviceId: "browser-client", mode: "webchat" }] }),
+    ).toBe(false);
+  });
+
+  it("treats explicit mode as authoritative over roles", () => {
+    const live = new SessionCatalogLiveState();
+
+    expect(
+      live.observePresence({
+        presence: [{ deviceId: "browser-node", mode: "webchat", roles: ["node"] }],
+      }),
+    ).toBe(false);
+    expect(
+      live.observePresence({
+        presence: [{ deviceId: "operator-node", mode: "operator", roles: ["node"] }],
+      }),
+    ).toBe(false);
+    expect(
+      live.observePresence({
+        presence: [{ deviceId: "node-operator", mode: "node", roles: ["operator"] }],
+      }),
+    ).toBe(true);
+  });
+
+  it("invalidates when explicit node presence changes", () => {
+    const live = new SessionCatalogLiveState();
+
+    expect(live.observePresence({ presence: [{ deviceId: "devbox", mode: "node" }] })).toBe(true);
+    expect(live.observePresence({ presence: [{ deviceId: "devbox", mode: "node" }] })).toBe(false);
+    expect(
+      live.observePresence({
+        presence: [{ deviceId: "devbox", mode: "node", reason: "disconnect" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a mode-less presence entry with an authenticated node role", () => {
+    const live = new SessionCatalogLiveState();
+
+    expect(live.observePresence({ presence: [{ deviceId: "legacy-node", roles: ["node"] }] })).toBe(
+      true,
+    );
+  });
+});

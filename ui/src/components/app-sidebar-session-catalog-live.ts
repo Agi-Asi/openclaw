@@ -106,6 +106,7 @@ export class SessionCatalogLiveState {
   progressive = true;
 
   private activationTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private activationQueueIfActive = false;
   private connectionEpoch = 0;
   private refetchOwner: symbol | null = null;
   private presenceSignature: string | null = null;
@@ -309,7 +310,17 @@ export class SessionCatalogLiveState {
       const rawId = typeof record.deviceId === "string" ? record.deviceId : record.instanceId;
       const id = typeof rawId === "string" ? rawId.trim().toLowerCase() : "";
       const mode = typeof record.mode === "string" ? record.mode.trim().toLowerCase() : "";
-      if (!id || mode === "gateway") {
+      const authenticatedRoles = Array.isArray(record.roles)
+        ? record.roles.filter((role: unknown): role is string => typeof role === "string")
+        : null;
+      const hasNodeRole =
+        authenticatedRoles?.some((role) => role.trim().toLowerCase() === "node") === true;
+      // Catalog hosts are native node connections. Browser/operator presence changes on
+      // every tab connect, disconnect, and watched-session update, but cannot change the
+      // native host inventory and must not trigger another full catalog scan. Older nodes
+      // can omit mode, but their authenticated node role remains authoritative.
+      const isNodePresence = mode ? mode === "node" : hasNodeRole;
+      if (!id || !isNodePresence) {
         continue;
       }
       const reason = typeof record.reason === "string" ? record.reason.trim().toLowerCase() : "";
@@ -409,14 +420,21 @@ export class SessionCatalogLiveState {
     visible: boolean;
     connected: boolean;
     generation: number;
+    queueIfActive: boolean;
     refresh: () => void;
   }) {
     if (!params.visible || !params.connected) {
       return;
     }
+    // A visible tab already has a freshness poll scheduled after its last request.
+    // Window focus can fire during startup and browser activation without the page
+    // ever becoming hidden, so it must not replace that poll with an immediate scan.
+    if (!params.queueIfActive && this.timer !== null) {
+      return;
+    }
     this.cancelTimer();
     if (this.requestGeneration === params.generation) {
-      this.refreshPending = true;
+      this.refreshPending ||= params.queueIfActive;
       return;
     }
     params.refresh();
@@ -424,6 +442,7 @@ export class SessionCatalogLiveState {
 
   cancelActivation() {
     this.cancelTimer("activationTimer");
+    this.activationQueueIfActive = false;
   }
 
   cancelScheduledRefreshes() {
@@ -431,7 +450,8 @@ export class SessionCatalogLiveState {
     this.cancelActivation();
   }
 
-  scheduleActivation(refresh: () => void) {
+  scheduleActivation(queueIfActive: boolean, refresh: (queueIfActive: boolean) => void) {
+    this.activationQueueIfActive ||= queueIfActive;
     if (this.activationTimer !== null) {
       return;
     }
@@ -439,7 +459,9 @@ export class SessionCatalogLiveState {
     // One short window keeps the burst to a single fleet scan.
     this.activationTimer = globalThis.setTimeout(() => {
       this.activationTimer = null;
-      refresh();
+      const shouldQueue = this.activationQueueIfActive;
+      this.activationQueueIfActive = false;
+      refresh(shouldQueue);
     }, 50);
   }
 }
