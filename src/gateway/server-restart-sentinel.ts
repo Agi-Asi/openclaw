@@ -680,8 +680,7 @@ async function loadRestartSentinelStartupTask(params: {
       noticeQueueCreated = queuedNotice.created;
     }
 
-    // Every downstream intent is durable before consuming the singleton. A
-    // failed or stale compare-delete cannot lose work or remove a newer row.
+    // Persist downstream intent first so compare-delete cannot lose work or remove a newer row.
     const consumed = await clearRestartSentinelIfRevision(sentinelRevision);
     if (!consumed) {
       log.info(`${summary}: newer restart sentinel preserved while draining durable work`, {
