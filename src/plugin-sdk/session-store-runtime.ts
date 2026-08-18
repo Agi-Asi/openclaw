@@ -620,7 +620,7 @@ export async function settleProvisionalParentFork(
     const agentId = params.agentId ?? resolveAgentIdFromSessionKey(params.sessionKey);
     const storePath =
       params.storePath ??
-      resolveSessionStorePath(undefined, {
+      resolveSessionStorePathCore(undefined, {
         agentId,
         env: params.env,
       });

@@ -25,6 +25,7 @@ const {
   replyMock,
   reactMock,
   reactionAddMock,
+  dispatchChannelInboundTurnParams,
   settleProvisionalParentForkMock,
   upsertPairingRequestMock,
 } = slackTestState;
@@ -958,6 +959,12 @@ describe("monitorSlackProvider tool results", () => {
         ParentSessionKey: followUpParentSessionKey,
       });
       if (threadInheritParent === undefined) {
+        const rootDispatchParams = dispatchChannelInboundTurnParams[0] as {
+          replyOptions?: { replyOperationCompletionBarrier?: PromiseLike<unknown> };
+        };
+        const completionBarrier = rootDispatchParams.replyOptions?.replyOperationCompletionBarrier;
+        expect(completionBarrier).toBeDefined();
+        await completionBarrier;
         expect(settleProvisionalParentForkMock).toHaveBeenCalledTimes(1);
         expect(settleProvisionalParentForkMock).toHaveBeenCalledWith(
           expect.objectContaining({

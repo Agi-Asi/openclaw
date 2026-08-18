@@ -286,7 +286,7 @@ export function createSlackMonitorContext(params: {
     accountId: params.accountId,
     getTeamId: () => ctx.teamId,
     mainKey: params.mainKey,
-    threadInheritParent: params.threadInheritParent,
+    threadInheritParent: params.threadInheritParent === true,
     recallSlackChannelType,
   });
 

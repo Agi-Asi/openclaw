@@ -12,6 +12,7 @@ import {
   deliverWithFinalizableLivePreviewAdapter,
 } from "openclaw/plugin-sdk/channel-outbound";
 import { toErrorObject } from "openclaw/plugin-sdk/error-runtime";
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import {
   buildTtsSupplementMediaPayload,
   getReplyPayloadTtsSupplement,
@@ -76,6 +77,9 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     useStreaming,
   } = setup;
   const delivery = createSlackStreamingDeliveryRuntime(setup);
+  const provisionalParentForkCompletion = prepared.provisionalParentFork
+    ? createDeferred<void>()
+    : undefined;
   const draftPreviewCommitted = { value: false };
   const progress = createSlackProgressRuntime({
     setup,
@@ -509,6 +513,7 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
             ? true
             : undefined,
         allowToolLifecycleWhenProgressHidden: statusReactionsEnabled ? true : undefined,
+        replyOperationCompletionBarrier: provisionalParentForkCompletion?.promise,
         onPartialReply: useStreaming
           ? undefined
           : !previewStreamingEnabled
@@ -612,7 +617,12 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   } finally {
     progress.progressDraft.cancel();
     if (!progress.useDraftProgressCard) {
-      await draftStream?.discardPending();
+      try {
+        await draftStream?.discardPending();
+      } catch (error) {
+        provisionalParentForkCompletion?.resolve();
+        throw error;
+      }
     }
   }
 
@@ -666,47 +676,51 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     fallbackDelivered: streamFallbackDelivered,
   });
 
-  if (pendingFailureNotice && anyReplyDelivered) {
-    recordSlackThreadFailureNotice(pendingFailureNotice);
-  }
+  try {
+    if (pendingFailureNotice && anyReplyDelivered) {
+      recordSlackThreadFailureNotice(pendingFailureNotice);
+    }
 
-  if (dispatchError || agentRunFailed) {
-    await progress.finalizeDraftProgressCard("error");
-  }
-  await progress.dropDetachedProgressCards();
-  const confirmedSlackReplyDelivered = delivery.observedReplyDelivery || streamFallbackDelivered;
+    if (dispatchError || agentRunFailed) {
+      await progress.finalizeDraftProgressCard("error");
+    }
+    await progress.dropDetachedProgressCards();
+    const confirmedSlackReplyDelivered = delivery.observedReplyDelivery || streamFallbackDelivered;
 
-  if (prepared.provisionalParentFork) {
-    try {
-      // Queue counts describe attempted dispatcher work, not transport
-      // success. Keep copied parent context only after Slack acknowledges a
-      // normal, preview, streaming, or fallback delivery.
-      const outcome = confirmedSlackReplyDelivered ? "confirm" : "retire";
-      const settlement = await settleProvisionalParentFork({
-        agentId: route.agentId,
-        id: prepared.provisionalParentFork.id,
-        outcome,
-        sessionKey: prepared.provisionalParentFork.sessionKey,
-        storePath: prepared.turn.storePath,
-      });
-      if (settlement === "mismatch" || settlement === "stale") {
+    if (prepared.provisionalParentFork) {
+      try {
+        // Queue counts describe attempted dispatcher work, not transport
+        // success. Keep copied parent context only after Slack acknowledges a
+        // normal, preview, streaming, or fallback delivery.
+        const outcome = confirmedSlackReplyDelivered ? "confirm" : "retire";
+        const settlement = await settleProvisionalParentFork({
+          agentId: route.agentId,
+          id: prepared.provisionalParentFork.id,
+          outcome,
+          sessionKey: prepared.provisionalParentFork.sessionKey,
+          storePath: prepared.turn.storePath,
+        });
+        if (settlement === "mismatch" || settlement === "stale") {
+          runtime.error?.(
+            danger(
+              `slack: provisional parent fork ${outcome} did not settle for ${prepared.provisionalParentFork.sessionKey} (${settlement})`,
+            ),
+          );
+        }
+      } catch (err) {
+        // A concurrent thread turn can hold the session admission fence. Its
+        // initializer sees the still-provisional marker and rolls over to an
+        // isolated generation, so cleanup failure must not duplicate a visible
+        // Slack reply or fail the already-settled delivery.
         runtime.error?.(
           danger(
-            `slack: provisional parent fork ${outcome} did not settle for ${prepared.provisionalParentFork.sessionKey} (${settlement})`,
+            `slack: provisional parent fork settlement failed for ${prepared.provisionalParentFork.sessionKey}: ${formatSlackError(err)}`,
           ),
         );
       }
-    } catch (err) {
-      // A concurrent thread turn can hold the session admission fence. Its
-      // initializer sees the still-provisional marker and rolls over to an
-      // isolated generation, so cleanup failure must not duplicate a visible
-      // Slack reply or fail the already-settled delivery.
-      runtime.error?.(
-        danger(
-          `slack: provisional parent fork settlement failed for ${prepared.provisionalParentFork.sessionKey}: ${formatSlackError(err)}`,
-        ),
-      );
     }
+  } finally {
+    provisionalParentForkCompletion?.resolve();
   }
 
   if (statusReactionsEnabled) {
