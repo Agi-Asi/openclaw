@@ -309,6 +309,12 @@ function resolveCodexHarnessExpectedEffort(modelId: string): string | null {
   );
 }
 
+function resolveCodexHarnessExpectedNativeEffort(modelId: string): string | null {
+  return CODEX_HARNESS_THINKING === "off"
+    ? "none"
+    : resolveCodexHarnessExpectedEffort(modelId);
+}
+
 function logCodexLiveStep(step: string, details?: Record<string, unknown>): void {
   if (!CODEX_HARNESS_DEBUG) {
     return;
@@ -866,6 +872,9 @@ function recordCodexAttemptIdentity(params: {
     typeof threadId === "string" && threadId.trim().length > 0,
     `expected Codex thread_ready identity for ${params.sessionKey}; events=${JSON.stringify(events)}`,
   ).toBe(true);
+  expect(threadReady?.data?.reasoningEffort ?? null).toBe(
+    resolveCodexHarnessExpectedNativeEffort(expectedModel),
+  );
   observedCodexThreadIds.set(params.sessionKey, threadId as string);
   const clientId = threadReady?.data?.clientId;
   expect(

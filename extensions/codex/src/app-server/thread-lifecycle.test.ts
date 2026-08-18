@@ -898,12 +898,18 @@ function threadStartResult(threadId = "thread-1") {
   };
 }
 
-function nativeThreadResult(threadId: string, model: string, modelProvider: string) {
+function nativeThreadResult(
+  threadId: string,
+  model: string,
+  modelProvider: string,
+  reasoningEffort: string | null = null,
+) {
   const response = threadStartResult(threadId);
   return {
     ...response,
     model,
     modelProvider,
+    reasoningEffort,
     thread: { ...response.thread, modelProvider },
   };
 }
@@ -3221,10 +3227,20 @@ describe("Codex app-server supervised branch lifecycle", () => {
         };
       }
       if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider");
+        return nativeThreadResult(
+          probeThreadId,
+          "native-effective",
+          "native-provider",
+          "max",
+        );
       }
       if (method === "thread/start" || method === "thread/resume") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
+        return nativeThreadResult(
+          finalThreadId,
+          "native-effective",
+          "native-provider",
+          "max",
+        );
       }
       if (method === "thread/inject_items" || method === "thread/archive") {
         return {};
@@ -3319,6 +3335,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       threadId: finalThreadId,
       model: "native-effective",
       modelProvider: "native-provider",
+      reasoningEffort: "max",
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       lifecycle: { action: "forked" },
@@ -3329,6 +3346,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       threadId: finalThreadId,
       model: "native-effective",
       modelProvider: "native-provider",
+      reasoningEffort: "max",
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       appServerRuntimeFingerprint: buildCodexAppServerConnectionFingerprint(commonParams.appServer),
@@ -3346,6 +3364,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
     expect(resumed).toMatchObject({
       threadId: finalThreadId,
+      reasoningEffort: "max",
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       lifecycle: { action: "resumed" },

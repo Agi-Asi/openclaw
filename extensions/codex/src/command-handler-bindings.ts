@@ -410,6 +410,7 @@ export async function resumeThread(
                 cwd: resumedCwd,
                 authProfileId,
                 model: response.model,
+                reasoningEffort: response.reasoningEffort,
                 modelProvider,
                 historyCoveredThrough: new Date().toISOString(),
               },

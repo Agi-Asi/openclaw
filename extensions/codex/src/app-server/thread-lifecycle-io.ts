@@ -271,6 +271,7 @@ export async function resumeExistingCodexThread(
         boundAuthProfileId,
         response.modelProvider ?? requestModelProvider ?? startModelProvider,
       ),
+      reasoningEffort: response.reasoningEffort,
       dynamicToolsFingerprint,
       dynamicToolsContainDeferred,
       webSearchThreadConfigFingerprint,
@@ -589,6 +590,7 @@ export async function startFreshCodexThread(
       authProfileId: params.params.authProfileId,
       model: response.model ?? startParams.model ?? params.params.modelId,
       modelProvider: bindingModelProvider,
+      reasoningEffort: response.reasoningEffort,
       dynamicToolsFingerprint,
       dynamicToolsContainDeferred,
       webSearchThreadConfigFingerprint,
@@ -681,6 +683,7 @@ export async function startFreshCodexThread(
     model: response.model ?? startParams.model ?? params.params.modelId,
     modelProvider:
       response.modelProvider ?? requestModelProvider ?? startModelProvider ?? modelProvider,
+    reasoningEffort: response.reasoningEffort,
     dynamicToolsFingerprint,
     dynamicToolsContainDeferred,
     nativeSkillIsolationFingerprint,

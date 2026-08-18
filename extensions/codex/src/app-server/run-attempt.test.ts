@@ -6588,6 +6588,27 @@ describe("runCodexAppServerAttempt", () => {
     expect(resumeRequestParams).not.toHaveProperty("modelProvider");
     expect(resumeRequestParams?.approvalsReviewer).toBe("auto_review");
   });
+  it("reports the effective native reasoning effort at the thread-ready boundary", async () => {
+    const { sessionFile, workspaceDir } = createRunPaths();
+    const params = createParams(sessionFile, workspaceDir);
+    const onAgentEvent = vi.fn();
+    params.onAgentEvent = onAgentEvent;
+    const harness = createStartedThreadHarness(async (method) => {
+      if (method === "thread/start") {
+        return { ...threadStartResult(), reasoningEffort: "max" };
+      }
+      return undefined;
+    });
+
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("turn/start");
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "codex_app_server.lifecycle",
+      data: expect.objectContaining({ phase: "thread_ready", reasoningEffort: "max" }),
+    });
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+  });
   it("does not apply bound local model providers to provider-qualified resumed models", async () => {
     const { sessionFile, workspaceDir } = createRunPaths();
     await writeExistingBinding(sessionFile, workspaceDir, {
