@@ -220,6 +220,7 @@ export async function finishGatewayStartup(params: {
           minimalTestGateway,
           cfgAtStart,
           deps,
+          resolveGatewayContext: resolvePluginGatewayContext,
           sessionDeliveryRecoveryMaxEnqueuedAt,
           cronState: runtimeState.cronState,
           cronReconciliation,

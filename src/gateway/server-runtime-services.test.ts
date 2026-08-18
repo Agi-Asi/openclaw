@@ -190,6 +190,7 @@ describe("server-runtime-services", () => {
       minimalTestGateway: false,
       cfgAtStart: {} as never,
       deps: {} as never,
+      resolveGatewayContext: vi.fn(),
       sessionDeliveryRecoveryMaxEnqueuedAt: 123,
       cronState: createTestCronState(createTestCron(), false),
       cronReconciliation: createTestCronReconciliation(),
@@ -212,6 +213,7 @@ describe("server-runtime-services", () => {
       minimalTestGateway: false,
       cfgAtStart: { agents: { defaults: { heartbeat: { every: "0m" } } } } as never,
       deps: {} as never,
+      resolveGatewayContext: vi.fn(),
       sessionDeliveryRecoveryMaxEnqueuedAt: 123,
       cronState: createTestCronState(createTestCron(), false),
       cronReconciliation: createTestCronReconciliation(),
@@ -492,6 +494,25 @@ describe("server-runtime-services", () => {
     );
   });
 
+  it("binds session delivery recovery to the owning Gateway instance", async () => {
+    vi.useFakeTimers();
+    const resolveGatewayContext = vi.fn();
+    activateScheduledServicesForTest({ resolveGatewayContext });
+
+    await vi.advanceTimersByTimeAsync(1_250);
+    await vi.dynamicImportSettled();
+
+    expect(hoisted.recoverPendingRestartContinuationDeliveries).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveGatewayContext }),
+    );
+    const runtime = hoisted.startSessionDeliveryRuntime.mock.calls[0]?.[0];
+    const entry = { id: "queued", kind: "systemEvent" } as never;
+    await runtime?.deliver(entry);
+    expect(hoisted.deliverQueuedSessionDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ entry, resolveGatewayContext }),
+    );
+  });
+
   it("can defer cron startup while activating other scheduled services", async () => {
     vi.useFakeTimers();
     const cron = { start: vi.fn(async () => undefined) };
@@ -501,6 +522,7 @@ describe("server-runtime-services", () => {
       minimalTestGateway: false,
       cfgAtStart: {} as never,
       deps: {} as never,
+      resolveGatewayContext: vi.fn(),
       sessionDeliveryRecoveryMaxEnqueuedAt: 123,
       cronState: createTestCronState(cron),
       cronReconciliation: createTestCronReconciliation(),
@@ -919,6 +941,7 @@ function activateScheduledServicesForTest(
     minimalTestGateway: false,
     cfgAtStart,
     deps: {} as never,
+    resolveGatewayContext: vi.fn(),
     sessionDeliveryRecoveryMaxEnqueuedAt: 123,
     cronReconciliation: createTestCronReconciliation(),
     logCron: { error: vi.fn() },

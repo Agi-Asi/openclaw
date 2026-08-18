@@ -21,6 +21,7 @@ import { startSessionUpstreamMonitor } from "../sessions/session-upstream-monito
 import type { GatewayCronReconciliation } from "./server-cron-reconciled.js";
 import type { GatewayCronState } from "./server-cron.js";
 import type { startGatewayMaintenanceTimers } from "./server-maintenance.js";
+import type { GatewayContextResolver } from "./server-plugin-in-process-dispatch.js";
 import {
   createNoopHeartbeatRunner,
   type GatewayRuntimeServiceLogger,
@@ -270,6 +271,7 @@ function startPendingSessionDeliveryRuntime(params: {
   deps: import("../cli/deps.types.js").CliDeps;
   log: GatewayRuntimeServiceLogger;
   maxEnqueuedAt: number;
+  resolveGatewayContext: GatewayContextResolver;
 }): () => void {
   let stopped = false;
   let stopRuntime: (() => void) | undefined;
@@ -291,6 +293,7 @@ function startPendingSessionDeliveryRuntime(params: {
           deliverQueuedSessionDelivery({
             deps: params.deps,
             entry,
+            resolveGatewayContext: params.resolveGatewayContext,
             ...(context.stateDir !== undefined ? { stateDir: context.stateDir } : {}),
           }),
         log: logRecovery,
@@ -301,6 +304,7 @@ function startPendingSessionDeliveryRuntime(params: {
           deps: params.deps,
           log: logRecovery,
           maxEnqueuedAt: params.maxEnqueuedAt,
+          resolveGatewayContext: params.resolveGatewayContext,
         });
       } finally {
         // Recovery and scheduling are independent safeguards. A transient
@@ -325,6 +329,7 @@ export function activateGatewayScheduledServices(params: {
   minimalTestGateway: boolean;
   cfgAtStart: OpenClawConfig;
   deps: import("../cli/deps.types.js").CliDeps;
+  resolveGatewayContext: GatewayContextResolver;
   sessionDeliveryRecoveryMaxEnqueuedAt: number;
   cronState: GatewayCronState;
   cronReconciliation: GatewayCronReconciliation;
@@ -361,6 +366,7 @@ export function activateGatewayScheduledServices(params: {
     deps: params.deps,
     log: params.log,
     maxEnqueuedAt: params.sessionDeliveryRecoveryMaxEnqueuedAt,
+    resolveGatewayContext: params.resolveGatewayContext,
   });
   if (params.startCron !== false) {
     startGatewayCronWithLogging({

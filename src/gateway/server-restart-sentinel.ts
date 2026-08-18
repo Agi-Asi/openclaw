@@ -59,6 +59,7 @@ import {
 } from "../utils/delivery-context.shared.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { deliverQueuedGeneratedMediaAgentTurn } from "./server-restart-sentinel-agent-delivery.js";
+import type { GatewayContextResolver } from "./server-plugin-in-process-dispatch.js";
 import {
   deliverRestartSentinelNotice,
   enqueueRestartSentinelNotice,
@@ -204,6 +205,7 @@ export async function deliverQueuedSessionDelivery(params: {
   deps: CliDeps;
   entry: QueuedSessionDelivery;
   stateDir?: string;
+  resolveGatewayContext?: GatewayContextResolver;
 }) {
   const queuedEntry = resolveCorrelatedSubagentDelivery(params.entry);
   const { cfg, agentId, entry, storePath, canonicalKey } = loadSessionEntry(queuedEntry.sessionKey);
@@ -242,6 +244,9 @@ export async function deliverQueuedSessionDelivery(params: {
       storePath,
       sessionEntry: entry,
       ...(params.stateDir !== undefined ? { stateDir: params.stateDir } : {}),
+      ...(params.resolveGatewayContext
+        ? { resolveGatewayContext: params.resolveGatewayContext }
+        : {}),
     })
   ) {
     return;
@@ -441,6 +446,7 @@ export async function recoverPendingRestartContinuationDeliveries(params: {
   deps: CliDeps;
   log?: SessionDeliveryRecoveryLogger;
   maxEnqueuedAt?: number;
+  resolveGatewayContext?: GatewayContextResolver;
 }) {
   await recoverPendingSessionDeliveries({
     deliver: (entry, context = {}) =>
@@ -448,6 +454,9 @@ export async function recoverPendingRestartContinuationDeliveries(params: {
         deps: params.deps,
         entry,
         ...(context.stateDir !== undefined ? { stateDir: context.stateDir } : {}),
+        ...(params.resolveGatewayContext
+          ? { resolveGatewayContext: params.resolveGatewayContext }
+          : {}),
       }),
     log: params.log ?? log,
     maxEnqueuedAt: params.maxEnqueuedAt,

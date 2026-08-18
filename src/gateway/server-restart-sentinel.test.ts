@@ -526,10 +526,12 @@ function deliverGeneratedMedia(
   overrides: Partial<GeneratedMediaDeliveryEntry> &
     Pick<GeneratedMediaDeliveryEntry, "id" | "messageId">,
   stateDir?: string,
+  resolveGatewayContext?: () => undefined,
 ) {
   return deliverQueuedSessionDelivery({
     deps: {} as never,
     ...(stateDir === undefined ? {} : { stateDir }),
+    ...(resolveGatewayContext ? { resolveGatewayContext } : {}),
     entry: {
       kind: "agentTurn",
       sessionKey: "agent:main:main",
@@ -1461,6 +1463,26 @@ describe("scheduleRestartSentinelWake", () => {
         internalDeliverySuppressText: true,
         onAccepted: expect.any(Function),
       },
+    );
+  });
+
+  it("binds generated-media replay to the owning Gateway instance", async () => {
+    const resolveGatewayContext = vi.fn(() => undefined);
+
+    await deliverGeneratedMedia(
+      {
+        id: "session-delivery-media-instance",
+        messageId: "image:task-instance:agent-loop",
+        expectedMediaUrls: ["/tmp/proof.png"],
+      },
+      undefined,
+      resolveGatewayContext,
+    );
+
+    expect(mocks.dispatchGatewayMethodInProcess).toHaveBeenCalledWith(
+      "agent",
+      expect.any(Object),
+      expect.objectContaining({ resolveGatewayContext }),
     );
   });
 
