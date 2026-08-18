@@ -65,6 +65,7 @@ type ThreadRequestContext = {
   bindingIdentity: CodexAppServerBindingIdentity;
   startModelSelection: ReturnType<typeof resolveCodexAppServerThreadModelSelection>;
   startModelProvider?: string;
+  supervisedReasoningEffort?: string;
   userMcpServersConfigPatch?: JsonObject;
   dynamicToolsFingerprint: string;
   dynamicToolsContainDeferred: boolean;
@@ -93,10 +94,7 @@ type ResumeThreadContext = ThreadRequestContext & {
   binding: CodexAppServerThreadBinding;
   clearCurrentBinding: (operation: string) => Promise<void>;
   prebuiltPluginThreadConfig?: CodexPluginThreadConfig;
-  prebuiltFinalConfigPatch?: {
-    configPatch?: JsonObject;
-    nativeHookRelayGeneration?: string;
-  };
+  prebuiltFinalConfigPatch?: { configPatch?: JsonObject; nativeHookRelayGeneration?: string };
 };
 
 type StartThreadContext = ThreadRequestContext & {
@@ -128,6 +126,7 @@ export async function resumeExistingCodexThread(
     bindingIdentity,
     startModelSelection,
     startModelProvider,
+    supervisedReasoningEffort: supervisedEffort,
     userMcpServersConfigPatch,
     dynamicToolsFingerprint,
     dynamicToolsContainDeferred,
@@ -176,6 +175,9 @@ export async function resumeExistingCodexThread(
         userMcpServersConfigPatch,
         pluginAppsConfigPatch,
         finalConfigPatch.configPatch,
+        // Persisted rollouts can omit effort. Only the lifecycle-prepared
+        // supervision fact may restore it; adaptive/off leaves native config untouched.
+        supervisedEffort ? { model_reasoning_effort: supervisedEffort } : undefined,
       ),
       nativeSkillIsolation,
     );

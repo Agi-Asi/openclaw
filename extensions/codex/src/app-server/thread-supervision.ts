@@ -28,7 +28,6 @@ import type {
   CodexTurnEnvironmentParams,
   JsonObject,
 } from "./protocol.js";
-import { readCodexSupportedReasoningEfforts } from "./reasoning-effort.js";
 import type {
   CodexAppServerBindingIdentity,
   CodexAppServerBindingStore,
@@ -42,7 +41,7 @@ import {
 } from "./thread-lifecycle-errors.js";
 import type { CodexThreadLifecycleTimingTracker } from "./thread-lifecycle-timing.js";
 import type { CodexAppServerThreadLifecycleBinding } from "./thread-lifecycle-types.js";
-import { resolveReasoningEffort } from "./thread-model-selection.js";
+import { resolveAttemptReasoningEffort } from "./thread-model-selection.js";
 import { buildDeveloperInstructions } from "./thread-prompt.js";
 import {
   attestCodexRestrictedToolSurfaceMcpServersDisabled,
@@ -172,7 +171,6 @@ export async function materializePendingSupervisionBranch(
     });
 
     const nativeAttempt = { ...params.attempt, modelId: nativeModel };
-    const supported = readCodexSupportedReasoningEfforts(nativeAttempt.model?.compat);
     const startParams = buildThreadStartParams(nativeAttempt, {
       cwd: params.cwd,
       dynamicTools: params.dynamicTools,
@@ -186,7 +184,7 @@ export async function materializePendingSupervisionBranch(
       environmentSelection: params.environmentSelection,
       model: nativeModel,
       modelProvider: nativeModelProvider,
-      reasoningEffort: resolveReasoningEffort(nativeAttempt.thinkLevel, nativeModel, supported),
+      reasoningEffort: resolveAttemptReasoningEffort(nativeAttempt, nativeModel),
       hostSystemAgentActive: params.hostSystemAgentActive,
       restrictedToolSurfaceInheritedMcpServerNames:
         params.restrictedToolSurfaceInheritedMcpServerNames,
