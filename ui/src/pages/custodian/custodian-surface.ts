@@ -182,9 +182,10 @@ class CustodianSurface extends OpenClawLightDomElement {
       `;
     }
     const emptyError = store.messages.length === 0 && store.error !== null && !store.sending;
-    const activeWizardMessage = store.wizardInputPending
-      ? store.messages.findLast((message) => message.step !== null)
-      : undefined;
+    const activeWizardMessage = store.messages.findLast(
+      (message) =>
+        message.step !== null && (store.wizardInputPending || message.step.type === "qr"),
+    );
     return html`
       <section
         class="custodian-surface ${this.compact ? "custodian-surface--panel" : ""} ${emptyError

@@ -2,6 +2,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { DEVICE_CODE_PHISHING_WARNING } from "./prompts.js";
+import type { WizardPrompter } from "./prompts.js";
 import { WizardSession, wizardStepAwaitsInput, type WizardStep } from "./session.js";
 
 function noteRunner() {
@@ -26,6 +27,89 @@ describe("WizardSession", () => {
     readonly [WizardStep["type"], WizardStep["executor"], boolean]
   >)("classifies whether %s/%s awaits user input", (type, executor, expected) => {
     expect(wizardStepAwaitsInput({ id: "step", type, executor })).toBe(expected);
+  });
+
+  test("long-polls after delivering a QR, then settles and scrubs through its producer", async () => {
+    let finish!: (account: string) => void;
+    const settled = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    let releaseRunner!: () => void;
+    const holdRunner = new Promise<void>((resolve) => {
+      releaseRunner = resolve;
+    });
+    let qrReturned!: () => void;
+    const returned = new Promise<void>((resolve) => {
+      qrReturned = resolve;
+    });
+    let account: string | undefined;
+    const session = new WizardSession(
+      async (prompter) => {
+        account = await prompter.qrCode?.({
+          title: "Link device",
+          text: "sgnl://linkdevice?uuid=test",
+          settled,
+        });
+        qrReturned();
+        await holdRunner;
+      },
+      { supportsQrCode: true },
+    );
+
+    const presented = await session.next();
+    expect(presented.step).toMatchObject({ type: "qr", executor: "gateway" });
+    if (!presented.step) {
+      throw new Error("expected QR step");
+    }
+    expect(wizardStepAwaitsInput(presented.step)).toBe(false);
+    await expect(session.answer(presented.step.id, true)).rejects.toThrow(
+      "wizard: QR steps settle through their producer",
+    );
+
+    let pollCompleted = false;
+    const poll = session.next().finally(() => {
+      pollCompleted = true;
+    });
+    await Promise.resolve();
+    expect(pollCompleted).toBe(false);
+
+    finish("+15555550123");
+    await returned;
+    expect(session.cancel()).toBe(false);
+    releaseRunner();
+    await session.whenSettled();
+
+    expect(account).toBe("+15555550123");
+    expect(presented.step.qrDataUrl).toBeUndefined();
+    await expect(poll).resolves.toMatchObject({ done: true, status: "done" });
+  });
+
+  test("cancels and scrubs a delivered QR without exposing the capability by default", async () => {
+    let unsupportedQrCode: WizardPrompter["qrCode"];
+    const unsupported = new WizardSession(async (prompter) => {
+      unsupportedQrCode = prompter.qrCode;
+    });
+    await unsupported.whenSettled();
+    expect(unsupportedQrCode).toBeUndefined();
+
+    const session = new WizardSession(
+      async (prompter) => {
+        await prompter.qrCode?.({
+          title: "Link device",
+          text: "sgnl://linkdevice?uuid=test",
+          settled: new Promise(() => {}),
+        });
+      },
+      { supportsQrCode: true },
+    );
+    const presented = await session.next();
+    expect(presented.step?.type).toBe("qr");
+
+    session.cancel();
+    await session.whenSettled();
+
+    expect(presented.step?.qrDataUrl).toBeUndefined();
+    await expect(session.next()).resolves.toMatchObject({ done: true, status: "cancelled" });
   });
 
   test("steps progress in order", async () => {

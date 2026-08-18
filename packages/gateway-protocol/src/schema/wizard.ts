@@ -2,7 +2,7 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import { NonEmptyString } from "./primitives.js";
+import { NonEmptyString, QrPngDataUrlSchema } from "./primitives.js";
 
 /** Runtime state reported for gateway-driven setup wizard sessions. */
 const WizardRunStatusSchema = Type.Union([
@@ -60,29 +60,66 @@ const WizardDeviceCodeSchema = closedObject({
   message: Type.Optional(Type.String()),
 });
 
-/** UI contract for one wizard step rendered by gateway clients. */
-export const WizardStepSchema = closedObject({
+const WizardQrStepSchema = closedObject({
   id: NonEmptyString,
-  type: Type.Union([
-    Type.Literal("note"),
-    Type.Literal("select"),
-    Type.Literal("text"),
-    Type.Literal("confirm"),
-    Type.Literal("multiselect"),
-    Type.Literal("progress"),
-    Type.Literal("action"),
-  ]),
+  type: Type.Literal("qr"),
   title: Type.Optional(Type.String()),
   message: Type.Optional(Type.String()),
-  format: Type.Optional(Type.Union([Type.Literal("plain")])),
-  options: Type.Optional(Type.Array(WizardStepOptionSchema)),
-  initialValue: Type.Optional(Type.Unknown()),
-  placeholder: Type.Optional(Type.String()),
-  sensitive: Type.Optional(Type.Boolean()),
-  executor: Type.Optional(Type.Union([Type.Literal("gateway"), Type.Literal("client")])),
-  externalUrl: Type.Optional(Type.String()),
-  deviceCode: Type.Optional(WizardDeviceCodeSchema),
+  qrDataUrl: QrPngDataUrlSchema,
+  expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  executor: Type.Literal("gateway"),
 });
+
+/** UI contract for one wizard step rendered by gateway clients. */
+const WizardStepObjectSchema = Type.Object(
+  {
+    id: NonEmptyString,
+    type: Type.Union([
+      Type.Literal("note"),
+      Type.Literal("select"),
+      Type.Literal("text"),
+      Type.Literal("confirm"),
+      Type.Literal("multiselect"),
+      Type.Literal("progress"),
+      Type.Literal("action"),
+      Type.Literal("qr"),
+    ]),
+    title: Type.Optional(Type.String()),
+    message: Type.Optional(Type.String()),
+    format: Type.Optional(Type.Union([Type.Literal("plain")])),
+    options: Type.Optional(Type.Array(WizardStepOptionSchema)),
+    initialValue: Type.Optional(Type.Unknown()),
+    placeholder: Type.Optional(Type.String()),
+    sensitive: Type.Optional(Type.Boolean()),
+    executor: Type.Optional(Type.Union([Type.Literal("gateway"), Type.Literal("client")])),
+    externalUrl: Type.Optional(Type.String()),
+    deviceCode: Type.Optional(WizardDeviceCodeSchema),
+    qrDataUrl: Type.Optional(QrPngDataUrlSchema),
+    expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  },
+  {
+    additionalProperties: false,
+    if: Type.Object({ type: Type.Literal("qr") }),
+    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword.
+    then: WizardQrStepSchema,
+    else: { not: { anyOf: [{ required: ["qrDataUrl"] }, { required: ["expiresInMs"] }] } },
+  },
+);
+
+type WizardStepWire = Static<typeof WizardStepObjectSchema>;
+type WizardNonQrStep = Omit<WizardStepWire, "type" | "qrDataUrl" | "expiresInMs"> & {
+  type: Exclude<WizardStepWire["type"], "qr">;
+  qrDataUrl?: never;
+  expiresInMs?: never;
+};
+type WizardQrStepWire = Static<typeof WizardQrStepSchema>;
+type WizardQrStep = WizardQrStepWire & {
+  [Field in Exclude<keyof WizardStepWire, keyof WizardQrStepWire>]?: never;
+};
+export type WizardStep = WizardNonQrStep | WizardQrStep;
+
+// Native generators need one object schema; the static type keeps the QR variant closed.
+export const WizardStepSchema = Type.Unsafe<WizardStep>(WizardStepObjectSchema);
 
 /** Channel/account pair the channels flow actually configured. */
 const WizardConfiguredAccountSchema = closedObject({
@@ -129,7 +166,6 @@ export type WizardAnswer = Static<typeof WizardAnswerSchema>;
 export type WizardNextParams = Static<typeof WizardNextParamsSchema>;
 export type WizardCancelParams = Static<typeof WizardCancelParamsSchema>;
 export type WizardStatusParams = Static<typeof WizardStatusParamsSchema>;
-export type WizardStep = Static<typeof WizardStepSchema>;
 export type WizardNextResult = Static<typeof WizardNextResultSchema>;
 export type WizardStartResult = Static<typeof WizardStartResultSchema>;
 export type WizardStatusResult = Static<typeof WizardStatusResultSchema>;

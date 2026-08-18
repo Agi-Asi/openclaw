@@ -87,6 +87,61 @@ describe("CustodianSessionStore", () => {
     expect(store.messages.at(-1)?.step).toMatchObject({ id: "step-1" });
   });
 
+  it("polls a passive QR in place and scrubs it when setup completes", async () => {
+    vi.useFakeTimers();
+    try {
+      const qrStep = (qrDataUrl: string) => ({
+        id: "qr-1",
+        type: "qr",
+        title: "Link Signal",
+        qrDataUrl,
+        expiresInMs: 60_000,
+        executor: "gateway",
+      });
+      const request = vi
+        .fn()
+        .mockResolvedValueOnce({
+          sessionId: "qr-session",
+          reply: "Scan this code.",
+          action: "none",
+          step: qrStep("data:image/png;base64,Zmlyc3Q="),
+        })
+        .mockResolvedValueOnce({
+          sessionId: "qr-session",
+          reply: "Welcome back.",
+          action: "none",
+          step: qrStep("data:image/png;base64,c2Vjb25k"),
+        })
+        .mockResolvedValueOnce({
+          sessionId: "qr-session",
+          reply: "Done — Signal is configured.",
+          action: "none",
+        });
+      const { context } = createContext(request);
+      const store = new CustodianSessionStore();
+
+      store.connect(context, "caretaker");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.wizardInputPending).toBe(false);
+      expect(store.hasUnresolvedQuestion()).toBe(true);
+      expect(store.messages).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(store.messages).toHaveLength(1);
+      expect(store.messages[0]?.step?.qrDataUrl).toContain("c2Vjb25k");
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(store.messages[0]?.step).toBeNull();
+      expect(store.messages.at(-1)?.text).toContain("Signal is configured");
+      expect(JSON.stringify(store.messages)).not.toContain("Zmlyc3Q");
+      expect(JSON.stringify(store.messages)).not.toContain("c2Vjb25k");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reuses the persisted session id across store instances", async () => {
     const request = vi.fn((_method: string, params: { sessionId: string }) =>
       Promise.resolve({ sessionId: params.sessionId, reply: "Ready.", action: "none" }),

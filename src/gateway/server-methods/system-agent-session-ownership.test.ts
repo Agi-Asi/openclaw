@@ -67,7 +67,7 @@ function makeEngine(): FakeEngine {
     dispose: vi.fn(async () => undefined),
     loadOverview: vi.fn(async () => ({})),
     noteAssistantMessage: vi.fn(),
-    decorateRejoinReply: vi.fn((reply: unknown) => reply),
+    decorateRejoinReply: vi.fn(async (reply: unknown) => reply),
   };
 }
 

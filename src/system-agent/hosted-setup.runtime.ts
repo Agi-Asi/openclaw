@@ -85,6 +85,7 @@ export async function runHostedChannelSetup(
   prompter: WizardPrompter,
   beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>,
   runtime?: RuntimeEnv,
+  signal?: AbortSignal,
 ): Promise<HostedSetupCompletion> {
   const { createChannelSetupTransaction, setupChannels } =
     await import("../commands/onboard-channels.js");
@@ -109,6 +110,7 @@ export async function runHostedChannelSetup(
           skipDmPolicyPrompt: true,
           skipConfirm: true,
           beforePersistentEffect: async () => await beforePersistentApply(setupRuntime),
+          ...(signal ? { signal } : {}),
           onPostWriteHook: (hook) => channelSetup.onPostWriteHook(hook),
         }),
         afterWrite: async (committedConfig) => {

@@ -2,6 +2,7 @@ import type {
   SystemAgentChatQuestion,
   SystemAgentWizardCancel,
   WizardAnswer,
+  WizardStep as ProtocolWizardStep,
 } from "../../packages/gateway-protocol/src/index.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -32,7 +33,7 @@ export type SystemAgentChatReply = {
   wizardInputPending?: boolean;
   handoff?: SystemAgentOperation;
   question?: SystemAgentChatQuestion;
-  step?: WizardStep;
+  step?: ProtocolWizardStep;
 };
 
 export type ChatWizardResult = {
@@ -50,6 +51,7 @@ export type ChatWizardHostDependencies = {
     channel: string,
     prompter: WizardPrompter,
     beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>,
+    signal: AbortSignal,
   ) => Promise<void | HostedSetupCompletion>;
   runSkillsSetupWizard?: (
     prompter: WizardPrompter,
@@ -256,6 +258,7 @@ export class ChatWizardHost {
   constructor(
     private readonly options: {
       surface?: "cli" | "gateway";
+      supportsQrCode?: boolean;
       beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>;
       dependencies?: ChatWizardHostDependencies;
     },
@@ -269,12 +272,17 @@ export class ChatWizardHost {
     return this.bridge?.step?.sensitive === true;
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
+    const settlement = this.bridge?.session.whenSettled();
     this.bridge?.session.cancel();
     this.bridge = null;
+    await settlement;
   }
 
   decorateReply(reply: SystemAgentChatReply): SystemAgentChatReply {
+    if (this.bridge?.step?.type === "qr" && !this.bridge.step.qrDataUrl) {
+      this.bridge.step = null;
+    }
     const step = this.bridge?.step ?? null;
     const completedReply =
       reply.text && step && wizardStepAwaitsInput(step)
@@ -285,10 +293,22 @@ export class ChatWizardHost {
     return {
       ...completedReply,
       ...(step?.sensitive === true ? { sensitive: true } : {}),
-      ...(this.bridge ? { wizardInputPending: true } : {}),
+      ...(step && wizardStepAwaitsInput(step) ? { wizardInputPending: true } : {}),
       ...(question ? { question } : {}),
       ...(clientStep ? { step: clientStep } : {}),
     };
+  }
+
+  /** Advance a producer-settled passive step during an input-free rejoin poll. */
+  async refreshReply(fallback: SystemAgentChatReply): Promise<SystemAgentChatReply> {
+    if (this.bridge?.step?.type === "qr" && !this.bridge.step.qrDataUrl) {
+      this.bridge.step = null;
+    }
+    if (!this.bridge || this.bridge.step !== null) {
+      return this.decorateReply(fallback);
+    }
+    const result = await this.pump();
+    return this.decorateReply({ ...fallback, text: result.text || fallback.text });
   }
 
   async answer(answer: WizardAnswer): Promise<ChatWizardAnswerResult> {
@@ -338,6 +358,16 @@ export class ChatWizardHost {
     if (!step) {
       return await this.pump();
     }
+    if (step.type === "qr") {
+      if (!step.qrDataUrl) {
+        bridge.step = null;
+        return await this.pump();
+      }
+      return {
+        text: "Scan the QR code to continue, or say `cancel` to stop setup.",
+        configWritten: false,
+      };
+    }
     const answer = parseWizardAnswer(step, text);
     if (!answer) {
       return {
@@ -357,12 +387,18 @@ export class ChatWizardHost {
       kind: "channel",
       label: channel,
       autoSelectChannel: channel,
-      run: async (prompter) =>
+      run: async (prompter, signal) =>
         run
-          ? await run(channel, prompter, this.options.beforePersistentApply)
+          ? await run(channel, prompter, this.options.beforePersistentApply, signal)
           : await (
               await loadHostedRuntime()
-            ).runHostedChannelSetup(channel, prompter, this.options.beforePersistentApply),
+            ).runHostedChannelSetup(
+              channel,
+              prompter,
+              this.options.beforePersistentApply,
+              undefined,
+              signal,
+            ),
     });
   }
 
@@ -441,7 +477,7 @@ export class ChatWizardHost {
     label: string;
     autoSelectChannel?: string;
     memoryImportProviders?: MemoryImportProviderOutcome[];
-    run: (prompter: WizardPrompter) => Promise<HostedWizardRunResult>;
+    run: (prompter: WizardPrompter, signal: AbortSignal) => Promise<HostedWizardRunResult>;
   }): Promise<ChatWizardResult> {
     const completion: ActiveWizardBridge["completion"] = {
       status: "applied",
@@ -449,14 +485,17 @@ export class ChatWizardHost {
         ? { memoryImportProviders: params.memoryImportProviders }
         : {}),
     };
-    const session = new WizardSession(async (prompter) => {
-      const result = await params.run(prompter);
-      if (typeof result === "string") {
-        completion.status = result;
-      } else if (result) {
-        completion.memoryImport = result;
-      }
-    });
+    const session = new WizardSession(
+      async (prompter, signal) => {
+        const result = await params.run(prompter, signal);
+        if (typeof result === "string") {
+          completion.status = result;
+        } else if (result) {
+          completion.memoryImport = result;
+        }
+      },
+      { supportsQrCode: this.options.supportsQrCode === true },
+    );
     this.bridge = {
       session,
       step: null,

@@ -115,6 +115,18 @@ describe("SystemAgentChatResultSchema", () => {
         executor: "client",
       },
     },
+    {
+      name: "passive QR owned by the gateway",
+      step: {
+        id: "step-qr",
+        type: "qr",
+        title: "Link device",
+        message: "Scan to continue.",
+        qrDataUrl: "data:image/png;base64,aGVsbG8=",
+        expiresInMs: 60_000,
+        executor: "gateway",
+      },
+    },
   ];
 
   it.each(steps)("accepts a chat result carrying a $name step", ({ step }) => {

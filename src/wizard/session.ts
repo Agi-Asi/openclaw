@@ -1,17 +1,27 @@
 // Wizard session helpers track onboarding session ids and state.
 import { randomUUID } from "node:crypto";
 import type { WizardStep as ProtocolWizardStep } from "../../packages/gateway-protocol/src/index.js";
+import { QR_PNG_DATA_URL_MAX_LENGTH } from "../../packages/gateway-protocol/src/schema/primitives.js";
+import { renderQrPngDataUrlWithinLimit } from "../media/qr-image.js";
 import { createDeferredCore, type Deferred } from "../shared/deferred.js";
 import {
   DEVICE_CODE_PHISHING_WARNING,
   WizardCancelledError,
   type WizardProgress,
   type WizardPrompter,
+  type WizardQrCodeParams,
 } from "./prompts.js";
 
 // WizardSession exposes interactive setup as a step/answer protocol for remote
 // clients while reusing the same WizardPrompter contract as the local CLI.
-export type WizardStep = ProtocolWizardStep;
+type ProtocolWizardQrStep = Extract<ProtocolWizardStep, { type: "qr" }>;
+type ProtocolWizardNonQrStep = Exclude<ProtocolWizardStep, ProtocolWizardQrStep>;
+type WizardQrStep = Omit<ProtocolWizardQrStep, "qrDataUrl" | "expiresInMs"> & {
+  qrDataUrl?: string;
+  qrExpiresAtMs?: number;
+};
+export type WizardStep = ProtocolWizardNonQrStep | WizardQrStep;
+type WizardNonQrStepInput = Omit<ProtocolWizardNonQrStep, "id">;
 
 type WizardStepInputRequirement = "always" | "never" | "client-executor";
 
@@ -23,6 +33,7 @@ const WIZARD_STEP_INPUT_REQUIREMENT_BY_TYPE = {
   multiselect: "always",
   progress: "never",
   action: "client-executor",
+  qr: "never",
 } as const satisfies Record<WizardStep["type"], WizardStepInputRequirement>;
 
 /** Whether a step needs a user answer instead of client or gateway acknowledgement. */
@@ -41,7 +52,20 @@ export function wizardStepAwaitsInput(step: WizardStep): boolean {
 }
 
 /** Remove secret prefill before a wizard step crosses a client boundary. */
-export function sanitizeWizardStepForClient(step: WizardStep): WizardStep {
+export function sanitizeWizardStepForClient(step: WizardStep): ProtocolWizardStep {
+  if (step.type === "qr") {
+    if (!step.qrDataUrl) {
+      throw new Error("wizard: QR presentation is no longer active");
+    }
+    const { qrExpiresAtMs, ...clientStep } = step;
+    return {
+      ...clientStep,
+      qrDataUrl: step.qrDataUrl,
+      ...(qrExpiresAtMs !== undefined
+        ? { expiresInMs: Math.max(0, qrExpiresAtMs - Date.now()) }
+        : {}),
+    };
+  }
   if (step.sensitive !== true || step.initialValue === undefined) {
     return step;
   }
@@ -76,7 +100,47 @@ function normalizeTextAnswer(value: unknown): string | undefined {
 }
 
 class WizardSessionPrompter implements WizardPrompter {
-  constructor(private session: WizardSession) {}
+  readonly qrCode?: NonNullable<WizardPrompter["qrCode"]>;
+
+  constructor(
+    private session: WizardSession,
+    supportsQrCode: boolean,
+  ) {
+    if (supportsQrCode) {
+      this.qrCode = async <T>(params: WizardQrCodeParams<T>): Promise<T> => {
+        if (
+          params.expiresInMs !== undefined &&
+          (!Number.isSafeInteger(params.expiresInMs) || params.expiresInMs < 0)
+        ) {
+          throw new RangeError("expiresInMs must be a non-negative safe integer.");
+        }
+        const qrExpiresAtMs =
+          params.expiresInMs === undefined ? undefined : Date.now() + params.expiresInMs;
+        if (qrExpiresAtMs !== undefined && !Number.isSafeInteger(qrExpiresAtMs)) {
+          throw new RangeError("expiresInMs exceeds the supported presentation deadline.");
+        }
+        // The producer may settle while PNG rendering awaits. Attach a sink now;
+        // presentQr still observes and normalizes the same eventual outcome.
+        void params.settled.catch(() => undefined);
+        const qrDataUrl = await renderQrPngDataUrlWithinLimit(
+          params.text,
+          QR_PNG_DATA_URL_MAX_LENGTH,
+        );
+        return await this.session.presentQr(
+          {
+            id: randomUUID(),
+            type: "qr",
+            title: params.title,
+            ...(params.message ? { message: params.message } : {}),
+            qrDataUrl,
+            ...(qrExpiresAtMs !== undefined ? { qrExpiresAtMs } : {}),
+            executor: "gateway",
+          },
+          params.settled,
+        );
+      };
+    }
+  }
 
   async intro(title: string): Promise<void> {
     await this.prompt({
@@ -245,11 +309,11 @@ class WizardSessionPrompter implements WizardPrompter {
     this.session.queueExternalUrl(url);
   }
 
-  private async prompt(step: Omit<WizardStep, "id">): Promise<unknown> {
+  private async prompt(step: WizardNonQrStepInput): Promise<unknown> {
     return await this.session.awaitAnswer(this.createStep(step));
   }
 
-  private createStep(step: Omit<WizardStep, "id">): WizardStep {
+  private createStep(step: WizardNonQrStepInput): ProtocolWizardNonQrStep {
     // Each emitted step receives an id so remote clients can answer the exact
     // pending prompt and stale answers can be rejected. Explicit browser
     // destinations bind to the very next step regardless of its input type.
@@ -274,6 +338,7 @@ export class WizardSession {
   private cancellationLocked = false;
   private settled = false;
   private pendingExternalUrl: string | undefined;
+  private deliveredPassiveStepId: string | undefined;
   private answerDeferred = new Map<
     string,
     {
@@ -293,9 +358,9 @@ export class WizardSession {
       signal: AbortSignal,
       session: WizardSession,
     ) => Promise<void>,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; supportsQrCode?: boolean },
   ) {
-    const prompter = new WizardSessionPrompter(this);
+    const prompter = new WizardSessionPrompter(this, options?.supportsQrCode === true);
     if (options?.timeoutMs !== undefined) {
       this.expiryTimer = setTimeout(() => this.cancel(), options.timeoutMs);
       this.expiryTimer.unref?.();
@@ -310,6 +375,16 @@ export class WizardSession {
       return { done: false, step: progressStep, status: this.status };
     }
     if (this.currentStep) {
+      if (this.currentStep.type === "qr" && this.deliveredPassiveStepId === this.currentStep.id) {
+        if (!this.stepDeferred) {
+          this.stepDeferred = createDeferredCore();
+        }
+        const step = await this.stepDeferred.promise;
+        return step ? { done: false, step, status: this.status } : this.terminalResult();
+      }
+      if (this.currentStep.type === "qr") {
+        this.deliveredPassiveStepId = this.currentStep.id;
+      }
       return { done: false, step: this.currentStep, status: this.status };
     }
     if (this.pendingTerminalResolution) {
@@ -324,6 +399,9 @@ export class WizardSession {
     }
     const step = await this.stepDeferred.promise;
     if (step) {
+      if (step.type === "qr") {
+        this.deliveredPassiveStepId = step.id;
+      }
       return { done: false, step, status: this.status };
     }
     return this.terminalResult();
@@ -357,6 +435,9 @@ export class WizardSession {
   }
 
   async answer(stepId: string, value: unknown): Promise<string | undefined> {
+    if (this.currentStep?.id === stepId && this.currentStep.type === "qr") {
+      throw new Error("wizard: QR steps settle through their producer");
+    }
     const pending = this.answerDeferred.get(stepId);
     if (!pending) {
       // Gateway-owned progress steps never block the provider run. Older
@@ -376,7 +457,7 @@ export class WizardSession {
       return validationError;
     }
     this.answerDeferred.delete(stepId);
-    this.currentStep = null;
+    this.clearCurrentStep();
     pending.deferred.resolve(normalizedValue);
     return undefined;
   }
@@ -388,7 +469,7 @@ export class WizardSession {
     this.status = "cancelled";
     this.error = "cancelled";
     this.abortController.abort(new WizardCancelledError());
-    this.currentStep = null;
+    this.clearCurrentStep();
     for (const [, pending] of this.answerDeferred) {
       // Reject all pending prompt promises so the runner can unwind through its
       // normal cancellation path.
@@ -410,9 +491,68 @@ export class WizardSession {
     return this.abortController.signal;
   }
 
-  pushStep(step: WizardStep) {
+  private pushStep(step: WizardStep) {
+    this.deliveredPassiveStepId = undefined;
     this.currentStep = step;
     this.resolveStep(step);
+  }
+
+  /** @internal Present a QR until its producer settles; clients cannot answer it. */
+  async presentQr<T>(step: WizardQrStep, settled: Promise<T>): Promise<T> {
+    if (this.status !== "running") {
+      throw new Error("wizard: session not running");
+    }
+    this.pushStep(step);
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    let rejectCancelled!: (error: Error) => void;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      rejectCancelled = reject;
+    });
+    const onAbort = () => rejectCancelled(new WizardCancelledError());
+    this.signal.addEventListener("abort", onAbort, { once: true });
+    const waits: Array<Promise<T>> = [settled, cancelled];
+    const expired = new Error("wizard: QR presentation expired; restart setup to retry");
+    if (step.qrExpiresAtMs !== undefined) {
+      waits.push(
+        new Promise<T>((_resolve, reject) => {
+          expiryTimer = setTimeout(
+            () => reject(expired),
+            Math.max(0, step.qrExpiresAtMs! - Date.now()),
+          );
+          expiryTimer.unref?.();
+        }),
+      );
+    }
+    try {
+      const result = await Promise.race(waits);
+      this.lockCancellation();
+      return result;
+    } catch (error) {
+      if (this.signal.aborted || error instanceof WizardCancelledError) {
+        throw new WizardCancelledError();
+      }
+      if (error === expired) {
+        throw expired;
+      }
+      throw new Error("wizard: QR presentation failed; retry setup", { cause: error });
+    } finally {
+      if (expiryTimer) {
+        clearTimeout(expiryTimer);
+      }
+      this.signal.removeEventListener("abort", onAbort);
+      if (this.currentStep?.id === step.id) {
+        this.clearCurrentStep();
+      }
+    }
+  }
+
+  private clearCurrentStep() {
+    if (this.currentStep?.type === "qr") {
+      delete this.currentStep.qrDataUrl;
+      delete this.currentStep.qrExpiresAtMs;
+    }
+    this.currentStep = null;
+    this.deliveredPassiveStepId = undefined;
   }
 
   pushProgress(message: string) {
@@ -478,6 +618,7 @@ export class WizardSession {
         this.error = String(err);
       }
     } finally {
+      this.clearCurrentStep();
       this.settled = true;
       if (this.expiryTimer) {
         clearTimeout(this.expiryTimer);
@@ -487,7 +628,7 @@ export class WizardSession {
   }
 
   async awaitAnswer(
-    step: WizardStep,
+    step: ProtocolWizardNonQrStep,
     validate?: (value: string) => string | undefined,
   ): Promise<unknown> {
     if (this.status !== "running") {
