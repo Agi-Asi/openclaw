@@ -656,11 +656,7 @@ describe("shell env fallback", () => {
     const exec = vi.fn(
       (file: string, args: string[], options: Parameters<typeof execFileSync>[2]) => {
         expect(args).toStrictEqual(["-lic", "printf '\\0'; env -0"]);
-        return execFileSync(
-          file,
-          ["-lic", 'set -u; : "$PS1"; printf \'\\0\'; env -0'],
-          options,
-        );
+        return execFileSync(file, ["-lic", "set -u; : \"$PS1\"; printf '\\0'; env -0"], options);
       },
     );
 

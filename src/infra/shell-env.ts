@@ -120,7 +120,10 @@ function parseShellEnv(stdout: Buffer): Map<string, string> {
   if (frameEnd < 0) {
     return shellEnv;
   }
-  const parts = stdout.subarray(frameEnd + 1).toString("utf8").split("\0");
+  const parts = stdout
+    .subarray(frameEnd + 1)
+    .toString("utf8")
+    .split("\0");
   for (const part of parts) {
     if (!part) {
       continue;
