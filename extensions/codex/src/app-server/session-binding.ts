@@ -225,7 +225,7 @@ const threadBindingSchema = z
       .pipe(z.string().min(1))
       .optional()
       .catch(undefined),
-    // Native start/resume/fork responses own this effective thread setting;
+    // Native thread responses and settings updates own this effective setting;
     // supervised turn requests intentionally carry no duplicate override.
     reasoningEffort: z.string().nullable().optional().catch(undefined),
     // Legacy rows may contain the retired two-field permission overlay. Keep

@@ -3253,14 +3253,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
         return nativeThreadResult(finalThreadId, "native-effective", "native-provider", "max");
       }
       if (method === "thread/resume") {
-        const config = (requestParams as { config?: Record<string, unknown> }).config;
-        const reasoningEffort = config?.model_reasoning_effort;
-        return nativeThreadResult(
-          finalThreadId,
-          "native-effective",
-          "native-provider",
-          typeof reasoningEffort === "string" ? reasoningEffort : null,
-        );
+        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
       }
       if (method === "thread/inject_items" || method === "thread/archive") {
         return {};
@@ -3389,18 +3382,18 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("model");
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
     expect(request.mock.calls[1]?.[1]).toMatchObject({
-      config: { model_reasoning_effort: "max" },
       developerInstructions: agentWorkspaceDeveloperInstructions,
     });
     expect(resumed).toMatchObject({
       threadId: finalThreadId,
-      reasoningEffort: "max",
+      reasoningEffort: null,
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       lifecycle: { action: "resumed" },
     });
     await expect(testCodexAppServerBindingStore.read(identity)).resolves.toMatchObject({
       appServerRuntimeFingerprint: buildCodexAppServerConnectionFingerprint(commonParams.appServer),
+      reasoningEffort: null,
     });
   });
 
