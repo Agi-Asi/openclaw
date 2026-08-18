@@ -2097,6 +2097,24 @@ public struct WorkerEnvironmentMetadata: Codable, Sendable {
     }
 }
 
+public struct WorkerSlotSummary: Codable, Sendable {
+    public let total: Int
+    public let available: Int
+
+    public init(
+        total: Int,
+        available: Int)
+    {
+        self.total = total
+        self.available = available
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case total
+        case available
+    }
+}
+
 public struct EnvironmentSummary: Codable, Sendable {
     public let id: String
     public let type: String
@@ -2104,6 +2122,7 @@ public struct EnvironmentSummary: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerslots: WorkerSlotSummary?
     public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
@@ -2122,6 +2141,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerslots: WorkerSlotSummary? = nil,
         workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
@@ -2139,6 +2159,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerslots = workerslots
         self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
@@ -2158,6 +2179,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerslots = "workerSlots"
         case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
@@ -2196,6 +2218,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerslots: WorkerSlotSummary?
     public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
@@ -2214,6 +2237,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerslots: WorkerSlotSummary? = nil,
         workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
@@ -2231,6 +2255,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerslots = workerslots
         self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
@@ -2250,6 +2275,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerslots = "workerSlots"
         case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
@@ -2288,6 +2314,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerslots: WorkerSlotSummary?
     public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
@@ -2306,6 +2333,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerslots: WorkerSlotSummary? = nil,
         workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
@@ -2323,6 +2351,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerslots = workerslots
         self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
@@ -2342,6 +2371,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerslots = "workerSlots"
         case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
@@ -2396,6 +2426,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerslots: WorkerSlotSummary?
     public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
@@ -2414,6 +2445,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerslots: WorkerSlotSummary? = nil,
         workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
@@ -2431,6 +2463,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerslots = workerslots
         self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
@@ -2450,6 +2483,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerslots = "workerSlots"
         case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
@@ -16886,17 +16920,20 @@ public struct MigrationsMemoryApplyResult: Codable, Sendable {
 
 public struct TerminalOpenParams: Codable, Sendable {
     public let agentid: String?
+    public let sessionkey: String?
     public let catalog: SessionsCatalogContinueParams?
     public let cols: Int
     public let rows: Int
 
     public init(
         agentid: String? = nil,
+        sessionkey: String? = nil,
         catalog: SessionsCatalogContinueParams? = nil,
         cols: Int,
         rows: Int)
     {
         self.agentid = agentid
+        self.sessionkey = sessionkey
         self.catalog = catalog
         self.cols = cols
         self.rows = rows
@@ -16904,6 +16941,7 @@ public struct TerminalOpenParams: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case agentid = "agentId"
+        case sessionkey = "sessionKey"
         case catalog
         case cols
         case rows
@@ -17893,17 +17931,20 @@ public struct ExecApprovalsSnapshot: Codable, Sendable {
     public let exists: Bool
     public let hash: String
     public let file: [String: AnyCodable]
+    public let resolveddefaults: [String: AnyCodable]?
 
     public init(
         path: String,
         exists: Bool,
         hash: String,
-        file: [String: AnyCodable])
+        file: [String: AnyCodable],
+        resolveddefaults: [String: AnyCodable]? = nil)
     {
         self.path = path
         self.exists = exists
         self.hash = hash
         self.file = file
+        self.resolveddefaults = resolveddefaults
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -17911,6 +17952,7 @@ public struct ExecApprovalsSnapshot: Codable, Sendable {
         case exists
         case hash
         case file
+        case resolveddefaults = "resolvedDefaults"
     }
 }
 
@@ -19569,6 +19611,7 @@ public struct DevicePairSetupDeliveryUncertainEvent: Codable, Sendable {
 public struct ChatHistoryParams: Codable, Sendable {
     public let sessionkey: String
     public let agentid: String?
+    public let cursor: String?
     public let limit: Int?
     public let offset: Int?
     public let messageid: String?
@@ -19578,6 +19621,7 @@ public struct ChatHistoryParams: Codable, Sendable {
     public init(
         sessionkey: String,
         agentid: String? = nil,
+        cursor: String? = nil,
         limit: Int? = nil,
         offset: Int? = nil,
         messageid: String? = nil,
@@ -19586,6 +19630,7 @@ public struct ChatHistoryParams: Codable, Sendable {
     {
         self.sessionkey = sessionkey
         self.agentid = agentid
+        self.cursor = cursor
         self.limit = limit
         self.offset = offset
         self.messageid = messageid
@@ -19596,11 +19641,60 @@ public struct ChatHistoryParams: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case sessionkey = "sessionKey"
         case agentid = "agentId"
+        case cursor
         case limit
         case offset
         case messageid = "messageId"
         case sessionid = "sessionId"
         case maxchars = "maxChars"
+    }
+}
+
+public struct ChatHistoryDeltaResult: Codable, Sendable {
+    public let kind: String
+    public let messages: [AnyCodable]
+    public let deltacursor: String
+    public let sessioninfo: AnyCodable
+    public let agentslist: AnyCodable?
+    public let metadata: AnyCodable?
+
+    public init(
+        kind: String,
+        messages: [AnyCodable],
+        deltacursor: String,
+        sessioninfo: AnyCodable,
+        agentslist: AnyCodable? = nil,
+        metadata: AnyCodable? = nil)
+    {
+        self.kind = kind
+        self.messages = messages
+        self.deltacursor = deltacursor
+        self.sessioninfo = sessioninfo
+        self.agentslist = agentslist
+        self.metadata = metadata
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case messages
+        case deltacursor = "deltaCursor"
+        case sessioninfo = "sessionInfo"
+        case agentslist = "agentsList"
+        case metadata
+    }
+}
+
+public struct ChatHistoryResetResult: Codable, Sendable {
+    public let kind: String
+
+    public init(
+        kind: String)
+    {
+        self.kind = kind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
     }
 }
 
@@ -21383,6 +21477,37 @@ public enum ScopeUpgradeResult: Codable, Sendable {
         case .approved(let value): try value.encode(to: encoder)
         case .rejected(let value): try value.encode(to: encoder)
         case .expired(let value): try value.encode(to: encoder)
+        }
+    }
+}
+
+public enum ChatHistoryCursorResult: Codable, Sendable {
+    case delta(ChatHistoryDeltaResult)
+    case reset(ChatHistoryResetResult)
+
+    private enum CodingKeys: String, CodingKey {
+        case discriminator = "kind"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let discriminator = try container.decode(String.self, forKey: .discriminator)
+        switch discriminator {
+        case "delta": self = try .delta(ChatHistoryDeltaResult(from: decoder))
+        case "reset": self = try .reset(ChatHistoryResetResult(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .discriminator,
+                in: container,
+                debugDescription: "Unknown ChatHistoryCursorResult discriminator value"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .delta(let value): try value.encode(to: encoder)
+        case .reset(let value): try value.encode(to: encoder)
         }
     }
 }

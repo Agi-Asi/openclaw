@@ -118,7 +118,6 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
     clientRunId,
     entry,
     expectedLeafEntryId,
-    expectedRunId,
     requestedSessionId,
     resolvedSessionModel,
     selectedAgent,
@@ -224,19 +223,18 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
             messageInjectionAttempt = beginCapturedMessageInjection();
           }
           if (messageInjectionAttempt) {
-            const outcome = await messageInjectionAttempt.outcome;
-            if (outcome.status === "accepted") {
-              acceptedMessageInjection = true;
+            if (
               await finalizeAcceptedChatSendMessageInjection({
+                attempt: messageInjectionAttempt,
                 context,
                 ctx,
-                outcome,
                 persistUserTurnTranscriptBestEffort: persistGatewayUserTurnTranscriptBestEffort,
                 session,
                 startedAt: admissionStartedAt,
                 target: messageInjectionTarget!,
-                targetRunId: messageInjectionAttempt.targetRunId,
-              });
+              })
+            ) {
+              acceptedMessageInjection = true;
               return {
                 queuedFinal: false,
                 counts: { tool: 0, block: 0, final: 0 },
@@ -304,13 +302,19 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                 fastModeOverride: p.fastMode,
                 queueModeOverride: p.queueMode,
                 userTurnTranscriptRecorder: userTurnRecorder,
-                ...((messageInjectionTarget && !isInternalTextSlashCommandTurn) ||
-                (p.queueMode === "steer" && expectedRunId !== undefined)
-                  ? { messageInjectionAttempted: true as const }
+                ...(p.queueMode === "steer"
+                  ? { messageInjectionDisposition: "rejected" as const }
                   : {}),
                 ...(restartSafeAdmission ? { suppressNextUserMessagePersistence: true } : {}),
                 fastModeAutoOnSecondsOverride: p.fastAutoOnSeconds,
                 onAgentRunStart: (runId) => {
+                  if (activeRunAbort.markExecutionStarted()) {
+                    emitSessionsChanged(context, {
+                      sessionKey,
+                      agentId,
+                      reason: "chat.run.started",
+                    });
+                  }
                   agentRunStarted = replyDispatch.captureAgentTranscriptStart();
                   emitServerTiming(
                     "agent-run-started",

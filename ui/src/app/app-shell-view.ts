@@ -27,6 +27,7 @@ import type { ApplicationContext, ApplicationNavigationOptions } from "./context
 import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
 import { readScopeUpgradeAvailability } from "./device-scope-upgrade.ts";
 import {
+  DEBUG_OVERLAY_ELEMENT,
   ensureOptionalElementForHost,
   isOptionalElementDefined,
   type OptionalCustomElement,
@@ -354,7 +355,8 @@ export function renderApplicationShell(host: ShellViewHost) {
   const uiSettings = loadSettings();
   // The new-session draft shares the chat layout: full-height pane that owns
   // its scrolling and pins the composer dock to the bottom.
-  const chatLikeRoute = isSessionRouteId(activeRoute) || activeRoute === "new-session";
+  const sessionRoute = isSessionRouteId(activeRoute);
+  const chatLikeRoute = sessionRoute || activeRoute === "new-session";
   const custodianRoute = activeRoute === "custodian";
   if (!settingsTakeover) {
     Object.assign(host.navigationSidebar, {
@@ -397,6 +399,7 @@ export function renderApplicationShell(host: ShellViewHost) {
       refreshRequired: navigationSurfaceHidden ? false : overlaySnapshot.controlUiRefreshRequired,
       onRefresh: () => host.refreshControlUi(),
       onHoldUpdate: () => context.overlays.holdUpdate(),
+      onReviewUpdate: () => host.navigate("updates"),
       onOpenApprovals: () => host.openApprovals(),
       onRetryConnect: () => context.gateway.connect(),
       onOpenNewSession: openNewSession,
@@ -433,6 +436,7 @@ export function renderApplicationShell(host: ShellViewHost) {
         refreshRequired: navigationSurfaceHidden ? false : overlaySnapshot.controlUiRefreshRequired,
         onRefresh: () => host.refreshControlUi(),
         onHoldUpdate: () => context.overlays.holdUpdate(),
+        onReviewUpdate: () => host.navigate("updates"),
         searchQuery: host.settingsSearchQuery,
         searchBlockMatches: settingsSearchBlocks,
         onExit: () => host.exitSettings(),
@@ -470,6 +474,9 @@ export function renderApplicationShell(host: ShellViewHost) {
           .onSlashCommand=${(command: string) => host.handleCommandPaletteSlashCommand(command)}
         ></openclaw-command-palette>`
       : nothing}
+    ${isOptionalElementDefined(DEBUG_OVERLAY_ELEMENT)
+      ? html`<openclaw-debug-overlay></openclaw-debug-overlay>`
+      : nothing}
     <div
       class="shell ${chatLikeRoute ? "shell--chat" : ""} ${navCollapsed
         ? "shell--nav-collapsed"
@@ -500,9 +507,7 @@ export function renderApplicationShell(host: ShellViewHost) {
         : nothing}
       <openclaw-app-topbar
         .basePath=${context.basePath}
-        .searchDisabled=${false}
         .navDrawerOpen=${navDrawerOpen}
-        .onboarding=${onboarding}
         .onOpenPalette=${() => host.openPalette()}
         .onToggleDrawer=${(trigger: HTMLElement) => host.toggleNavigationSurface(trigger)}
       ></openclaw-app-topbar>
@@ -617,6 +622,7 @@ export function renderApplicationShell(host: ShellViewHost) {
           refreshRequired: overlaySnapshot.controlUiRefreshRequired,
           onRefresh: () => host.refreshControlUi(),
           onHoldUpdate: () => context.overlays.holdUpdate(),
+          onReviewUpdate: () => host.navigate("updates"),
         })}
         ${pageActionsBlocked && gatewaySnapshot.phase !== "reload-required"
           ? html`<div class="connection-action-block" role="status" aria-live="polite">
@@ -636,12 +642,12 @@ export function renderApplicationShell(host: ShellViewHost) {
         .client=${gatewayConnected ? gatewaySnapshot.client : null}
         .available=${terminalAvailable}
         .agentId=${selectedAgentId}
+        .sessionKey=${sessionRoute ? host.activeSessionKey : null}
         .suppressed=${settingsTakeover}
-        .sessionBottomOnly=${isSessionRouteId(activeRoute)}
         .themeMode=${resolveTerminalThemeMode()}
         .basePath=${context.basePath}
       ></openclaw-terminal-panel>
-      ${isSessionRouteId(activeRoute)
+      ${sessionRoute
         ? nothing
         : html`
             <openclaw-browser-panel
@@ -673,6 +679,7 @@ export function renderApplicationShell(host: ShellViewHost) {
             .props=${{
               queue: overlaySnapshot.approvalQueue,
               busy: overlaySnapshot.approvalBusy,
+              canGrant: overlaySnapshot.approvalCanGrant,
               errors: overlaySnapshot.approvalErrors,
               nowMs: overlaySnapshot.approvalNowMs,
               onDecision: (
