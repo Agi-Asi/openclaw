@@ -28,7 +28,7 @@ import {
   type SidebarSlotId,
 } from "./sidebar-layout.ts";
 
-export type SidebarSlotControls = {
+type SidebarSlotControls = {
   hasPanelSlot: (slot: SidebarSlotId) => boolean;
   openPanelSlot: (slot: SidebarSlotId) => void;
   closePanelSlot: (slot: SidebarSlotId) => void;
