@@ -176,7 +176,7 @@ describe("Markdown table interactions", () => {
     expect(document.querySelector(".markdown-table-dialog")).toBeNull();
     expect(document.activeElement).toBe(expand);
 
-    expand.click();
+    handleMarkdownTableInteraction(markdownTableInteractionEvent(expand));
     const reopenedDialog = document.querySelector<HTMLDialogElement>(".markdown-table-dialog")!;
 
     reopenedDialog.querySelector<HTMLButtonElement>(".markdown-table-dialog__close")!.click();
