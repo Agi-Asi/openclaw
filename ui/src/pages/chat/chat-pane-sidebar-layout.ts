@@ -1,8 +1,13 @@
 import { html, type TemplateResult } from "lit";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import { isDesktopPanelAvailable } from "../../app/app-shell-chrome.ts";
+import type { ApplicationGatewaySnapshot } from "../../app/gateway.ts";
 import { sidebarPanelDefinitions } from "./chat-pane-embedded-panels.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
+import { createBackgroundTasksProps } from "./components/chat-background-tasks.ts";
+import { detailSlotOpen } from "./components/chat-detail-slot.ts";
+import { createSessionWorkspaceProps } from "./components/chat-session-workspace.ts";
 import type {
   SidebarPanelDefinition,
   SidebarPanelTemplates,
@@ -22,6 +27,85 @@ import {
   type SidebarLayout,
   type SidebarSlotId,
 } from "./sidebar-layout.ts";
+
+export type SidebarSlotControls = {
+  hasPanelSlot: (slot: SidebarSlotId) => boolean;
+  openPanelSlot: (slot: SidebarSlotId) => void;
+  closePanelSlot: (slot: SidebarSlotId) => void;
+  togglePanelSlot: (slot: SidebarSlotId) => void;
+};
+
+/**
+ * Slot open/close closures over the resolved layout. The companion slot doubles
+ * as the observer-visibility switch, so open/close must notify the pane or the
+ * observer stream keeps running behind a closed rail.
+ */
+export function createSidebarSlotControls(params: {
+  state: ChatPageHost;
+  sidebarLayout: SidebarLayout;
+  setSessionObserverVisibility: (visible: boolean) => void;
+}): SidebarSlotControls {
+  const { state, sidebarLayout, setSessionObserverVisibility } = params;
+  const hasPanelSlot = (slot: SidebarSlotId) =>
+    sidebarLayout.columns[0]?.panels.some((panel) => panel.slot === slot) === true;
+  const openPanelSlot = (slot: SidebarSlotId) => {
+    state.updateSidebarLayout(openSlot(state.sidebarLayout, slot));
+    if (slot === "companion") {
+      setSessionObserverVisibility(true);
+    }
+  };
+  const closePanelSlot = (slot: SidebarSlotId) => {
+    if (slot === "companion") {
+      setSessionObserverVisibility(false);
+    }
+    state.updateSidebarLayout(closeSlot(state.sidebarLayout, slot));
+  };
+  const togglePanelSlot = (slot: SidebarSlotId) =>
+    hasPanelSlot(slot) ? closePanelSlot(slot) : openPanelSlot(slot);
+  return { hasPanelSlot, openPanelSlot, closePanelSlot, togglePanelSlot };
+}
+
+/** Wide-layout workspace/tasks rail props: base factories plus slot wiring. */
+export function createSidebarRailProps(params: {
+  state: ChatPageHost;
+  sidebarLayout: SidebarLayout;
+  slots: SidebarSlotControls;
+  gatewaySnapshot: ApplicationGatewaySnapshot;
+  draftScope: string;
+}) {
+  const { state, sidebarLayout, slots, gatewaySnapshot } = params;
+  const sessionWorkspace = {
+    ...createSessionWorkspaceProps(state, {
+      draftScope: params.draftScope,
+      expanded: slots.hasPanelSlot("workspace"),
+      narrowLayout: false,
+    }),
+    collapsed: !slots.hasPanelSlot("workspace"),
+    narrowLayout: false,
+    onToggleCollapsed: () => slots.togglePanelSlot("workspace"),
+    onToggleTerminal: state.terminalAvailable ? () => slots.togglePanelSlot("terminal") : undefined,
+    onToggleBrowser: state.browserPanelAvailable
+      ? () => slots.togglePanelSlot("browser")
+      : undefined,
+    onToggleDesktop: isDesktopPanelAvailable(gatewaySnapshot)
+      ? () => slots.togglePanelSlot("desktop")
+      : undefined,
+  };
+  const backgroundTasks = {
+    ...createBackgroundTasksProps(state, {
+      narrowLayout: false,
+      openTaskId:
+        state.sidebarContent?.kind === "task" && detailSlotOpen(sidebarLayout)
+          ? state.sidebarContent.taskId
+          : undefined,
+      onOpenTaskDetail: (task) => state.handleOpenSidebar({ kind: "task", taskId: task.id }),
+    }),
+    collapsed: !slots.hasPanelSlot("tasks"),
+    narrowLayout: false,
+    onToggleCollapsed: () => slots.togglePanelSlot("tasks"),
+  };
+  return { sessionWorkspace, backgroundTasks };
+}
 
 const DETAIL_FULL_MESSAGE_MAX_CHARS = 500_000;
 let sidebarRegionLoad: Promise<boolean> | null = null;
