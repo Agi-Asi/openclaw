@@ -3,7 +3,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { EventFrame } from "../../packages/gateway-protocol/src/index.js";
+import {
+  GATEWAY_CLIENT_CAPS,
+  type EventFrame,
+} from "../../packages/gateway-protocol/src/index.js";
 import { isLiveTestEnabled } from "../agents/live-test-helpers.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { setTestEnvValue } from "../test-utils/env.js";
@@ -134,6 +137,7 @@ async function connectGatewayClient(params: {
     url: params.url,
     token: params.token,
     deviceIdentity,
+    caps: [GATEWAY_CLIENT_CAPS.EXEC_APPROVALS],
     timeoutMs: GATEWAY_CONNECT_TIMEOUT_MS,
     requestTimeoutMs: 60_000,
     tickWatchTimeoutMs: AGENT_REQUEST_TIMEOUT_MS + 120_000,
