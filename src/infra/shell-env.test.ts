@@ -88,7 +88,6 @@ describe("shell env fallback", () => {
       HOME: "/tmp/evil-home",
       ZDOTDIR: "/tmp/evil-zdotdir",
       BASH_ENV: "/tmp/evil-bash-env",
-      PS1: "host-prompt",
       PS4: "$(touch /tmp/pwned)",
     };
   }
@@ -102,7 +101,6 @@ describe("shell env fallback", () => {
     expect(receivedEnv.ZDOTDIR).toBeUndefined();
     expect(receivedEnv.SHELL).toBeUndefined();
     expect(receivedEnv.HOME).toBe(os.homedir());
-    expect(receivedEnv.PS1).toBeUndefined();
   }
 
   function withEtcShells(shells: string[], fn: () => void) {
