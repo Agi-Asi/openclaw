@@ -2642,6 +2642,8 @@ docker_e2e_docker_run_cmd run demo
     expect(script).toContain('exit "$channel_add_status"');
     expect(script).toContain("s/openclaw-npm-onboard-discord-token/[REDACTED]/g");
     expect(script).toContain("s/xox[baprs]-[-_A-Za-z0-9.]+/[REDACTED]/g");
+    expect(script).toContain("s/xapp-[-_A-Za-z0-9.]+/[REDACTED]/g");
+    expect(script).toContain("s/[0-9]{6,}:[-_A-Za-z0-9]{20,}/[REDACTED]/g");
   });
 
   it("keeps real-TTY onboarding drivers aligned with the first-agent prompt", () => {

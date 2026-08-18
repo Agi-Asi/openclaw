@@ -221,6 +221,8 @@ if [ "$channel_add_status" -ne 0 ]; then
   sed -E \
     -e 's/openclaw-npm-onboard-discord-token/[REDACTED]/g' \
     -e 's/xox[baprs]-[-_A-Za-z0-9.]+/[REDACTED]/g' \
+    -e 's/xapp-[-_A-Za-z0-9.]+/[REDACTED]/g' \
+    -e 's/[0-9]{6,}:[-_A-Za-z0-9]{20,}/[REDACTED]/g' \
     -e 's/(^|[^[:alnum:]_])(sk|gh[a-z]|github_pat|glpat|AIza)[-_A-Za-z0-9.]+/\1[REDACTED]/g' \
     /tmp/openclaw-channel-add.log >&2
   exit "$channel_add_status"
