@@ -709,6 +709,15 @@ describe("gateway server chat", () => {
       const pngB64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=";
 
+      const pendingRuns = await Promise.all(
+        ["idem-webchat-1", "idem-timeout-1", "idem-session-key-1"].map(async (runId) => ({
+          runId,
+          result: await rpcReq(ws, "agent.wait", { runId, timeoutMs: 0 }),
+        })),
+      );
+      console.error(
+        `[chat-flow-diagnostic] before-image activeRoots=${getActiveGatewayRootWorkCount()} runs=${JSON.stringify(pendingRuns)}`,
+      );
       diagnosticStep = "send legacy image attachment";
       const imgRes = await rpcReq(ws, "chat.send", {
         sessionKey: "main",

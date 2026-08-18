@@ -475,6 +475,11 @@ export function tryBeginGatewaySuspendAdmission(
 
 /** Clears restart/suspend admission during SIGUSR1 and isolated tests. */
 export function resetGatewayWorkAdmission(): void {
+  if (process.env.OPENCLAW_TEST_CHAT_ADMISSION_DIAGNOSTIC === "1") {
+    console.error(
+      `[chat-admission-diagnostic] reset active=${GATEWAY_WORK_ADMISSION_STATE.activeRootWork.size} stack=${new Error().stack}`,
+    );
+  }
   // SIGUSR1 can abandon old async chains before their finally blocks run.
   // Retire their ALS records so surviving chains must re-enter admission.
   for (const admission of GATEWAY_WORK_ADMISSION_STATE.activeRootWork) {
