@@ -176,11 +176,6 @@ export async function resumeExistingCodexThread(
         userMcpServersConfigPatch,
         pluginAppsConfigPatch,
         finalConfigPatch.configPatch,
-        resumeBinding.connectionScope === "supervision" &&
-          resumeBinding.preserveNativeModel === true &&
-          resumeBinding.reasoningEffort
-          ? { model_reasoning_effort: resumeBinding.reasoningEffort }
-          : undefined,
       ),
       nativeSkillIsolation,
     );
@@ -206,7 +201,10 @@ export async function resumeExistingCodexThread(
         disableLoginShell: params.disableLoginShell,
       }),
     );
-    const requestModelProvider = resumeParams.modelProvider?.trim() || undefined;
+    const requestModelProvider =
+      typeof resumeParams.modelProvider === "string" && resumeParams.modelProvider.trim()
+        ? resumeParams.modelProvider
+        : undefined;
     // Keep ownership accounting atomic with the resume request: a
     // pre-aborted request retains no subscription, so it must not reserve.
     throwIfAborted();
@@ -255,6 +253,7 @@ export async function resumeExistingCodexThread(
       }
     }
     throwIfAborted();
+    const boundAuthProfileId = authProfileId;
     const nextMcpServersFingerprint =
       params.mcpServersFingerprintEvaluated === true
         ? params.mcpServersFingerprint
@@ -265,11 +264,11 @@ export async function resumeExistingCodexThread(
       clientId: resolveCodexAppServerClientInstanceId(params.client),
       cwd: params.cwd,
       rolloutPath: resolveCodexThreadRolloutPath(response.thread) ?? resumeBinding.rolloutPath,
-      authProfileId,
+      authProfileId: boundAuthProfileId,
       model: response.model ?? resumeParams.model ?? params.params.modelId,
       preserveNativeModel: resumeBinding.preserveNativeModel === true ? true : undefined,
       modelProvider: normalizeBindingModelProvider(
-        authProfileId,
+        boundAuthProfileId,
         response.modelProvider ?? requestModelProvider ?? startModelProvider,
       ),
       reasoningEffort: response.reasoningEffort,
@@ -486,7 +485,10 @@ export async function startFreshCodexThread(
       disableLoginShell: params.disableLoginShell,
     }),
   );
-  const requestModelProvider = startParams.modelProvider?.trim() || undefined;
+  const requestModelProvider =
+    typeof startParams.modelProvider === "string" && startParams.modelProvider.trim()
+      ? startParams.modelProvider
+      : undefined;
   const threadStartResponse = await lifecycleTiming.measure("thread-start-request", async () => {
     try {
       return await params.client.request("thread/start", startParams, { signal: params.signal });
@@ -681,7 +683,8 @@ export async function startFreshCodexThread(
     authProfileId: params.params.authProfileId,
     agentWorkspaceDeveloperInstructions: params.agentWorkspaceDeveloperInstructions,
     model: response.model ?? startParams.model ?? params.params.modelId,
-    modelProvider: bindingModelProvider ?? modelProvider,
+    modelProvider:
+      response.modelProvider ?? requestModelProvider ?? startModelProvider ?? modelProvider,
     reasoningEffort: response.reasoningEffort,
     dynamicToolsFingerprint,
     dynamicToolsContainDeferred,

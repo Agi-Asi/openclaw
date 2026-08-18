@@ -70,6 +70,7 @@
     "features.code_mode_only": false,
     "features.goals": false,
     "features.standalone_web_search": false,
+    "model_reasoning_effort": "medium",
     "tools.update_plan.enabled": false,
     "web_search": "cached"
   },
@@ -556,7 +557,6 @@ Full tool overrides: `codex-dynamic-tools.discord-group.json` (base: `codex-dyna
   "sessions_yield"
 ]
 ```
-
 ## Critical Visible-Reply Tool Specs
 
 ```json

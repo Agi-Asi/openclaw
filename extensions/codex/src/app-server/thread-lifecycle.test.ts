@@ -3206,6 +3206,13 @@ describe("Codex app-server supervised branch lifecycle", () => {
     const agentWorkspaceDeveloperInstructions = "Follow the frozen supervised AGENTS guidance.";
     const workspaceDir = path.join(tempDir, "workspace");
     const attempt = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
+    attempt.thinkLevel = "max";
+    attempt.model = {
+      ...attempt.model,
+      compat: {
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+      } as never,
+    } as never;
     attempt.modelId = "outer-global-default";
     const identity = await seedPendingSupervisionBinding({
       attempt,
@@ -3247,12 +3254,9 @@ describe("Codex app-server supervised branch lifecycle", () => {
         };
       }
       if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider", "max");
+        return nativeThreadResult(probeThreadId, "native-effective", "native-provider", "low");
       }
       if (method === "thread/start") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider", "max");
-      }
-      if (method === "thread/resume") {
         const config = (requestParams as { config?: Record<string, unknown> }).config;
         const reasoningEffort = config?.model_reasoning_effort;
         return nativeThreadResult(
@@ -3261,6 +3265,9 @@ describe("Codex app-server supervised branch lifecycle", () => {
           "native-provider",
           typeof reasoningEffort === "string" ? reasoningEffort : null,
         );
+      }
+      if (method === "thread/resume") {
+        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
       }
       if (method === "thread/inject_items" || method === "thread/archive") {
         return {};
@@ -3329,6 +3336,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       environments: [{ environmentId: "local", cwd: workspaceDir }],
       config: {
         allow_login_shell: false,
+        model_reasoning_effort: "max",
         shell_environment_policy: {
           experimental_use_profile: false,
           set: { GH_TOKEN: "", GITHUB_TOKEN: "" },
@@ -3389,18 +3397,18 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("model");
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
     expect(request.mock.calls[1]?.[1]).toMatchObject({
-      config: { model_reasoning_effort: "max" },
       developerInstructions: agentWorkspaceDeveloperInstructions,
     });
     expect(resumed).toMatchObject({
       threadId: finalThreadId,
-      reasoningEffort: "max",
+      reasoningEffort: null,
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       lifecycle: { action: "resumed" },
     });
     await expect(testCodexAppServerBindingStore.read(identity)).resolves.toMatchObject({
       appServerRuntimeFingerprint: buildCodexAppServerConnectionFingerprint(commonParams.appServer),
+      reasoningEffort: null,
     });
   });
 

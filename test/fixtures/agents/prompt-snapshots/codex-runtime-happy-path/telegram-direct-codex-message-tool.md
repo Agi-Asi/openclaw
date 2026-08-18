@@ -70,6 +70,7 @@
     "features.code_mode_only": false,
     "features.goals": false,
     "features.standalone_web_search": false,
+    "model_reasoning_effort": "medium",
     "tools.update_plan.enabled": false,
     "web_search": "cached"
   },
@@ -550,7 +551,6 @@ Full JSON: `codex-dynamic-tools.telegram-direct.json`
   "sessions_yield"
 ]
 ```
-
 ## Critical Visible-Reply Tool Specs
 
 ```json
