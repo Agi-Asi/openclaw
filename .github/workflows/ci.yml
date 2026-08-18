@@ -87,9 +87,9 @@ jobs:
           dependency-cache: "false"
           use-actions-cache: "true"
       - name: Materialize canonical formatting
-        run: pnpm format docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts
+        run: pnpm format docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts
       - name: Print source-only formatting diff
-        run: git diff -- docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts
+        run: git diff -- docs/help/environment.md src/config/types.openclaw.ts src/infra/shell-env.ts src/infra/shell-env.test.ts
       - name: Upload formatted source
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -98,6 +98,7 @@ jobs:
             docs/help/environment.md
             src/config/types.openclaw.ts
             src/infra/shell-env.ts
+            src/infra/shell-env.test.ts
           if-no-files-found: error
           retention-days: 1
 
