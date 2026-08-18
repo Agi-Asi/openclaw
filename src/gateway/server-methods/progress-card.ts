@@ -75,7 +75,10 @@ export function createProgressCardHandlers(
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, "expectedRevision is only valid when clearing a card"),
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            "expectedRevision is only valid when clearing a card",
+          ),
         );
         return;
       }
@@ -84,7 +87,10 @@ export function createProgressCardHandlers(
         return;
       }
       try {
-        const result = store.put(sessionKey, { ...input, expectedRevision: params.expectedRevision });
+        const result = store.put(sessionKey, {
+          ...input,
+          expectedRevision: params.expectedRevision,
+        });
         if (params.expectedRevision === undefined || result.card === null) {
           context.broadcast("progressCard.changed", {
             sessionKey,

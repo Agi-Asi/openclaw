@@ -1,5 +1,8 @@
 import type { ProgressCard, ProgressCardStep } from "../../packages/gateway-protocol/src/index.js";
-import { readSessionProgressCard, writeSessionProgressCard } from "../session-cards/progress-card-store.js";
+import {
+  readSessionProgressCard,
+  writeSessionProgressCard,
+} from "../session-cards/progress-card-store.js";
 import { withOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
 import {
   openOpenClawAgentDatabase,

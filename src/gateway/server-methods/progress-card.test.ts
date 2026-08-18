@@ -39,10 +39,7 @@ function createHarness() {
   };
   const handlers = createProgressCardHandlers(store);
   const broadcast = vi.fn();
-  const invoke = async (
-    method: "progressCard.get" | "progressCard.put",
-    params: unknown,
-  ) => {
+  const invoke = async (method: "progressCard.get" | "progressCard.put", params: unknown) => {
     const respond = vi.fn<RespondFn>();
     await handlers[method]!({
       params,
