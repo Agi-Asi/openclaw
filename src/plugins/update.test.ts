@@ -2474,7 +2474,7 @@ describe("updateNpmInstalledPlugins", () => {
     });
     expect(result.config.plugins?.allow).toEqual(["demo", "other"]);
     expect(result.config.plugins?.deny).toEqual(["demo", "blocked"]);
-    expect(result.config.plugins?.slots?.memory).toBe("memory-core");
+    expect(result.config.plugins?.slots?.memory).toBeUndefined();
     expect(result.outcomes).toEqual([
       {
         pluginId: "demo",
@@ -3140,7 +3140,7 @@ describe("updateNpmInstalledPlugins", () => {
       config: { preserved: true },
     });
     expect(result.config.plugins?.allow).toEqual(["demo"]);
-    expect(result.config.plugins?.slots?.memory).toBe("memory-core");
+    expect(result.config.plugins?.slots?.memory).toBeUndefined();
     expect(result.outcomes).toEqual([
       {
         pluginId: "demo",

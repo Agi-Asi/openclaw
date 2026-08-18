@@ -69,6 +69,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- **Plugin slot persistence:** keep default memory and context-engine selections implicit during install, uninstall, and update recovery so redundant default pins cannot fail validation while their plugin lifecycle commit is in progress.
 - **Plugin setup diagnostics:** stop treating metadata-only provider setup descriptors as missing runtime registrations while retaining undeclared runtime and CLI drift warnings. Fixes #125506. Thanks @shakkernerd.
 - **Onboarding model browsing:** keep preferred-provider model discovery scoped to the selected provider, preserve route variants, and avoid loading unrelated provider setup surfaces. Fixes #125363. Thanks @shakkernerd.
 - **Codex subagent fan-out:** settle successful terminal yields immediately and preserve requester ownership so completed children reliably resume their parent.
