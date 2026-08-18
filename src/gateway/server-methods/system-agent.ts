@@ -62,6 +62,7 @@ import {
   buildSystemAgentRejoinResult,
   getSystemAgentChatInputError,
   runSystemAgentChatInput,
+  supportsSystemAgentWizardQr,
 } from "./system-agent-chat-turn.js";
 import type {
   GatewayClient,
@@ -601,16 +602,15 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
             );
             return;
           }
-          // The gateway surface must never install/restart its own daemon; the
-          // engine's setup path honors this via surface: "gateway".
+          // surface: "gateway" keeps setup from installing or restarting its own daemon.
           const engine = new SystemAgentChatEngine({
             surface: "gateway",
+            supportsQrCode: supportsSystemAgentWizardQr(client?.connect.caps),
             verifiedInference: inference.binding,
             operatorApprovalOnly: params.delegation !== undefined,
             ...(params.delegation?.agentId ? { requesterAgentId: params.delegation.agentId } : {}),
           });
-          // `reset: true` keeps the durable logbook but deliberately starts
-          // model context clean; only ordinary fresh sessions receive its tail.
+          // Reset keeps the durable logbook but starts model context clean; only fresh sessions get its tail.
           if (!params.reset) {
             engine.seedHistory(
               readTranscriptTail(SYSTEM_AGENT_SEED_HISTORY_LIMIT, { afterLastReset: true }).map(
@@ -619,8 +619,7 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
             );
           }
           const welcomeHistoryStart = engine.historyLength();
-          let welcome: string;
-          let welcomeQuestion: SystemAgentChatQuestion | undefined;
+          let welcome: string, welcomeQuestion: SystemAgentChatQuestion | undefined;
           try {
             if (params.welcomeVariant === "onboarding") {
               const onboardingWelcome = await buildOnboardingWelcome({ engine });
@@ -686,16 +685,15 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
           params.wizardCancel === undefined &&
           (params.message === undefined || !params.message.trim())
         ) {
-          respond(
-            true,
-            buildSystemAgentRejoinResult({
-              sessionId,
-              welcome: session.welcome,
-              ...(session.welcomeQuestion ? { welcomeQuestion: session.welcomeQuestion } : {}),
-              engine: session.engine,
-            }),
-            undefined,
-          );
+          const historyStart = session.engine.historyLength();
+          const rejoin = await buildSystemAgentRejoinResult({
+            sessionId,
+            welcome: session.welcome,
+            ...(session.welcomeQuestion ? { welcomeQuestion: session.welcomeQuestion } : {}),
+            engine: session.engine,
+          });
+          persistEngineHistory(session.engine, historyStart);
+          respond(true, rejoin, undefined);
           acknowledgeDeliveredSystemAgentWelcome(session);
           return;
         }

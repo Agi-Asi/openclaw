@@ -123,6 +123,12 @@ class WizardPromptNavigator {
           },
         }
       : {}),
+    ...(this.base.qrCode
+      ? {
+          qrCode: async <T>(params: Parameters<NonNullable<WizardPrompter["qrCode"]>>[0]) =>
+            (await this.base.qrCode?.(params)) as T,
+        }
+      : {}),
     plain: async (message) => {
       if (!this.shouldSuppressOutput()) {
         await this.base.plain?.(message);

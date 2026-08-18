@@ -307,6 +307,8 @@ export type SetupChannelsOptions = {
   allowSignalInstall?: boolean;
   /** Revalidate host authority immediately before an installer or other durable effect. */
   beforePersistentEffect?: () => Promise<void>;
+  /** Abort setup-owned transient work when its host session closes. */
+  signal?: AbortSignal;
   onSelection?: (selection: ChannelId[]) => void;
   onPostWriteHook?: (hook: ChannelOnboardingPostWriteHook) => void;
   accountIds?: Partial<Record<ChannelId, string>>;

@@ -1,3 +1,7 @@
+import {
+  GATEWAY_CLIENT_CAPS,
+  hasGatewayClientCap,
+} from "../../../packages/gateway-protocol/src/client-info.js";
 import type {
   SystemAgentChatParams,
   SystemAgentChatResult,
@@ -10,27 +14,34 @@ type SystemAgentChatEngineInput = Pick<
   "answerWizard" | "cancelWizard" | "handle"
 >;
 
+export function supportsSystemAgentWizardQr(caps: string[] | null | undefined): boolean {
+  return hasGatewayClientCap(caps, GATEWAY_CLIENT_CAPS.WIZARD_QR);
+}
+
 /**
  * Build the welcome-only result for rejoining an existing session. A
  * reconnecting client must re-render the live wizard/question controls the
  * session still awaits; the stale welcome question only fills in when no live
  * interaction exists.
  */
-export function buildSystemAgentRejoinResult(params: {
+export async function buildSystemAgentRejoinResult(params: {
   sessionId: string;
   welcome: string;
   welcomeQuestion?: SystemAgentChatResult["question"];
   engine: {
-    decorateRejoinReply: (reply: { text: string; action: "none" }) => {
+    decorateRejoinReply: (reply: { text: string; action: "none" }) => Promise<{
       text: string;
       sensitive?: boolean;
       wizardInputPending?: boolean;
       question?: SystemAgentChatResult["question"];
       step?: SystemAgentChatResult["step"];
-    };
+    }>;
   };
-}): SystemAgentChatResult {
-  const rejoin = params.engine.decorateRejoinReply({ text: params.welcome, action: "none" });
+}): Promise<SystemAgentChatResult> {
+  const rejoin = await params.engine.decorateRejoinReply({
+    text: params.welcome,
+    action: "none",
+  });
   return {
     sessionId: params.sessionId,
     reply: rejoin.text || params.welcome,
@@ -40,7 +51,7 @@ export function buildSystemAgentRejoinResult(params: {
     ...(rejoin.step ? { step: rejoin.step } : {}),
     ...(rejoin.question
       ? { question: rejoin.question }
-      : params.welcomeQuestion
+      : !rejoin.step && params.welcomeQuestion
         ? { question: params.welcomeQuestion }
         : {}),
   };
