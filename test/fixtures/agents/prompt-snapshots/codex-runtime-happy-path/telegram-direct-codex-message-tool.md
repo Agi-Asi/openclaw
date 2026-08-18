@@ -70,7 +70,6 @@
     "features.code_mode_only": false,
     "features.goals": false,
     "features.standalone_web_search": false,
-    "model_reasoning_effort": "medium",
     "project_doc_max_bytes": 131072,
     "tools.update_plan.enabled": false,
     "web_search": "cached"
