@@ -202,8 +202,8 @@ jobs:
             deep_profile: "true"
             live: "false"
             managed_service: "true"
-            include_filters: "scenario:fresh-install,scenario:gateway-performance,scenario:agent-cold-warm-message"
-            expected_release_entries: "fresh-install:fresh,fresh-install:onboarded-user,agent-cold-warm-message:mock-openai-provider,gateway-performance:many-bundled-plugins"
+            include_filters: "scenario:gateway-performance"
+            expected_release_entries: "gateway-performance:many-bundled-plugins"
           - lane: live-openai-candidate
             title: Kova live OpenAI GPT 5.6 agent turn
             auth: live
@@ -217,6 +217,7 @@ jobs:
       KOVA_REF: ${{ needs.resolve_target.outputs.kova_ref }}
       KOVA_OPENCLAW_CONFIG_CONTRACT: ${{ needs.resolve_target.outputs.kova_config_contract }}
       KOVA_HOME: ${{ github.workspace }}/.artifacts/kova/home/${{ matrix.lane }}
+      MANAGED_GATEWAY_DIAGNOSTICS_DIR: ${{ github.workspace }}/.artifacts/kova/managed-gateway/${{ matrix.lane }}
       PERFORMANCE_HELPER_DIR: ${{ github.workspace }}/.artifacts/performance-workflow
       REPORT_DIR: ${{ github.workspace }}/.artifacts/kova/reports/${{ matrix.lane }}
       BUNDLE_DIR: ${{ github.workspace }}/.artifacts/kova/bundles/${{ matrix.lane }}
@@ -242,6 +243,10 @@ jobs:
           set -euo pipefail
           run_lane=true
           reason=""
+          if [[ "$LANE_ID" == "mock-provider" && "${{ inputs.deep_profile || 'false' }}" == "true" ]]; then
+            run_lane=false
+            reason="managed Gateway diagnostic selects the failure-only lane"
+          fi
           if [[ "$LANE_ID" == "mock-deep-profile" && "${{ github.event_name }}" != "schedule" && "${{ inputs.deep_profile || 'false' }}" != "true" ]]; then
             run_lane=false
             reason="deep_profile input is false"
@@ -327,6 +332,11 @@ jobs:
             export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus"
             echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
           fi
+
+          mkdir -p "$MANAGED_GATEWAY_DIAGNOSTICS_DIR"
+          diagnostic_node_options="--heapsnapshot-signal=SIGUSR2 --report-on-signal --report-signal=SIGUSR2 --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
+          systemctl --user set-environment "NODE_OPTIONS=$diagnostic_node_options"
+          test "$(systemctl --user show-environment | sed -n 's/^NODE_OPTIONS=//p')" = "$diagnostic_node_options"
 
           systemctl --user show-environment >/dev/null
 
@@ -492,7 +502,7 @@ jobs:
             args+=(--model "$PERFORMANCE_MODEL_ID")
           fi
           if [[ "$MATRIX_DEEP_PROFILE" == "true" ]]; then
-            args+=(--deep-profile)
+            args+=(--profile-on-failure)
           fi
           if [[ "$FAIL_ON_REGRESSION" == "true" ]]; then
             args+=(--gate)
@@ -618,12 +628,14 @@ jobs:
             .artifacts/kova/reports/${{ matrix.lane }}
             .artifacts/kova/bundles/${{ matrix.lane }}
             .artifacts/kova/summaries/${{ matrix.lane }}.md
+            .artifacts/kova/managed-gateway/${{ matrix.lane }}
           if-no-files-found: error
           retention-days: ${{ matrix.deep_profile == 'true' && 14 || 30 }}
 
   source_performance:
     name: OpenClaw source performance probes
     needs: resolve_target
+    if: ${{ inputs.deep_profile != true }}
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 120
     env:
