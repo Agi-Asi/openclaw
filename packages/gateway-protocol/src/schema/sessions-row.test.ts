@@ -77,4 +77,44 @@ describe("SessionRowSchema", () => {
     expect(accepted.every(validateSessionsAssignOwnerParams)).toBe(true);
     expect(rejected.every((value) => !validateSessionsAssignOwnerParams(value))).toBe(true);
   });
+
+  it("accepts bounded session run activity without exposing run identities", () => {
+    const waiting = {
+      key: "agent:main:queued",
+      kind: "direct",
+      runActivity: {
+        state: "waiting",
+        since: 1_000,
+        queueWait: {
+          queuedAhead: 2,
+          busySlots: 4,
+          capacity: 4,
+          blockedBy: "group-budget",
+        },
+      },
+    };
+
+    expect(Value.Check(SessionRowSchema, waiting)).toBe(true);
+    expect(
+      Value.Check(SessionRowSchema, {
+        ...waiting,
+        runActivity: { state: "working" },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(SessionRowSchema, {
+        ...waiting,
+        runActivity: {
+          ...waiting.runActivity,
+          queueWait: { ...waiting.runActivity.queueWait, queuedAhead: -1 },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(SessionRowSchema, {
+        ...waiting,
+        runActivity: { ...waiting.runActivity, runId: "private-run-id" },
+      }),
+    ).toBe(false);
+  });
 });

@@ -92,6 +92,7 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     sending: boolean;
     canAbort?: boolean;
     runStatus?: ChatRunUiStatus | null;
+    runActivity?: GatewaySessionRow["runActivity"];
     startupStatus?: ChatRunStartupStatus | null;
     waitingApproval?: boolean;
     compactionStatus?: CompactionStatus | null;
@@ -312,6 +313,7 @@ export function renderChat(props: ChatProps) {
       persistCommentary: props.persistCommentary,
       runActive: Boolean(props.canAbort),
       runWorking: isChatRunWorking(props),
+      runActivity: props.runActivity,
       startupStatus: props.startupStatus,
       waitingApproval: props.waitingApproval,
       questionPrompts: props.gatewayQuestionPrompts,
@@ -380,6 +382,7 @@ export function renderChat(props: ChatProps) {
     sending: props.sending,
     canAbort: props.canAbort,
     runStatus: props.runStatus,
+    runActivity: props.runActivity,
     waitingApproval: props.waitingApproval,
     compactionStatus: props.compactionStatus,
     fallbackStatus: props.fallbackStatus,

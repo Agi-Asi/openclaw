@@ -13,12 +13,26 @@ import {
   clearAgentRunContext,
   registerAgentRunContext,
 } from "../../infra/agent-run-registry.js";
+import type { CommandQueueWorkProjection } from "../../process/command-queue.js";
 import {
   collectTrackedActiveSessionRuns,
   hasRegisteredChatRunForSessionKey,
   hasTrackedActiveSessionRun,
   resolveVisibleActiveSessionRunState,
 } from "./session-active-runs.js";
+
+function queueProjection(
+  params: {
+    waits?: CommandQueueWorkProjection["waits"];
+    revisionByWorkId?: CommandQueueWorkProjection["revisionByWorkId"];
+  } = {},
+): CommandQueueWorkProjection {
+  return {
+    epoch: "test-queue",
+    waits: params.waits ?? new Map(),
+    revisionByWorkId: params.revisionByWorkId ?? new Map(),
+  };
+}
 
 it("keeps prebuilt active-run indexes in parity with per-row scans", () => {
   const context = {
@@ -150,6 +164,95 @@ it("returns deterministic visible run ids for the selected session", () => {
   ).toEqual({ active: true, runIds: ["run-a", "run-z"] });
 });
 
+it("projects a queued visible run without exposing its work identity", () => {
+  const context = {
+    chatAbortControllers: new Map([
+      ["run-queued", { sessionKey: "agent:main:queued", taskId: "task-queued" }],
+    ]),
+  } as never;
+  const projection = queueProjection({
+    waits: new Map([
+      [
+        "task-queued",
+        {
+          lane: "main",
+          since: 1_000,
+          queuedAhead: 2,
+          busySlots: 4,
+          capacity: 4,
+          blockedBy: "group-budget",
+          revision: 7,
+          queuedAheadWorkIds: ["private-ahead"],
+          activeWorkIds: ["private-active"],
+        },
+      ],
+    ]),
+    revisionByWorkId: new Map([["task-queued", 7]]),
+  });
+
+  expect(
+    resolveVisibleActiveSessionRunState({
+      context,
+      requestedKey: "agent:main:queued",
+      canonicalKey: "agent:main:queued",
+      queueProjection: projection,
+    }),
+  ).toEqual({
+    active: true,
+    runIds: ["run-queued"],
+    runActivity: {
+      state: "waiting",
+      since: 1_000,
+      queueWait: {
+        queuedAhead: 2,
+        busySlots: 4,
+        capacity: 4,
+        blockedBy: "group-budget",
+      },
+    },
+  });
+});
+
+it("prefers working when one of several visible runs has been admitted", () => {
+  const context = {
+    chatAbortControllers: new Map([
+      ["run-waiting", { sessionKey: "agent:main:busy" }],
+      ["run-working", { sessionKey: "agent:main:busy" }],
+    ]),
+  } as never;
+  const projection = queueProjection({
+    waits: new Map([
+      [
+        "run-waiting",
+        {
+          lane: "main",
+          since: 1_000,
+          queuedAhead: 0,
+          busySlots: 1,
+          capacity: 1,
+          blockedBy: "lane",
+          revision: 2,
+          queuedAheadWorkIds: [],
+          activeWorkIds: ["run-working"],
+        },
+      ],
+    ]),
+    revisionByWorkId: new Map([
+      ["run-waiting", 2],
+      ["run-working", 2],
+    ]),
+  });
+
+  expect(
+    resolveVisibleActiveSessionRunState({
+      context,
+      requestedKey: "agent:main:busy",
+      canonicalKey: "agent:main:busy",
+      queueProjection: projection,
+    }).runActivity,
+  ).toEqual({ state: "working" });
+});
+
 it("projects a lifecycle-owned worker run without widening event visibility", () => {
   registerAgentRunContext("worker-run", {
     isControlUiVisible: false,
@@ -241,6 +344,95 @@ it("preserves an independent lifecycle-owned worker while a reply operation sett
   } finally {
     operation.complete();
     clearAgentRunContext("worker-overlap-run");
+  }
+});
+
+it("prefers working when a lifecycle-owned worker overlaps a queued gateway run", () => {
+  const sessionKey = "agent:main:worker-and-queue";
+  const sessionId = "worker-and-queue-session";
+  registerAgentRunContext("worker-and-queue-run", {
+    projectSessionActive: true,
+    sessionId,
+    sessionKey,
+  });
+  try {
+    expect(
+      resolveVisibleActiveSessionRunState({
+        context: {
+          chatAbortControllers: new Map([
+            ["queued-run", { sessionId, sessionKey, taskId: "queued-task" }],
+          ]),
+        } as never,
+        requestedKey: sessionKey,
+        canonicalKey: sessionKey,
+        sessionId,
+        queueProjection: queueProjection({
+          waits: new Map([
+            [
+              "queued-task",
+              {
+                lane: "main",
+                since: 1_000,
+                queuedAhead: 1,
+                busySlots: 1,
+                capacity: 1,
+                revision: 2,
+                queuedAheadWorkIds: ["worker-and-queue-run"],
+                activeWorkIds: ["worker-and-queue-run"],
+              },
+            ],
+          ]),
+        }),
+      }).runActivity,
+    ).toEqual({ state: "working" });
+  } finally {
+    clearAgentRunContext("worker-and-queue-run");
+  }
+});
+
+it("prefers working when an embedded handle overlaps a queued gateway run", () => {
+  const sessionKey = "agent:main:embedded-and-queue";
+  const sessionId = "embedded-and-queue-session";
+  const handle: EmbeddedAgentQueueHandle = {
+    abort: () => undefined,
+    isAborted: () => false,
+    isCompacting: () => false,
+    isStreaming: () => true,
+    queueMessage: async () => undefined,
+  };
+  setActiveEmbeddedRun(sessionId, handle, sessionKey);
+  try {
+    expect(
+      resolveVisibleActiveSessionRunState({
+        context: {
+          chatAbortControllers: new Map([
+            ["queued-run", { sessionId, sessionKey, taskId: "queued-task" }],
+          ]),
+        } as never,
+        requestedKey: sessionKey,
+        canonicalKey: sessionKey,
+        sessionId,
+        queueProjection: queueProjection({
+          waits: new Map([
+            [
+              "queued-task",
+              {
+                lane: "main",
+                since: 1_000,
+                queuedAhead: 0,
+                busySlots: 1,
+                capacity: 1,
+                revision: 2,
+                queuedAheadWorkIds: [],
+                activeWorkIds: ["embedded-run"],
+              },
+            ],
+          ]),
+        }),
+      }).runActivity,
+    ).toEqual({ state: "working" });
+  } finally {
+    clearActiveEmbeddedRun(sessionId, handle, sessionKey);
   }
 });
 

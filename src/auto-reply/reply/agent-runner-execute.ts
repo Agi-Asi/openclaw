@@ -499,6 +499,7 @@ export function createReplyAgentRestartRecoveryController(
     admissionRunId:
       normalizeOptionalString(sessionCtx.MessageSid) ??
       normalizeOptionalString(sessionCtx.MessageSidFull),
+    claimUserTurnForRestartRecovery: opts?.claimUserTurnForRestartRecovery === true,
     getEntry: () =>
       sessionKey
         ? (activeSessionStore?.[sessionKey] ?? getActiveSessionEntry())

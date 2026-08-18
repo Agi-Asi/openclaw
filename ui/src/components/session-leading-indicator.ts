@@ -3,6 +3,7 @@ import { t } from "../i18n/index.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import { icons } from "./icons.ts";
 import {
+  describeSessionRunActivity,
   renderSessionAttentionIcon,
   renderSessionState,
   renderSessionUnreadState,
@@ -94,7 +95,7 @@ export function describeSessionTrailingState(
   return [
     session.forkSource ? t("sessionsView.forkedSession") : "",
     pullRequestState === "none" ? "" : pullRequestStateLabel(pullRequestState),
-    session.hasActiveRun ? t("sessionsView.activeRun") : "",
+    describeSessionRunActivity(session) ?? "",
     session.unread ? t("sessionsView.unread") : "",
   ]
     .filter(Boolean)

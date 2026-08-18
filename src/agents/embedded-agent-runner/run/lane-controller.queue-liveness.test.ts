@@ -80,8 +80,8 @@ describe("queued embedded run context liveness", () => {
   test("preserves one queue wait start across the session and global lanes", async () => {
     const queuedAt = 1_000;
     const clock = vi.spyOn(Date, "now").mockReturnValue(queuedAt);
-    const workId = "nested-lane-work";
-    const { controller } = createRunController({ queueWorkId: workId });
+    const workId = "nested-lane-run";
+    const { controller } = createRunController({ runId: workId });
     setCommandLaneConcurrency(SESSION_LANE, 0);
     setCommandLaneConcurrency(GLOBAL_LANE, 0);
     const run = controller.enqueueSession(() =>

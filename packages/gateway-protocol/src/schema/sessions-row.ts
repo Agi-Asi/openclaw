@@ -30,6 +30,28 @@ export const SessionCreatedActorSchema = closedObject({
   avatarUrl: Type.Optional(NonEmptyString),
 });
 
+const SessionRunQueueWaitSchema = closedObject({
+  queuedAhead: Type.Integer({ minimum: 0 }),
+  busySlots: Type.Integer({ minimum: 0 }),
+  capacity: Type.Integer({ minimum: 0 }),
+  blockedBy: Type.Optional(
+    Type.Union([
+      Type.Literal("lane"),
+      Type.Literal("group-budget"),
+      Type.Literal("sibling-reservation"),
+    ]),
+  ),
+});
+
+const SessionRunActivitySchema = Type.Union([
+  closedObject({ state: Type.Literal("working") }),
+  closedObject({
+    state: Type.Literal("waiting"),
+    since: Type.Optional(Type.Integer({ minimum: 0 })),
+    queueWait: Type.Optional(SessionRunQueueWaitSchema),
+  }),
+]);
+
 /** Mutable responsibility for one session; actor display data is projected at read time. */
 export const SessionOwnerSchema = closedObject({
   actor: SessionCreatedActorSchema,
@@ -86,6 +108,7 @@ export const SessionRowSchema = Type.Object(
       ]),
     ),
     lastRunError: Type.Optional(Type.String()),
+    runActivity: Type.Optional(SessionRunActivitySchema),
     restartRecoveryStatus: Type.Optional(Type.Literal("tombstoned")),
     activeLeafEntryId: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
     spawnedBy: Type.Optional(Type.String()),

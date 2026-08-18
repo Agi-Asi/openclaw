@@ -41,6 +41,7 @@ import {
   type GatewayAgentTaskTrackingMode,
 } from "../server-methods/agent-task-tracking.js";
 import type { GatewayCronCreatorAuthorityAdmission } from "../server-methods/cron-creator-authority-admission.js";
+import { emitSessionsChanged } from "../server-methods/session-change-event.js";
 import { formatForLog } from "../ws-log.js";
 import { setGatewayDedupeEntries } from "./agent-dedupe.js";
 import type { AgentTurnContext, AgentTurnIo } from "./types.js";
@@ -236,49 +237,66 @@ export function dispatchAgentRunFromGateway(params: {
         params.cronCreatorAuthority.callerOrigin,
       )
     : undefined;
+  const activeOwnsSessionProjection =
+    Boolean(taskSessionKey) &&
+    active?.controller === params.abortController &&
+    active.sessionKey === taskSessionKey &&
+    active.controlUiVisible !== false &&
+    active.projectSessionActive !== false;
+  const publishSessionRunActivity = () => {
+    if (!activeOwnsSessionProjection || !taskSessionKey) {
+      return;
+    }
+    emitSessionsChanged(params.context, {
+      sessionKey: taskSessionKey,
+      ...(active?.agentId ? { agentId: active.agentId } : {}),
+      reason: "run-activity",
+    });
+  };
+  const onExecutionStarted = () => {
+    params.ingressOpts.onExecutionStarted?.();
+    if (queueTaskId && taskSessionKey && queueTaskRuntime && !taskStarted) {
+      taskStarted = true;
+      try {
+        const startedAt = Date.now();
+        if (queueTaskOwnedByCore) {
+          markTaskRunningById({
+            taskId: queueTaskId,
+            startedAt,
+            lastEventAt: startedAt,
+          });
+        } else {
+          startTaskRunByRunId({
+            runId: params.runId,
+            runtime: queueTaskRuntime,
+            sessionKey: taskSessionKey,
+            startedAt,
+            lastEventAt: startedAt,
+          });
+        }
+      } catch (err) {
+        params.context.logGateway.warn(
+          `failed to mark tracked agent task ${params.runId} running: ${formatForLog(err)}`,
+        );
+      }
+    }
+    publishSessionRunActivity();
+  };
+  const onQueueStateChange = () => {
+    params.ingressOpts.onQueueStateChange?.();
+    if (queueTaskId) {
+      publishTaskProjectionById(queueTaskId);
+    }
+    publishSessionRunActivity();
+  };
   const runAgent = () =>
     agentCommandFromGatewayIngress(
       {
         ...params.ingressOpts,
         ...(cronCreatorAuthorityCapability ? { cronCreatorAuthorityCapability } : {}),
-        ...(queueTaskId
-          ? {
-              queueWorkId: queueTaskId,
-              onExecutionStarted: () => {
-                params.ingressOpts.onExecutionStarted?.();
-                if (!taskSessionKey || !queueTaskRuntime || taskStarted) {
-                  return;
-                }
-                taskStarted = true;
-                try {
-                  const startedAt = Date.now();
-                  if (queueTaskOwnedByCore) {
-                    markTaskRunningById({
-                      taskId: queueTaskId,
-                      startedAt,
-                      lastEventAt: startedAt,
-                    });
-                  } else {
-                    startTaskRunByRunId({
-                      runId: params.runId,
-                      runtime: queueTaskRuntime,
-                      sessionKey: taskSessionKey,
-                      startedAt,
-                      lastEventAt: startedAt,
-                    });
-                  }
-                } catch (err) {
-                  params.context.logGateway.warn(
-                    `failed to mark tracked agent task ${params.runId} running: ${formatForLog(err)}`,
-                  );
-                }
-              },
-              onQueueStateChange: () => {
-                params.ingressOpts.onQueueStateChange?.();
-                publishTaskProjectionById(queueTaskId);
-              },
-            }
-          : {}),
+        queueWorkId: queueTaskId ?? params.runId,
+        onExecutionStarted,
+        onQueueStateChange,
       },
       defaultRuntime,
       params.context.deps,

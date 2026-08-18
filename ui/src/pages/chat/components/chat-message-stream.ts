@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import type { GatewaySessionRow } from "../../../api/types.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
 import { icons } from "../../../components/icons.ts";
 import { t } from "../../../i18n/index.ts";
@@ -46,6 +47,7 @@ export type StreamGroupOptions = StreamMessageOptions & {
   showAssistantAvatar?: boolean;
   startupPhase?: ChatRunStartupPhase;
   waitingApproval?: boolean;
+  runActivity?: GatewaySessionRow["runActivity"];
   runOutputTokens?: number | null;
   questionPrompts?: ReadonlyMap<string, QuestionPrompt>;
 };
@@ -66,6 +68,7 @@ export function renderStreamGroupParts(
   return parts.map((part) =>
     part.kind === "reading-indicator"
       ? renderChatWorkingIndicator(part, {
+          runActivity: opts.runActivity,
           waitingApproval: opts.waitingApproval === true,
           startupPhase: opts.startupPhase,
           outputTokens: opts.runOutputTokens,

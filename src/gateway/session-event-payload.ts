@@ -36,6 +36,7 @@ export function buildGatewaySessionEventFields(params: {
   parentSessionKey?: string;
   hasActiveRun?: boolean;
   activeRunIds?: string[];
+  runActivity?: GatewaySessionRow["runActivity"];
 }): Record<string, unknown> {
   const { sessionRow } = params;
   const omitUnscopedGlobalGoal = sessionRow.key === "global" && !params.agentId;
@@ -123,6 +124,8 @@ export function buildGatewaySessionEventFields(params: {
     hasAutomation: sessionRow.hasAutomation ?? false,
     ...(params.hasActiveRun === undefined ? {} : { hasActiveRun: params.hasActiveRun }),
     ...(params.activeRunIds === undefined ? {} : { activeRunIds: params.activeRunIds }),
+    // Explicit null clears a prior live activity state during merge-reconcile.
+    runActivity: params.runActivity ?? null,
     startedAt: sessionRow.startedAt,
     endedAt: sessionRow.endedAt,
     runtimeMs: sessionRow.runtimeMs,

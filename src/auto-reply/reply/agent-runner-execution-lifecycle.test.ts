@@ -122,6 +122,23 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
     expect(embeddedCall.abortSignal).toBe(replyOperation.abortSignal);
   });
 
+  it("forwards command-queue state changes from embedded session turns", async () => {
+    const onQueueStateChange = vi.fn();
+    state.runEmbeddedAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      params.onQueueStateChange?.();
+      return { payloads: [{ text: "ok" }], meta: {} };
+    });
+
+    const executeAgentTurn = await getExecuteAgentTurnForTest();
+    await executeAgentTurn({
+      ...createMinimalRunAgentTurnParams({
+        opts: { onQueueStateChange } satisfies GetReplyOptions,
+      }),
+    });
+
+    expect(onQueueStateChange).toHaveBeenCalledOnce();
+  });
+
   it("records diagnostic progress from global-lane wait notifications", async () => {
     const replyOperation = createReplyOperation({
       sessionKey: "agent:main:global-lane-progress",

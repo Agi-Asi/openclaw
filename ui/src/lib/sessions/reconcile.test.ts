@@ -227,6 +227,49 @@ test("sessions.changed applies reassignment and invalidates the complete owner f
 });
 
 describe("reconcileSessionChanged", () => {
+  it("reconciles session activity from waiting through working to terminal", () => {
+    const key = "agent:main:queued";
+    const waiting = buildResult([
+      {
+        key,
+        kind: "direct",
+        updatedAt: 1,
+        sessionId: "s1",
+        hasActiveRun: true,
+        status: "running",
+        runActivity: {
+          state: "waiting",
+          since: 1_000,
+          queueWait: { queuedAhead: 1, busySlots: 2, capacity: 2 },
+        },
+      },
+    ]);
+
+    const working = reconcileSessionChanged(waiting, {
+      sessionKey: key,
+      key,
+      kind: "direct",
+      updatedAt: 2,
+      sessionId: "s1",
+      hasActiveRun: true,
+      status: "running",
+      runActivity: { state: "working" },
+    });
+    expect(working.row?.runActivity).toEqual({ state: "working" });
+
+    const terminal = reconcileSessionChanged(working.result, {
+      sessionKey: key,
+      key,
+      kind: "direct",
+      updatedAt: 3,
+      sessionId: "s1",
+      hasActiveRun: false,
+      status: "done",
+      runActivity: null,
+    });
+    expect(terminal.row?.runActivity).toBeUndefined();
+  });
+
   it("drops a cleared category from the merged row", () => {
     const key = "agent:main:discord:channel:1";
     const result = buildResult([

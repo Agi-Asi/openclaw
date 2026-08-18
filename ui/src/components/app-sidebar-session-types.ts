@@ -8,7 +8,7 @@ import type {
 } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { SessionAgentAttentionIconId } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
-import type { SessionRunStatus } from "../api/types.ts";
+import type { GatewaySessionRow, SessionRunStatus } from "../api/types.ts";
 import type { RouteId } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context.ts";
 import type { BoardFace } from "../lib/board/settings.ts";
@@ -82,6 +82,7 @@ export type SidebarRecentSession = {
   /** Raw Gateway liveness used for operations even when display status is terminal. */
   gatewayHasActiveRun?: boolean;
   activeRunIds?: readonly string[];
+  runActivity?: GatewaySessionRow["runActivity"];
   modelSelectionLocked: boolean;
   kind?: string;
   pinned: boolean;

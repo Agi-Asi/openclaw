@@ -106,7 +106,7 @@ export function createEmbeddedRunLaneController<TParams extends LaneParams>(opti
         : undefined;
     return {
       ...opts,
-      ...(params.queueWorkId ? { workId: params.queueWorkId } : {}),
+      workId: params.queueWorkId ?? params.runId,
       queueWaitStartedAt,
       ...(onWait ? { onWait } : {}),
       ...(onQueueStateChange ? { onQueueStateChange } : {}),

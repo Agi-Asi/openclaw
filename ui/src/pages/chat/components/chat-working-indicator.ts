@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import type { GatewaySessionRow } from "../../../api/types.ts";
 import "../../../components/elapsed-time.ts";
 import type { ApplicationCloudStartupStatus } from "../../../app/cloud-session-startup.ts";
 import "../../../components/working-phrase.ts";
@@ -6,6 +7,7 @@ import { icons } from "../../../components/icons.ts";
 import { i18n, t } from "../../../i18n/index.ts";
 import type { ChatItem } from "../../../lib/chat/chat-types.ts";
 import { formatCompactTokenCount } from "../../../lib/format.ts";
+import { describeSessionRunActivity } from "../../../lib/sessions/run-activity.ts";
 import type { TurnRecap } from "../chat-progress.ts";
 import type { ChatRunStartupPhase } from "../chat-run-startup.ts";
 import { selectWorkingClawSurprise } from "./chat-working-indicator-surprise.ts";
@@ -119,6 +121,7 @@ function renderLiveOutputTokens(outputTokens: number | null | undefined) {
 export function renderChatWorkingIndicator(
   part: Extract<ChatItem, { kind: "reading-indicator" }>,
   options: {
+    runActivity?: GatewaySessionRow["runActivity"];
     waitingApproval?: boolean;
     startupPhase?: ChatRunStartupPhase;
     outputTokens?: number | null;
@@ -126,6 +129,9 @@ export function renderChatWorkingIndicator(
   } = {},
 ) {
   const waitingApproval = options.waitingApproval === true;
+  const waitingActivity =
+    !waitingApproval && options.runActivity?.state === "waiting" ? options.runActivity : undefined;
+  const waitingToRun = waitingActivity !== undefined;
   const continuation = options.presentation === "continuation";
   // Streaming tokens are the real liveness signal; the whimsical phrase only
   // covers the stretch before any usage data exists.
@@ -140,44 +146,60 @@ export function renderChatWorkingIndicator(
     >
       ${continuation
         ? nothing
-        : html`
-            <div
-              class="chat-bubble chat-reading-indicator ${selectWorkingClawSurprise(part.key, {
-                eligible: !waitingApproval,
-              })}"
-              aria-hidden="true"
-            >
-              ${icons.claw}
-            </div>
-          `}
+        : waitingToRun
+          ? html`
+              <div class="chat-bubble chat-waiting-indicator" aria-hidden="true">
+                <span class="chat-waiting-indicator__hourglass" aria-hidden="true"
+                  >${icons.hourglass}</span
+                >
+              </div>
+            `
+          : html`
+              <div
+                class="chat-bubble chat-reading-indicator ${selectWorkingClawSurprise(part.key, {
+                  eligible: !waitingApproval,
+                })}"
+                aria-hidden="true"
+              >
+                ${icons.claw}
+              </div>
+            `}
       <span class="chat-working-indicator__status">
         ${waitingApproval
           ? html`<span>${t("chat.waitingForApproval")}</span>`
-          : options.startupPhase
+          : waitingToRun
             ? html`
-                <span>${startupStatusLabel(options.startupPhase)}</span>
+                <span>${describeSessionRunActivity(options.runActivity)}</span>
                 <openclaw-elapsed-time
                   class="chat-working-indicator__elapsed"
-                  .startMs=${part.startedAt}
+                  .startMs=${waitingActivity?.since ?? part.startedAt}
                 ></openclaw-elapsed-time>
-                ${renderLiveOutputTokens(options.outputTokens)}
               `
-            : html`
-                <span class=${continuation ? "" : "sr-only"}>${t("common.working")}</span>
-                <openclaw-elapsed-time
-                  class="chat-working-indicator__elapsed"
-                  .startMs=${part.startedAt}
-                ></openclaw-elapsed-time>
-                ${hasTokens
-                  ? renderLiveOutputTokens(options.outputTokens)
-                  : html`
-                      <openclaw-working-phrase
-                        aria-hidden="true"
-                        .startMs=${part.startedAt}
-                        .seed=${part.key}
-                      ></openclaw-working-phrase>
-                    `}
-              `}
+            : options.startupPhase
+              ? html`
+                  <span>${startupStatusLabel(options.startupPhase)}</span>
+                  <openclaw-elapsed-time
+                    class="chat-working-indicator__elapsed"
+                    .startMs=${part.startedAt}
+                  ></openclaw-elapsed-time>
+                  ${renderLiveOutputTokens(options.outputTokens)}
+                `
+              : html`
+                  <span class=${continuation ? "" : "sr-only"}>${t("common.working")}</span>
+                  <openclaw-elapsed-time
+                    class="chat-working-indicator__elapsed"
+                    .startMs=${part.startedAt}
+                  ></openclaw-elapsed-time>
+                  ${hasTokens
+                    ? renderLiveOutputTokens(options.outputTokens)
+                    : html`
+                        <openclaw-working-phrase
+                          aria-hidden="true"
+                          .startMs=${part.startedAt}
+                          .seed=${part.key}
+                        ></openclaw-working-phrase>
+                      `}
+                `}
       </span>
     </div>
   `;

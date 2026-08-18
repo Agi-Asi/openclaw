@@ -43,6 +43,71 @@ function createTestAdmission(params: {
 }
 
 describe("createReplyRestartRecoveryClaimController", () => {
+  it("atomically claims a Control UI user turn before the agent can be interrupted", async () => {
+    const root = tempDirs.make("openclaw-reply-control-ui-claim-");
+    const storePath = path.join(root, "sessions.json");
+    const sessionKey = "agent:main:main";
+    const sessionId = "session";
+    const runId = "control-ui-run";
+    let restartAborted = false;
+    let entry: InternalSessionEntry = {
+      sessionId,
+      status: "done",
+      updatedAt: 1,
+    };
+    await replaceSessionEntry({ storePath, sessionKey }, entry);
+    const recorder = createUserTurnTranscriptRecorder({
+      input: {
+        text: "keep this accepted turn recoverable",
+        idempotencyKey: `${runId}:user`,
+      },
+      target: {
+        agentId: "main",
+        sessionEntry: entry,
+        sessionId,
+        sessionKey,
+        storePath,
+      },
+    });
+    const controller = createReplyRestartRecoveryClaimController({
+      admissionRunId: runId,
+      claimUserTurnForRestartRecovery: true,
+      getEntry: () => entry,
+      getSessionId: () => sessionId,
+      isRestartAbort: () => restartAborted,
+      resolveDeliveryContext: () => undefined,
+      resolveUserTurnTarget: (target) => ({
+        ...target,
+        sessionEntry: target.entry,
+        agentId: "main",
+      }),
+      sessionKey,
+      setEntry: (next) => {
+        entry = next;
+      },
+      storePath,
+    });
+
+    await expect(controller.admitUserTurn(recorder)).resolves.toBe("admitted");
+
+    expect(loadSessionEntry({ storePath, sessionKey })).toMatchObject({
+      abortedLastRun: false,
+      lifecycleRunId: runId,
+      restartRecoveryDeliveryRunId: runId,
+      restartRecoveryDeliverySourceRunId: runId,
+      restartRecoverySourceIngress: "control-ui",
+      sessionId,
+      status: "running",
+    });
+    restartAborted = true;
+    await controller.clear();
+    expect(loadSessionEntry({ storePath, sessionKey })).toMatchObject({
+      lifecycleRunId: runId,
+      restartRecoveryDeliveryRunId: runId,
+      status: "running",
+    });
+  });
+
   it.each([
     { receiptState: undefined, expectedStatus: "done" },
     { receiptState: "terminal-pending" as const, expectedStatus: "failed" },

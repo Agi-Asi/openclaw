@@ -12,6 +12,7 @@ import {
   resolveTranscriptSessionKeyBySessionId,
 } from "../config/sessions/session-accessor.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../config/sessions/session-store-owner.js";
+import { getCommandQueueWorkProjection } from "../process/command-queue.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import type { SessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import type { InternalSessionTranscriptUpdate } from "../sessions/transcript-events.js";
@@ -106,6 +107,7 @@ function buildGatewaySessionSnapshot(params: {
   parentSessionKey?: string;
   hasActiveRun?: boolean;
   activeRunIds?: string[];
+  runActivity?: GatewaySessionRow["runActivity"];
 }): Record<string, unknown> {
   const { sessionRow } = params;
   if (!sessionRow) {
@@ -130,8 +132,11 @@ function buildGatewaySessionSnapshot(params: {
   if (session && params.activeRunIds !== undefined) {
     session.activeRunIds = params.activeRunIds;
   }
+  const sessionWithActivity = session
+    ? { ...session, runActivity: params.runActivity ?? null }
+    : undefined;
   return {
-    ...(session ? { session } : {}),
+    ...(sessionWithActivity ? { session: sessionWithActivity } : {}),
     ...buildGatewaySessionEventFields({
       sessionRow,
       agentId: params.agentId,
@@ -140,6 +145,7 @@ function buildGatewaySessionSnapshot(params: {
       parentSessionKey: params.parentSessionKey,
       hasActiveRun: params.hasActiveRun,
       activeRunIds: params.activeRunIds,
+      runActivity: params.runActivity,
     }),
     subagentRunState: sessionRow.subagentRunState,
     hasActiveSubagentRun: sessionRow.hasActiveSubagentRun,
@@ -354,6 +360,7 @@ async function handleTranscriptUpdateBroadcast(
           sessionId: sessionRow.sessionId,
           ...(routingAgentId ? { agentId: routingAgentId } : {}),
           defaultAgentId: stableUnscopedOwner,
+          queueProjection: getCommandQueueWorkProjection(),
         })
       : null;
   const sessionSnapshot = buildGatewaySessionSnapshot({
@@ -362,6 +369,7 @@ async function handleTranscriptUpdateBroadcast(
     includeSession: true,
     hasActiveRun: activeRunState?.active,
     activeRunIds: activeRunState?.runIds,
+    runActivity: activeRunState?.runActivity,
   });
   if (update.message === undefined) {
     // A committed batch without individually proven cursors must invalidate
@@ -465,6 +473,7 @@ export function createLifecycleEventBroadcastHandler(params: {
             sessionId: sessionRow.sessionId,
             ...(rowAgentId ? { agentId: rowAgentId } : {}),
             defaultAgentId: stableOwnerAgentId,
+            queueProjection: getCommandQueueWorkProjection(),
           })
         : null;
     params.broadcastToConnIds(
@@ -484,6 +493,7 @@ export function createLifecycleEventBroadcastHandler(params: {
           parentSessionKey: event.parentSessionKey,
           hasActiveRun: activeRunState?.active,
           activeRunIds: activeRunState?.runIds,
+          runActivity: activeRunState?.runActivity,
         }),
         ...(swarmEvent.swarmGroupId
           ? {

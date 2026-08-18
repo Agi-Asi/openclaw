@@ -281,6 +281,7 @@ export async function runEmbeddedFallbackCandidate(params: {
             params.onLifecycleGeneration(info.lifecycleGeneration);
           }
         },
+        onQueueStateChange: turn.opts?.onQueueStateChange,
         onExecutionPhase: params.signalExecutionPhaseForTyping,
         onLaneWait: ({ waiting }) => {
           const replyOperation = turn.replyOperation;

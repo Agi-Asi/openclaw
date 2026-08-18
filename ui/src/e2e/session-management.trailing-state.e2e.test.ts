@@ -3,6 +3,7 @@ import { CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT } from "../../../src/gat
 import { SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD } from "../lib/session-pull-requests.ts";
 import {
   actionOpacity,
+  captureUiProof,
   createSessionManagementE2eSuite,
   installMockGateway,
   requireRecord,
@@ -13,6 +14,111 @@ import {
 const suite = createSessionManagementE2eSuite();
 
 suite.define(() => {
+  it("distinguishes waiting from working sessions across desktop and touch sidebars", async () => {
+    for (const scenario of [
+      { hasTouch: false, viewport: { height: 900, width: 1280 } },
+      { hasTouch: true, viewport: { height: 844, width: 390 } },
+    ]) {
+      const context = await suite.browser.newContext({
+        hasTouch: scenario.hasTouch,
+        locale: "en-US",
+        serviceWorkers: "block",
+        viewport: scenario.viewport,
+      });
+      const page = await context.newPage();
+      await installMockGateway(page, {
+        methodResponses: {
+          "sessions.list": sessionsListResponse([
+            sessionRow("agent:main:main", "Main", Date.now()),
+            sessionRow("agent:main:waiting", "Queued session", Date.now() - 1, {
+              hasActiveRun: true,
+              runActivity: {
+                state: "waiting",
+                queueWait: { queuedAhead: 2, busySlots: 3, capacity: 4 },
+              },
+              status: "running",
+            }),
+            sessionRow("agent:main:working", "Working session", Date.now() - 2, {
+              hasActiveRun: true,
+              runActivity: { state: "working" },
+              status: "running",
+            }),
+          ]),
+        },
+        sessionKey: "agent:main:main",
+      });
+
+      try {
+        await page.goto(`${suite.server.baseUrl}chat`);
+        if (scenario.hasTouch) {
+          await page
+            .locator(".topbar-nav-toggle:visible, .chat-pane__nav-toggle:visible")
+            .first()
+            .click();
+        }
+
+        const waitingRow = page.locator('[data-session-key="agent:main:waiting"]:visible');
+        const workingRow = page.locator('[data-session-key="agent:main:working"]:visible');
+        await waitingRow.waitFor({ state: "visible", timeout: 10_000 });
+        await workingRow.waitFor({ state: "visible", timeout: 10_000 });
+
+        const waitingState = waitingRow.locator(".session-row-state");
+        const workingState = workingRow.locator(".session-row-state");
+        await expect
+          .poll(() => waitingState.locator(".session-waiting-indicator").isVisible())
+          .toBe(true);
+        await expect.poll(() => waitingState.locator(".session-run-spinner").count()).toBe(0);
+        await expect
+          .poll(() => workingState.locator(".session-run-spinner").isVisible())
+          .toBe(true);
+        await expect.poll(() => workingState.locator(".session-waiting-indicator").count()).toBe(0);
+        await expect
+          .poll(() => waitingState.getAttribute("aria-label"))
+          .toBe("Waiting to run · 2 ahead · 3 of 4 slots busy");
+        const waitingIcon = waitingState.locator(".session-waiting-indicator");
+        expect(
+          await waitingIcon.evaluate(
+            (element) => getComputedStyle(element, "::after").animationName,
+          ),
+        ).toBe("session-waiting-sand-fall");
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        expect(
+          await waitingIcon.evaluate(
+            (element) => getComputedStyle(element, "::after").animationName,
+          ),
+        ).toBe("none");
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        await captureUiProof(
+          page,
+          `sidebar-session-run-activity-${scenario.hasTouch ? "mobile" : "desktop"}.png`,
+        );
+
+        const waitingPin = waitingRow.getByRole("button", { name: "Pin session" });
+        const waitingMenu = waitingRow.getByRole("button", { name: "Open session menu" });
+        if (scenario.hasTouch) {
+          await expect.poll(() => actionOpacity(waitingState)).toBe("1");
+          await expect.poll(() => actionOpacity(waitingPin)).toBe("1");
+          await expect.poll(() => actionOpacity(waitingMenu)).toBe("1");
+          const [stateBounds, pinBounds] = await Promise.all([
+            waitingState.boundingBox(),
+            waitingPin.boundingBox(),
+          ]);
+          if (!stateBounds || !pinBounds) {
+            throw new Error("Expected visible touch waiting state and action geometry");
+          }
+          expect(stateBounds.x + stateBounds.width).toBeLessThanOrEqual(pinBounds.x);
+        } else {
+          await waitingRow.hover();
+          await expect.poll(() => actionOpacity(waitingState)).toBe("0");
+          await expect.poll(() => actionOpacity(waitingPin)).toBe("1");
+          await expect.poll(() => actionOpacity(waitingMenu)).toBe("1");
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
   it("keeps action-only text widest at rest and swaps active state for actions", async () => {
     const context = await suite.browser.newContext({
       locale: "en-US",

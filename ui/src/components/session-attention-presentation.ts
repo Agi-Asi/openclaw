@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
+import { describeSessionRunActivity as describeRunActivity } from "../lib/sessions/run-activity.ts";
 import type { SidebarRecentSession, SidebarSessionAttention } from "./app-sidebar-session-types.ts";
 import { icons } from "./icons.ts";
 import { resolveSessionAttentionIcon } from "./session-attention-icon-registry.ts";
@@ -60,8 +61,27 @@ export function renderSessionRunSpinner(showTitle = true) {
   ></span>`;
 }
 
+export function describeSessionRunActivity(session: SidebarRecentSession): string | undefined {
+  return describeRunActivity(session.runActivity, session.hasActiveRun);
+}
+
+function renderSessionWaitingState(session: SidebarRecentSession, showTitle: boolean) {
+  const label = describeSessionRunActivity(session);
+  return html`<span
+    class="session-waiting-indicator sidebar-recent-session__state"
+    data-session-run-activity="waiting"
+    role="img"
+    aria-label=${label}
+    title=${showTitle ? label : nothing}
+    >${icons.hourglass}</span
+  >`;
+}
+
 export function renderSessionState(session: SidebarRecentSession, showTitle = true) {
-  if (session.hasActiveRun) {
+  if (session.runActivity?.state === "waiting") {
+    return renderSessionWaitingState(session, showTitle);
+  }
+  if (session.runActivity?.state === "working" || session.hasActiveRun) {
     return renderSessionRunSpinner(showTitle);
   }
   if (!session.isChild) {

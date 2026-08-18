@@ -21,6 +21,8 @@ import {
   measureDiagnosticsTimelineSpanSync,
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
+import { getCommandQueueWorkProjection } from "../../process/command-queue.js";
 import { normalizeAgentId, scopeLegacySessionKeyToAgent } from "../../routing/session-key.js";
 import {
   boundInFlightRunSnapshotForChatHistory,
@@ -477,9 +479,11 @@ async function handleChatHistoryRequest({
     sessionId: entry?.sessionId,
     ...(activeRunAgentId ? { agentId: activeRunAgentId } : {}),
     defaultAgentId: compatibilityOwnerAgentId,
+    queueProjection: getCommandQueueWorkProjection(),
   });
   sessionInfo.hasActiveRun = activeRunState.active;
   sessionInfo.activeRunIds = activeRunState.runIds;
+  sessionInfo.runActivity = activeRunState.runActivity;
   // Clients merge this row into the same store sessions.list fills, so it must
   // carry the placement facts that projection adds; without them the merge
   // erases a live worker placement and its move intent.

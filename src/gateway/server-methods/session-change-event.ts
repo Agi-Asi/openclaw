@@ -1,3 +1,4 @@
+import { getCommandQueueWorkProjection } from "../../process/command-queue.js";
 // Shared sessions.changed broadcaster for gateway RPC and chat-command mutations.
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { hasSessionChangeReceivers } from "../session-change-receivers.js";
@@ -83,6 +84,7 @@ function broadcastSessionsChanged(
           sessionId: sessionRow.sessionId,
           agentId: rowAgentId,
           defaultAgentId: unscopedOwnerAgentId,
+          queueProjection: getCommandQueueWorkProjection(),
         })
       : null;
   context.broadcastToConnIds(
@@ -98,6 +100,7 @@ function broadcastSessionsChanged(
               agentId: effectiveAgentId,
               hasActiveRun: activeRunState?.active,
               activeRunIds: activeRunState?.runIds,
+              runActivity: activeRunState?.runActivity,
             }),
             effectiveFastMode: sessionRow.effectiveFastMode,
             effectiveFastModeSource: sessionRow.effectiveFastModeSource,

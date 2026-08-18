@@ -35,6 +35,7 @@ import { installTemporaryCurrentPluginMetadataSnapshot } from "../plugins/curren
 import { resolveInstalledPluginIndexPolicyHash } from "../plugins/installed-plugin-index-policy.js";
 import { rebasePluginMetadataSnapshotManifestRegistry } from "../plugins/plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
+import { enqueueCommandInLane, setCommandLaneConcurrency } from "../process/command-queue.js";
 import {
   isSessionWorkAdmissionActive,
   runExclusiveSessionLifecycleMutation,
@@ -3071,6 +3072,61 @@ describe("gateway server chat", () => {
     }
   });
 
+  test("chat.send publishes queued embedded-run activity to session subscribers", async () => {
+    const runId = "idem-chat-send-queue-activity";
+    const lane = "chat-send-queue-activity";
+    const dispatchRelease = createDeferred();
+    const queued = (() => {
+      setCommandLaneConcurrency(lane, 0);
+      return enqueueCommandInLane(lane, async () => undefined, { workId: runId });
+    })();
+    const context = createDirectChatContext({
+      getSessionEventSubscriberConnIds: () => new Set(["conn-session-list"]),
+    });
+    openDirectChatSession();
+    try {
+      await writeStoredMainSession(makeDoneSessionEntry());
+      let replyOptions: GetReplyOptions | undefined;
+      dispatchInboundMessageMock.mockImplementationOnce(async (args) => {
+        replyOptions = (args as { replyOptions?: GetReplyOptions }).replyOptions;
+        return dispatchRelease.promise;
+      });
+      await sendControlUiChat({
+        context,
+        idempotencyKey: runId,
+        message: "wait behind another session",
+        respond: vi.fn(),
+      });
+      await waitForFast(() => expect(replyOptions?.onQueueStateChange).toBeTypeOf("function"));
+      replyOptions?.onQueueStateChange?.();
+
+      expect(context.broadcastToConnIds).toHaveBeenCalledWith(
+        "sessions.changed",
+        expect.objectContaining({
+          sessionKey: "agent:main:main",
+          runActivity: {
+            state: "waiting",
+            queueWait: {
+              queuedAhead: 0,
+              busySlots: 0,
+              capacity: 0,
+              blockedBy: "lane",
+            },
+            since: expect.any(Number),
+          },
+        }),
+        new Set(["conn-session-list"]),
+        expect.objectContaining({ dropIfSlow: true }),
+      );
+    } finally {
+      setCommandLaneConcurrency(lane, 1);
+      await queued;
+      dispatchRelease.resolve(undefined);
+      await waitForFast(() => expect(context.removeChatRun).toHaveBeenCalledTimes(1));
+      resetDirectChatSession();
+    }
+  });
+
   test("chat.send persists optional connection identity per turn", async () => {
     openDirectChatSession();
     try {
@@ -4008,7 +4064,10 @@ describe("gateway server chat", () => {
         }),
       );
       const context = createDirectChatContext();
-      dispatchInboundMessageMock.mockResolvedValueOnce(undefined);
+      let replyOptions: GetReplyOptions | undefined;
+      dispatchInboundMessageMock.mockImplementationOnce(async (args) => {
+        replyOptions = (args as { replyOptions?: GetReplyOptions }).replyOptions;
+      });
       const ackSnapshot: { entry: ReturnType<typeof loadSessionEntry> } = { entry: undefined };
 
       await sendControlUiChat({
@@ -4027,6 +4086,8 @@ describe("gateway server chat", () => {
         status: "done",
       });
       expect(ackSnapshot.entry?.restartRecoveryDeliveryRunId).toBeUndefined();
+      await waitForFast(() => expect(replyOptions).toBeDefined(), FAST_WAIT_OPTS);
+      expect(replyOptions?.claimUserTurnForRestartRecovery).toBe(true);
       await waitForFast(
         () => expect(context.removeChatRun).toHaveBeenCalledTimes(1),
         FAST_WAIT_OPTS,

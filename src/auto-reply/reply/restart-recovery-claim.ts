@@ -107,6 +107,7 @@ function buildExpectedSessionState(entry: SessionEntry): SessionTranscriptTurnEx
 
 export function createReplyRestartRecoveryClaimController(params: {
   admissionRunId?: unknown;
+  claimUserTurnForRestartRecovery?: boolean;
   getEntry: () => SessionEntry | undefined;
   getSessionId: () => string;
   isRestartAbort: () => boolean;
@@ -279,6 +280,47 @@ export function createReplyRestartRecoveryClaimController(params: {
       if (!recorder || persistedSourceTurnId !== sourceTurnId) {
         throw new Error("channel restart recovery requires source-keyed user-turn admission");
       }
+    }
+    if (
+      params.claimUserTurnForRestartRecovery &&
+      admissionRunId &&
+      !recoverableDeliveryContext &&
+      !activeClaimRunId
+    ) {
+      const updatedAt = Date.now();
+      const persisted = await persistAdmissionPatch({
+        entry,
+        patch: {
+          abortedLastRun: false,
+          endedAt: undefined,
+          lifecycleRunId: admissionRunId,
+          restartRecoveryBeforeAgentReplyState: undefined,
+          restartRecoveryDeliveryReceiptState: undefined,
+          restartRecoveryDeliveryToolCallId: undefined,
+          restartRecoveryDeliveryContext: undefined,
+          restartRecoveryDeliveryRequestFingerprint: undefined,
+          restartRecoveryDeliveryRunId: admissionRunId,
+          restartRecoveryDeliverySourceRunId: admissionRunId,
+          restartRecoveryRequesterAccountId: undefined,
+          restartRecoveryRequesterSenderId: undefined,
+          restartRecoverySameChannelThreadRequired: undefined,
+          restartRecoverySourceIngress: "control-ui",
+          restartRecoverySourceReplyDeliveryMode: undefined,
+          runtimeMs: undefined,
+          startedAt: updatedAt,
+          status: "running",
+          updatedAt,
+        },
+        recorder,
+        sessionId,
+        sessionKey: params.sessionKey,
+        storePath: params.storePath,
+      });
+      params.setEntry(persisted);
+      recoveryRunId = admissionRunId;
+      recoverySourceRunId = admissionRunId;
+      tracked = true;
+      return "admitted";
     }
     if (!recoverableDeliveryContext && !activeClaimRunId) {
       // Source-less scheduled/ambient runs may execute, but cannot own a

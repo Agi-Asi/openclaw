@@ -278,6 +278,111 @@ async function assertSteeredRecoveryOrder(
 }
 
 suite.define(() => {
+  it("restores canonical queue wait and durable failure state in the open chat", async () => {
+    const waitingRunId = "run-waiting-reload";
+    const waitingPrompt = "Wait for a free execution slot.";
+    const startedAt = Date.now() - 2 * 60_000;
+    const waitingSession = {
+      activeRunIds: [waitingRunId],
+      hasActiveRun: true,
+      key: "main",
+      kind: "direct",
+      runActivity: {
+        state: "waiting",
+        since: startedAt,
+        queueWait: { busySlots: 4, capacity: 4, queuedAhead: 2 },
+      },
+      status: "running",
+      updatedAt: startedAt,
+    };
+    const { context, page, gateway } = await openActiveTurn({
+      historyMessages: [
+        {
+          __openclaw: { idempotencyKey: `${waitingRunId}:user` },
+          content: [{ text: waitingPrompt, type: "text" }],
+          role: "user",
+          timestamp: startedAt,
+        },
+      ],
+      inFlightRun: { runId: waitingRunId, startedAt },
+      methodResponses: {
+        "sessions.list": {
+          count: 1,
+          defaults: { contextTokens: null, model: "gpt-5.5", modelProvider: "openai" },
+          path: "",
+          sessions: [waitingSession],
+          ts: startedAt,
+        },
+      },
+      sessionInfo: waitingSession,
+    });
+    try {
+      const waiting = page.locator(".chat-waiting-indicator");
+      await expect(waiting).toHaveCount(1, { timeout: 10_000 });
+      await expect(page.getByText("Waiting to run · 2 ahead · 4 of 4 slots busy")).toHaveCount(1);
+      await expect(page.locator(".chat-reading-indicator")).toHaveCount(0);
+      await expect(waiting).toHaveAttribute("aria-hidden", "true");
+      await expect(page.locator(".chat-working-indicator[role='status']")).toContainText(
+        "Waiting to run · 2 ahead · 4 of 4 slots busy",
+      );
+      const sand = waiting.locator(".chat-waiting-indicator__hourglass");
+      expect(
+        await sand.evaluate((element) => getComputedStyle(element, "::after").animationName),
+      ).toBe("session-waiting-sand-fall");
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(
+        await sand.evaluate((element) => getComputedStyle(element, "::after").animationName),
+      ).toBe("none");
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await capture(page, "09-waiting-chat");
+
+      await gateway.setMethodResponse("chat.startup", {
+        messages: [
+          {
+            content: [{ text: waitingPrompt, type: "text" }],
+            role: "user",
+            timestamp: startedAt,
+          },
+        ],
+        sessionId: "active-turn-recovery-session",
+        sessionInfo: {
+          activeRunIds: [],
+          hasActiveRun: false,
+          key: "main",
+          kind: "direct",
+          lastRunError: "LLM request timed out.",
+          status: "failed",
+          updatedAt: startedAt + 1_000,
+        },
+        thinkingLevel: null,
+      });
+      await gateway.setMethodResponse("sessions.list", {
+        count: 1,
+        defaults: { contextTokens: null, model: "gpt-5.5", modelProvider: "openai" },
+        path: "",
+        sessions: [
+          {
+            activeRunIds: [],
+            hasActiveRun: false,
+            key: "main",
+            kind: "direct",
+            lastRunError: "LLM request timed out.",
+            status: "failed",
+            updatedAt: startedAt + 1_000,
+          },
+        ],
+        ts: startedAt + 1_000,
+      });
+
+      await page.reload();
+      await expect(page.locator(".chat-run-error")).toContainText("LLM request timed out.");
+      await expect(page.locator(".chat-working-indicator")).toHaveCount(0);
+      await capture(page, "10-durable-failure-chat");
+    } finally {
+      await suite.closeBrowserContext(context);
+    }
+  });
+
   it("restores the active assistant and tool across SPA navigation", async () => {
     const { context, page, gateway } = await openActiveTurn();
     try {

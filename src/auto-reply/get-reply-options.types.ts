@@ -128,6 +128,8 @@ export type GetReplyOptions = {
     runId: string,
     executionIdentityToken?: ExecutionIdentityAdmissionToken,
   ) => void;
+  /** Notifies Gateway projections when this run's execution-lane state changes. */
+  onQueueStateChange?: () => void;
   /**
    * Canonical adoption lifecycle (adopted / deferred / abandoned / settled + pre-adoption abort).
    */
@@ -138,6 +140,8 @@ export type GetReplyOptions = {
   messageInjectionAttempted?: true;
   /** Current user turn is already durable; replay it without appending another copy. */
   suppressNextUserMessagePersistence?: boolean;
+  /** Atomically claim a Control UI user turn when the reply runner persists it. */
+  claimUserTurnForRestartRecovery?: true;
   onReplyStart?: () => Promise<void> | void;
   /** Called when the typing controller cleans up (e.g., run ended with NO_REPLY). */
   onTypingCleanup?: () => void;

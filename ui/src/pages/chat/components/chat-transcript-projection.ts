@@ -353,6 +353,7 @@ export function projectChatTranscript(
   const streamGroupOptions = {
     ...sharedMessageRenderOptions,
     assistant: assistantIdentity,
+    runActivity: props.runActivity,
   } satisfies StreamGroupOptions;
   const renderGroupOptions = (item: MessageGroup) => {
     const lastMessage = item.messages.at(-1)?.message;
@@ -623,6 +624,11 @@ export function projectChatTranscript(
     props.showToolCalls,
     Boolean(props.runActive),
     Boolean(props.runWorking),
+    props.runActivity?.state,
+    props.runActivity?.state === "waiting" ? props.runActivity.since : undefined,
+    props.runActivity?.state === "waiting" ? props.runActivity.queueWait?.queuedAhead : undefined,
+    props.runActivity?.state === "waiting" ? props.runActivity.queueWait?.busySlots : undefined,
+    props.runActivity?.state === "waiting" ? props.runActivity.queueWait?.capacity : undefined,
     props.startupStatus?.phase,
     Boolean(props.waitingApproval),
     props.questionPrompts,

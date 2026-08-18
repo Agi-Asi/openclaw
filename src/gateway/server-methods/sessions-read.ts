@@ -28,6 +28,7 @@ import {
   measureDiagnosticsTimelineSpanSync,
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { getCommandQueueWorkProjection } from "../../process/command-queue.js";
 import {
   isIncognitoSessionKey,
   normalizeAgentId,
@@ -386,6 +387,7 @@ export const sessionReadHandlers: GatewayRequestHandlers = {
                   defaultAgentId: tryResolveSessionCompatibilityOwnerAgentId(cfg, session.key),
                   trackedActiveRuns,
                   projectedAgentRunIndex,
+                  queueProjection: getCommandQueueWorkProjection(),
                 });
                 return Object.assign({}, session, {
                   visibility,
@@ -401,6 +403,7 @@ export const sessionReadHandlers: GatewayRequestHandlers = {
                       }
                     : {}),
                   hasActiveRun: activeRunState.active,
+                  runActivity: activeRunState.runActivity,
                   ...projectPlacement(session.sessionId),
                   ...(activeRunState.runIds.length > 0
                     ? { activeRunIds: activeRunState.runIds }
@@ -416,13 +419,8 @@ export const sessionReadHandlers: GatewayRequestHandlers = {
               },
             },
           );
-          // The pre-await visibility predicate used a stale store snapshot; re-drop rows
-          // whose freshly resolved sharing state is a draft this caller cannot see
-          // (a session flipped to draft mid-list, or an older shared alias hiding
-          // a now-draft canonical entry). Drafts are owner+admin only — members
-          // lose access, matching createSessionListEntryFilter — so keep a draft
-          // row only for the owner role. Admins and identity-less solo callers
-          // keep everything.
+          // Re-drop rows whose sharing state changed after the pre-await visibility filter.
+          // Drafts remain visible only to their owner, admins, and identity-less solo callers.
           const canSeeDrafts = !identityId || isGatewayAdmin(client);
           const visibleSessions = canSeeDrafts
             ? sessions

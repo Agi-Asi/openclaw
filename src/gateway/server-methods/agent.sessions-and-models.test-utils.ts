@@ -316,8 +316,8 @@ describe("gateway agent handler", () => {
 
       const lane = "gateway-agent-real-queue-cancel";
       setCommandLaneConcurrency(lane, 1);
-      const blockerStarted = createDeferred<void>();
-      const releaseBlocker = createDeferred<void>();
+      const blockerStarted = createDeferred();
+      const releaseBlocker = createDeferred();
       const blockerRun = enqueueCommandInLane(lane, async () => {
         blockerStarted.resolve();
         await releaseBlocker.promise;
@@ -425,8 +425,8 @@ describe("gateway agent handler", () => {
 
       const lane = "gateway-agent-custom-runtime-queue-cancel";
       setCommandLaneConcurrency(lane, 1);
-      const blockerStarted = createDeferred<void>();
-      const releaseBlocker = createDeferred<void>();
+      const blockerStarted = createDeferred();
+      const releaseBlocker = createDeferred();
       const blockerRun = enqueueCommandInLane(lane, async () => {
         blockerStarted.resolve();
         await releaseBlocker.promise;
@@ -454,8 +454,8 @@ describe("gateway agent handler", () => {
         status: "cancelled",
         endedAt: task.createdAt + 1,
       };
-      const cancellationStarted = createDeferred<void>();
-      const acceptCancellation = createDeferred<void>();
+      const cancellationStarted = createDeferred();
+      const acceptCancellation = createDeferred();
       const customCancel = vi.fn(async () => {
         cancellationStarted.resolve();
         await acceptCancellation.promise;
@@ -611,8 +611,8 @@ describe("gateway agent handler", () => {
         cancelDetachedTaskRunById: customCancel,
       });
 
-      const providerStarted = createDeferred<void>();
-      const finishProvider = createDeferred<void>();
+      const providerStarted = createDeferred();
+      const finishProvider = createDeferred();
       mocks.agentCommand.mockImplementationOnce((call: AgentCommandCall) => {
         const workId = call.queueWorkId;
         const abortSignal = call.abortSignal;
@@ -1218,7 +1218,7 @@ describe("gateway agent handler", () => {
       });
 
       const call = await waitForAgentCommandCall<{ queueWorkId?: string }>();
-      expect(call.queueWorkId).toBeUndefined();
+      expect(call.queueWorkId).toBe(runId);
       expect(context.chatAbortControllers.get(runId)?.taskId).toBeUndefined();
       expect(listTaskRecords()).toEqual([]);
       await waitForAssertion(() => expect(respond).toHaveBeenCalled());

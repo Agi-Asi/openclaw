@@ -232,6 +232,7 @@ export function buildSidebarSessionNavigationState(input: {
       hasActiveRun: row.archived !== true && isSessionRunActive(row),
       gatewayHasActiveRun: row.hasActiveRun,
       activeRunIds: row.archived === true ? undefined : row.activeRunIds,
+      runActivity: row.archived === true ? undefined : row.runActivity,
       modelSelectionLocked: row.modelSelectionLocked === true,
       kind: row.kind,
       pinned: row.pinned === true,

@@ -2,7 +2,7 @@
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
-import type { SessionsListResult } from "../../../api/types.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../../../api/types.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
 import { copyMarkdownLabel } from "../../../components/copy-button.ts";
 import { icons } from "../../../components/icons.ts";
@@ -79,6 +79,7 @@ export type ChatThreadProps = {
   persistCommentary?: boolean;
   runActive?: boolean;
   runWorking?: boolean;
+  runActivity?: GatewaySessionRow["runActivity"];
   startupStatus?: ChatRunStartupStatus | null;
   waitingApproval?: boolean;
   questionPrompts?: readonly QuestionPrompt[];

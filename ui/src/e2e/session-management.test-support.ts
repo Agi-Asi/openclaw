@@ -3,6 +3,7 @@ import path from "node:path";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import type { Locator, Page } from "playwright";
 import { expect } from "vitest";
+import type { GatewaySessionRow } from "../api/types.ts";
 import {
   controlUiSessionPath,
   controlUiSessionUrl,
@@ -43,6 +44,7 @@ export function sessionRow(
     pinned?: boolean;
     pinnedAt?: number;
     hasActiveRun?: boolean;
+    runActivity?: GatewaySessionRow["runActivity"];
     unread?: boolean;
     status?: string;
     spawnedBy?: string;

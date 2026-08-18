@@ -196,6 +196,7 @@ describe("AppSidebar session indicators", () => {
       plain: "agent:main:plain",
       forked: "agent:main:forked",
       unread: "agent:main:unread",
+      waiting: "agent:main:waiting",
       runningUnread: "agent:main:status-running-unread",
       openPullRequest: "agent:main:open-pr",
       mergedPullRequest: "agent:main:merged-pr",
@@ -210,8 +211,17 @@ describe("AppSidebar session indicators", () => {
         row.forkSource = { sessionKey: "agent:main:main", sessionId: "source-session" };
       } else if (row.key === keys.unread) {
         row.unread = true;
+      } else if (row.key === keys.waiting) {
+        row.status = "running";
+        row.hasActiveRun = true;
+        row.runActivity = {
+          state: "waiting",
+          queueWait: { queuedAhead: 2, busySlots: 3, capacity: 4 },
+        };
       } else if (row.key === keys.runningUnread) {
         row.status = "running";
+        row.hasActiveRun = true;
+        row.runActivity = { state: "working" };
         row.unread = true;
       } else if (row.key === keys.openPullRequest || row.key === keys.mergedPullRequest) {
         row.worktree = {
@@ -285,6 +295,23 @@ describe("AppSidebar session indicators", () => {
     expect(
       unread?.querySelector(".session-row-aside > .session-row-state .session-unread-dot"),
     ).not.toBeNull();
+
+    const waiting = sidebar.querySelector(`[data-session-key="${keys.waiting}"]`);
+    const waitingIndicator = waiting?.querySelector(".session-waiting-indicator");
+    expectNoLead(waiting);
+    expect(waitingIndicator).not.toBeNull();
+    expect(waitingIndicator?.querySelector("svg")).not.toBeNull();
+    expect(waitingIndicator?.getAttribute("aria-label")).toBe(
+      "Waiting to run · 2 ahead · 3 of 4 slots busy",
+    );
+    expect(waitingIndicator?.getAttribute("title")).toBeNull();
+    expect(waiting?.querySelector(".session-run-spinner")).toBeNull();
+    expect(waiting?.querySelector(".session-row-state")?.getAttribute("aria-label")).toBe(
+      "Waiting to run · 2 ahead · 3 of 4 slots busy",
+    );
+    expect(waiting?.querySelector("a")?.getAttribute("title")).toContain(
+      "Waiting to run · 2 ahead · 3 of 4 slots busy",
+    );
 
     const runningUnread = sidebar.querySelector(`[data-session-key="${keys.runningUnread}"]`);
     expect(runningUnread?.classList.contains("session-row-host--running")).toBe(true);

@@ -149,7 +149,15 @@ current in-memory run state:
    membership in `activeRunIds` when deciding whether a retained run still owns
    the streaming UI. A true `hasActiveRun` with no listed ID can represent another
    active runtime projection.
-5. Reconcile subsequent `agent` events by `payload.runId` and `payload.seq`.
+5. Read the optional `sessionInfo.runActivity` to distinguish admitted work from
+   queue wait. `state: "working"` means at least one visible owner is executing;
+   `state: "waiting"` can include `since` and bounded numeric `queueWait` facts
+   (`queuedAhead`, `busySlots`, `capacity`, and optional `blockedBy`). It never
+   exposes queued run or blocker identities. Omission means the Gateway cannot
+   classify the active owner. A `sessions.changed` payload uses
+   `runActivity: null` as a tombstone, so delete a cached value instead of merging
+   the null.
+6. Reconcile subsequent `agent` events by `payload.runId` and `payload.seq`.
    Maintain the highest accepted sequence independently for each run, ignore an
    already-seen or lower sequence, and treat a forward gap as a reason to reload
    authoritative history.

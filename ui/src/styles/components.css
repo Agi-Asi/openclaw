@@ -3471,8 +3471,9 @@ td.data-table-key-col {
   }
 }
 
-/* Reading indicator bubble sizing; dot styles live in chat/tool-cards.css. */
-.chat-bubble.chat-reading-indicator {
+/* Active-run indicator bubble sizing; motion lives in chat/tool-cards.css. */
+.chat-bubble.chat-reading-indicator,
+.chat-bubble.chat-waiting-indicator {
   width: fit-content;
   padding: 10px 16px;
 }
@@ -6128,6 +6129,60 @@ td.data-table-key-col {
   border-radius: var(--radius-full);
 }
 
+.session-waiting-indicator {
+  --waiting-sand-travel: 5px;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  color: var(--run);
+}
+
+.session-waiting-indicator::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: calc(50% - 1px);
+  width: 2px;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  animation: session-waiting-sand-fall 1.15s ease-in infinite;
+}
+
+.session-waiting-indicator svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8px;
+}
+
+@keyframes session-waiting-sand-fall {
+  0% {
+    transform: translateY(0) scale(0.7);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(var(--waiting-sand-travel)) scale(0.9);
+    opacity: 0;
+  }
+}
+
 .session-run-spinner,
 .session-glyph__ring {
   animation: session-run-spin 1.6s linear infinite;
@@ -6144,6 +6199,12 @@ td.data-table-key-col {
   .session-glyph__ring {
     animation: none;
     border-color: var(--run);
+  }
+
+  .session-waiting-indicator::after {
+    animation: none;
+    transform: translateY(2px);
+    opacity: 1;
   }
 }
 

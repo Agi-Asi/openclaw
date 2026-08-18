@@ -261,6 +261,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                   : {}),
                 ...(isOperatorUiClient(clientInfo)
                   ? {
+                      claimUserTurnForRestartRecovery: true as const,
                       promptCacheKey: resolveWebchatPromptCacheKey({
                         agentId,
                         provider: resolvedSessionModel.provider,
@@ -349,6 +350,13 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                       }
                     }
                   }
+                },
+                onQueueStateChange: () => {
+                  emitSessionsChanged(context, {
+                    sessionKey,
+                    ...(selectedAgent.agentId ? { agentId: selectedAgent.agentId } : {}),
+                    reason: "run-activity",
+                  });
                 },
                 onModelSelected: (modelSelection) => {
                   updateChatRunProvider(context.chatAbortControllers, {

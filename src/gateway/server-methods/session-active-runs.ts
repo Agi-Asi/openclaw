@@ -1,8 +1,13 @@
-import { isEmbeddedAgentRunInProgress } from "../../agents/embedded-agent-runner/runs.js";
+import type { SessionRow } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  isEmbeddedAgentRunHandleInProgress,
+  isEmbeddedAgentRunInProgress,
+} from "../../agents/embedded-agent-runner/runs.js";
 import {
   hasProjectedAgentRunForSession,
   type ProjectedAgentRunIndex,
 } from "../../infra/agent-run-registry.js";
+import type { CommandQueueWorkProjection } from "../../process/command-queue.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveChatRunOwnerAgentId } from "../chat-run-owner.js";
 import type { GatewayRequestContext } from "./types.js";
@@ -10,6 +15,7 @@ import type { GatewayRequestContext } from "./types.js";
 /** Active-run matcher including hidden remote lifecycle projections. */
 type TrackedActiveSessionRun = {
   runId: string;
+  workId: string;
   sessionKey?: string;
   sessionId?: string;
   agentId?: string;
@@ -31,6 +37,7 @@ export function collectTrackedActiveSessionRuns(
       }
       runs.push({
         runId,
+        workId: active.taskId?.trim() || runId,
         ...(sessionKey ? { sessionKey } : {}),
         ...(sessionId ? { sessionId } : {}),
         agentId: typeof active.agentId === "string" ? normalizeAgentId(active.agentId) : undefined,
@@ -146,37 +153,38 @@ export function resolveVisibleActiveSessionRunState(params: {
   defaultAgentId?: string;
   trackedActiveRuns?: readonly TrackedActiveSessionRun[];
   projectedAgentRunIndex?: ProjectedAgentRunIndex;
-}): { active: boolean; runIds: string[] } {
+  queueProjection?: CommandQueueWorkProjection;
+}): { active: boolean; runIds: string[]; runActivity?: SessionRow["runActivity"] } {
   const sessionId = params.sessionId?.trim();
   const resolvedAgentId =
     params.agentId ??
     parseAgentSessionKey(params.canonicalKey)?.agentId ??
     parseAgentSessionKey(params.requestedKey)?.agentId;
-  const runIds = (params.trackedActiveRuns ?? collectTrackedActiveSessionRuns(params.context))
-    .filter(
-      (active) =>
-        isTrackedActiveSessionRunForKey(
+  const matchingTrackedRuns = (
+    params.trackedActiveRuns ?? collectTrackedActiveSessionRuns(params.context)
+  ).filter(
+    (active) =>
+      isTrackedActiveSessionRunForKey(
+        active,
+        params.canonicalKey,
+        resolvedAgentId,
+        params.defaultAgentId,
+      ) ||
+      isTrackedActiveSessionRunForKey(
+        active,
+        params.requestedKey,
+        resolvedAgentId,
+        params.defaultAgentId,
+      ) ||
+      (sessionId !== undefined &&
+        isTrackedActiveSessionRunForSessionId(
           active,
-          params.canonicalKey,
+          sessionId,
           resolvedAgentId,
           params.defaultAgentId,
-        ) ||
-        isTrackedActiveSessionRunForKey(
-          active,
-          params.requestedKey,
-          resolvedAgentId,
-          params.defaultAgentId,
-        ) ||
-        (sessionId !== undefined &&
-          isTrackedActiveSessionRunForSessionId(
-            active,
-            sessionId,
-            resolvedAgentId,
-            params.defaultAgentId,
-          )),
-    )
-    .map((active) => active.runId)
-    .toSorted();
+        )),
+  );
+  const runIds = matchingTrackedRuns.map((active) => active.runId).toSorted();
   const hasProjectedRun = hasProjectedAgentRunForSession({
     sessionKeys: [params.requestedKey, params.canonicalKey],
     ...(sessionId ? { sessionId } : {}),
@@ -185,10 +193,42 @@ export function resolveVisibleActiveSessionRunState(params: {
     ...(params.projectedAgentRunIndex ? { index: params.projectedAgentRunIndex } : {}),
   });
   const embeddedRunInProgress = sessionId !== undefined && isEmbeddedAgentRunInProgress(sessionId);
+  const embeddedHandleInProgress =
+    sessionId !== undefined && isEmbeddedAgentRunHandleInProgress(sessionId);
   // Connection, worker-lifecycle, and embedded registries are independent owners.
   // Settlement in one must not hide live work owned by another.
+  const active = runIds.length > 0 || hasProjectedRun || embeddedRunInProgress;
+  let runActivity: SessionRow["runActivity"] | undefined;
+  if (params.queueProjection && matchingTrackedRuns.length > 0) {
+    if (hasProjectedRun || embeddedHandleInProgress) {
+      runActivity = { state: "working" };
+    } else {
+      const waits = matchingTrackedRuns.flatMap((run) => {
+        const wait = params.queueProjection?.waits.get(run.workId);
+        return wait ? [wait] : [];
+      });
+      if (waits.length === matchingTrackedRuns.length) {
+        const wait = waits.reduce((earliest, candidate) =>
+          candidate.since < earliest.since ? candidate : earliest,
+        );
+        runActivity = {
+          state: "waiting",
+          since: wait.since,
+          queueWait: {
+            queuedAhead: wait.queuedAhead,
+            busySlots: wait.busySlots,
+            capacity: wait.capacity,
+            ...(wait.blockedBy ? { blockedBy: wait.blockedBy } : {}),
+          },
+        };
+      } else {
+        runActivity = { state: "working" };
+      }
+    }
+  }
   return {
-    active: runIds.length > 0 || hasProjectedRun || embeddedRunInProgress,
+    active,
     runIds,
+    ...(runActivity ? { runActivity } : {}),
   };
 }

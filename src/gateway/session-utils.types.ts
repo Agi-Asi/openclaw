@@ -157,6 +157,7 @@ export type GatewaySessionRow = {
   lastRunError?: string;
   hasActiveRun?: boolean;
   activeRunIds?: string[];
+  runActivity?: SessionRow["runActivity"];
   /** Active transcript-branch leaf for history rendered from this row. */
   activeLeafEntryId?: string | null;
   /** An enabled cron job is bound to this session (runs in it or delivers to it). */

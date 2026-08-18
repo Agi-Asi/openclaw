@@ -175,6 +175,34 @@ describe("sidebar session live-run projection", () => {
     },
   );
 
+  it("preserves authoritative waiting activity for the session row", () => {
+    const projected = projectSidebarSession({
+      status: "running",
+      hasActiveRun: true,
+      runActivity: {
+        state: "waiting",
+        since: 1_000,
+        queueWait: {
+          queuedAhead: 2,
+          busySlots: 3,
+          capacity: 4,
+          blockedBy: "lane",
+        },
+      },
+    });
+
+    expect(projected.runActivity).toEqual({
+      state: "waiting",
+      since: 1_000,
+      queueWait: {
+        queuedAhead: 2,
+        busySlots: 3,
+        capacity: 4,
+        blockedBy: "lane",
+      },
+    });
+  });
+
   it("carries active cloud disk pressure into the existing sidebar badge model", () => {
     const projected = projectSidebarSession({
       placement: {

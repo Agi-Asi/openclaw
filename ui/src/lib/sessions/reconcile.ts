@@ -468,6 +468,9 @@ export function reconcileSessionChanged(
       delete row[field as keyof GatewaySessionRow];
     }
   }
+  if (rowFields.runActivity === null) {
+    delete row.runActivity;
+  }
   const next = reconcileSessionHistory(result, row, undefined, {
     ...options,
     selectedGlobalAgentId,
@@ -622,7 +625,13 @@ export function reconcileSessionRunTerminal(
     const remainingRunIds = runId ? row.activeRunIds?.filter((id) => id !== runId) : [];
     if (remainingRunIds?.length) {
       changed = true;
-      return { ...row, activeRunIds: remainingRunIds, hasActiveRun: true, status: "running" };
+      return {
+        ...row,
+        activeRunIds: remainingRunIds,
+        hasActiveRun: true,
+        runActivity: undefined,
+        status: "running",
+      };
     }
     const endedAt = row.endedAt ?? terminal.endedAt;
     const runtimeMs =
@@ -640,6 +649,7 @@ export function reconcileSessionRunTerminal(
       row.endedAt === endedAt &&
       row.runtimeMs === runtimeMs &&
       row.activeRunIds === activeRunIds &&
+      row.runActivity === undefined &&
       row.abortedLastRun === abortedLastRun
     ) {
       return row;
@@ -649,6 +659,7 @@ export function reconcileSessionRunTerminal(
       ...row,
       activeRunIds,
       hasActiveRun: false,
+      runActivity: undefined,
       status: terminal.status,
       endedAt,
       runtimeMs,

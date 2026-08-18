@@ -18,6 +18,7 @@ import { clearAgentRunContext } from "../infra/agent-run-registry.js";
 import { onTrustedToolExecutionEvent } from "../infra/diagnostic-events.js";
 import { onHeartbeatEvent } from "../infra/heartbeat-events.js";
 import type { SubsystemLogger } from "../logging/subsystem.js";
+import { getCommandQueueWorkProjection } from "../process/command-queue.js";
 import { onSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { onInternalSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { createLazyPromise, createLazyPromiseLoader } from "../shared/lazy-runtime.js";
@@ -259,6 +260,7 @@ export function startGatewayEventSubscriptions(params: {
                   getRuntimeConfig(),
                   session.requestedKey,
                 ),
+                queueProjection: getCommandQueueWorkProjection(),
               }),
           }),
       );

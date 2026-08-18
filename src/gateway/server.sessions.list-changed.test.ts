@@ -9,6 +9,7 @@ import { loadSessionEntry } from "../config/sessions/session-accessor.js";
 import { subscribePluginSessionsChanged } from "../plugins/gateway-events.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { enqueueCommandInLane, setCommandLaneConcurrency } from "../process/command-queue.js";
 import {
   normalizeSessionDeliveryState,
   projectSessionDeliveryFields,
@@ -721,6 +722,35 @@ test("sessions.list marks sessions with active abortable runs", async () => {
   await expectListedSessionActiveRun("req-sessions-list-active-run", {}, true);
 });
 
+test("sessions.list distinguishes a queued session run from working", async () => {
+  const lane = "sessions-list-run-activity";
+  const runId = "run-queued";
+  setCommandLaneConcurrency(lane, 0);
+  const queued = enqueueCommandInLane(lane, async () => undefined, { workId: runId });
+  try {
+    await writeMainSessionStore();
+    const { respond } = await invokeSessionsList({
+      requestId: "req-sessions-list-queued-run",
+      context: {
+        chatAbortControllers: new Map([[runId, { sessionKey: "agent:main:main" }]]),
+      },
+    });
+
+    expect(findSession(expectRespondPayload(respond), "agent:main:main")).toMatchObject({
+      hasActiveRun: true,
+      activeRunIds: [runId],
+      runActivity: {
+        state: "waiting",
+        since: expect.any(Number),
+        queueWait: { queuedAhead: 0, busySlots: 0, capacity: 0, blockedBy: "lane" },
+      },
+    });
+  } finally {
+    setCommandLaneConcurrency(lane, 1);
+    await queued;
+  }
+});
+
 test("sessions.changed publishes visible active run ids", async () => {
   await writeMainSessionStore();
   const result = await invokeSessionMutation({
@@ -737,6 +767,45 @@ test("sessions.changed publishes visible active run ids", async () => {
     hasActiveRun: true,
     activeRunIds: ["run-1"],
   });
+});
+
+test("sessions.changed publishes queued activity and explicitly clears it", async () => {
+  const lane = "sessions-changed-run-activity";
+  const runId = "run-event-queued";
+  setCommandLaneConcurrency(lane, 0);
+  const queued = enqueueCommandInLane(lane, async () => undefined, { workId: runId });
+  try {
+    await writeMainSessionStore();
+    const waiting = await invokeSessionMutation({
+      method: "sessions.patch",
+      params: { key: "main", label: "Queued main" },
+      context: {
+        chatAbortControllers: new Map([[runId, { sessionKey: "agent:main:main" }]]),
+      },
+    });
+    expectChangedBroadcast(waiting.broadcastToConnIds, {
+      sessionKey: "agent:main:main",
+      reason: "patch",
+      runActivity: {
+        state: "waiting",
+        since: expect.any(Number),
+        queueWait: { queuedAhead: 0, busySlots: 0, capacity: 0, blockedBy: "lane" },
+      },
+    });
+
+    const cleared = await invokeSessionMutation({
+      method: "sessions.patch",
+      params: { key: "main", label: "Idle main" },
+    });
+    expectChangedBroadcast(cleared.broadcastToConnIds, {
+      sessionKey: "agent:main:main",
+      reason: "patch",
+      runActivity: null,
+    });
+  } finally {
+    setCommandLaneConcurrency(lane, 1);
+    await queued;
+  }
 });
 
 test("sessions.list ignores terminal abortable runs kept for retry guards", async () => {

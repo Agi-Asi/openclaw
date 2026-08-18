@@ -106,4 +106,27 @@ describe("renderChatWorkingIndicator", () => {
   it("keeps approval waits on the default claw even for surprising keys", () => {
     expect(surpriseClassesFor(findRenderKey(true), true)).toEqual([]);
   });
+
+  it("renders canonical queue activity as a waiting hourglass with its position", () => {
+    const container = document.createElement("div");
+    render(
+      renderChatWorkingIndicator(
+        { kind: "reading-indicator", key: "queued-run", startedAt: 1_000 },
+        {
+          runActivity: {
+            state: "waiting",
+            since: 1_000,
+            queueWait: { queuedAhead: 2, busySlots: 3, capacity: 4 },
+          },
+        },
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-waiting-indicator")).not.toBeNull();
+    expect(container.querySelector(".chat-reading-indicator")).toBeNull();
+    expect(container.textContent).toContain("Waiting to run");
+    expect(container.textContent).toContain("2 ahead");
+    expect(container.textContent).toContain("3 of 4 slots busy");
+  });
 });

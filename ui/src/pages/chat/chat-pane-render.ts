@@ -50,6 +50,7 @@ import {
 } from "./chat-pane-state.ts";
 import { dismissRealtimeTalkError } from "./chat-realtime.ts";
 import { activeChatRunStartupStatus } from "./chat-run-startup.ts";
+import { resolveChatSessionRunError } from "./chat-session-run-error.ts";
 import { refreshChatCommands, refreshPageChat } from "./chat-state-refresh.ts";
 import {
   resolveChatAgentId,
@@ -112,9 +113,7 @@ export class ChatPane extends ChatPaneBrowserAnnotationRender {
     const placement = selectedSession?.placement;
     const diskSpace = placement?.state === "active" ? placement.diskSpace : undefined;
     const terminalReason = (placement as { terminalReason?: string } | undefined)?.terminalReason;
-    const placementRunError = terminalReason
-      ? { summary: t("chat.cloudWorkerFailed", { error: terminalReason }) }
-      : null;
+    const selectedSessionRunError = resolveChatSessionRunError(selectedSession, terminalReason);
     const visibleWorkspaceConflict =
       workspaceConflict &&
       this.dismissedWorkspaceConflictRefs.get(selectedSession?.key ?? state.sessionKey) !==
@@ -366,6 +365,7 @@ export class ChatPane extends ChatPaneBrowserAnnotationRender {
       streamStartedAt: catalogKey ? null : state.chatStreamStartedAt,
       runId: catalogKey ? null : projectionRunId,
       runOutputTokens: catalogKey ? null : runOutputTokens,
+      runActivity: catalogKey ? undefined : selectedSession?.runActivity,
       assistantAvatarUrl: resolveChatAvatarUrl(state),
       sendShortcut: state.settings.chatSendShortcut,
       followUpMode: state.chatFollowUpMode,
@@ -412,7 +412,7 @@ export class ChatPane extends ChatPaneBrowserAnnotationRender {
       onModelSetup: () => this.context.navigate("model-setup"),
       error: state.lastError,
       diskSpace,
-      runError: catalogKey ? null : (state.chatRunError ?? placementRunError),
+      runError: catalogKey ? null : (state.chatRunError ?? selectedSessionRunError),
       inlineApproval: sessionParticipationBlocked ? null : inlineApproval,
       approvalBusy: overlays?.snapshot?.approvalBusy,
       approvalErrors: overlays?.snapshot?.approvalErrors,

@@ -1,6 +1,7 @@
 // Gateway chat runtime projects agent events into chat/session subscriber
 // streams, lifecycle persistence, heartbeat visibility, and live UI updates.
 import { performance } from "node:perf_hooks";
+import type { SessionRow } from "../../packages/gateway-protocol/src/index.js";
 import type {
   ChatEvent,
   ChatRunStartupPhase,
@@ -372,7 +373,7 @@ export type AgentEventHandlerOptions = {
     canonicalKey: string;
     sessionId?: string;
     agentId?: string;
-  }) => { active: boolean; runIds: string[] };
+  }) => { active: boolean; runIds: string[]; runActivity?: SessionRow["runActivity"] };
 };
 
 type AgentEventHandler = ((event: AgentEventPayload) => void) & {
@@ -605,7 +606,11 @@ export function createAgentEventHandler({
     // Agent lifecycle broadcasts merge into cached session rows in the UI.
     // Always replace run identity so a newer start cannot inherit a completed run.
     const activeRunFields = activeRunState
-      ? { hasActiveRun: activeRunState.active, activeRunIds: activeRunState.runIds }
+      ? {
+          hasActiveRun: activeRunState.active,
+          activeRunIds: activeRunState.runIds,
+          runActivity: activeRunState.runActivity ?? null,
+        }
       : {};
     const clearsLastRunError =
       Object.hasOwn(lifecyclePatch, "lastRunError") && lifecyclePatch.lastRunError === undefined;
