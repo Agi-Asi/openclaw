@@ -1,11 +1,7 @@
-import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { isBunRuntime } from "../daemon/runtime-binary.js";
 import { resolveOpenClawPackageRootSync } from "./openclaw-root.js";
 import { tryProcessCwd } from "./safe-cwd.js";
 
-const requireFromHere = createRequire(import.meta.url);
 const OPENCLAW_CLI_ENTRY_BASENAMES = new Set(["openclaw", "openclaw.mjs"]);
 const OPENCLAW_PACKAGE_ENTRY_PATHS = new Set([
   path.join("dist", "entry.js"),
@@ -55,27 +51,6 @@ export function filterOpenClawChildExecArgv(execArgv: readonly string[]): string
   return filtered;
 }
 
-function resolveTrustedTsxLoader(packageRoot: string): string | null {
-  try {
-    return requireFromHere.resolve("tsx", { paths: [packageRoot] });
-  } catch {
-    return null;
-  }
-}
-
-function buildPackageRootCliArgs(packageRoot: string, execPath: string): string[] {
-  const sourceEntry = path.join(packageRoot, "src", "entry.ts");
-  if (fs.existsSync(sourceEntry)) {
-    const tsxLoader = resolveTrustedTsxLoader(packageRoot);
-    return isBunRuntime(execPath)
-      ? [sourceEntry]
-      : tsxLoader
-        ? ["--import", tsxLoader, sourceEntry]
-        : [path.join(packageRoot, "openclaw.mjs")];
-  }
-  return [path.join(packageRoot, "openclaw.mjs")];
-}
-
 export function resolveCurrentOpenClawCliInvocation(
   args: readonly string[],
   options: {
@@ -115,7 +90,7 @@ export function resolveCurrentOpenClawCliInvocation(
   if (packageRoot) {
     return {
       command: execPath,
-      args: [...buildPackageRootCliArgs(packageRoot, execPath), ...args],
+      args: [path.join(packageRoot, "openclaw.mjs"), ...args],
       cwd: invocationCwd,
     };
   }

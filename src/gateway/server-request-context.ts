@@ -13,7 +13,6 @@ import { buildAuthenticatedPresenceUser } from "./authenticated-presence-user.js
 import { NODE_DESKTOP_SERVICE_CONTEXT } from "./desktop/node-source-context.js";
 import { ScopeUpgradeCoordinator } from "./device-scope-upgrade.js";
 import type { GatewayServerLiveState } from "./server-live-state.js";
-import { emitApprovalDeliveryDiagnostic } from "./server-methods/approval-delivery-diagnostics.js";
 import type { GatewayClient, GatewayRequestContext } from "./server-methods/types.js";
 import { disconnectAllSharedGatewayAuthClients } from "./server-shared-auth-generation.js";
 import { broadcastPresenceSnapshot } from "./server/presence-events.js";
@@ -129,70 +128,32 @@ const EXEC_APPROVAL_CLIENT_IDS: ReadonlySet<GatewayClientId> = new Set([
 
 const PLUGIN_APPROVAL_CLIENT_IDS: ReadonlySet<GatewayClientId> = new Set([GATEWAY_CLIENT_IDS.TUI]);
 
-function resolveApprovalDeliveryEligibility(
+function canDeliverApprovals(
   gatewayClient: GatewayRequestContextClient,
   approvalKind: "exec" | "plugin" | "system-agent",
-): { allowed: boolean; reason: string } {
+): boolean {
   if (gatewayClient.invalidated) {
-    return { allowed: false, reason: "invalidated-client" };
+    return false;
   }
   const scopes = Array.isArray(gatewayClient.connect.scopes) ? gatewayClient.connect.scopes : [];
   const hasApprovalScope =
     scopes.includes("operator.admin") || scopes.includes("operator.approvals");
   if (!hasApprovalScope) {
-    return { allowed: false, reason: "missing-approval-scope" };
+    return false;
   }
   // Scope grants approval access; it does not prove the client renders this approval kind.
   // Stable ids preserve shipped clients while explicit caps describe newer non-UI bridges.
-  if (gatewayClient.internal?.approvalRuntime === true) {
-    return { allowed: true, reason: "trusted-approval-runtime" };
-  }
-  if (ALL_APPROVAL_CLIENT_IDS.has(gatewayClient.connect.client.id)) {
-    return { allowed: true, reason: "all-approval-client-id" };
-  }
-  if (hasGatewayClientCap(gatewayClient.connect.caps, GATEWAY_CLIENT_CAPS.APPROVALS)) {
-    return { allowed: true, reason: "all-approval-capability" };
-  }
-  if (
-    approvalKind === "exec" &&
-    (EXEC_APPROVAL_CLIENT_IDS.has(gatewayClient.connect.client.id) ||
-      hasGatewayClientCap(gatewayClient.connect.caps, GATEWAY_CLIENT_CAPS.EXEC_APPROVALS))
-  ) {
-    return { allowed: true, reason: "exec-approval-renderer" };
-  }
-  if (
-    approvalKind === "plugin" &&
-    (PLUGIN_APPROVAL_CLIENT_IDS.has(gatewayClient.connect.client.id) ||
-      hasGatewayClientCap(gatewayClient.connect.caps, GATEWAY_CLIENT_CAPS.PLUGIN_APPROVALS))
-  ) {
-    return { allowed: true, reason: "plugin-approval-renderer" };
-  }
-  return { allowed: false, reason: "missing-approval-renderer" };
-}
-
-function emitApprovalClientDiagnostic(params: {
-  gatewayClient: GatewayRequestContextClient;
-  approvalKind: "exec" | "plugin" | "system-agent";
-  allowed: boolean;
-  reason: string;
-}): void {
-  const scopes = Array.isArray(params.gatewayClient.connect.scopes)
-    ? params.gatewayClient.connect.scopes
-    : [];
-  const caps = Array.isArray(params.gatewayClient.connect.caps)
-    ? params.gatewayClient.connect.caps
-    : [];
-  emitApprovalDeliveryDiagnostic({
-    stage: "connected-client",
-    approvalKind: params.approvalKind,
-    allowed: params.allowed,
-    reason: params.reason,
-    clientId: params.gatewayClient.connect.client.id,
-    mode: params.gatewayClient.connect.client.mode,
-    hasDevice: Boolean(params.gatewayClient.connect.device?.id),
-    caps: [...caps].toSorted(),
-    scopes: [...scopes].toSorted(),
-  });
+  return (
+    gatewayClient.internal?.approvalRuntime === true ||
+    ALL_APPROVAL_CLIENT_IDS.has(gatewayClient.connect.client.id) ||
+    hasGatewayClientCap(gatewayClient.connect.caps, GATEWAY_CLIENT_CAPS.APPROVALS) ||
+    (approvalKind === "exec" &&
+      (EXEC_APPROVAL_CLIENT_IDS.has(gatewayClient.connect.client.id) ||
+        hasGatewayClientCap(gatewayClient.connect.caps, GATEWAY_CLIENT_CAPS.EXEC_APPROVALS))) ||
+    (approvalKind === "plugin" &&
+      (PLUGIN_APPROVAL_CLIENT_IDS.has(gatewayClient.connect.client.id) ||
+        hasGatewayClientCap(gatewayClient.connect.caps, GATEWAY_CLIENT_CAPS.PLUGIN_APPROVALS)))
+  );
 }
 
 export type GatewayRequestContextWithClientLookup = GatewayRequestContext & {
@@ -264,17 +225,9 @@ export function createGatewayRequestContext(
     hasExecApprovalClients: (excludeConnId?: string) => {
       for (const gatewayClient of params.clients) {
         if (excludeConnId && gatewayClient.connId === excludeConnId) {
-          emitApprovalClientDiagnostic({
-            gatewayClient,
-            approvalKind: "exec",
-            allowed: false,
-            reason: "requester-connection-excluded",
-          });
           continue;
         }
-        const eligibility = resolveApprovalDeliveryEligibility(gatewayClient, "exec");
-        emitApprovalClientDiagnostic({ gatewayClient, approvalKind: "exec", ...eligibility });
-        if (eligibility.allowed) {
+        if (canDeliverApprovals(gatewayClient, "exec")) {
           return true;
         }
       }
@@ -284,27 +237,12 @@ export function createGatewayRequestContext(
       const connIds = new Set<string>();
       for (const gatewayClient of params.clients) {
         if (!gatewayClient.connId) {
-          emitApprovalClientDiagnostic({
-            gatewayClient,
-            approvalKind: opts.approvalKind ?? "exec",
-            allowed: false,
-            reason: "missing-connection-id",
-          });
           continue;
         }
         if (opts.excludeConnId && gatewayClient.connId === opts.excludeConnId) {
-          emitApprovalClientDiagnostic({
-            gatewayClient,
-            approvalKind: opts.approvalKind ?? "exec",
-            allowed: false,
-            reason: "requester-connection-excluded",
-          });
           continue;
         }
-        const approvalKind = opts.approvalKind ?? "exec";
-        const eligibility = resolveApprovalDeliveryEligibility(gatewayClient, approvalKind);
-        emitApprovalClientDiagnostic({ gatewayClient, approvalKind, ...eligibility });
-        if (!eligibility.allowed) {
+        if (!canDeliverApprovals(gatewayClient, opts.approvalKind ?? "exec")) {
           continue;
         }
         if (opts.filter && !opts.filter(gatewayClient, opts.record)) {

@@ -17,9 +17,6 @@ import {
   getCliBackendPortBlock,
 } from "./gateway-cli-backend.live-helpers.js";
 import { restoreLiveEnv, snapshotLiveEnv, type LiveEnvSnapshot } from "./live-env-test-helpers.js";
-import {
-  setApprovalDeliveryDiagnosticSinkForTest,
-} from "./server-methods/approval-delivery-diagnostics.js";
 import { loadSessionEntry } from "./session-utils.js";
 import { extractPayloadText } from "./test-helpers.agent-results.js";
 
@@ -459,12 +456,6 @@ describeLive("gateway live trajectory export", () => {
   it(
     "exports a combined runtime and transcript trajectory bundle through the live gateway",
     async () => {
-      setApprovalDeliveryDiagnosticSinkForTest((event) => {
-        console.error(`[trajectory-approval-diagnostic] ${JSON.stringify(event)}`);
-      });
-      cleanup.push(async () => {
-        setApprovalDeliveryDiagnosticSinkForTest(undefined);
-      });
       const { clearRuntimeConfigSnapshot } = await import("../config/config.js");
       const { startGatewayServer } = await import("./server.js");
 

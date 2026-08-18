@@ -33,8 +33,6 @@ import { resolveSystemRunApprovalRequestContext } from "../../infra/system-run-a
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { InvalidApprovalIdError, type ExecApprovalManager } from "../exec-approval-manager.js";
 import { runApprovalRequestDeliveries } from "./approval-request-delivery.js";
-import { emitApprovalDeliveryDiagnostic } from "./approval-delivery-diagnostics.js";
-import { normalizeApprovalIdentities } from "./approval-record-lookup.js";
 import {
   handleApprovalWaitDecision,
   handlePendingApprovalRequest,
@@ -417,19 +415,6 @@ export function createExecApprovalHandlers(
           deviceIds: p.approvalReviewerDeviceIds,
         });
       }
-      emitApprovalDeliveryDiagnostic({
-        stage: "record-created",
-        approvalKind: "exec",
-        requesterClientId: record.requestedByClientId ?? null,
-        requesterHasConnection: Boolean(record.requestedByConnId),
-        requesterHasDevice: Boolean(record.requestedByDeviceId),
-        requestReviewerDeviceCount: normalizeApprovalIdentities(
-          p.approvalReviewerDeviceIds,
-        ).length,
-        boundReviewerDeviceCount: normalizeApprovalIdentities(record.approvalReviewerDeviceIds)
-          .length,
-        trustedApprovalRuntime: client?.internal?.approvalRuntime === true,
-      });
       // Use register() to synchronously add to pending map before sending any response.
       // This ensures the approval ID is valid immediately after the "accepted" response.
       const decisionPromise = registerPendingApprovalRecord({

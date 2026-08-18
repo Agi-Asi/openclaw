@@ -25,7 +25,6 @@ import {
   respondPendingApprovalLookupError,
   respondUnknownOrExpiredApproval,
 } from "./approval-record-lookup.js";
-import { emitApprovalDeliveryDiagnostic } from "./approval-delivery-diagnostics.js";
 import { buildWaitResponse, type WaitReasonResolver } from "./approval-wait-response.js";
 import type { GatewayClient, GatewayRequestContext, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
@@ -362,25 +361,6 @@ export async function handlePendingApprovalRequest<
         : hasTurnSourceRoute
           ? "turn-source"
           : "none";
-    emitApprovalDeliveryDiagnostic({
-      stage: "delivery-outcome",
-      approvalKind: params.approvalKind ?? "exec",
-      approvalClientRecipientCount: approvalClientConnIds?.size ?? null,
-      internalApprovalSubscriberCount,
-      hasApprovalClients,
-      delivered,
-      hasTurnSourceRoute,
-      deliveryRoute,
-      willExpireWithoutRoute:
-        params.requireDeliveryRoute !== false &&
-        !params.keepPendingWithoutRoute &&
-        !hasApprovalClients &&
-        !hasTurnSourceRoute &&
-        !delivered,
-      requireDeliveryRoute: params.requireDeliveryRoute !== false,
-      keepPendingWithoutRoute: params.keepPendingWithoutRoute === true,
-      suppressDelivery,
-    });
 
     const respondWithDecision = async (decision: ExecApprovalDecision | null): Promise<void> => {
       let projectedDecision = params.manager.projectDecisionIfActive(params.record.id, decision);

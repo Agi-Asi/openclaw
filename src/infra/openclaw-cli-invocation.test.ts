@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -9,10 +8,8 @@ import {
   resolveCurrentOpenClawCliInvocation,
 } from "./openclaw-cli-invocation.js";
 
-const requireFromHere = createRequire(import.meta.url);
 const repoRoot = process.cwd();
-const repoSourceEntry = path.join(repoRoot, "src", "entry.ts");
-const trustedTsxLoader = requireFromHere.resolve("tsx", { paths: [repoRoot] });
+const repoLauncher = path.join(repoRoot, "openclaw.mjs");
 const commandArgs = ["sessions", "export-trajectory"];
 
 describe("resolveCurrentOpenClawCliInvocation", () => {
@@ -31,7 +28,7 @@ describe("resolveCurrentOpenClawCliInvocation", () => {
     ).toEqual(["--import", "/loader.mjs", "--trace-warnings"]);
   });
 
-  it("uses the source entry for a Node-hosted checkout harness", () => {
+  it("uses the built launcher for a Node-hosted checkout harness", () => {
     expect(
       resolveCurrentOpenClawCliInvocation(commandArgs, {
         argv1: path.join(repoRoot, "scripts", "test-live.mts"),
@@ -41,12 +38,12 @@ describe("resolveCurrentOpenClawCliInvocation", () => {
       }),
     ).toEqual({
       command: "/usr/bin/node",
-      args: ["--import", trustedTsxLoader, repoSourceEntry, ...commandArgs],
+      args: [repoLauncher, ...commandArgs],
       cwd: repoRoot,
     });
   });
 
-  it("uses the source entry directly under Bun", () => {
+  it("uses the built launcher under Bun", () => {
     expect(
       resolveCurrentOpenClawCliInvocation(commandArgs, {
         argv1: path.join(repoRoot, "scripts", "test-live.mts"),
@@ -55,7 +52,7 @@ describe("resolveCurrentOpenClawCliInvocation", () => {
       }),
     ).toEqual({
       command: "/usr/local/bin/bun",
-      args: [repoSourceEntry, ...commandArgs],
+      args: [repoLauncher, ...commandArgs],
       cwd: repoRoot,
     });
   });
@@ -120,7 +117,7 @@ describe("resolveCurrentOpenClawCliInvocation", () => {
       }),
     ).toEqual({
       command: "/usr/bin/node",
-      args: ["--import", trustedTsxLoader, repoSourceEntry, ...commandArgs],
+      args: [repoLauncher, ...commandArgs],
       cwd: repoRoot,
     });
   });
@@ -134,7 +131,7 @@ describe("resolveCurrentOpenClawCliInvocation", () => {
       }),
     ).toEqual({
       command: "/usr/bin/node",
-      args: ["--import", trustedTsxLoader, repoSourceEntry, ...commandArgs],
+      args: [repoLauncher, ...commandArgs],
       cwd: repoRoot,
     });
   });
