@@ -51,6 +51,10 @@ export async function runManagerInitializeSession(params: {
     cfg: input.cfg,
     sessionKey,
   });
+  const ensureStartedAt = Date.now();
+  if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+    console.info(`[acp-bind-diagnostic] manager.ensure.start agent=${agent}`);
+  }
   const handle = await withAcpRuntimeErrorBoundary({
     run: async () =>
       await runtime.ensureSession({
@@ -66,6 +70,11 @@ export async function runManagerInitializeSession(params: {
     fallbackCode: "ACP_SESSION_INIT_FAILED",
     fallbackMessage: "Could not initialize ACP session runtime.",
   });
+  if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+    console.info(
+      `[acp-bind-diagnostic] manager.ensure.end agent=${agent} elapsedMs=${String(Date.now() - ensureStartedAt)}`,
+    );
+  }
   const effectiveCwd = normalizeText(handle.cwd) ?? requestedCwd;
   const effectiveModel = resolveEffectiveSessionModel({
     requestedModel,
@@ -114,6 +123,9 @@ export async function runManagerInitializeSession(params: {
     handle,
     writeSessionMeta: params.writeSessionMeta,
   });
+  if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+    console.info(`[acp-bind-diagnostic] manager.metadata.persisted agent=${agent}`);
+  }
   if (!persisted?.acp) {
     throw new AcpRuntimeError(
       "ACP_SESSION_INIT_FAILED",

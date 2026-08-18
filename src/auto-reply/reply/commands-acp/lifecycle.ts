@@ -172,6 +172,10 @@ export async function handleAcpSpawnAction(
   let initializedBackend;
   let initializedMeta: SessionAcpMeta | undefined;
   let initializedRuntime: AcpSpawnRuntimeCloseHandle | undefined;
+  const initializeStartedAt = Date.now();
+  if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+    console.info(`[acp-bind-diagnostic] command.initialize.start agent=${spawn.agentId}`);
+  }
   try {
     const initialized = await acpManager.initializeSession({
       cfg: params.cfg,
@@ -186,6 +190,11 @@ export async function handleAcpSpawnAction(
     };
     initializedBackend = initialized.handle.backend || initialized.meta.backend;
     initializedMeta = initialized.meta;
+    if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+      console.info(
+        `[acp-bind-diagnostic] command.initialize.end agent=${spawn.agentId} elapsedMs=${String(Date.now() - initializeStartedAt)}`,
+      );
+    }
   } catch (err) {
     return commandReply(
       collectAcpErrorText({

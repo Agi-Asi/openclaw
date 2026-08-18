@@ -1495,6 +1495,10 @@ export class AcpxRuntime implements CompleteAcpRuntime {
   private async ensureSessionUnlocked(
     input: Parameters<AcpRuntime["ensureSession"]>[0],
   ): Promise<OpenClawRuntimeHandle> {
+    const diagnosticStartedAt = Date.now();
+    if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+      console.info(`[acp-bind-diagnostic] acpx.ensure.start agent=${input.agent}`);
+    }
     assertSupportedRuntimeSessionMode(input.mode);
     const command = resolveAgentCommand({
       agentName: input.agent,
@@ -1543,6 +1547,11 @@ export class AcpxRuntime implements CompleteAcpRuntime {
       command: stableLaunchCommand,
       resumeSessionId: input.resumeSessionId,
     });
+    if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+      console.info(
+        `[acp-bind-diagnostic] acpx.delegate.ensure.start agent=${input.agent} reusable=${String(Boolean(reusableCommand))}`,
+      );
+    }
 
     const handle = !codexModelOverride
       ? await this.runWithLaunchLease({
@@ -1569,6 +1578,11 @@ export class AcpxRuntime implements CompleteAcpRuntime {
               }),
             ),
         });
+    if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+      console.info(
+        `[acp-bind-diagnostic] acpx.delegate.ensure.end agent=${input.agent} elapsedMs=${String(Date.now() - diagnosticStartedAt)}`,
+      );
+    }
     return appliedModel ? { ...handle, appliedModel } : handle;
   }
 

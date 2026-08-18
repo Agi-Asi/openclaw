@@ -112,6 +112,7 @@ function createLazyDefaultRuntime(params: AcpxRuntimeFactoryParams): AcpxRuntime
         permissionMode: params.pluginConfig.permissionMode,
         nonInteractivePermissions: params.pluginConfig.nonInteractivePermissions,
         timeoutMs: resolveAcpxTimerTimeoutMs(params.pluginConfig.timeoutSeconds),
+        verbose: process.env.OPENCLAW_LIVE_ACP_BIND === "1",
       }) as AcpxRuntimeLike;
       return runtime;
     });
