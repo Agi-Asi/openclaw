@@ -87,6 +87,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
       }),
     getSelectedAgentId: () => this.selectedAgentIdForSessions(),
     getGateway: () => this.context?.gateway,
+    getSessions: () => this.context?.sessions,
   });
 
   protected readonly compareSidebarSessionRows = (
@@ -188,18 +189,13 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
     const selectedId = this.sessionOwnerFilterId;
-    const selectedResult = this.selectedAgentSessionResult();
-    const owners = selectedResult?.owners;
-    const hasParticipants = selectedResult?.sessions.some(
-      (session) => (session.participantCount ?? 0) > 0,
-    );
     if (this.sessionSortMode === "people" && this.sessionPeopleSortCapability() === false) {
       this.setSessionSortMode("created");
     }
     if (
       selectedId &&
-      owners &&
-      ((!hasParticipants && owners.length < 2) || !owners.some((owner) => owner.id === selectedId))
+      (!this.sessionOwnershipVisible ||
+        !this.sessionOwnerOptions.some((owner) => owner.id === selectedId))
     ) {
       this.sessionOwnerFilterId = null;
       void this.context?.sessions.setOwnerFilter(null);
@@ -251,6 +247,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
       projected,
       ownerFacet,
       selectedOwnerId: this.sessionOwnerFilterId,
+      self: this.context?.gateway.snapshot.selfUser,
     });
     this.sessionOwnerOptions = result.ownerOptions;
     this.sessionOwnershipVisible = result.ownershipVisible;
@@ -338,7 +335,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
       catalogIds:
         this.sessionsStatusFilter === "archived"
           ? []
-          : this.sessionData.sessionCatalogs.map((catalog) => catalog.id),
+          : this.visibleSessionCatalogs().map((catalog) => catalog.id),
       collapsedSections: this.collapsedSessionSections,
       hideEmptyOwnerFilteredGroup: (category, rowCount) =>
         this.sessionOwnerFilterActive && Boolean(category) && rowCount === 0,

@@ -1,4 +1,7 @@
+import type { ProgressCard } from "@openclaw/gateway-protocol";
 import { ReactiveElement, render } from "lit";
+import type { GatewayBrowserClient } from "../api/gateway.ts";
+import type { ApplicationContext } from "../app/context.ts";
 import type { ApplicationGateway } from "../app/gateway.ts";
 import { t } from "../i18n/index.ts";
 import {
@@ -14,40 +17,54 @@ import { parseAgentSessionKey } from "../lib/sessions/session-key.ts";
 import type { AppSidebarSessionNavigationElement } from "./app-sidebar-session-navigation.ts";
 import { createPortaledHovercard, PortaledHovercardController } from "./portaled-hovercard.ts";
 import { renderSessionHovercard } from "./session-hovercard.ts";
+import { SessionLinkTitler } from "./session-link-titling.ts";
+import { sessionProgressHoverAnchorFromEvent } from "./session-progress-hovercard-target.ts";
 
 const OPEN_DELAY_MS = 350;
 let nextHovercardId = 0;
 
-function sessionRowFromEvent(event: Event): HTMLElement | null {
-  for (const target of event.composedPath()) {
-    if (
-      target instanceof HTMLElement &&
-      target.matches(".sidebar-recent-session[data-session-key]")
-    ) {
-      return target;
-    }
-  }
-  return null;
-}
-
 export class SessionProgressHovercardProvider extends ReactiveElement {
+  private applicationClient: GatewayBrowserClient | null = null;
+  private applicationContext: ApplicationContext | null = null;
   private applicationGateway: ApplicationGateway | null = null;
   private progressCards: SessionProgressCardStore | null = null;
   private stopProgressCardUpdates: (() => void) | null = null;
   private pullRequests: SessionPullRequestSnapshotStore | null = null;
   private stopPullRequestUpdates: (() => void) | null = null;
-  private activeRow: HTMLElement | null = null;
-  private activeTrigger: HTMLElement | null = null;
+  private activeAnchor: HTMLAnchorElement | null = null;
   private activeSessionKey: string | null = null;
   private activePullRequestKey: string | null = null;
   private open = false;
+  private lastProgressCard: ProgressCard | null = null;
   private readonly hovercard = new PortaledHovercardController(() => this.close());
+  private readonly sessionLinkTitler = new SessionLinkTitler(this);
   private loadGeneration = 0;
-  private readonly activeRowObserver = new MutationObserver(() => {
-    if (this.activeRow && !this.contains(this.activeRow)) {
+  private readonly activeAnchorObserver = new MutationObserver(() => {
+    if (this.activeAnchor && !this.contains(this.activeAnchor)) {
       this.close();
     }
   });
+
+  get client(): GatewayBrowserClient | null {
+    return this.applicationClient;
+  }
+
+  set client(value: GatewayBrowserClient | null) {
+    this.applicationClient = value;
+    this.sessionLinkTitler.client = value;
+  }
+
+  get context(): ApplicationContext | null {
+    return this.applicationContext;
+  }
+
+  set context(value: ApplicationContext | null) {
+    this.applicationContext = value;
+    this.sessionLinkTitler.context = value;
+    if (this.isConnected) {
+      this.sessionLinkTitler.refresh();
+    }
+  }
 
   get gateway(): ApplicationGateway | null {
     return this.applicationGateway;
@@ -77,6 +94,7 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     this.addEventListener("focusin", this.handleFocusIn);
     this.addEventListener("focusout", this.handleFocusOut);
     this.addEventListener("keydown", this.handleKeyDown);
+    this.sessionLinkTitler.connect();
     this.connectStore();
   }
 
@@ -86,6 +104,7 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     this.removeEventListener("focusin", this.handleFocusIn);
     this.removeEventListener("focusout", this.handleFocusOut);
     this.removeEventListener("keydown", this.handleKeyDown);
+    this.sessionLinkTitler.disconnect();
     this.disconnectStore();
     this.close();
     super.disconnectedCallback();
@@ -108,8 +127,13 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
   }
 
   private readonly handleProgressCardUpdate = () => {
-    if (!this.open || !this.hovercard.held) {
+    const sessionKey = this.activeSessionKey;
+    if (!sessionKey || !this.open || !this.hovercard.held) {
       return;
+    }
+    const card = this.progressCards?.get(sessionKey);
+    if (card !== undefined) {
+      this.lastProgressCard = card;
     }
     this.showCurrent();
   };
@@ -124,20 +148,20 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     if (event.pointerType === "touch" || !globalThis.matchMedia?.("(hover: hover)").matches) {
       return;
     }
-    const row = sessionRowFromEvent(event);
-    if (!row) {
+    const anchor = sessionProgressHoverAnchorFromEvent(event);
+    if (!anchor) {
       return;
     }
-    this.activate(row, row, OPEN_DELAY_MS);
+    this.activate(anchor, OPEN_DELAY_MS);
     this.hovercard.pointerInside = true;
   };
 
   private readonly handlePointerOut = (event: PointerEvent) => {
-    const row = sessionRowFromEvent(event);
-    if (!row || row !== this.activeRow) {
+    const anchor = sessionProgressHoverAnchorFromEvent(event);
+    if (!anchor || anchor !== this.activeAnchor) {
       return;
     }
-    if (event.relatedTarget instanceof Node && row.contains(event.relatedTarget)) {
+    if (event.relatedTarget instanceof Node && anchor.contains(event.relatedTarget)) {
       return;
     }
     this.hovercard.pointerInside = false;
@@ -145,20 +169,19 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
   };
 
   private readonly handleFocusIn = (event: FocusEvent) => {
-    const row = sessionRowFromEvent(event);
-    const trigger = event.target instanceof HTMLElement ? event.target : row;
-    if (!row || !trigger) {
+    const anchor = sessionProgressHoverAnchorFromEvent(event);
+    if (!anchor) {
       return;
     }
-    this.activate(row, trigger, 0);
+    this.activate(anchor, 0);
     this.hovercard.focusInside = true;
   };
 
   private readonly handleFocusOut = (event: FocusEvent) => {
-    if (!this.activeRow) {
+    if (!this.activeAnchor) {
       return;
     }
-    if (event.relatedTarget instanceof Node && this.activeRow.contains(event.relatedTarget)) {
+    if (event.relatedTarget instanceof Node && this.activeAnchor.contains(event.relatedTarget)) {
       return;
     }
     this.hovercard.focusInside = false;
@@ -170,7 +193,7 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
       this.close();
       return;
     }
-    if (event.key !== "Tab" || event.shiftKey || event.target !== this.activeTrigger) {
+    if (event.key !== "Tab" || event.shiftKey || event.target !== this.activeAnchor) {
       return;
     }
     const first = this.cardFocusables()[0];
@@ -180,24 +203,28 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     }
   };
 
-  private activate(row: HTMLElement, trigger: HTMLElement, delay: number): void {
-    const sessionKey = row.dataset.sessionKey;
-    if (!sessionKey || (row === this.activeRow && sessionKey === this.activeSessionKey)) {
+  private activate(anchor: HTMLAnchorElement, delay: number): void {
+    const sessionKey = anchor.dataset.sessionKey;
+    if (!sessionKey || (anchor === this.activeAnchor && sessionKey === this.activeSessionKey)) {
       return;
     }
     this.close();
-    this.activeRow = row;
-    this.activeTrigger = trigger;
+    this.activeAnchor = anchor;
     this.activeSessionKey = sessionKey;
     this.open = false;
+    this.lastProgressCard = null;
     this.progressCards?.watch(this, [sessionKey]);
-    this.hovercard.markTrigger(trigger);
-    this.activeRowObserver.observe(this, { childList: true, subtree: true });
+    this.hovercard.markTrigger(anchor);
+    this.activeAnchorObserver.observe(this, { childList: true, subtree: true });
     const generation = ++this.loadGeneration;
     this.hovercard.scheduleOpen(delay, () => void this.loadAndShow(sessionKey, generation));
   }
 
   private async loadAndShow(sessionKey: string, generation: number): Promise<void> {
+    const anchor = this.activeAnchor;
+    if (anchor?.dataset.sessionKey === sessionKey) {
+      void this.sessionLinkTitler.decorate(anchor, true);
+    }
     if (
       generation !== this.loadGeneration ||
       this.activeSessionKey !== sessionKey ||
@@ -211,7 +238,7 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     try {
       await this.progressCards?.load(sessionKey);
     } catch {
-      // Row and pull-request facts remain useful when progress is unavailable.
+      // Session facts and the last successful card remain useful when refresh fails.
     }
     if (
       generation === this.loadGeneration &&
@@ -244,31 +271,33 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
   }
 
   private showCurrent(): void {
-    const row = this.activeRow;
-    const trigger = this.activeTrigger;
+    const anchor = this.activeAnchor;
     const sessionKey = this.activeSessionKey;
-    const gateway = this.applicationGateway;
-    if (!row || !trigger || !sessionKey || !gateway || !this.open) {
+    if (!anchor || !sessionKey || !this.open) {
       return;
     }
-    const sidebarRow = row
-      .closest<AppSidebarSessionNavigationElement>("openclaw-app-sidebar")
-      ?.findSidebarSessionByKey(sessionKey);
+    const sidebarRow =
+      this.querySelector<AppSidebarSessionNavigationElement>(
+        "openclaw-app-sidebar",
+      )?.findSidebarSessionByKey(sessionKey);
     const pullRequests = this.activePullRequestKey
       ? this.pullRequests?.get(this.activePullRequestKey)
       : undefined;
-    const progressCard = this.progressCards?.get(sessionKey);
+    const currentProgressCard = this.progressCards?.get(sessionKey);
+    if (currentProgressCard !== undefined) {
+      this.lastProgressCard = currentProgressCard;
+    }
     const revision = JSON.stringify({
-      progress: progressCard?.revision ?? null,
+      progress: this.lastProgressCard?.revision ?? null,
       pullRequests: pullRequests
         ? { branch: pullRequests.branch, pullRequests: pullRequests.pullRequests }
         : null,
       row: sidebarRow
         ? {
             label: sidebarRow.label,
+            lastMessagePreview: sidebarRow.lastMessagePreview,
             owner: sidebarRow.owner?.actor ?? sidebarRow.createdActor,
             startedAt: sidebarRow.startedAt,
-            subtitle: sidebarRow.subtitle,
             updatedAt: sidebarRow.updatedAt,
           }
         : null,
@@ -287,7 +316,7 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
       renderSessionHovercard({
         row: sidebarRow,
         pullRequests,
-        progressCard,
+        progressCard: this.lastProgressCard,
       }),
       card,
     );
@@ -302,7 +331,7 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     card.addEventListener("focusin", this.handleCardFocusIn);
     card.addEventListener("focusout", this.handleCardFocusOut);
     card.addEventListener("keydown", this.handleCardKeyDown);
-    this.hovercard.mount(row, card, "horizontal", false);
+    this.hovercard.mount(anchor, card, "vertical", false);
   }
 
   private readonly handleCardPointerEnter = () => {
@@ -338,9 +367,9 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
       return;
     }
     event.preventDefault();
-    const trigger = this.activeTrigger;
+    const anchor = this.activeAnchor;
     this.close();
-    trigger?.focus({ preventScroll: true });
+    anchor?.focus({ preventScroll: true });
   };
 
   private cardFocusables(): HTMLElement[] {
@@ -351,11 +380,11 @@ export class SessionProgressHovercardProvider extends ReactiveElement {
     this.hovercard.reset();
     this.loadGeneration += 1;
     this.open = false;
-    this.activeRowObserver.disconnect();
+    this.lastProgressCard = null;
+    this.activeAnchorObserver.disconnect();
     this.progressCards?.unwatch(this);
     this.releasePullRequestStore();
-    this.activeRow = null;
-    this.activeTrigger = null;
+    this.activeAnchor = null;
     this.activeSessionKey = null;
   }
 }

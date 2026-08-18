@@ -161,6 +161,9 @@ export function renderSessionHovercard(input: {
   const hasPullRequestDetails = Boolean(
     input.pullRequests && (input.pullRequests.pullRequests.length > 0 || input.pullRequests.branch),
   );
+  const lastMessagePreview = input.progressCard
+    ? undefined
+    : input.row?.lastMessagePreview?.trim() || undefined;
   if (!input.row && !hasPullRequestDetails && !input.progressCard) {
     return nothing;
   }
@@ -169,6 +172,9 @@ export function renderSessionHovercard(input: {
     ${input.progressCard
       ? html`<div class="session-hovercard__divider" role="presentation"></div>
           ${renderSessionProgressCard(input.progressCard, "hovercard")}`
-      : nothing}
+      : lastMessagePreview
+        ? html`<div class="session-hovercard__divider" role="presentation"></div>
+            <div class="session-hovercard__excerpt">${lastMessagePreview}</div>`
+        : nothing}
   </div>`;
 }

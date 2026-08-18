@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 
+import type { ProgressCard } from "@openclaw/gateway-protocol";
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ControlUiSessionPullRequestSnapshot } from "../../../src/gateway/control-ui-contract.js";
@@ -12,9 +13,7 @@ function row(overrides: Partial<SidebarRecentSession> = {}): SidebarRecentSessio
     label: "Ship the release",
     startedAt: Date.now() - 2 * 60 * 60_000,
     updatedAt: Date.now() - 5 * 60_000,
-    owner: {
-      actor: { type: "human", id: "alice", label: "Alice Baker" },
-    },
+    owner: { actor: { type: "human", id: "alice", label: "Alice Baker" } },
     children: [],
     ...overrides,
   } as SidebarRecentSession;
@@ -23,11 +22,16 @@ function row(overrides: Partial<SidebarRecentSession> = {}): SidebarRecentSessio
 function snapshot(
   overrides: Partial<ControlUiSessionPullRequestSnapshot> = {},
 ): ControlUiSessionPullRequestSnapshot {
+  return { status: "ready", pullRequests: [], rateLimited: false, ...overrides };
+}
+
+function progressCard(): ProgressCard {
   return {
-    status: "ready",
-    pullRequests: [],
-    rateLimited: false,
-    ...overrides,
+    sessionKey: "agent:main:work",
+    revision: 1,
+    updatedAt: Date.now(),
+    markdown: "**Release** is ready.",
+    steps: [{ step: "Verify", status: "in_progress" }],
   };
 }
 
@@ -54,6 +58,7 @@ describe("renderSessionHovercard", () => {
     expect(metadata).toContain("created");
     expect(metadata).toContain("updated");
     expect(container.querySelector(".session-progress-card")).toBeNull();
+    expect(container.querySelector(".session-hovercard__excerpt")).toBeNull();
     expect(container.querySelector(".session-hovercard__divider")).toBeNull();
   });
 
@@ -152,5 +157,43 @@ describe("renderSessionHovercard", () => {
     const createLink = container.querySelector<HTMLAnchorElement>(".session-hovercard__no-pr a");
     expect(createLink?.textContent).toBe("No PR yet");
     expect(createLink?.href).toBe("https://github.com/openclaw/openclaw/pull/new/feature");
+  });
+
+  it("renders the latest turn as plain text when progress is absent", () => {
+    const container = document.createElement("div");
+    render(
+      renderSessionHovercard({
+        row: row({ lastMessagePreview: "  Finished <strong>without markup</strong>.  " }),
+      }),
+      container,
+    );
+
+    expect(container.querySelector(".session-hovercard__excerpt")?.textContent).toBe(
+      "Finished <strong>without markup</strong>.",
+    );
+    expect(container.querySelector(".session-hovercard__excerpt strong")).toBeNull();
+    expect(container.querySelector(".session-progress-card")).toBeNull();
+  });
+
+  it("renders progress instead of the latest-turn excerpt", () => {
+    const container = document.createElement("div");
+    render(
+      renderSessionHovercard({
+        row: row({ lastMessagePreview: "This must not appear." }),
+        progressCard: progressCard(),
+      }),
+      container,
+    );
+
+    expect(container.querySelector(".session-progress-card")?.textContent).toContain("Release");
+    expect(container.querySelector(".session-hovercard__excerpt")).toBeNull();
+    expect(container.textContent).not.toContain("This must not appear.");
+  });
+
+  it("renders nothing when no session facts are known", () => {
+    const container = document.createElement("div");
+    render(renderSessionHovercard({}), container);
+
+    expect(container.childElementCount).toBe(0);
   });
 });

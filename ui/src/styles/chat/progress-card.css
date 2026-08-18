@@ -134,6 +134,18 @@
   background: var(--border);
 }
 
+.session-hovercard__excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .session-progress-card--composer {
   flex: 1 1 100%;
   overflow: hidden;

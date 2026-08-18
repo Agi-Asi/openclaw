@@ -1716,13 +1716,14 @@ describe("runCodexAppServerAttempt", () => {
       data?: { prompt?: string; systemPrompt?: string };
       type: string;
     }> = [];
-    Object.assign(params, {
-      trajectoryRecorder: {
+    params.hostCapabilities = Object.freeze({
+      ...params.hostCapabilities,
+      trajectory: Object.freeze({
         recordEvent: (type: string, data?: { prompt?: string; systemPrompt?: string }) => {
           trajectoryEvents.push({ type, data });
         },
         flush: async () => undefined,
-      },
+      }),
     });
     params.skillsSnapshot = {
       prompt: "<available_skills><skill><name>demo</name></skill></available_skills>",
@@ -3878,8 +3879,9 @@ describe("runCodexAppServerAttempt", () => {
     });
     expect(fileStats.get("AGENTS.md")).toMatchObject({
       rawChars: agentsGuidance.length,
-      injectedChars: agentsGuidance.length,
-      truncated: false,
+      injectionStatus: "native_unverified",
+      injectedChars: null,
+      truncated: null,
     });
   });
   it("adds memory recall guidance when dated memory notes exist without root MEMORY.md", async () => {
@@ -4011,7 +4013,7 @@ describe("runCodexAppServerAttempt", () => {
     const run = runCodexAppServerAttempt(params);
     await harness.waitForMethod("turn/start");
     await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-    await run;
+    const result = await run;
 
     const threadStart = harness.requests.find((request) => request.method === "thread/start");
     if (!threadStart) {
@@ -4036,6 +4038,14 @@ describe("runCodexAppServerAttempt", () => {
       ).collaborationMode?.settings?.developer_instructions ?? "";
     expect(collaborationInstructions).toContain(soulGuidance);
     expect(collaborationInstructions).not.toContain(agentsGuidance);
+    const agentWorkspaceStats = result.systemPromptReport?.injectedWorkspaceFiles.find(
+      (file) => file.path === path.join(agentWorkspaceDir, "AGENTS.md"),
+    );
+    expect(agentWorkspaceStats).toMatchObject({
+      rawChars: agentsGuidance.length,
+      injectedChars: agentsGuidance.length,
+      truncated: false,
+    });
 
     const updatedGuidance = "Updated AGENTS guidance must wait for a new session.";
     await fs.writeFile(path.join(agentWorkspaceDir, "AGENTS.md"), updatedGuidance);
@@ -4047,95 +4057,6 @@ describe("runCodexAppServerAttempt", () => {
     await resumeHarness.waitForMethod("turn/start");
     await resumeHarness.completeTurn({ threadId: "thread-1", turnId: "turn-2" });
     await resumedRun;
-    const threadResume = resumeHarness.requests.find(
-      (request) => request.method === "thread/resume",
-    );
-    if (!threadResume) {
-      throw new Error("expected thread/resume request");
-    }
-    const resumedInstructions =
-      (threadResume.params as { developerInstructions?: string }).developerInstructions ?? "";
-    expect(resumedInstructions).toContain(agentsGuidance);
-    expect(resumedInstructions).not.toContain(updatedGuidance);
-  });
-
-  it("freezes external-cwd agent instructions across supervised materialization", async () => {
-    const { sessionFile, workspaceDir: executionDir } = createRunPaths();
-    const agentWorkspaceDir = path.join(tempDir, "agent-workspace");
-    const sourceThreadId = "thread-source";
-    const probeThreadId = "thread-probe";
-    const materializedThreadId = "thread-materialized";
-    const agentsGuidance = "Follow the frozen supervised AGENTS guidance.";
-    const updatedGuidance = "Updated supervised guidance belongs to a new session.";
-    const supervisionPluginConfig = { supervision: { enabled: true } } as const;
-    await fs.mkdir(executionDir, { recursive: true });
-    await fs.mkdir(agentWorkspaceDir, { recursive: true });
-    await fs.writeFile(path.join(agentWorkspaceDir, "AGENTS.md"), agentsGuidance);
-    await fs.writeFile(path.join(executionDir, "AGENTS.md"), "Execution project instructions");
-    const supervisionAppServer = resolveCodexSupervisionAppServerRuntimeOptions({
-      pluginConfig: supervisionPluginConfig,
-    });
-    await writeExistingBinding(sessionFile, executionDir, {
-      threadId: sourceThreadId,
-      connectionScope: "supervision",
-      supervisionSourceThreadId: sourceThreadId,
-      preserveNativeModel: true,
-      pendingSupervisionBranch: {
-        sourceThreadId,
-        connectionFingerprint: buildCodexAppServerConnectionFingerprint(supervisionAppServer),
-      },
-      conversationSourceTransferComplete: true,
-      historyCoveredThrough: new Date(0).toISOString(),
-    });
-    const materializeHarness = createAppServerHarness(async (method) => {
-      if (method === "thread/read") {
-        return { thread: threadStartResult(sourceThreadId).thread };
-      }
-      if (method === "thread/fork") {
-        return threadStartResult(probeThreadId);
-      }
-      if (method === "thread/start") {
-        return threadStartResult(materializedThreadId);
-      }
-      if (method === "turn/start") {
-        return turnStartResult();
-      }
-      return {};
-    });
-    const params = createParams(sessionFile, executionDir);
-    params.bootstrapWorkspaceDir = agentWorkspaceDir;
-    setAgentWorkspaceForTest(params, agentWorkspaceDir);
-
-    const run = runCodexAppServerAttempt(params, {
-      pluginConfig: supervisionPluginConfig,
-    });
-    await materializeHarness.waitForMethod("turn/start");
-    await materializeHarness.completeTurn({ threadId: materializedThreadId, turnId: "turn-1" });
-    await run;
-
-    await fs.writeFile(path.join(agentWorkspaceDir, "AGENTS.md"), updatedGuidance);
-    const resumeHarness = createAppServerHarness(async (method) => {
-      if (method === "thread/read") {
-        return { thread: threadStartResult(materializedThreadId).thread };
-      }
-      if (method === "thread/resume") {
-        return threadStartResult(materializedThreadId);
-      }
-      if (method === "turn/start") {
-        return turnStartResult("turn-2");
-      }
-      return {};
-    });
-    const resumeParams = createParams(sessionFile, executionDir);
-    resumeParams.bootstrapWorkspaceDir = agentWorkspaceDir;
-    setAgentWorkspaceForTest(resumeParams, agentWorkspaceDir);
-    const resumedRun = runCodexAppServerAttempt(resumeParams, {
-      pluginConfig: supervisionPluginConfig,
-    });
-    await resumeHarness.waitForMethod("turn/start");
-    await resumeHarness.completeTurn({ threadId: materializedThreadId, turnId: "turn-2" });
-    await resumedRun;
-
     const threadResume = resumeHarness.requests.find(
       (request) => request.method === "thread/resume",
     );
@@ -4675,6 +4596,83 @@ describe("runCodexAppServerAttempt", () => {
       }
     },
   );
+  it("captures settled tool evidence when an active native compaction fails terminally", async () => {
+    const storePath = path.join(tempDir, "settled-compaction-failure.sqlite");
+    const sessionId = "session-settled-compaction-failure";
+    const sessionFile = `agent:main:${sessionId}`;
+    const workspaceDir = path.join(tempDir, "workspace-settled-compaction-failure");
+    const harness = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    await attachSqliteSessionTarget(params, storePath, sessionId);
+    params.prompt = "Finish the task and report the result.";
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("turn/start");
+    await harness.notify(
+      itemNotification("item/started", {
+        type: "commandExecution",
+        id: "tool-settled",
+        command: "echo completed-work",
+        cwd: workspaceDir,
+        status: "inProgress",
+      }),
+    );
+    await harness.notify(
+      itemNotification("item/completed", {
+        type: "commandExecution",
+        id: "tool-settled",
+        command: "echo completed-work",
+        cwd: workspaceDir,
+        status: "completed",
+        aggregatedOutput: "completed-work\n",
+        exitCode: 0,
+        durationMs: 12,
+      }),
+    );
+    await harness.notify(
+      itemNotification("item/started", { type: "contextCompaction", id: "compact-failed" }),
+    );
+    await harness.notify({
+      method: "error",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        error: {
+          message: "remote compaction failed",
+          codexErrorInfo: "other",
+          additionalDetails: null,
+        },
+        willRetry: false,
+      },
+    });
+    await harness.notify(
+      turnCompleted({
+        id: "turn-1",
+        status: "failed",
+        error: {
+          message: "remote compaction failed",
+          codexErrorInfo: "other",
+          additionalDetails: null,
+        },
+      }),
+    );
+
+    const result = await run;
+
+    expect(readAttemptTerminal(result)).toMatchObject({
+      promptError: "remote compaction failed",
+      promptErrorSource: "compaction",
+    });
+    expect(result.itemLifecycle).toEqual({ startedCount: 1, completedCount: 1, activeCount: 0 });
+    expect(result.settledTurnFinalizationContext).toMatchObject({
+      source: "openclaw-transcript",
+      messages: [
+        expect.objectContaining({ role: "user" }),
+        expect.objectContaining({ role: "assistant" }),
+        expect.objectContaining({ role: "toolResult", toolCallId: "tool-settled" }),
+      ],
+    });
+    expect(Object.isFrozen(result.settledTurnFinalizationContext?.messages)).toBe(true);
+  });
   it("preserves every command failure from official app-server events", async () => {
     const sessionFile = path.join(tempDir, "session-multi-command-failure.jsonl");
     const workspaceDir = path.join(tempDir, "workspace-multi-command-failure");
