@@ -380,9 +380,9 @@ export function createChannelIngressDrain<
   const armStallWatchdog = (state: ActiveHandlerState<TPayload, TMetadata>) => {
     clearStallTimer(state);
     state.stallTimer = setTimeout(() => {
-      // Pre-handoff only. Deferred work has an explicit lifecycle owner that
-      // completes, releases, or fails the claim while its lease stays refreshed.
-      if (state.phase !== "dispatching") {
+      // Dispatch must either hand off or finish. Deferred work keeps this
+      // deadline alive through reply-queue ownership heartbeats.
+      if (state.phase !== "dispatching" && state.phase !== "deferred") {
         return;
       }
       const ageMs = now() - state.startedAt;
@@ -458,10 +458,10 @@ export function createChannelIngressDrain<
         if (state.phase !== "dispatching") {
           return;
         }
-        // The reply queue now owns settlement. Keep the durable claim and lease,
-        // but end the ingress deadline so valid queue waits can outlive it.
+        // The reply queue now owns settlement and watchdog renewal. Reset the
+        // deadline at handoff so its first heartbeat gets a full interval.
         state.phase = "deferred";
-        clearStallTimer(state);
+        armStallWatchdog(state);
         if (deferredLaneOccupancy === "release") {
           if (laneOwnerByKey.get(state.laneKey) === state) {
             laneOwnerByKey.delete(state.laneKey);
@@ -469,6 +469,13 @@ export function createChannelIngressDrain<
           state.occupiesLane = false;
         }
       },
+      onDeferredHeartbeat: () => {
+        if (state.phase !== "deferred" || state.guillotined || state.superseded) {
+          return;
+        }
+        armStallWatchdog(state);
+      },
+      deferredHeartbeatIntervalMs: Math.max(1, Math.floor(adoptionStallTimeoutMs / 3)),
       onAdoptionFinalizing: () => {
         if (state.phase !== "dispatching" && state.phase !== "deferred") {
           return;

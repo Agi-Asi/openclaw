@@ -276,7 +276,7 @@ describe("channel ingress drain", () => {
     }
   });
 
-  it("keeps heartbeat while deferred work owns timeout settlement", async () => {
+  it("keeps claim heartbeat while the reply queue heartbeats deferred ownership", async () => {
     await withTempState(async (stateDir) => {
       let clock = 1_000;
       const queue = createTestIngressQueue(stateDir, { now: () => clock });
@@ -284,6 +284,7 @@ describe("channel ingress drain", () => {
       const refreshClaim = vi.fn(async () => true);
       queue.refreshClaim = refreshClaim;
       let adoptDeferred: (() => void | Promise<void>) | undefined;
+      let heartbeatDeferred: (() => void) | undefined;
       const drain = createChannelIngressDrain<Payload>({
         queue,
         now: () => clock,
@@ -292,6 +293,7 @@ describe("channel ingress drain", () => {
         deferredLaneOccupancy: "release",
         dispatchClaimedEvent: async (_event, lifecycle) => {
           adoptDeferred = lifecycle.onAdopted;
+          heartbeatDeferred = lifecycle.onDeferredHeartbeat;
           return { kind: "deferred" };
         },
       });
@@ -301,6 +303,7 @@ describe("channel ingress drain", () => {
       clock += 1_000;
       await vi.advanceTimersByTimeAsync(1_000);
       expect(refreshClaim).toHaveBeenCalledTimes(1);
+      heartbeatDeferred?.();
 
       clock += 1_000;
       await vi.advanceTimersByTimeAsync(1_000);

@@ -47,12 +47,13 @@ describe("channel ingress drain watchdog", () => {
     });
   });
 
-  it("lets lifecycle-owned deferrals outlive the pre-adoption watchdog", async () => {
+  it("lets queue-heartbeating deferrals outlive the pre-adoption watchdog", async () => {
     await withTempState(async (stateDir) => {
       let clock = 30_000;
       const queue = createTestIngressQueue(stateDir, { now: () => clock });
       await queue.enqueue("evt-def-stall", { text: "x" }, { laneKey: "l1" });
       let adoptDeferred: (() => void | Promise<void>) | undefined;
+      let deferredHeartbeat: (() => void) | undefined;
 
       const drain = createChannelIngressDrain<Payload>({
         queue,
@@ -60,6 +61,7 @@ describe("channel ingress drain watchdog", () => {
         adoptionStallTimeoutMs: 5_000,
         dispatchClaimedEvent: async (_event, lifecycle) => {
           adoptDeferred = lifecycle.onAdopted;
+          deferredHeartbeat = lifecycle.onDeferredHeartbeat;
           lifecycle.onDeferred();
           return { kind: "deferred" };
         },
@@ -67,8 +69,16 @@ describe("channel ingress drain watchdog", () => {
 
       await drain.drainOnce();
       expect(await queue.listClaims()).toHaveLength(1);
-      clock += 60_000;
-      await vi.advanceTimersByTimeAsync(60_000);
+      expect(deferredHeartbeat).toBeTypeOf("function");
+      for (let elapsed = 0; elapsed < 60_000; elapsed += 4_000) {
+        clock += 4_000;
+        await vi.advanceTimersByTimeAsync(4_000);
+        expect(drain.activeLaneKeys()).toEqual(new Set(["l1"]));
+        const claim = await queue.listClaims();
+        expect(claim).toHaveLength(1);
+        // The real reply queue emits this while it retains the deferred lifecycle.
+        deferredHeartbeat?.();
+      }
 
       expect(await queue.listFailed?.()).toEqual([]);
       expect((await queue.listClaims()).map((claim) => claim.id)).toEqual(["evt-def-stall"]);
