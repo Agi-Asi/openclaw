@@ -870,10 +870,9 @@ function recordCodexAttemptIdentity(params: {
     typeof threadId === "string" && threadId.trim().length > 0,
     `expected Codex thread_ready identity for ${params.sessionKey}; events=${JSON.stringify(events)}`,
   ).toBe(true);
-  const previousThreadId = observedCodexThreadIds.get(params.sessionKey);
-  if (previousThreadId === threadId) {
-    // The authoritative native setting update arrives during turn/start, after thread_ready.
-    // Its durable projection is observable when the same thread is prepared again.
+  if (nativeSettingsSessionKeys.has(params.sessionKey)) {
+    // Supervised turns omit turn-level overrides, so the thread response must
+    // immediately report the target effort prepared on start or resume.
     expect(threadReady?.data?.reasoningEffort ?? null).toBe(
       resolveCodexHarnessExpectedNativeEffort(expectedModel),
     );

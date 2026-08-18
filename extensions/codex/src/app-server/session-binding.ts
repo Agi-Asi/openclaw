@@ -225,8 +225,8 @@ const threadBindingSchema = z
       .pipe(z.string().min(1))
       .optional()
       .catch(undefined),
-    // Native thread responses and settings updates own this effective setting;
-    // supervised turn requests intentionally carry no duplicate override.
+    // Native thread responses own this effective setting; supervised turn
+    // requests intentionally carry no duplicate override.
     reasoningEffort: z.string().nullable().optional().catch(undefined),
     // Legacy rows may contain the retired two-field permission overlay. Keep
     // parsing it so the rest of the binding survives; SessionEntry owns live policy.
