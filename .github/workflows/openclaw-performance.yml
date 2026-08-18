@@ -511,6 +511,7 @@ jobs:
             args+=(--profile-on-failure)
           fi
           if [[ "$LANE_ID" == "mock-deep-profile" ]]; then
+            export NODE_OPTIONS="--heapsnapshot-signal=SIGUSR2 --diagnostic-dir=${MANAGED_GATEWAY_DIAGNOSTICS_DIR} --report-on-signal --report-signal=SIGWINCH --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
             args+=(--keep-env)
           fi
           if [[ "$FAIL_ON_REGRESSION" == "true" ]]; then
@@ -629,6 +630,10 @@ jobs:
 
           expected_node_options="--heapsnapshot-signal=SIGUSR2 --diagnostic-dir=${MANAGED_GATEWAY_DIAGNOSTICS_DIR} --report-on-signal --report-signal=SIGWINCH --report-directory=${MANAGED_GATEWAY_DIAGNOSTICS_DIR}"
           actual_node_options="$(tr '\0' '\n' < "/proc/$gateway_pid/environ" | sed -n 's/^NODE_OPTIONS=//p')"
+          node_options_present=false
+          if [[ -n "$actual_node_options" ]]; then
+            node_options_present=true
+          fi
           node_options_match=false
           if [[ "$actual_node_options" == "$expected_node_options" ]]; then
             node_options_match=true
@@ -643,8 +648,9 @@ jobs:
             --argjson pid "$gateway_pid" \
             --arg command "$gateway_comm" \
             --arg cwd "$gateway_cwd" \
+            --argjson nodeOptionsPresent "$node_options_present" \
             --argjson nodeOptionsMatch "$node_options_match" \
-            '{envName:$envName,pid:$pid,command:$command,cwd:$cwd,nodeOptionsPresent:true,nodeOptionsMatch:$nodeOptionsMatch}' \
+            '{envName:$envName,pid:$pid,command:$command,cwd:$cwd,nodeOptionsPresent:$nodeOptionsPresent,nodeOptionsMatch:$nodeOptionsMatch}' \
             > "$MANAGED_GATEWAY_DIAGNOSTICS_DIR/managed-gateway.json"
 
           # The report signal is distinct from the heap signal so the synchronous
