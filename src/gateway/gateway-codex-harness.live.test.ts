@@ -2276,6 +2276,7 @@ describeLive("gateway live (Codex harness)", () => {
                 command: "/new",
                 expectedText: "New session started.",
               });
+              nativeSettingsSessionKeys.delete(sessionKey);
               logCodexLiveStep("new-command", { resetText });
               expect(await readCodexHarnessSessionId({ client: activeClient, sessionKey })).toBe(
                 preResetSessionId,
