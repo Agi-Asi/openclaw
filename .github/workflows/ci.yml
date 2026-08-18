@@ -67,12 +67,72 @@ env:
   NODE_VERSION: "24.x"
 
 jobs:
+  control-ui-draft-visual-proof:
+    name: control-ui-draft-visual-proof
+    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.dispatch_id, 'pr125637-current-main-visual-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact proof composition
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - name: Verify current-main base and stable patch identity
+        run: |
+          set -euo pipefail
+          expected_main="1ed682f883ec448599e7085ffafaddc4e70f1a1e"
+          expected_patch_id="76ee04f3c72532409a0141408efb4ddeea34ba60"
+          actual_main="$(git rev-parse HEAD~2)"
+          actual_patch_id="$(git show HEAD~1 --pretty=format: | git patch-id --stable | awk '{print $1}')"
+          test "$actual_main" = "$expected_main"
+          test "$actual_patch_id" = "$expected_patch_id"
+          echo "current_main=${actual_main}"
+          echo "stable_patch_id=${actual_patch_id}"
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.x"
+          install-bun: "false"
+          dependency-cache: "false"
+          use-actions-cache: "true"
+      - name: Cache Playwright Chromium
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-1.62.1
+      - name: Install Playwright Chromium
+        run: node --import tsx scripts/ensure-playwright-chromium.mts
+      - name: Capture current-main plus stable-patch text-draft proof
+        env:
+          OPENCLAW_UI_E2E_ARTIFACT_DIR: .artifacts/pr125637-current-main-text-draft
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            echo "[pr125637-current-main-proof] attempt=${attempt}"
+            node scripts/run-vitest.mjs run \
+              --config test/vitest/vitest.ui-e2e.config.ts \
+              --configLoader runner \
+              ui/src/e2e/new-session-page.prompt-attachments.e2e.test.ts \
+              --testNamePattern "restores a text-only prompt in a fresh page"
+          done
+      - name: Upload sanitized visual proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pr125637-current-main-text-draft-visual-proof
+          path: .artifacts/pr125637-current-main-text-draft/
+          if-no-files-found: error
+          retention-days: 7
+
   # Preflight: establish routing truth and job matrices once, then let real
   # work fan out from a single source of truth.
   preflight:
     permissions:
       contents: read
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !(github.event_name == 'workflow_dispatch' && startsWith(inputs.dispatch_id, 'pr125637-current-main-visual-'))
     runs-on: ${{ (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid') && 'ubuntu-24.04' || github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04') }}
     timeout-minutes: 20
     outputs:
