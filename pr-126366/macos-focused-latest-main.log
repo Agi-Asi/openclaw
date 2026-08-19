@@ -1,0 +1,86 @@
+◇ Test run started.
+↳ Testing Library Version: 2070
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite GatewayConnectionControlTests started.
+◇ Suite ConnectSnapshotStoreGenerationTests started.
+◇ Test "retired generation cannot repopulate CLI snapshot store" started.
+◇ Test "operator widget capability refresh is shared and retained" started.
+✔ Test "retired generation cannot repopulate CLI snapshot store" passed after 0.001 seconds.
+✔ Suite ConnectSnapshotStoreGenerationTests passed after 0.001 seconds.
+✔ Test "operator widget capability refresh is shared and retained" passed after 0.007 seconds.
+◇ Test "wizard not found means cancellation already reached a terminal session" started.
+✔ Test "wizard not found means cancellation already reached a terminal session" passed after 0.001 seconds.
+◇ Test "operator connection rebuilds when direct TLS pin changes" started.
+✔ Test "operator connection rebuilds when direct TLS pin changes" passed after 0.009 seconds.
+◇ Test "direct endpoint never receives another route device token" started.
+✔ Test "direct endpoint never receives another route device token" passed after 0.015 seconds.
+◇ Test "SSH endpoint never receives another route device token" started.
+✔ Test "SSH endpoint never receives another route device token" passed after 0.013 seconds.
+◇ Test "retired socket callbacks cannot mutate cache or subscribers" started.
+✔ Test "retired socket callbacks cannot mutate cache or subscribers" passed after 0.001 seconds.
+◇ Test "replaced route rejects callbacks from previous client" started.
+✔ Test "replaced route rejects callbacks from previous client" passed after 0.001 seconds.
+◇ Test "older reconfigure cannot install after newer route" started.
+✔ Test "older reconfigure cannot install after newer route" passed after 0.001 seconds.
+◇ Test "same route reconfigure joins newer client" started.
+✔ Test "same route reconfigure joins newer client" passed after 0.001 seconds.
+◇ Test "reconfigure cannot join same route installed after shutdown" started.
+✔ Test "reconfigure cannot join same route installed after shutdown" passed after 0.001 seconds.
+◇ Test "request suspended in config lookup cannot recreate route after shutdown" started.
+✔ Test "request suspended in config lookup cannot recreate route after shutdown" passed after 0.001 seconds.
+◇ Test "refresh suspended in config lookup cannot recreate route after shutdown" started.
+✔ Test "refresh suspended in config lookup cannot recreate route after shutdown" passed after 0.001 seconds.
+◇ Test "capture route suspended in config lookup cannot recreate route after shutdown" started.
+✔ Test "capture route suspended in config lookup cannot recreate route after shutdown" passed after 0.001 seconds.
+◇ Test "older shutdown cannot clear newer route" started.
+✔ Test "older shutdown cannot clear newer route" passed after 0.001 seconds.
+◇ Test "status fails when process missing" started.
+✔ Test "status fails when process missing" passed after 0.001 seconds.
+◇ Test "reject empty message" started.
+✔ Test "reject empty message" passed after 0.001 seconds.
+◇ Test "send agent keeps empty voice wake trigger field" started.
+✔ Test "send agent keeps empty voice wake trigger field" passed after 0.001 seconds.
+◇ Test "chat send carries routing precondition and omits inherited thinking" started.
+✔ Test "chat send carries routing precondition and omits inherited thinking" passed after 0.001 seconds.
+◇ Test "routing identity decodes agent and contract from one response" started.
+✔ Test "routing identity decodes agent and contract from one response" passed after 0.001 seconds.
+◇ Test "configured inference model follows the default agent" started.
+◇ Test case passing 2 arguments json → "{"defaultId":"main","mainKey":"main","scope":"per-sender","agents":[{"id":"main","model":{"primary":"openai/gpt-5.5"}}]}", expected → "openai/gpt-5.5" to "configured inference model follows the default agent" started.
+◇ Test case passing 2 arguments json → "{"defaultId":"work","mainKey":"main","scope":"per-sender","agents":[{"id":"main","model":{"primary":"openai/gpt-5.5"}},{"id":"work","model":{"primary":"anthropic/claude-opus-4-8"}}]}", expected → "anthropic/claude-opus-4-8" to "configured inference model follows the default agent" started.
+◇ Test case passing 2 arguments json → "{"defaultId":"main","mainKey":"main","scope":"per-sender","agents":[{"id":"main"},{"id":"work","model":{"primary":"openai/gpt-5.5"}}]}", expected → nil to "configured inference model follows the default agent" started.
+◇ Test case passing 2 arguments json → "{"defaultId":"main","mainKey":"main","scope":"per-sender","agents":[{"id":"main","model":{"primary":"   "}}]}", expected → nil to "configured inference model follows the default agent" started.
+✔ Test "configured inference model follows the default agent" with 4 test cases passed after 0.001 seconds.
+✔ Suite GatewayConnectionControlTests passed after 0.051 seconds.
+✔ Test run with 21 tests in 2 suites passed after 0.051 seconds.
+◇ Test run started.
+↳ Testing Library Version: 2070
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite WebChatSwiftUISmokeTests started.
+◇ Test "response and thinking headings keep their semantic typography" started.
+✔ Test "response and thinking headings keep their semantic typography" passed after 0.001 seconds.
+◇ Test "assistant segments select one complete markdown typography profile" started.
+✔ Test "assistant segments select one complete markdown typography profile" passed after 0.001 seconds.
+◇ Test "session observer remains visible until the last shared gateway window closes" started.
+✔ Test "session observer remains visible until the last shared gateway window closes" passed after 0.001 seconds.
+◇ Test "reopening a gateway window restores visibility after the last owner closes" started.
+✔ Test "reopening a gateway window restores visibility after the last owner closes" passed after 0.001 seconds.
+◇ Test "window controller merges titlebar and keeps toolbar controls" started.
+✔ Test "window controller merges titlebar and keeps toolbar controls" passed after 0.760 seconds.
+◇ Test "closing a full window releases it and notifies its owner once" started.
+✔ Test "closing a full window releases it and notifies its owner once" passed after 0.291 seconds.
+◇ Test "one Gateway profile can own multiple independent windows" started.
+✔ Test "one Gateway profile can own multiple independent windows" passed after 0.633 seconds.
+◇ Test "initial draft populates an empty composer without replacing user text" started.
+✔ Test "initial draft populates an empty composer without replacing user text" passed after 0.286 seconds.
+◇ Test "controller explicit agent wins and nil falls back to cached default" started.
+✔ Test "controller explicit agent wins and nil falls back to cached default" passed after 0.423 seconds.
+◇ Test "controller refuses cached display default when gateway requires selection" started.
+✔ Test "controller refuses cached display default when gateway requires selection" passed after 0.421 seconds.
+◇ Test "max and Ultra thinking preferences survive reopen" started.
+✔ Test "max and Ultra thinking preferences survive reopen" passed after 0.015 seconds.
+◇ Test "verbosity preference survives reopen" started.
+✔ Test "verbosity preference survives reopen" passed after 0.001 seconds.
+◇ Test "inherited verbosity preference clears persisted override" started.
+✔ Test "inherited verbosity preference clears persisted override" passed after 0.001 seconds.
+✔ Suite WebChatSwiftUISmokeTests passed after 2.837 seconds.
+✔ Test run with 13 tests in 1 suite passed after 2.837 seconds.

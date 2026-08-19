@@ -1,0 +1,268 @@
+Building for debugging...
+[Computing dependencies]
+[Pre-planning 1 / 598]
+[Planning deferred tasks]
+[1 / 5]
+[2 / 6] OpenClawProtocol
+[3 / 7] OpenClawProtocol
+[8 / 12] OpenClawKit
+[9 / 13] OpenClawKit
+[12 / 16] OpenClawChatUI
+[13 / 17] OpenClawChatUI
+[21 / 28] OpenClawProtocol
+[24 / 31] OpenClawProtocol
+[26 / 32] OpenClawProtocol
+[37 / 44] OpenClawKit
+[48 / 55] OpenClawChatUI
+/Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation/apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatViewModel+Outbox.swift:893:26: warning: result of call to 'markCommandQueued(id:attemptVersion:retryCount:lastError:)' is unused [#NoUsage]
+ 891 |             // The transport proved this payload never reached its request
+ 892 |             // channel, so it is safe to retry automatically.
+ 893 |             await outbox.markCommandQueued(
+     |                          `- warning: result of call to 'markCommandQueued(id:attemptVersion:retryCount:lastError:)' is unused [#NoUsage]
+ 894 |                 id: command.id,
+ 895 |                 attemptVersion: command.attemptVersion,
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[50 / 56] OpenClawChatUI
+[53 / 57] OpenClawKitTests-product
+[64 / 68] OpenClawKitTests-product
+/Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation/apps/shared/OpenClawKit/Tests/OpenClawKitTests/ChatViewModelSessionActionTests.swift:872:28: warning: expression of type 'Bool' is unused [#NoUsage]
+ 870 |         #expect(viewModel.sessionBranches == newBranches)
+ 871 |         firstGate.release()
+ 872 |         await firstRefresh.value
+     |                            `- warning: expression of type 'Bool' is unused [#NoUsage]
+ 873 | 
+ 874 |         #expect(viewModel.sessionBranches == newBranches)
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[70 / 72] OpenClawKitTests-product
+[72 / 72] OpenClawKitTests-product
+[76 / 76]
+Build complete! (47.70 sec)
+◇ Test run started.
+↳ Testing Library Version: 2070
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ChatGatewayPayloadCodecTests started.
+◇ Test "agent wait distinguishes terminal and retryable timeouts" started.
+◇ Test "command choice normalizes source aliases and identity" started.
+◇ Test "session change decoding distinguishes absent fields from explicit clears" started.
+◇ Test "session change remains codable without exposing presence flags" started.
+◇ Test "routing identity decodes agent and canonical contract" started.
+◇ Test "event frames map to shared chat transport events" started.
+◇ Test "model choices preserve metadata and replace blank names" started.
+◇ Test "session key extracts canonical agent identity" started.
+◇ Test "routing identity reconstructs legacy gateway contract" started.
+◇ Test "session change decodes nested fallback with outer null precedence and no reason" started.
+✔ Test "session key extracts canonical agent identity" passed after 0.001 seconds.
+✔ Test "command choice normalizes source aliases and identity" passed after 0.001 seconds.
+✔ Test "agent wait distinguishes terminal and retryable timeouts" passed after 0.001 seconds.
+✔ Test "session change decodes nested fallback with outer null precedence and no reason" passed after 0.001 seconds.
+✔ Test "model choices preserve metadata and replace blank names" passed after 0.001 seconds.
+✔ Test "routing identity decodes agent and canonical contract" passed after 0.001 seconds.
+✔ Test "routing identity reconstructs legacy gateway contract" passed after 0.001 seconds.
+✔ Test "session change decoding distinguishes absent fields from explicit clears" passed after 0.001 seconds.
+✔ Test "session change remains codable without exposing presence flags" passed after 0.001 seconds.
+✔ Test "event frames map to shared chat transport events" passed after 0.001 seconds.
+✔ Suite ChatGatewayPayloadCodecTests passed after 0.001 seconds.
+✔ Test run with 10 tests in 1 suite passed after 0.001 seconds.
+Building for debugging...
+[Computing dependencies]
+[Pre-planning 1 / 598]
+[Planning deferred tasks]
+[1 / 5]
+[8 / 9] OpenClawNativeStateTests-product
+Build complete! (0.94 sec)
+◇ Test run started.
+↳ Testing Library Version: 2070
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ChatGatewayRequestTests started.
+◇ Suite ChatGatewayPayloadCodecTests started.
+◇ Test "session patch request preserves explicit null clearing" started.
+◇ Test "long running requests share exact gateway timeout margins" started.
+◇ Test "chat metadata request selects session agent before fallback" started.
+◇ Test "settings patch request encodes fast values and explicit resets" started.
+◇ Test "list sessions request normalizes optional filters" started.
+◇ Test "session targets share normalization while preserving platform routing policy" started.
+◇ Test "question resolve request preserves answer arrays" started.
+◇ Test "question get request carries id" started.
+◇ Test "settings patch request encodes default model as null" started.
+◇ Test "fork and create requests preserve routing identity" started.
+◇ Test "send request omits inherited thinking override" started.
+◇ Test "commands request selects session agent before fallback" started.
+◇ Test "settings patch request encodes model thinking and verbosity atomically" started.
+◇ Test "routing identity decodes agent and canonical contract" started.
+◇ Test "child session request encodes focused pagination filters" started.
+◇ Test "session observation requests encode global subscription and actual visibility" started.
+◇ Test "message rewind and fork requests preserve routing identity" started.
+◇ Test "question cancel request uses resolve cancel contract" started.
+◇ Test "send request shares attachment encoding and timeout policy" started.
+◇ Test "session key extracts canonical agent identity" started.
+◇ Test "models list scopes worker catalogs and preserves default scope" started.
+◇ Test "event frames map to shared chat transport events" started.
+◇ Test "model choices preserve metadata and replace blank names" started.
+◇ Test "session change remains codable without exposing presence flags" started.
+◇ Test "session change decodes nested fallback with outer null precedence and no reason" started.
+◇ Test "routing identity reconstructs legacy gateway contract" started.
+◇ Test "agent wait distinguishes terminal and retryable timeouts" started.
+◇ Test "session group requests encode exact gateway contracts" started.
+◇ Test "rename clear archive and fork use session mutation contracts" started.
+◇ Test "command choice normalizes source aliases and identity" started.
+◇ Test "branch list and switch requests preserve routing identity" started.
+◇ Test "session change decoding distinguishes absent fields from explicit clears" started.
+✔ Test "chat metadata request selects session agent before fallback" passed after 0.001 seconds.
+✔ Test "session targets share normalization while preserving platform routing policy" passed after 0.001 seconds.
+✔ Test "long running requests share exact gateway timeout margins" passed after 0.001 seconds.
+✔ Test "list sessions request normalizes optional filters" passed after 0.001 seconds.
+✔ Test "fork and create requests preserve routing identity" passed after 0.001 seconds.
+✔ Test "session patch request preserves explicit null clearing" passed after 0.001 seconds.
+✔ Test "question get request carries id" passed after 0.001 seconds.
+✔ Test "settings patch request encodes default model as null" passed after 0.001 seconds.
+✔ Test "settings patch request encodes model thinking and verbosity atomically" passed after 0.001 seconds.
+✔ Test "commands request selects session agent before fallback" passed after 0.001 seconds.
+✔ Test "child session request encodes focused pagination filters" passed after 0.001 seconds.
+✔ Test "models list scopes worker catalogs and preserves default scope" passed after 0.001 seconds.
+✔ Test "session observation requests encode global subscription and actual visibility" passed after 0.001 seconds.
+✔ Test "question resolve request preserves answer arrays" passed after 0.001 seconds.
+✔ Test "message rewind and fork requests preserve routing identity" passed after 0.001 seconds.
+✔ Test "question cancel request uses resolve cancel contract" passed after 0.001 seconds.
+✔ Test "send request omits inherited thinking override" passed after 0.001 seconds.
+✔ Test "session key extracts canonical agent identity" passed after 0.001 seconds.
+✔ Test "send request shares attachment encoding and timeout policy" passed after 0.001 seconds.
+✔ Test "session group requests encode exact gateway contracts" passed after 0.001 seconds.
+✔ Test "settings patch request encodes fast values and explicit resets" passed after 0.001 seconds.
+✔ Test "agent wait distinguishes terminal and retryable timeouts" passed after 0.001 seconds.
+✔ Test "rename clear archive and fork use session mutation contracts" passed after 0.001 seconds.
+✔ Test "routing identity decodes agent and canonical contract" passed after 0.001 seconds.
+✔ Test "routing identity reconstructs legacy gateway contract" passed after 0.001 seconds.
+✔ Test "command choice normalizes source aliases and identity" passed after 0.001 seconds.
+✔ Test "model choices preserve metadata and replace blank names" passed after 0.001 seconds.
+✔ Test "branch list and switch requests preserve routing identity" passed after 0.001 seconds.
+✔ Test "session change decodes nested fallback with outer null precedence and no reason" passed after 0.001 seconds.
+✔ Test "session change decoding distinguishes absent fields from explicit clears" passed after 0.001 seconds.
+✔ Suite ChatGatewayRequestTests passed after 0.001 seconds.
+✔ Test "session change remains codable without exposing presence flags" passed after 0.001 seconds.
+✔ Test "event frames map to shared chat transport events" passed after 0.001 seconds.
+✔ Suite ChatGatewayPayloadCodecTests passed after 0.001 seconds.
+✔ Test run with 32 tests in 2 suites passed after 0.001 seconds.
+Building for debugging...
+[Computing dependencies]
+[Pre-planning 1 / 598]
+[Planning deferred tasks]
+[4 / 11] OpenClawKit_OpenClawKit
+Build complete! (0.80 sec)
+◇ Test run started.
+↳ Testing Library Version: 2070
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ChatCommandOutboxStoreTests started.
+◇ Suite ClientDatabaseLegacyImportTests started.
+◇ Suite ChatTranscriptCacheStoreTests started.
+◇ Test "queue and attachment budgets are gateway scoped" started.
+◇ Test "retiring a store ends only its forwarded change streams" started.
+◇ Test "parked accepted rows mint retry identity while queued rows keep it" started.
+◇ Test "empty root reconcile permits first row and parks a wiped scope" started.
+◇ Test "canonical proof wins a cancellation race" started.
+◇ Test "interrupted sends fail closed once" started.
+◇ Test "retry adopts a fresh verified route" started.
+◇ Test "nil agent rows use the canonical empty scope owner" started.
+◇ Test "commands and attachment blobs round trip in order" started.
+◇ Test "bulk branch parking invalidates sibling subscribers" started.
+◇ Test "stale queued and acknowledged commands require user action" started.
+◇ Test "cancellation stops only unclaimed client state" started.
+◇ Test "forget removes an unreadable per gateway legacy database and sidecars" started.
+◇ Test "parked accepted attachment follows the fresh retry identity" started.
+◇ Test "foreground retry imports a legacy database discovered after startup" started.
+◇ Test "retired facade cannot recover a replacement facades sends" started.
+◇ Test "nonancestral parking gives failed uncertain rows a fresh retry identity" started.
+◇ Test "legacy v1 cache is discarded" started.
+◇ Test "claims are insertion FIFO when timestamps tie and exclusive" started.
+◇ Test "preserved shared legacy database blocks targeted forget" started.
+◇ Test "unknown or corrupt legacy files remain untouched" started.
+◇ Test "legacy import accepts only gateways in the pairing registry" started.
+◇ Test "legacy import uses exact registry identifier bytes" started.
+◇ Test "canonical cache excludes optimistic outbox rows" started.
+◇ Test "cache projection strips payloads and keeps bounded diffs" started.
+◇ Test "legacy v6 imports attachments and routing identity" started.
+◇ Test "forgotten gateway is never resurrected by a late legacy import" started.
+◇ Test "gateway removal deletes only that gateways cache and state" started.
+◇ Test "corrupt cache rebuilds while corrupt client state is preserved" started.
+◇ Test "transcripts are scoped by gateway and agent in one cache" started.
+◇ Test "legacy v2 outbox imports parked into client state" started.
+◇ Test "transcript and sessions round trip as row JSON" started.
+◇ Test "concurrent canonical merges do not lose messages" started.
+◇ Test "one broken pending removal does not block another gateway" started.
+◇ Test "staged gateway removal uses exact registry identifier bytes" started.
+◇ Test "full removal deletes both databases legacy files and sidecars" started.
+◇ Test "malformed cache partitions are discarded atomically" started.
+◇ Test "canceling a repeated forget preserves the finalized tombstone" started.
+◇ Test "hash only scrub marker remains recoverable" started.
+◇ Test "pending removal marker gates writable facade recreation" started.
+◇ Test "cache format mismatch rebuilds without touching client state" started.
+◇ Test "cancelable stage does not suppress legacy state import" started.
+◇ Test "empty transcript deletes its partition" started.
+◇ Test "gateway removal scrubs its payloads from shared database files" started.
+◇ Test "canceled optimistic row cannot reenter cache from a stale snapshot" started.
+◇ Test "routing identity survives a cold container reopen" started.
+◇ Test "routing identity lazily upgrades the legacy table shape" started.
+◇ Test "cache bounds sessions messages and transcript partitions" started.
+◇ Test "staged gateway removal reconciles against the pairing registry" started.
+◇ Test "canonical merge preserves newer cache rows" started.
+◇ Test "commit started recovery finishes even while gateway remains registered" started.
+◇ Test "one installation owns exactly the two named databases" started.
+◇ Test "unknown registry preserves a cancelable staged removal" started.
+✔ Test "forget removes an unreadable per gateway legacy database and sidecars" passed after 0.120 seconds.
+✔ Test "cache projection strips payloads and keeps bounded diffs" passed after 0.121 seconds.
+✔ Test "pending removal marker gates writable facade recreation" passed after 0.141 seconds.
+✔ Test "foreground retry imports a legacy database discovered after startup" passed after 0.144 seconds.
+✔ Test "legacy import uses exact registry identifier bytes" passed after 0.147 seconds.
+✔ Test "legacy v1 cache is discarded" passed after 0.147 seconds.
+✔ Test "legacy v6 imports attachments and routing identity" passed after 0.149 seconds.
+✔ Test "unknown or corrupt legacy files remain untouched" passed after 0.149 seconds.
+✔ Test "legacy v2 outbox imports parked into client state" passed after 0.154 seconds.
+✔ Test "full removal deletes both databases legacy files and sidecars" passed after 0.154 seconds.
+✔ Test "cancelable stage does not suppress legacy state import" passed after 0.155 seconds.
+✔ Test "one installation owns exactly the two named databases" passed after 0.156 seconds.
+✔ Test "corrupt cache rebuilds while corrupt client state is preserved" passed after 0.169 seconds.
+✔ Test "preserved shared legacy database blocks targeted forget" passed after 0.181 seconds.
+✔ Test "legacy import accepts only gateways in the pairing registry" passed after 0.235 seconds.
+✔ Test "canonical proof wins a cancellation race" passed after 0.277 seconds.
+✔ Test "routing identity lazily upgrades the legacy table shape" passed after 0.277 seconds.
+✔ Test "retired facade cannot recover a replacement facades sends" passed after 0.282 seconds.
+✔ Test "canceling a repeated forget preserves the finalized tombstone" passed after 0.282 seconds.
+✔ Test "commands and attachment blobs round trip in order" passed after 0.282 seconds.
+✔ Test "retry adopts a fresh verified route" passed after 0.282 seconds.
+✔ Test "forgotten gateway is never resurrected by a late legacy import" passed after 0.282 seconds.
+✔ Test "interrupted sends fail closed once" passed after 0.282 seconds.
+✔ Test "canonical merge preserves newer cache rows" passed after 0.284 seconds.
+✔ Test "retiring a store ends only its forwarded change streams" passed after 0.284 seconds.
+✔ Test "routing identity survives a cold container reopen" passed after 0.316 seconds.
+✔ Test "canceled optimistic row cannot reenter cache from a stale snapshot" passed after 0.335 seconds.
+✔ Test "hash only scrub marker remains recoverable" passed after 0.335 seconds.
+✔ Test "empty transcript deletes its partition" passed after 0.344 seconds.
+✔ Test "nil agent rows use the canonical empty scope owner" passed after 0.344 seconds.
+✔ Test "staged gateway removal uses exact registry identifier bytes" passed after 0.344 seconds.
+✔ Suite ClientDatabaseLegacyImportTests passed after 0.345 seconds.
+✔ Test "cache format mismatch rebuilds without touching client state" passed after 0.356 seconds.
+✔ Test "unknown registry preserves a cancelable staged removal" passed after 0.355 seconds.
+✔ Test "claims are insertion FIFO when timestamps tie and exclusive" passed after 0.364 seconds.
+✔ Test "transcript and sessions round trip as row JSON" passed after 0.364 seconds.
+✔ Test "canonical cache excludes optimistic outbox rows" passed after 0.372 seconds.
+✔ Test "stale queued and acknowledged commands require user action" passed after 0.373 seconds.
+✔ Test "gateway removal deletes only that gateways cache and state" passed after 0.380 seconds.
+✔ Test "cancellation stops only unclaimed client state" passed after 0.380 seconds.
+✔ Test "gateway removal scrubs its payloads from shared database files" passed after 0.380 seconds.
+✔ Test "one broken pending removal does not block another gateway" passed after 0.384 seconds.
+✔ Test "transcripts are scoped by gateway and agent in one cache" passed after 0.385 seconds.
+✔ Test "malformed cache partitions are discarded atomically" passed after 0.399 seconds.
+✔ Test "parked accepted attachment follows the fresh retry identity" passed after 0.399 seconds.
+✔ Test "nonancestral parking gives failed uncertain rows a fresh retry identity" passed after 0.399 seconds.
+✔ Test "commit started recovery finishes even while gateway remains registered" passed after 0.401 seconds.
+✔ Test "empty root reconcile permits first row and parks a wiped scope" passed after 0.409 seconds.
+✔ Test "bulk branch parking invalidates sibling subscribers" passed after 0.409 seconds.
+✔ Test "concurrent canonical merges do not lose messages" passed after 0.415 seconds.
+✔ Test "queue and attachment budgets are gateway scoped" passed after 0.445 seconds.
+✔ Test "staged gateway removal reconciles against the pairing registry" passed after 0.452 seconds.
+✔ Test "parked accepted rows mint retry identity while queued rows keep it" passed after 0.453 seconds.
+✔ Suite ChatCommandOutboxStoreTests passed after 0.453 seconds.
+✔ Test "cache bounds sessions messages and transcript partitions" passed after 0.457 seconds.
+✔ Suite ChatTranscriptCacheStoreTests passed after 0.458 seconds.
+✔ Test run with 53 tests in 3 suites passed after 0.458 seconds.

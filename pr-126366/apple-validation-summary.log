@@ -1,0 +1,32 @@
+OpenClaw Apple routing stack validation
+Date: 2026-08-19
+
+Final base: 5976e74d1cc8022c82c644f9d2fffbd07473d7a5
+Protocol PR head: 3a118c1156f
+Gateway PR head: 4c1142e6f32
+Apple PR head: 1f80c437575
+
+Latest-main focused verification
+- protocol:check:swift: PASS
+- gateway protocol schema: 30/30 PASS
+- agent-list routing projection: 27/27 PASS across focused shard
+- released Apple chat.send projection: 1/1 PASS
+- ChatGatewayPayloadCodecTests: 10/10 PASS
+- ChatGatewayRequestTests + codec coverage: 32/32 PASS
+- ChatTranscriptCacheStoreTests + dependent suites: 53/53 PASS
+- GatewayConnectionControlTests: 21/21 PASS
+- WebChatSwiftUISmokeTests: 13/13 PASS
+- Targeted macOS assertion: controller refuses cached display default when Gateway requires selection: PASS
+
+iOS simulator verification
+- Simulator build: BUILD SUCCEEDED
+- NodeAppModelInvokeTests: 236/236 PASS
+- RoutingProofUITests.testExplicitRoutingRequiresSelectionBeforeSend: 1/1 PASS, 0 failures
+- Live proof flow: unowned request refused; Research selected explicitly; same message accepted
+
+Environment notes
+- Physical iPhone and Watch were offline; iOS proof used the dedicated iOS 27 simulator.
+- The only upstream delta touching Apple paths after live iOS capture was regenerated shared GatewayModels/protocol coverage; apps/ios was unchanged.
+- Latest-main protocol/shared Swift/macOS focused suites were rerun after that delta and passed.
+- macOS package was ad-hoc signed for isolated proof only.
+- Xcode 27 beta required one local AppKit symbol compatibility substitution; it was reverted and never pushed.
