@@ -5,6 +5,7 @@ import {
   startBrokeredMemoryRuntimeSupervisor,
   testing,
   withBrokeredMemoryMaintenance,
+  withBrokeredMemoryUpgrade,
 } from "./memory-broker-runtime.js";
 import type { MemoryPluginCapability } from "./registry-contribution-types.js";
 
@@ -45,6 +46,7 @@ const brokerCapability = {
 
 afterEach(async () => {
   await closeBrokeredMemoryRuntimes();
+  testing.clearBrokeredMemoryUpgradeFenceForTest();
   startMemoryBrokerProcess.mockReset();
 });
 
@@ -241,5 +243,33 @@ describe("brokered memory maintenance", () => {
     resolveStart?.(broker);
     await Promise.all([supervisor, maintenance]);
     expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("retires the broker before direct Gateway update work and keeps the old process fenced", async () => {
+    const order: string[] = [];
+    const broker = {
+      ...brokerProcess(),
+      close: vi.fn(async () => {
+        order.push("broker:closed");
+      }),
+    };
+    startMemoryBrokerProcess.mockResolvedValueOnce(broker);
+    await startBrokeredMemoryRuntimeSupervisor(brokerCapability);
+
+    const update = vi.fn(async () => {
+      order.push("update");
+    });
+    await withBrokeredMemoryUpgrade(update);
+
+    expect(order).toEqual(["broker:closed", "update"]);
+    expect(broker.close).toHaveBeenCalledOnce();
+
+    // Shutdown cannot reopen a broker after the old Gateway has started replacing its own code.
+    // The following readiness attempt models a late lifecycle callback in that same process.
+    await closeBrokeredMemoryRuntimes();
+    await expect(startBrokeredMemoryRuntimeSupervisor(brokerCapability)).rejects.toThrow(
+      "selected memory broker did not become ready",
+    );
+    expect(startMemoryBrokerProcess).toHaveBeenCalledOnce();
   });
 });

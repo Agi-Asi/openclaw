@@ -77,6 +77,9 @@ type PostCoreFinalizeOutcome = Awaited<
 const runPostCoreFinalizeAfterGatewayUpdateMock = vi.fn<() => Promise<PostCoreFinalizeOutcome>>(
   async () => ({ status: "skipped", reason: "not-git-update" }),
 );
+const withBrokeredMemoryUpgradeMock = vi.fn(
+  async <T>(run: () => Promise<T>): Promise<T> => await run(),
+);
 
 type UpdateRunPayload = {
   ok: boolean;
@@ -185,6 +188,10 @@ vi.mock("../../infra/update-campaign.js", () => ({
 vi.mock("../../infra/update-runner.js", () => ({
   resolveUpdateInstallSurface: resolveUpdateInstallSurfaceMock,
   runGatewayUpdate: runGatewayUpdateMock,
+}));
+
+vi.mock("../../plugins/memory-broker-runtime.js", () => ({
+  withBrokeredMemoryUpgrade: withBrokeredMemoryUpgradeMock,
 }));
 
 // Keep the real `foldPostCoreFinalizeIntoResult` so the restart-gate behavior on
@@ -312,6 +319,10 @@ beforeEach(() => {
     status: "skipped",
     reason: "not-git-update",
   });
+  withBrokeredMemoryUpgradeMock.mockClear();
+  withBrokeredMemoryUpgradeMock.mockImplementation(
+    async <T>(run: () => Promise<T>): Promise<T> => await run(),
+  );
 });
 
 async function invokeUpdateRun(
@@ -980,6 +991,37 @@ describe("update.run post-core plugin finalize", () => {
     expect(scheduleGatewaySigusr1RestartMock).toHaveBeenCalledTimes(1);
     expect(payload?.ok).toBe(true);
     expect(payload?.result?.status).toBe("ok");
+  });
+
+  it("fences brokered memory around the full unsupervised git update lifecycle", async () => {
+    const order: string[] = [];
+    withBrokeredMemoryUpgradeMock.mockImplementationOnce(async <T>(run: () => Promise<T>) => {
+      order.push("upgrade:start");
+      const result = await run();
+      order.push("upgrade:finish");
+      return result;
+    });
+    runGatewayUpdateMock.mockImplementationOnce(async () => {
+      order.push("core:update");
+      return {
+        status: "ok",
+        mode: "git",
+        root: "/tmp/openclaw-git",
+        after: { version: "2026.6.1" },
+        steps: [],
+        durationMs: 100,
+      };
+    });
+    runPostCoreFinalizeAfterGatewayUpdateMock.mockImplementationOnce(async () => {
+      order.push("plugin:finalize");
+      return { status: "ok", entrypoint: "/tmp/openclaw-git/dist/index.mjs" };
+    });
+    mockGitInstallSurface("/tmp/openclaw-git");
+
+    await captureUpdateRunPayload();
+
+    expect(withBrokeredMemoryUpgradeMock).toHaveBeenCalledOnce();
+    expect(order).toEqual(["upgrade:start", "core:update", "plugin:finalize", "upgrade:finish"]);
   });
 
   it("carries the pre-doctor source config into the git finalizer", async () => {

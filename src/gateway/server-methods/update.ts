@@ -506,41 +506,51 @@ export const updateHandlers: GatewayRequestHandlers = {
                 return undefined;
               })
             : undefined;
+        const runDirectGatewayUpdate = async () => {
+          // The package tree can change beneath this process. Retire selected-memory children
+          // first, then keep this Gateway fenced until its replacement owns a fresh broker epoch.
+          result = await runGatewayUpdate({
+            timeoutMs,
+            cwd: root,
+            argv1: process.argv[1],
+            channel:
+              installSurface.kind === "git"
+                ? (configChannel ?? undefined)
+                : effectiveChannel === "extended-stable"
+                  ? effectiveChannel
+                  : (configChannel ?? undefined),
+            ...(adoptedPackageTargetVersion ? { tag: adoptedPackageTargetVersion } : {}),
+            ...(adoptedDevTarget ? { devTarget: adoptedDevTarget } : {}),
+            allowGatewayServiceRepair: false,
+            allowGatewayActivation: false,
+          });
+          // The CLI `openclaw update` resumes post-core plugin convergence after a
+          // git/source core update; the RPC path did not, leaving official managed
+          // plugins stale on the new core. Run the finalizer here to match.
+          const finalizeOutcome = await runPostCoreFinalizeAfterGatewayUpdate({
+            result,
+            channel: configChannel ?? undefined,
+            serviceRepairPolicy: "external",
+            ...(timeoutMs === undefined ? {} : { timeoutMs }),
+            ...(preUpdateConfig ? { preUpdateConfig } : {}),
+          });
+          if (finalizeOutcome.status === "error") {
+            context?.logGateway?.warn(
+              `update.run post-core plugin finalize failed ${formatControlPlaneActor(actor)} reason=${finalizeOutcome.reason}`,
+            );
+          }
+          return foldPostCoreFinalizeIntoResult(result, finalizeOutcome);
+        };
         // Supervised Windows gateways, including Startup-folder fallbacks, take
         // the detached handoff above. This direct path is unsupervised, so keep
         // doctor service mutation disabled: it could rewrite or terminate the
         // RPC server before the response and restart sentinel become durable.
-        result = await runGatewayUpdate({
-          timeoutMs,
-          cwd: root,
-          argv1: process.argv[1],
-          channel:
-            installSurface.kind === "git"
-              ? (configChannel ?? undefined)
-              : effectiveChannel === "extended-stable"
-                ? effectiveChannel
-                : (configChannel ?? undefined),
-          ...(adoptedPackageTargetVersion ? { tag: adoptedPackageTargetVersion } : {}),
-          ...(adoptedDevTarget ? { devTarget: adoptedDevTarget } : {}),
-          allowGatewayServiceRepair: false,
-          allowGatewayActivation: false,
-        });
-        // The CLI `openclaw update` resumes post-core plugin convergence after a
-        // git/source core update; the RPC path did not, leaving official managed
-        // plugins stale on the new core. Run the finalizer here to match.
-        const finalizeOutcome = await runPostCoreFinalizeAfterGatewayUpdate({
-          result,
-          channel: configChannel ?? undefined,
-          serviceRepairPolicy: "external",
-          ...(timeoutMs === undefined ? {} : { timeoutMs }),
-          ...(preUpdateConfig ? { preUpdateConfig } : {}),
-        });
-        if (finalizeOutcome.status === "error") {
-          context?.logGateway?.warn(
-            `update.run post-core plugin finalize failed ${formatControlPlaneActor(actor)} reason=${finalizeOutcome.reason}`,
-          );
-        }
-        result = foldPostCoreFinalizeIntoResult(result, finalizeOutcome);
+        result =
+          installSurface.kind === "git"
+            ? await (
+                await import("../../plugins/memory-broker-runtime.js")
+              ).withBrokeredMemoryUpgrade(runDirectGatewayUpdate)
+            : await runDirectGatewayUpdate();
       }
     } catch {
       result = {

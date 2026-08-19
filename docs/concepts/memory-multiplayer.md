@@ -1815,6 +1815,13 @@ allow.
   restart, upgrade, backup, and recovery to this broker lifecycle. A restart
   rotates its epoch and rejects every pre-restart envelope; Gateway must
   re-authorize rather than reuse a continuation.
+- For an unsupervised direct Gateway source update, Gateway takes the broker
+  lifecycle writer lease, fences and retires every selected broker before it
+  mutates the package tree, then keeps memory unavailable in that old process.
+  Core update and post-core plugin convergence share that fenced window; only
+  the replacement Gateway can start a child with a new epoch and secret. A
+  managed-service handoff instead waits for Gateway shutdown before its helper
+  mutates the install root.
 - Run agent processes in per-session sandboxes with only authorized virtual
   mounts. The agent never receives the broker database handle or real artifact
   root.

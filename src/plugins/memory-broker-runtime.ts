@@ -20,6 +20,7 @@ import type {
 type BrokerRuntimeState = {
   processes: Map<string, Promise<MemoryBrokerProcess>>;
   agentIdsByModule: Map<string, readonly string[]>;
+  unavailableAfterUpgrade: Set<string>;
   supervisors: Set<MemoryBrokerSupervisor>;
   leases: Map<string, Promise<void>>;
   maintenance: BrokerMaintenanceGate;
@@ -47,6 +48,7 @@ const state = resolveGlobalSingleton(
   (): BrokerRuntimeState => ({
     processes: new Map(),
     agentIdsByModule: new Map(),
+    unavailableAfterUpgrade: new Set(),
     supervisors: new Set(),
     leases: new Map(),
     maintenance: createBrokerMaintenanceGate(),
@@ -252,6 +254,11 @@ async function resolveProcess(
 }
 
 async function resolveProcessOnLease(moduleUrl: string): Promise<MemoryBrokerProcess | undefined> {
+  // The Gateway may update its own package tree while it is still answering the update RPC. Do
+  // not fork a child from a half-replaced tree: only the replacement Gateway may clear this fence.
+  if (state.unavailableAfterUpgrade.has(moduleUrl)) {
+    return undefined;
+  }
   const existing = state.processes.get(moduleUrl);
   if (existing) {
     try {
@@ -328,7 +335,10 @@ export async function startBrokeredMemoryRuntimeSupervisor(
   if (!moduleUrl) {
     return undefined;
   }
-  state.agentIdsByModule.set(moduleUrl, Object.freeze([...new Set(params.agentIds ?? [])].toSorted()));
+  state.agentIdsByModule.set(
+    moduleUrl,
+    Object.freeze([...new Set(params.agentIds ?? [])].toSorted()),
+  );
   const supervisor = await startMemoryBrokerSupervisor({
     ensureProcess: () => resolveProcess(capability),
     retireProcess: () => retireProcess(capability),
@@ -586,6 +596,28 @@ export async function closeBrokeredMemoryRuntimes(): Promise<void> {
   }
 }
 
+/**
+ * An in-process Gateway update must retire every selected broker before it rewrites code or
+ * plugins. The current process stays memory-unavailable afterward; only its replacement may
+ * create a child, run startup recovery, and mint a new epoch/secret.
+ */
+export async function withBrokeredMemoryUpgrade<T>(run: () => Promise<T>): Promise<T> {
+  return await withGatewayBrokeredMemoryMaintenanceLease(state.maintenance, async () => {
+    const moduleUrls = [
+      ...new Set([...state.processes.keys(), ...state.agentIdsByModule.keys()]),
+    ].toSorted();
+    for (const moduleUrl of moduleUrls) {
+      await withBrokerLease(state.leases, moduleUrl, async () => {
+        // Fence resolution before closing the old child. A failed close must abort the update;
+        // proceeding could leave an old broker serving from code the update is about to replace.
+        state.unavailableAfterUpgrade.add(moduleUrl);
+        await retireProcessOnLease(state, moduleUrl);
+      });
+    }
+    return await run();
+  });
+}
+
 type BrokerMaintenanceProcess = Pick<MemoryBrokerProcess, "isRunning" | "quiesce" | "resume">;
 
 async function runBrokeredMemoryMaintenance<T>(params: {
@@ -679,6 +711,7 @@ export async function withBrokeredMemoryMaintenance<T>(run: () => Promise<T>): P
 }
 
 export const testing = {
+  clearBrokeredMemoryUpgradeFenceForTest: () => state.unavailableAfterUpgrade.clear(),
   createBrokerMaintenanceGate,
   withBrokerLease,
   withBrokerLifecycleOperation,
