@@ -92,11 +92,16 @@ export async function executeSessionsPatchMany(params: {
         throw new ToolAuthorizationError(`Session changed after access was granted: ${sessionKey}`);
       }
       const expectedSessionId = requestedSessionId ?? resolved.expectedSessionId;
-      return {
+      const target: { key: string; agentId?: string; expectedSessionId?: string } = {
         key: resolved.key,
-        ...(!parseAgentSessionKey(resolved.key) ? { agentId: resolved.agentId } : {}),
-        ...(expectedSessionId ? { expectedSessionId } : {}),
       };
+      if (!parseAgentSessionKey(resolved.key)) {
+        target.agentId = resolved.agentId;
+      }
+      if (expectedSessionId) {
+        target.expectedSessionId = expectedSessionId;
+      }
+      return target;
     }),
   );
   const result = await params.callGateway<SessionsPatchManyResult>({
