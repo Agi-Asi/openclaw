@@ -9,6 +9,7 @@ export {
 export { formatValidationErrors, type ValidationError } from "./validation-errors.js";
 export type { ProtocolValidator } from "./protocol-validator.js";
 export * from "./schema/worker-inference.js";
+export * from "./worker-schema-exports.js";
 export * from "./schema/skill-history.js";
 export * from "./schema/ui-command.js";
 export * from "./schema/board.js";
@@ -65,53 +66,6 @@ export {
   PresenceEntrySchema,
   SnapshotSchema,
   ErrorShapeSchema,
-  WorkerAdmissionFailureReasonSchema,
-  WorkerAdmissionHandshakeSchema,
-  WorkerAdmissionResponseFrameSchema,
-  WorkerConnectRequestFrameSchema,
-  WorkerHeartbeatParamsSchema,
-  WorkerHeartbeatRequestFrameSchema,
-  WorkerHeartbeatResponseFrameSchema,
-  WorkerSessionsSpawnParamsSchema,
-  WorkerSessionsSpawnResponseFrameSchema,
-  WorkerSessionsSendParamsSchema,
-  WorkerSessionsSendResponseFrameSchema,
-  WorkerSessionToolResultSchema,
-  WorkerLiveEventSchema,
-  WorkerLiveEventErrorDetailsSchema,
-  WorkerLiveEventErrorShapeSchema,
-  WorkerLiveEventParamsSchema,
-  WorkerLiveEventRequestFrameSchema,
-  WorkerLiveEventResponseFrameSchema,
-  WorkerLiveEventResultSchema,
-  WorkerProtocolCloseReasonSchema,
-  WorkerTranscriptCommitErrorReasonSchema,
-  WorkerTranscriptCommitErrorShapeSchema,
-  WorkerTranscriptCommitParamsSchema,
-  WorkerTranscriptCommitRequestFrameSchema,
-  WorkerTranscriptCommitResponseFrameSchema,
-  WorkerTranscriptCommitResultSchema,
-  WorkerTranscriptMessageSchema,
-  WORKER_BUNDLE_PREWARM_VERSION,
-  WORKER_HEARTBEAT_INTERVAL_MS,
-  WORKER_LAUNCH_V2_PROTOCOL_FEATURE,
-  WORKER_LIVE_EVENT_PROTOCOL_FEATURE,
-  WORKER_SESSION_TOOLS_PROTOCOL_FEATURE,
-  WORKER_SESSION_TOOL_MAX_TEXT_LENGTH,
-  WORKER_PROTOCOL_FEATURES,
-  WORKER_PROTOCOL_MAX_FEATURE_LENGTH,
-  WORKER_PROTOCOL_MAX_FEATURES,
-  WORKER_PROTOCOL_MAX_FRAME_ID_LENGTH,
-  WORKER_PROTOCOL_MAX_IDENTIFIER_LENGTH,
-  WORKER_PROTOCOL_MAX_METHOD_LENGTH,
-  WORKER_PROTOCOL_MAX_PAYLOAD_BYTES,
-  WORKER_PROVIDER_REPLAY_MAX_DATA_BYTES,
-  WORKER_PROTOCOL_METHODS,
-  WORKER_RPC_SET_VERSION,
-  WORKER_TRANSCRIPT_MAX_BATCH_MESSAGES,
-  WORKER_TRANSCRIPT_MAX_CONTENT_PARTS,
-  WORKER_TRANSCRIPT_MAX_JSON_DEPTH,
-  WORKER_TRANSCRIPT_COMMIT_PROTOCOL_FEATURE,
   EnvironmentStatusSchema,
   WorkerEnvironmentStateSchema,
   WorkerTunnelStatusSchema,
@@ -692,11 +646,6 @@ export {
   FsListDirParamsSchema,
   FsListDirResultSchema,
 } from "./schema-modules.js";
-export {
-  MIN_CLIENT_PROTOCOL_VERSION,
-  MIN_NODE_PROTOCOL_VERSION,
-  MIN_PROBE_PROTOCOL_VERSION,
-  PROTOCOL_VERSION,
-} from "./version.js";
+export * from "./version.js";
 export type * from "./schema-types.js";
 export type { SessionsPatchResult } from "./sessions-patch-result.js";
