@@ -1366,6 +1366,7 @@ describe("runGatewayUpdate", () => {
     expect(doctorEnv?.OPENCLAW_UPDATE_PARENT_SUPPORTS_GATEWAY_RESTART).toBe("1");
     expect(doctorEnv?.OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_SERVICE_REPAIR).toBe("1");
     expect(doctorEnv?.OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION).toBe("1");
+    expect(doctorEnv?.NODE_OPTIONS).toBe("--max-old-space-size=8192");
   });
 
   it("uses the pre-mutation activation decision for the git update doctor pass", async () => {

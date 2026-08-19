@@ -4,7 +4,8 @@ import {
   formatGatewayHeapLimitReport,
   inspectGatewayHeapLimit,
   resolveGatewayHeapNodeOptions,
-} from "./gateway-heap.js";
+  resolveNodeOptionsWithMinimumOldSpaceSize,
+} from "./node-heap.js";
 
 const MIB = 1024 * 1024;
 
@@ -112,5 +113,22 @@ describe("Gateway service NODE_OPTIONS", () => {
     expect(formatGatewayHeapLimitReport(report)).toBe(
       "6144 MiB (service setting; adaptive default 4096 MiB from 50% of 8192 MiB constrained memory, target range 2048-8192 MiB, native headroom cap 6144 MiB)",
     );
+  });
+});
+
+describe("minimum Node heap options", () => {
+  it("raises a lower limit without dropping other options", () => {
+    expect(
+      resolveNodeOptionsWithMinimumOldSpaceSize("--trace-warnings --max-old-space-size=1024", 8192),
+    ).toBe("--trace-warnings --max-old-space-size=1024 --max-old-space-size=8192");
+  });
+
+  it("preserves a larger explicit limit in any Node-supported spelling", () => {
+    expect(
+      resolveNodeOptionsWithMinimumOldSpaceSize(
+        "--max_old_space_size 12288 --trace-warnings",
+        8192,
+      ),
+    ).toBe("--max_old_space_size 12288 --trace-warnings");
   });
 });

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveNodeStartupTlsEnvironment } from "../bootstrap/node-startup-env.js";
+import { resolveGatewayHeapNodeOptions } from "../infra/node-heap.js";
 import {
   GATEWAY_SERVICE_KIND,
   GATEWAY_SERVICE_MARKER,
@@ -12,7 +13,6 @@ import {
   resolveGatewayWindowsTaskName,
   resolveNodeServiceIdentityEnvironment,
 } from "./constants.js";
-import { resolveGatewayHeapNodeOptions } from "./gateway-heap.js";
 import { resolveGatewayStateDir } from "./paths.js";
 
 type MinimalServicePathOptions = {

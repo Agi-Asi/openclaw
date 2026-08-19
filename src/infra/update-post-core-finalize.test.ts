@@ -120,6 +120,7 @@ describe("runPostCoreFinalizeAfterGatewayUpdate", () => {
       spawnFinalize,
       env: {
         PATH: "/usr/bin",
+        NODE_OPTIONS: "--trace-warnings --max-old-space-size=1024",
         OPENCLAW_SERVICE_MARKER: "openclaw",
         OPENCLAW_SERVICE_KIND: "gateway",
         OPENCLAW_GATEWAY_SERVICE_PID: "4242",
@@ -130,6 +131,9 @@ describe("runPostCoreFinalizeAfterGatewayUpdate", () => {
       "spawnFinalize.mock.calls[0] test invariant",
     )[0];
     expect(env.PATH).toBe("/usr/bin");
+    expect(env.NODE_OPTIONS).toBe(
+      "--trace-warnings --max-old-space-size=1024 --max-old-space-size=8192",
+    );
     expect(env.OPENCLAW_SERVICE_MARKER).toBeUndefined();
     expect(env.OPENCLAW_SERVICE_KIND).toBeUndefined();
     expect(env.OPENCLAW_GATEWAY_SERVICE_PID).toBeUndefined();

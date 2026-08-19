@@ -127,6 +127,18 @@ function parseMaxOldSpaceSizeMiB(nodeOptions: string | undefined): number | null
   return result;
 }
 
+export function resolveNodeOptionsWithMinimumOldSpaceSize(
+  nodeOptions: string | undefined,
+  minimumMiB: number,
+): string {
+  const current = nodeOptions?.trim() ?? "";
+  const existingLimit = parseMaxOldSpaceSizeMiB(current);
+  if (existingLimit !== null && existingLimit >= minimumMiB) {
+    return current;
+  }
+  return [current, `--max-old-space-size=${minimumMiB}`].filter(Boolean).join(" ");
+}
+
 export function resolveGatewayHeapNodeOptions(
   existingNodeOptions: string | undefined,
   memory: GatewayHeapMemoryInputs = {},

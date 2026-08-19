@@ -3,9 +3,9 @@ import {
   managerInstallIgnoreScriptsArgs,
   type UpdatePackageManagerFailureReason,
 } from "./update-package-manager.js";
+import { resolveUpdateNodeOptions } from "./update-runner-doctor.js";
 import type { UpdateRunResult, UpdateStepResult } from "./update-runner-types.js";
 
-const BUILD_MAX_OLD_SPACE_MB = 8192;
 const DEV_PREFLIGHT_LINT_ENV: NodeJS.ProcessEnv = {
   OPENCLAW_LOCAL_CHECK: "1",
   OPENCLAW_LOCAL_CHECK_MODE: "throttled",
@@ -29,17 +29,7 @@ export function shouldPreferIgnoreScriptsForWindowsPreflight(
 }
 
 function resolveBuildNodeOptions(baseOptions: string | undefined): string {
-  const current = baseOptions?.trim() ?? "";
-  const desired = `--max-old-space-size=${BUILD_MAX_OLD_SPACE_MB}`;
-  const existingMatch = /(?:^|\s)--max-old-space-size=(\d+)(?=\s|$)/.exec(current);
-  if (!existingMatch) {
-    return current ? `${current} ${desired}` : desired;
-  }
-  const existingValue = Number(existingMatch[1]);
-  if (Number.isFinite(existingValue) && existingValue >= BUILD_MAX_OLD_SPACE_MB) {
-    return current;
-  }
-  return current.replace(/(?:^|\s)--max-old-space-size=\d+(?=\s|$)/, ` ${desired}`).trim();
+  return resolveUpdateNodeOptions(baseOptions);
 }
 
 export function resolveBuildEnv(
