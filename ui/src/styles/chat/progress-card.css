@@ -243,32 +243,10 @@
 }
 
 .session-progress-card__dismiss {
-  display: inline-flex;
   width: 22px;
+  min-width: 22px;
   height: 22px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: var(--cursor-action);
-}
-
-.session-progress-card__dismiss:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.session-progress-card__dismiss:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
-  outline-offset: 1px;
-}
-
-.session-progress-card__dismiss svg {
-  width: 14px;
-  height: 14px;
+  min-height: 22px;
 }
 
 .session-progress-card--composer .session-progress-card__body {

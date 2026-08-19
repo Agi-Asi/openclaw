@@ -87,7 +87,7 @@ export function renderSessionProgressCard(
   );
   const dismiss = dismissible
     ? html`<button
-        class="session-progress-card__dismiss"
+        class="rail-header__action session-progress-card__dismiss"
         type="button"
         aria-label=${t("sessionProgressCard.dismiss")}
         title=${t("sessionProgressCard.dismiss")}

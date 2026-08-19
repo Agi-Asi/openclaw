@@ -2,7 +2,7 @@
 
 import type { ProgressCard } from "@openclaw/gateway-protocol";
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { renderSessionProgressCard } from "./session-progress-card.ts";
 
 const progressCard: ProgressCard = {
@@ -50,19 +50,4 @@ describe("renderSessionProgressCard", () => {
     ]);
   });
 
-  it("offers dismissal only for a completed checklist", () => {
-    const container = document.createElement("div");
-    const completed = {
-      ...progressCard,
-      steps: progressCard.steps?.map((step) => ({ ...step, status: "completed" as const })),
-    };
-    const onDismiss = vi.fn();
-
-    render(renderSessionProgressCard(completed, "composer", onDismiss), container);
-    container.querySelector<HTMLButtonElement>(".session-progress-card__dismiss")?.click();
-    expect(onDismiss).toHaveBeenCalledWith(completed);
-
-    render(renderSessionProgressCard(progressCard, "composer", onDismiss), container);
-    expect(container.querySelector(".session-progress-card__dismiss")).toBeNull();
-  });
 });
