@@ -1054,7 +1054,7 @@ describe("sessions tool", () => {
           ],
         };
       }
-      return { key: String(request.params.sessionKey) };
+      return { key: "agent:main:dashboard:changed" };
     });
     const tool = createSessionsTool({
       agentSessionKey: "agent:main:main",
