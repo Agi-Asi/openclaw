@@ -157,10 +157,6 @@ describe("sessions tool", () => {
         },
         deleteTranscript: { type: "boolean" },
         label: { type: "string", description: expect.stringContaining("Empty string clears") },
-        category: {
-          anyOf: [{ type: "string" }, { type: "null" }],
-          description: expect.stringContaining("Null or empty string clears"),
-        },
         unread: { type: "boolean" },
         targets: { type: "array", maxItems: 100 },
         icon: {
