@@ -28,6 +28,7 @@ const hoisted = vi.hoisted(() => ({
   completeCollectorLaunchCleanupMock: vi.fn(),
   emitSessionLifecycleEventMock: vi.fn(),
   dispatchGatewayMethodInProcessMock: vi.fn(),
+  getInProcessGatewayRequestContextMock: vi.fn(),
   hasInProcessGatewayContextMock: vi.fn(),
   resolveAgentConfigMock: vi.fn(),
   resolveContextEngineMock: vi.fn(),
@@ -160,6 +161,7 @@ describe("spawnSubagentDirect seam flow", () => {
     ({ resetSubagentRegistryForTests, spawnSubagentDirect } = await loadSubagentSpawnModuleForTest({
       callGatewayMock: hoisted.callGatewayMock,
       dispatchGatewayMethodInProcessMock: hoisted.dispatchGatewayMethodInProcessMock,
+      getInProcessGatewayRequestContextMock: hoisted.getInProcessGatewayRequestContextMock,
       hasInProcessGatewayContextMock: hoisted.hasInProcessGatewayContextMock,
       getRuntimeConfig: () => hoisted.configOverride,
       loadSessionStoreMock: hoisted.loadSessionStoreMock,
@@ -194,6 +196,7 @@ describe("spawnSubagentDirect seam flow", () => {
     hoisted.completeCollectorLaunchCleanupMock.mockReset();
     hoisted.emitSessionLifecycleEventMock.mockReset();
     hoisted.dispatchGatewayMethodInProcessMock.mockReset();
+    hoisted.getInProcessGatewayRequestContextMock.mockReset();
     hoisted.hasInProcessGatewayContextMock.mockReset().mockReturnValue(false);
     hoisted.resolveAgentConfigMock.mockReset();
     hoisted.resolveContextEngineMock.mockReset().mockResolvedValue({});
@@ -1233,6 +1236,8 @@ describe("spawnSubagentDirect seam flow", () => {
   });
 
   it("dispatches spawned agent runs in process when a gateway context is available", async () => {
+    const gatewayContext = { owner: "gateway-a" } as never;
+    hoisted.getInProcessGatewayRequestContextMock.mockReturnValue(gatewayContext);
     hoisted.hasInProcessGatewayContextMock.mockReturnValue(true);
     hoisted.callGatewayMock.mockRejectedValue(new Error("unexpected websocket gateway call"));
     hoisted.dispatchGatewayMethodInProcessMock.mockImplementation(async (method: string) => {
@@ -1274,7 +1279,11 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(agentOptions.allowSyntheticModelOverride).toBeUndefined();
     // In-process dispatch claims the task row directly, unlike ACP's best-effort
     // registration (see acp-spawn.test.ts).
-    expect(firstRegisteredSubagentRun().taskRowOwnership).toBe("required");
+    const registration = firstRegisteredSubagentRun();
+    expect(registration.taskRowOwnership).toBe("required");
+    expect(
+      (registration.gatewayContextResolver as (() => typeof gatewayContext) | undefined)?.(),
+    ).toBe(gatewayContext);
   });
 
   it("authorizes explicit model overrides for in-process child launches", async () => {

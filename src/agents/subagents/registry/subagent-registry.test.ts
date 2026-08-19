@@ -19,7 +19,11 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { GatewayRecoveryRuntime } from "../../../gateway/server-instance-runtime.types.js";
 import type { AgentEventPayload } from "../../../infra/agent-events.js";
 import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
-import { getPluginRuntimeGatewayRequestScope } from "../../../plugins/runtime/gateway-request-scope.js";
+import {
+  bindGatewayContextResolver,
+  getGatewayContextResolver,
+  getPluginRuntimeGatewayRequestScope,
+} from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   getActiveGatewayRootWorkCount,
   markGatewayRestartDraining,
@@ -6461,7 +6465,7 @@ describe("subagent registry seam flow", () => {
         },
       };
     });
-    mod.addSubagentRunForTests({
+    const entry = createSubagentRunRecord({
       runId: "run-release-context-engine",
       childSessionKey: "agent:main:session:child",
       controllerSessionKey: "agent:main:session:parent",
@@ -6479,8 +6483,15 @@ describe("subagent registry seam flow", () => {
       accumulatedRuntimeMs: 0,
       cleanupHandled: false,
     });
+    mod.addSubagentRunForTests(entry);
+    const registeredEntry = mod
+      .listSubagentRunsForRequester("agent:main:session:parent")
+      .find((run) => run.runId === "run-release-context-engine");
+    expect(registeredEntry).toBeDefined();
+    bindGatewayContextResolver(registeredEntry!, () => ({ owner: "gateway-a" }) as never);
 
     mod.releaseSubagentRun("run-release-context-engine");
+    expect(getGatewayContextResolver(registeredEntry!)).toBeUndefined();
 
     await waitForFast(() => {
       expect(mocks.onSubagentEnded).toHaveBeenCalledWith({

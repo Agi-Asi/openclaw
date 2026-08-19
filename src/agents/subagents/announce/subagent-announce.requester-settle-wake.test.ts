@@ -2,6 +2,7 @@
 // drain gating, batch idempotency, and the guards that keep the wake out of
 // nested/cron/single-delivered paths.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { bindGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
 import type { SubagentRunRecord } from "../registry/subagent-registry.types.js";
 import type { SubagentAnnounceDeliveryResult } from "./subagent-announce-dispatch.js";
 
@@ -181,7 +182,9 @@ describe("maybeWakeRequesterAfterAllChildrenSettled", () => {
   });
 
   it("wakes the requester once with a batch-stable idempotency key when the fan-out drains", async () => {
-    registryRuntimeMock.listSubagentRunsForRequester.mockReturnValue([
+    const context = { owner: "gateway-a" } as never;
+    const resolveGatewayContext = () => context;
+    const children = [
       makeSettledChild({
         runId: "run-b",
         completion: { required: true, resultText: "network findings" },
@@ -190,7 +193,11 @@ describe("maybeWakeRequesterAfterAllChildrenSettled", () => {
         runId: "run-a",
         completion: { required: true, resultText: "social findings" },
       }),
-    ]);
+    ];
+    for (const child of children) {
+      bindGatewayContextResolver(child, resolveGatewayContext);
+    }
+    registryRuntimeMock.listSubagentRunsForRequester.mockReturnValue(children);
 
     const woke = await maybeWakeRequesterAfterAllChildrenSettled(wakeParams());
 
@@ -203,6 +210,7 @@ describe("maybeWakeRequesterAfterAllChildrenSettled", () => {
     expect(call.requireDirectDelivery).toBe(true);
     expect(call.requireVisibleReply).toBeUndefined();
     expect(call.directIdempotencyKey).toBe(requesterSettleKey("run-a,run-b"));
+    expect((call.resolveGatewayContext as (() => typeof context) | undefined)?.()).toBe(context);
     const message = String(call.triggerMessage);
     expect(message).toContain("settled");
     expect(message).toContain("social findings");

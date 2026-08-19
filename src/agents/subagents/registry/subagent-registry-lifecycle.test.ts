@@ -8,6 +8,7 @@ import {
 } from "../../../config/sessions/transcript-write-context.js";
 import type { CallGatewayOptions } from "../../../gateway/call.js";
 import { getAgentEventLifecycleGeneration } from "../../../infra/agent-events.js";
+import { bindGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   getActiveGatewayRootWorkCount,
   markGatewayRestartDraining,
@@ -2629,6 +2630,9 @@ describe("subagent registry lifecycle hardening", () => {
       expectsCompletionMessage: true,
     });
     const runSubagentAnnounceFlow = vi.fn(async () => "delivered" as const);
+    const gatewayContext = { owner: "gateway-a" } as never;
+    const resolveGatewayContext = () => gatewayContext;
+    bindGatewayContextResolver(entry, resolveGatewayContext);
 
     const controller = createLifecycleController({ entry, persist, runSubagentAnnounceFlow });
 
@@ -2641,6 +2645,7 @@ describe("subagent registry lifecycle hardening", () => {
     expect(browserCleanupArg.onWarn).toBeTypeOf("function");
     expectFields(firstCallArg(runSubagentAnnounceFlow), {
       childSessionKey: entry.childSessionKey,
+      resolveGatewayContext,
     });
   });
 

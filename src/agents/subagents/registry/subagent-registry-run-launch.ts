@@ -1,9 +1,11 @@
 /** Owns subagent registration and queued collector launch transitions. */
+import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
 import {
   getAgentEventLifecycleGeneration,
   isAgentEventLifecycleGenerationCurrent,
 } from "../../../infra/agent-events.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
+import { bindGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   createQueuedTaskRun,
   createRunningTaskRun,
@@ -87,6 +89,7 @@ export type RegisterSubagentRunParams = {
   /** Required when direct dispatch suppresses Gateway tracking. Out-of-process launches keep
       Gateway's existing best-effort CLI policy; other callers create a best-effort row here. */
   taskRowOwnership?: "required" | "gateway_best_effort";
+  gatewayContextResolver?: GatewayContextResolver;
 };
 
 export class SubagentLaunchManager extends SubagentRecoveryManager {
@@ -266,6 +269,7 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
         }
       }
     }
+    bindGatewayContextResolver(entry, registerParams.gatewayContextResolver);
     // Wait through Gateway RPC; the in-process lifecycle listener is the embedded fallback.
     activateRegistrationLifecycle();
   };

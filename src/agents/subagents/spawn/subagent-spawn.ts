@@ -51,7 +51,7 @@ import type {
   SpawnSubagentParams,
   SpawnSubagentResult,
 } from "./subagent-spawn-contract.js";
-import { setSubagentSpawnDepsForTest } from "./subagent-spawn-deps.js";
+import { getSubagentSpawnDeps, setSubagentSpawnDepsForTest } from "./subagent-spawn-deps.js";
 import { callNativeSubagentGateway, readGatewayRunId } from "./subagent-spawn-gateway.js";
 import { buildSubagentLaunchRequest } from "./subagent-spawn-launch-request.js";
 import { createSubagentSpawnLifecycleEmitter } from "./subagent-spawn-lifecycle.js";
@@ -105,6 +105,8 @@ export async function spawnSubagentDirect(
   const requestThreadBinding = params.thread === true;
   const sandboxMode = params.sandbox === "require" ? "require" : "inherit";
   const requesterSessionKey = ctx.agentSessionKey;
+  const gatewayContext = getSubagentSpawnDeps().getInProcessGatewayRequestContext();
+  const gatewayContextResolver = gatewayContext ? () => gatewayContext : undefined;
   let requestedAgentId = params.agentId?.trim();
   const requestResolution = resolveSubagentSpawnRequest(params, ctx, {
     initial: requestedAgentId,
@@ -546,6 +548,7 @@ export async function spawnSubagentDirect(
           queuedLaunch,
           queued: params.collect === true,
           taskRowOwnership,
+          ...(gatewayContextResolver ? { gatewayContextResolver } : {}),
           attachmentsDir: attachmentAbsDir,
           attachmentsRootDir: attachmentRootDir,
           retainAttachmentsOnKeep: retainOnSessionKeep,

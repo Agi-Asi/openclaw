@@ -14,6 +14,7 @@ export { resolveContextEngine } from "../../../context-engine/registry.js";
 export { callGateway } from "../../../gateway/call.js";
 export {
   dispatchGatewayMethodInProcess,
+  getInProcessGatewayRequestContext,
   hasInProcessGatewayContext,
 } from "../../../gateway/server-plugins.js";
 export {

@@ -9,6 +9,10 @@ import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { GatewayRequestContext, GatewayRequestOptions } from "./server-methods/types.js";
+import {
+  clearFallbackGatewayContext,
+  setFallbackGatewayContext,
+} from "./server-plugin-fallback-context.js";
 import { dispatchGatewayMethodInProcess } from "./server-plugin-in-process-dispatch.js";
 
 const startTurn = vi.hoisted(() => vi.fn());
@@ -100,8 +104,22 @@ async function dispatchScopedMethod(params: {
 
 describe("typed in-process agent authorization", () => {
   beforeEach(() => {
+    clearFallbackGatewayContext();
     startTurn.mockReset();
     waitForTurn.mockReset();
+  });
+
+  it("fails closed when an explicit Gateway resolver loses its owner", async () => {
+    setFallbackGatewayContext(createContext());
+
+    await expect(
+      dispatchGatewayMethodInProcess(
+        "agent",
+        { message: "detached completion", idempotencyKey: "detached-completion" },
+        { resolveGatewayContext: () => undefined },
+      ),
+    ).rejects.toThrow("No scope set and no fallback context available");
+    expect(startTurn).not.toHaveBeenCalled();
   });
 
   it("rejects a scoped agent turn without operator.write", async () => {

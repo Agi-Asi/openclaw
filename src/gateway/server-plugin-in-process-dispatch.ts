@@ -13,6 +13,7 @@ import type { AgentRunRequest } from "./server-methods/agent-request-types.js";
 import type { TrustedSessionCreation } from "./server-methods/session-creation-provenance.js";
 import type {
   GatewayAgentRunTaskOwner,
+  GatewayContextResolver,
   GatewayRequestContext,
   GatewayRequestOptions,
   TrustedAgentToolCaller,
@@ -52,6 +53,7 @@ type DispatchGatewayMethodInProcessOptions = {
   syntheticScopes?: string[];
   timeoutMs?: number;
   signal?: AbortSignal;
+  resolveGatewayContext?: GatewayContextResolver;
 };
 
 type ResolvedInProcessGatewayDispatch = {
@@ -66,7 +68,11 @@ function resolveInProcessGatewayDispatch(
   options?: DispatchGatewayMethodInProcessOptions,
 ): ResolvedInProcessGatewayDispatch {
   const scope = getPluginRuntimeGatewayRequestScope();
-  const context = scope?.context ?? getFallbackGatewayContext();
+  const context =
+    scope?.context ??
+    (options?.resolveGatewayContext
+      ? options.resolveGatewayContext()
+      : getFallbackGatewayContext());
   const isWebchatConnect = scope?.isWebchatConnect ?? (() => false);
   if (!context) {
     throw new Error(

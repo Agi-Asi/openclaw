@@ -386,6 +386,8 @@ type GatewayResidentBridgeContext = {
   ) => void;
 };
 
+export type GatewayContextResolver = () => GatewayRequestContext | undefined;
+
 /** Complete runtime context available to gateway request handlers. */
 export type GatewayRequestContext = GatewayKernelContext &
   GatewayTransportContext &
