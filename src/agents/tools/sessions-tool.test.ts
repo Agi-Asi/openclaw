@@ -191,6 +191,7 @@ describe("sessions tool", () => {
     const callGateway = vi.fn();
     const tool = createSessionsTool({
       agentSessionKey: "agent:main:main",
+      agentSessionId: "main-session",
       config: {},
       callGateway,
     });
@@ -1065,7 +1066,7 @@ describe("sessions tool", () => {
     const result = await tool.execute("batch-category", {
       action: "patch_many",
       targets: [
-        { sessionKey: "agent:main:main", expectedSessionId: "main-session" },
+        { sessionKey: "agent:main:main" },
         { sessionKey: "agent:main:dashboard:changed" },
       ],
       category: "Research",
@@ -1083,7 +1084,7 @@ describe("sessions tool", () => {
       },
     });
     expect(result.details).toEqual({
-      status: "updated",
+      status: "partial",
       requested: 2,
       updated: 1,
       failed: [{ sessionKey: "agent:main:dashboard:changed", error: "session changed; retry" }],
@@ -1097,6 +1098,13 @@ describe("sessions tool", () => {
         archived: true,
       }),
     ).rejects.toThrow("patch_many does not support archived");
+    await expect(
+      tool.execute("batch-stale-current", {
+        action: "patch_many",
+        targets: [{ sessionKey: "agent:main:main", expectedSessionId: "stale-session" }],
+        unread: false,
+      }),
+    ).rejects.toThrow("Session changed after access was granted");
   });
 
   it("bounds failed batch details", async () => {
@@ -1126,7 +1134,7 @@ describe("sessions tool", () => {
     });
 
     expect(result.details).toEqual({
-      status: "updated",
+      status: "failed",
       requested: 1,
       updated: 0,
       failedOmitted: { count: 100, reason: "response_budget_exceeded" },

@@ -549,19 +549,21 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
           const error = outcome.error.message.slice(0, PATCH_MANY_ERROR_MAX_CHARS);
           return [{ sessionKey: outcome.key, error }];
         });
+        const updated = result.outcomes.length - failed.length;
+        const status = updated === 0 ? "failed" : failed.length > 0 ? "partial" : "updated";
         const acknowledgement = {
-          status: "updated",
+          status,
           requested: targets.length,
-          updated: result.outcomes.length - failed.length,
+          updated,
           failed,
         };
         return jsonResult(
           sessionsToolResultFitsBudget(acknowledgement)
             ? acknowledgement
             : {
-                status: "updated",
+                status,
                 requested: targets.length,
-                updated: result.outcomes.length - failed.length,
+                updated,
                 failedOmitted: { count: failed.length, reason: RESOLVED_OMITTED_REASON },
               },
         );

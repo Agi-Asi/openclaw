@@ -135,7 +135,8 @@ test("sessions.patchMany categorizes 100 sessions without transcript hydration",
         const selectedColumns = fromIndex > 0 ? normalized.slice("select ".length, fromIndex) : "";
         return normalized.startsWith("select ") &&
           /\b(?:from|join) "transcript_events"(?: |$)/.test(normalized) &&
-          (selectedColumns.includes("event_json") || /(?:^|, )(?:(?:"[^"]+"\.)?\*)/.test(selectedColumns))
+          (selectedColumns.includes("event_json") ||
+            /(?:^|, )(?:(?:"[^"]+"\.)?\*)/.test(selectedColumns))
           ? "transcript-full-hydration"
           : null;
       },

@@ -91,11 +91,7 @@ const SessionListRowOutputSchema = Type.Object(
     owner: Type.Optional(
       Type.Object(
         {
-          type: Type.Union([
-            Type.Literal("human"),
-            Type.Literal("agent"),
-            Type.Literal("system"),
-          ]),
+          type: Type.Union([Type.Literal("human"), Type.Literal("agent"), Type.Literal("system")]),
           id: Type.Optional(Type.String()),
           label: Type.Optional(Type.String()),
         },
