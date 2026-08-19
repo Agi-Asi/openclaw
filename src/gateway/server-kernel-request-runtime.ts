@@ -227,10 +227,12 @@ export async function prepareGatewayKernelRequestRuntime(params: {
     logError: (message) => log.error(message),
   });
   gatewayInstanceRuntimeRef.current = gatewayInstanceRuntime;
+  gatewayRequestContext.resolveGatewayContext = () =>
+    gatewayInstanceRuntime.isAvailable() ? gatewayRequestContext : undefined;
   gatewayRequestContext.approvalEvents = gatewayInstanceRuntime.approvalEvents;
   gatewayRequestContext.recoveryRuntime = gatewayInstanceRuntime.recovery;
   const clearFallbackContext: unknown = setFallbackGatewayContextResolver(
-    () => gatewayRequestContext,
+    gatewayRequestContext.resolveGatewayContext,
   );
   clearFallbackGatewayContextForServer.set(
     typeof clearFallbackContext === "function" ? () => clearFallbackContext() : () => {},

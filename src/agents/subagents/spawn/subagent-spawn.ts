@@ -23,6 +23,7 @@ import {
   type SpawnBackendAdapter,
   summarizeSpawnError,
 } from "../../spawn-pipeline.js";
+import { getGatewayToolCallerIdentity } from "../../tools/gateway-caller-context.js";
 import {
   completeCollectorLaunchCleanup,
   settleFailedQueuedSubagentLaunch,
@@ -51,7 +52,7 @@ import type {
   SpawnSubagentParams,
   SpawnSubagentResult,
 } from "./subagent-spawn-contract.js";
-import { getSubagentSpawnDeps, setSubagentSpawnDepsForTest } from "./subagent-spawn-deps.js";
+import { setSubagentSpawnDepsForTest } from "./subagent-spawn-deps.js";
 import { callNativeSubagentGateway, readGatewayRunId } from "./subagent-spawn-gateway.js";
 import { buildSubagentLaunchRequest } from "./subagent-spawn-launch-request.js";
 import { createSubagentSpawnLifecycleEmitter } from "./subagent-spawn-lifecycle.js";
@@ -105,8 +106,7 @@ export async function spawnSubagentDirect(
   const requestThreadBinding = params.thread === true;
   const sandboxMode = params.sandbox === "require" ? "require" : "inherit";
   const requesterSessionKey = ctx.agentSessionKey;
-  const gatewayContext = getSubagentSpawnDeps().getInProcessGatewayRequestContext();
-  const gatewayContextResolver = gatewayContext ? () => gatewayContext : undefined;
+  const gatewayContextResolver = getGatewayToolCallerIdentity()?.gatewayContextResolver;
   let requestedAgentId = params.agentId?.trim();
   const requestResolution = resolveSubagentSpawnRequest(params, ctx, {
     initial: requestedAgentId,
@@ -384,6 +384,7 @@ export async function spawnSubagentDirect(
           timeoutMs: childLaunch.timeoutMs,
         },
         childLaunch.authorization,
+        gatewayContextResolver,
       );
 
     const emitSpawnLifecycleHooks = createSubagentSpawnLifecycleEmitter({

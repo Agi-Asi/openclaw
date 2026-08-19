@@ -2,6 +2,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExecutionIdentityAdmissionToken } from "../../audit/execution-identity-admission.js";
 import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.js";
+import type { GatewayContextResolver } from "../../gateway/server-methods/types.js";
+import { getGatewayContextResolver } from "../../plugins/runtime/gateway-request-scope.js";
 import type { AdmittedRunContext, OperationalRunInstanceRef } from "../admitted-run-context.js";
 import { copyAgentToolMetadata } from "../agent-tool-metadata.js";
 import {
@@ -19,6 +21,8 @@ type GatewayToolCallerIdentity = {
   /** Opaque already-signed identity used only by isolated worker transports. */
   signedAgentRuntimeIdentityToken?: string;
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
+  /** Instance-bound routing only; delegated authority is revalidated separately. */
+  gatewayContextResolver?: GatewayContextResolver;
   /** Host-signed capability for the scheduled run's existing self-management surface. */
   cronSelfManagementJobId?: string;
   cronToolsAllowCapture?: "final-executable-surface";
@@ -70,6 +74,7 @@ export function createAdmittedGatewayToolCallerIdentity(
     sessionKey,
     operationalRunInstance: params.admittedRunContext.operationalRunInstance,
     executionIdentityToken: params.admittedRunContext.executionIdentityToken,
+    gatewayContextResolver: getGatewayContextResolver(params.admittedRunContext),
     turnSourceChannel: params.turnSourceChannel,
     turnSourceLocal: params.turnSourceLocal,
     turnSourceTo: params.turnSourceTo,
@@ -107,6 +112,8 @@ export async function withGatewayToolCallerIdentity<T>(
     identity.signedAgentRuntimeIdentityToken?.trim();
   const executionIdentityToken =
     inheritedOwner?.executionIdentityToken ?? identity.executionIdentityToken;
+  const gatewayContextResolver =
+    inheritedOwner?.gatewayContextResolver ?? identity.gatewayContextResolver;
   const cronSelfManagementJobId =
     identity.cronSelfManagementJobId?.trim() ?? inheritedOwner?.cronSelfManagementJobId;
   const cronToolsAllowCapture =
@@ -134,6 +141,7 @@ export async function withGatewayToolCallerIdentity<T>(
       ...(cronToolsAllowCapture ? { cronToolsAllowCapture } : {}),
       ...(cronCreatorAuthorityGrant ? { cronCreatorAuthorityGrant } : {}),
       ...(executionIdentityToken ? { executionIdentityToken } : {}),
+      ...(gatewayContextResolver ? { gatewayContextResolver } : {}),
       ...(turnSourceChannel ? { turnSourceChannel } : {}),
       ...(turnSourceLocal === true ? { turnSourceLocal: true } : {}),
       ...(turnSourceTo ? { turnSourceTo } : {}),

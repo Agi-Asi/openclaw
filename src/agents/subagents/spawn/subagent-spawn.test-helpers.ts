@@ -130,7 +130,6 @@ export function expectPersistedRuntimeModel(params: {
 export async function loadSubagentSpawnModuleForTest(params: {
   callGatewayMock: MockFn;
   dispatchGatewayMethodInProcessMock?: MockFn;
-  getInProcessGatewayRequestContextMock?: MockFn;
   hasInProcessGatewayContextMock?: MockFn;
   getRuntimeConfig?: () => Record<string, unknown>;
   loadSessionStoreMock?: MockFn;
@@ -220,7 +219,6 @@ export async function loadSubagentSpawnModuleForTest(params: {
     callGateway: (opts: unknown) => params.callGatewayMock(opts),
     dispatchGatewayMethodInProcess: (...args: unknown[]) =>
       params.dispatchGatewayMethodInProcessMock?.(...args),
-    getInProcessGatewayRequestContext: () => params.getInProcessGatewayRequestContextMock?.(),
     hasInProcessGatewayContext: () => Boolean(params.hasInProcessGatewayContextMock?.()),
     buildSubagentSystemPrompt: () => "system-prompt",
     forkSessionEntryFromParent:

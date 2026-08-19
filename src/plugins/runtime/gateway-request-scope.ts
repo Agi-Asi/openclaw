@@ -11,6 +11,7 @@ import type { PluginRegistry } from "../registry-types.js";
 
 type PluginRuntimeGatewayRequestScope = {
   context?: GatewayRequestContext;
+  resolveGatewayContext?: GatewayContextResolver;
   client?: GatewayRequestOptions["client"];
   isWebchatConnect: GatewayRequestOptions["isWebchatConnect"];
   pluginId?: string;
@@ -64,10 +65,9 @@ export function getSharedGatewayContextResolver(
   if (resolvers.some((resolver) => resolver === undefined)) {
     return resolveNoGatewayContext;
   }
-  const contexts = resolvers.map((resolver) => resolver?.());
-  const first = contexts[0];
-  return first && contexts.every((context) => context === first)
-    ? () => first
+  const first = resolvers[0];
+  return first && resolvers.every((resolver) => resolver === first)
+    ? first
     : resolveNoGatewayContext;
 }
 

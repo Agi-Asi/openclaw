@@ -2,6 +2,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { createExecutionIdentityAdmissionToken } from "../../audit/execution-identity-admission.js";
+import { bindGatewayContextResolver } from "../../plugins/runtime/gateway-request-scope.js";
 import { getPluginToolMeta, setPluginToolMeta } from "../../plugins/tools.js";
 import {
   isToolWrappedWithBeforeToolCallHook,
@@ -18,6 +19,7 @@ import {
 } from "../tool-terminal-presentation.js";
 import type { AnyAgentTool } from "./common.js";
 import {
+  createAdmittedGatewayToolCallerIdentity,
   getGatewayToolCallerIdentity,
   withGatewayToolApprovalOwner,
   withGatewayToolCallerIdentity,
@@ -25,6 +27,22 @@ import {
 } from "./gateway-caller-context.js";
 
 describe("gateway caller context wrapper", () => {
+  it("binds the admitted run to its lifecycle-fenced gateway resolver", () => {
+    const admittedRunContext = {
+      operationalRunInstance: { instanceId: "instance-1", runId: "run-1" },
+    };
+    const resolveGatewayContext = () => ({ owner: "gateway-a" }) as never;
+    bindGatewayContextResolver(admittedRunContext, resolveGatewayContext);
+
+    expect(
+      createAdmittedGatewayToolCallerIdentity({
+        admittedRunContext,
+        agentId: "main",
+        sessionKey: "agent:main:session-1",
+      })?.gatewayContextResolver,
+    ).toBe(resolveGatewayContext);
+  });
+
   it("preserves tool metadata used by policy and presentation layers", () => {
     const tool: AnyAgentTool = {
       name: "plugin_tool",

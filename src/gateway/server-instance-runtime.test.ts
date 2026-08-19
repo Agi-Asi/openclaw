@@ -57,12 +57,14 @@ describe("createGatewayInstanceRuntime", () => {
       getMethodRegistry: () => registry,
       isDispatchAvailable: () => available,
     });
+    expect(runtime.isAvailable()).toBe(false);
     expect(getGatewayRecoveryRuntime()).toBe(runtime.recovery);
 
     await expect(
       runtime.recovery.dispatchAgent({ message: "test", idempotencyKey: "run-unavailable" }),
     ).rejects.toThrow("Gateway instance dispatch unavailable");
     available = true;
+    expect(runtime.isAvailable()).toBe(true);
     await expect(runtime.recovery.waitForAgent({ runId: "run-1", timeoutMs: 0 })).resolves.toEqual({
       runId: "run-1",
       status: "timeout",
@@ -90,6 +92,7 @@ describe("createGatewayInstanceRuntime", () => {
     expect(rawAgent).not.toHaveBeenCalled();
 
     runtime.close();
+    expect(runtime.isAvailable()).toBe(false);
     expect(getGatewayRecoveryRuntime()).toBeUndefined();
     await expect(runtime.recovery.waitForAgent({ runId: "run-1" })).rejects.toThrow(
       "Gateway instance dispatch unavailable",

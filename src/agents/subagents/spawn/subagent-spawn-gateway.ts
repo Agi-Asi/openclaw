@@ -1,3 +1,4 @@
+import { getGatewayToolCallerIdentity } from "../../tools/gateway-caller-context.js";
 import { resolveSubagentRunTimerDelayMs } from "../registry/subagent-run-timeout.js";
 import type { SubagentLaunchAuthorization } from "./subagent-launch-authorization.js";
 import { applySubagentLaunchAuthorization } from "./subagent-launch-authorization.js";
@@ -17,7 +18,10 @@ type SubagentGatewayDispatchMode = "in_process" | "out_of_process";
 async function callSubagentGatewayWithDispatchMode(
   params: Parameters<typeof callGateway>[0],
   authorization?: SubagentLaunchAuthorization,
-  options?: { agentRunTracking?: "native_subagent" },
+  options?: {
+    agentRunTracking?: "native_subagent";
+    gatewayContextResolver?: import("../../../gateway/server-methods/types.js").GatewayContextResolver;
+  },
 ): Promise<{ response: SubagentGatewayResponse; dispatchMode: SubagentGatewayDispatchMode }> {
   // Subagent lifecycle requires methods spanning multiple scope tiers
   // (sessions.delete → admin, agent → write). When each call
@@ -39,7 +43,10 @@ async function callSubagentGatewayWithDispatchMode(
   );
   const allowModelOverride = authorization !== undefined;
   const deps = getSubagentSpawnDeps();
-  const hasInProcessGateway = deps.hasInProcessGatewayContext();
+  const gatewayContextResolver =
+    options?.gatewayContextResolver ?? getGatewayToolCallerIdentity()?.gatewayContextResolver;
+  const hasInProcessGateway =
+    gatewayContextResolver !== undefined || deps.hasInProcessGatewayContext();
   const needsOutOfProcessModelOverrideAuth = allowModelOverride && !hasInProcessGateway;
   const scopes =
     params.scopes ??
@@ -70,6 +77,7 @@ async function callSubagentGatewayWithDispatchMode(
         expectFinal: request.expectFinal,
         ...(allowModelOverride ? { allowSyntheticModelOverride: true } : {}),
         ...(options?.agentRunTracking ? { agentRunTracking: options.agentRunTracking } : {}),
+        ...(gatewayContextResolver ? { resolveGatewayContext: gatewayContextResolver } : {}),
         ...(forceSyntheticClient ? { forceSyntheticClient: true } : {}),
         ...(typeof request.timeoutMs === "number" ? { timeoutMs: request.timeoutMs } : {}),
         ...(scopes != null ? { syntheticScopes: scopes } : {}),
@@ -90,12 +98,14 @@ export async function callSubagentGateway(
 export async function callNativeSubagentGateway(
   params: Parameters<typeof callGateway>[0],
   authorization?: SubagentLaunchAuthorization,
+  gatewayContextResolver?: import("../../../gateway/server-methods/types.js").GatewayContextResolver,
 ): Promise<{
   response: SubagentGatewayResponse;
   taskRowOwnership: "required" | "gateway_best_effort";
 }> {
   const result = await callSubagentGatewayWithDispatchMode(params, authorization, {
     agentRunTracking: "native_subagent",
+    ...(gatewayContextResolver ? { gatewayContextResolver } : {}),
   });
   return {
     response: result.response,

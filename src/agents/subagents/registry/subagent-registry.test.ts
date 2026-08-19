@@ -3367,7 +3367,9 @@ describe("subagent registry seam flow", () => {
     };
 
     it("announces to the original requester once the adopted follow-up ends normally", async () => {
-      await arrangePausedChildWithYieldedRequester();
+      const paused = await arrangePausedChildWithYieldedRequester();
+      const resolveGatewayContext = () => ({ owner: "gateway-a" }) as never;
+      bindGatewayContextResolver(paused, resolveGatewayContext);
 
       mockGatewayMethods(mocks.callGateway, {
         "agent.wait": {
@@ -3382,6 +3384,7 @@ describe("subagent registry seam flow", () => {
           childSessionKey: CHILD_SESSION_KEY,
           runId: FOLLOW_UP_RUN_ID,
           task: "the remote job finished",
+          gatewayContextResolver: resolveGatewayContext,
         }),
       ).toBe(true);
 
@@ -3393,6 +3396,7 @@ describe("subagent registry seam flow", () => {
       expect(adopted.requesterSessionKey).toBe("agent:main:main");
       expect(adopted.task).toBe("the remote job finished");
       expect(adopted.pauseReason).toBeUndefined();
+      expect(getGatewayContextResolver(adopted)).toBe(resolveGatewayContext);
       // The frozen batch is addressed by runId, so the retired id must be
       // remapped or this row drops out of the batch it still gates.
       expect(adopted.requesterSettleWake?.batchRunIds).toEqual(

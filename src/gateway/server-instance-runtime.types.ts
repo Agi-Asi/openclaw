@@ -32,5 +32,6 @@ export type GatewayInstanceRuntime = {
   approvalEvents: GatewayApprovalEventPublisher;
   nativeApprovals: GatewayNativeApprovalRuntime;
   recovery: GatewayRecoveryRuntime;
+  isAvailable: () => boolean;
   close: () => void;
 };

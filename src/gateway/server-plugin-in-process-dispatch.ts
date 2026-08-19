@@ -68,11 +68,10 @@ function resolveInProcessGatewayDispatch(
   options?: DispatchGatewayMethodInProcessOptions,
 ): ResolvedInProcessGatewayDispatch {
   const scope = getPluginRuntimeGatewayRequestScope();
-  const context =
-    scope?.context ??
-    (options?.resolveGatewayContext
-      ? options.resolveGatewayContext()
-      : getFallbackGatewayContext());
+  const resolveGatewayContext = options?.resolveGatewayContext ?? scope?.resolveGatewayContext;
+  const context = resolveGatewayContext
+    ? resolveGatewayContext()
+    : (scope?.context ?? getFallbackGatewayContext());
   const isWebchatConnect = scope?.isWebchatConnect ?? (() => false);
   if (!context) {
     throw new Error(

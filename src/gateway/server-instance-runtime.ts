@@ -228,6 +228,7 @@ export function createGatewayInstanceRuntime(
       },
     },
     recovery,
+    isAvailable: () => !closed && options.isDispatchAvailable(),
     close: () => {
       closed = true;
       releaseRecoveryRuntime();

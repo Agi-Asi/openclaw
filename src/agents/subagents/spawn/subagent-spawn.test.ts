@@ -28,13 +28,17 @@ const hoisted = vi.hoisted(() => ({
   completeCollectorLaunchCleanupMock: vi.fn(),
   emitSessionLifecycleEventMock: vi.fn(),
   dispatchGatewayMethodInProcessMock: vi.fn(),
-  getInProcessGatewayRequestContextMock: vi.fn(),
+  getGatewayToolCallerIdentityMock: vi.fn(),
   hasInProcessGatewayContextMock: vi.fn(),
   resolveAgentConfigMock: vi.fn(),
   resolveContextEngineMock: vi.fn(),
   countActiveRunsForSessionMock: vi.fn(),
   listSwarmRunsForGroupMock: vi.fn(),
   configOverride: {} as Record<string, unknown>,
+}));
+
+vi.mock("../../tools/gateway-caller-context.js", () => ({
+  getGatewayToolCallerIdentity: () => hoisted.getGatewayToolCallerIdentityMock(),
 }));
 
 let resetSubagentRegistryForTests: typeof import("../registry/subagent-registry.test-helpers.js").resetSubagentRegistryForTests;
@@ -161,7 +165,6 @@ describe("spawnSubagentDirect seam flow", () => {
     ({ resetSubagentRegistryForTests, spawnSubagentDirect } = await loadSubagentSpawnModuleForTest({
       callGatewayMock: hoisted.callGatewayMock,
       dispatchGatewayMethodInProcessMock: hoisted.dispatchGatewayMethodInProcessMock,
-      getInProcessGatewayRequestContextMock: hoisted.getInProcessGatewayRequestContextMock,
       hasInProcessGatewayContextMock: hoisted.hasInProcessGatewayContextMock,
       getRuntimeConfig: () => hoisted.configOverride,
       loadSessionStoreMock: hoisted.loadSessionStoreMock,
@@ -196,7 +199,7 @@ describe("spawnSubagentDirect seam flow", () => {
     hoisted.completeCollectorLaunchCleanupMock.mockReset();
     hoisted.emitSessionLifecycleEventMock.mockReset();
     hoisted.dispatchGatewayMethodInProcessMock.mockReset();
-    hoisted.getInProcessGatewayRequestContextMock.mockReset();
+    hoisted.getGatewayToolCallerIdentityMock.mockReset();
     hoisted.hasInProcessGatewayContextMock.mockReset().mockReturnValue(false);
     hoisted.resolveAgentConfigMock.mockReset();
     hoisted.resolveContextEngineMock.mockReset().mockResolvedValue({});
@@ -516,6 +519,30 @@ describe("spawnSubagentDirect seam flow", () => {
       scopes: ["operator.admin"],
       params: { provider: "openai", model: "gpt-5.4" },
     });
+  });
+
+  it("retains the admitted gateway resolver through a queued collector launch", async () => {
+    hoisted.configOverride = createConfigOverride({ tools: { swarm: true } });
+    const gatewayContext = { owner: "gateway-a" } as never;
+    const gatewayContextResolver = () => gatewayContext;
+    hoisted.getGatewayToolCallerIdentityMock.mockReturnValue({ gatewayContextResolver });
+    hoisted.dispatchGatewayMethodInProcessMock.mockResolvedValue({ runId: "queued-gateway-run" });
+
+    const result = await spawnSubagentDirect(
+      { task: "collect through the owning gateway", collect: true },
+      { agentSessionKey: "agent:main:main", requesterRunId: "parent-run" },
+    );
+
+    expect(result).toMatchObject({ status: "accepted" });
+    expect(firstRegisteredSubagentRun().gatewayContextResolver).toBe(gatewayContextResolver);
+    await vi.waitFor(() => expect(hoisted.dispatchGatewayMethodInProcessMock).toHaveBeenCalled());
+    expect(
+      requireRecord(hoisted.dispatchGatewayMethodInProcessMock.mock.calls[0]?.[2])
+        .resolveGatewayContext,
+    ).toBe(gatewayContextResolver);
+    expect(hoisted.callGatewayMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ method: "agent" }),
+    );
   });
 
   it("aborts a collector cancelled while its gateway launch is in flight", async () => {
@@ -1237,7 +1264,8 @@ describe("spawnSubagentDirect seam flow", () => {
 
   it("dispatches spawned agent runs in process when a gateway context is available", async () => {
     const gatewayContext = { owner: "gateway-a" } as never;
-    hoisted.getInProcessGatewayRequestContextMock.mockReturnValue(gatewayContext);
+    const gatewayContextResolver = () => gatewayContext;
+    hoisted.getGatewayToolCallerIdentityMock.mockReturnValue({ gatewayContextResolver });
     hoisted.hasInProcessGatewayContextMock.mockReturnValue(true);
     hoisted.callGatewayMock.mockRejectedValue(new Error("unexpected websocket gateway call"));
     hoisted.dispatchGatewayMethodInProcessMock.mockImplementation(async (method: string) => {
@@ -1281,9 +1309,11 @@ describe("spawnSubagentDirect seam flow", () => {
     // registration (see acp-spawn.test.ts).
     const registration = firstRegisteredSubagentRun();
     expect(registration.taskRowOwnership).toBe("required");
+    expect(registration.gatewayContextResolver).toBe(gatewayContextResolver);
     expect(
-      (registration.gatewayContextResolver as (() => typeof gatewayContext) | undefined)?.(),
-    ).toBe(gatewayContext);
+      requireRecord(hoisted.dispatchGatewayMethodInProcessMock.mock.calls[0]?.[2])
+        .resolveGatewayContext,
+    ).toBe(gatewayContextResolver);
   });
 
   it("authorizes explicit model overrides for in-process child launches", async () => {

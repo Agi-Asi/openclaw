@@ -8,6 +8,7 @@ import { PROTOCOL_VERSION } from "../../packages/gateway-protocol/src/version.js
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import { createGatewayInstanceRuntime } from "./server-instance-runtime.js";
 import type { GatewayRequestContext, GatewayRequestOptions } from "./server-methods/types.js";
 import {
   clearFallbackGatewayContext,
@@ -109,14 +110,24 @@ describe("typed in-process agent authorization", () => {
     waitForTurn.mockReset();
   });
 
-  it("fails closed when an explicit Gateway resolver loses its owner", async () => {
+  it("fails closed after its Gateway closes even when another global fallback is active", async () => {
+    const ownedContext = createContext();
+    const runtime = createGatewayInstanceRuntime({
+      getContext: () => ownedContext,
+      getMethodRegistry: () => {
+        throw new Error("closed resolver must not dispatch");
+      },
+      isDispatchAvailable: () => true,
+    });
+    ownedContext.resolveGatewayContext = () => (runtime.isAvailable() ? ownedContext : undefined);
     setFallbackGatewayContext(createContext());
+    runtime.close();
 
     await expect(
       dispatchGatewayMethodInProcess(
         "agent",
         { message: "detached completion", idempotencyKey: "detached-completion" },
-        { resolveGatewayContext: () => undefined },
+        { resolveGatewayContext: ownedContext.resolveGatewayContext },
       ),
     ).rejects.toThrow("No scope set and no fallback context available");
     expect(startTurn).not.toHaveBeenCalled();
