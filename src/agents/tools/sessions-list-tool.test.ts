@@ -369,7 +369,20 @@ describe("sessions-list-tool", () => {
           classification: "subagent",
           channel: "discord",
           label: "worker",
-          category: "P1 issues",
+          category: "Projects",
+          icon: "🦞",
+          unread: true,
+          owner: {
+            actor: {
+              type: "human",
+              id: "profile-owner",
+              label: "Owner",
+              avatarUrl: "/avatars/private",
+            },
+          },
+          projectId: "openclaw",
+          worktree: { id: "worktree-private", branch: "work", repoRoot: "/private/repo" },
+          agentStatus: { note: "Needs review", attention: "flag", expiresAt: Date.now() + 60_000 },
           displayName: "Worker",
           derivedTitle: "Investigate queue",
           lastMessagePreview: "Use `[[reply_to_current]]` literally.",
@@ -406,7 +419,7 @@ describe("sessions-list-tool", () => {
       linkedDetails.sessionLinkRule,
     );
     expect(compactToolOutputHint(tool.outputSchema)).toBe(
-      '{ count: number; sessions: Array<{ agentId: string; archived: boolean; channel: string; key: string; kind: "main" | "group" | "cron" | "hook" | "node" | "other"; pinned: boolean; abortedLastRun?: boolean; category?: string; childSessions?: Array<string>; contextTokens?: number; derivedTitle?: string; displayName?: string; label?: string; lastMessagePreview?: string; messages?: Array<unknown>; model?: string; parentSessionKey?: string; sessionId?: string; stateVersion?: number; status?: "running" | "done" | "failed" | "killed" | "timeout"; totalTokens?: number; updatedAt?: number }>; sessionLinkRule?: string; visibility?: { mode: "self" | "tree" | "agent"; restricted: true; warning: string } }',
+      '{ count: number; sessions: Array<{ agentId: string; archived: boolean; channel: string; key: string; kind: "main" | "group" | "cron" | "hook" | "node" | "other"; pinned: boolean; abortedLastRun?: boolean; agentStatus?: { expiresAt: number; note: string; attention?: string }; category?: string; childSessions?: Array<string>; contextTokens?: number; derivedTitle?: string; displayName?: string; hasWorktree?: boolean; icon?: string; label?: string; lastMessagePreview?: string; messages?: Array<unknown>; model?: string; owner?: { type: "human" | "agent" | "system"; id?: string; label?: string }; parentSessionKey?: string; projectId?: string; sessionId?: string; stateVersion?: number; status?: "running" | "done" | "failed" | "killed" | "timeout"; totalTokens?: number; unread?: boolean; updatedAt?: number }>; sessionLinkRule?: string; visibility?: { mode: "self" | "tree" | "agent"; restricted: true; warning: string } }',
     );
     expect(result.details).toEqual({
       count: 1,
@@ -420,7 +433,17 @@ describe("sessions-list-tool", () => {
           archived: false,
           pinned: true,
           label: "worker",
-          category: "P1 issues",
+          category: "Projects",
+          icon: "🦞",
+          unread: true,
+          owner: { type: "human", id: "profile-owner", label: "Owner" },
+          projectId: "openclaw",
+          hasWorktree: true,
+          agentStatus: {
+            note: "Needs review",
+            attention: "flag",
+            expiresAt: expect.any(Number),
+          },
           displayName: "Worker",
           derivedTitle: "Investigate queue",
           lastMessagePreview: "Use `[[reply_to_current]]` literally.",

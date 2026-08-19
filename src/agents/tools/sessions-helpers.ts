@@ -1,8 +1,10 @@
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
 import type {
+  SessionOwner,
   SessionRow,
   SessionRunStatus,
 } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { parseRawSessionConversationRef } from "../../sessions/session-key-utils.js";
@@ -67,6 +69,12 @@ export type GatewaySessionListRow = {
   spawnedBy?: string;
   label?: string;
   category?: string;
+  icon?: string;
+  unread?: boolean;
+  owner?: SessionOwner;
+  projectId?: string;
+  worktree?: { id: string; branch: string; repoRoot: string };
+  agentStatus?: SessionAgentStatus;
   displayName?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;
@@ -117,6 +125,12 @@ export type SessionListRow = {
   channel: string;
   label?: string;
   category?: string;
+  icon?: string;
+  unread?: boolean;
+  owner?: SessionOwner["actor"];
+  projectId?: string;
+  hasWorktree?: boolean;
+  agentStatus?: SessionAgentStatus;
   displayName?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;

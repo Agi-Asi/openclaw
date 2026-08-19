@@ -147,6 +147,7 @@ describe("sessions tool", () => {
           type: "string",
           enum: [
             "patch",
+            "patch_many",
             "reset",
             "delete",
             "assign_owner",
@@ -158,6 +159,12 @@ describe("sessions tool", () => {
         },
         deleteTranscript: { type: "boolean" },
         label: { type: "string", description: expect.stringContaining("Empty string clears") },
+        category: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          description: expect.stringContaining("Null or empty string clears"),
+        },
+        unread: { type: "boolean" },
+        targets: { type: "array", maxItems: 100 },
         icon: {
           type: "string",
           description: expect.stringContaining(
@@ -767,20 +774,20 @@ describe("sessions tool", () => {
 
     const result = await tool.execute("patch-sidebar", {
       action: "patch",
-      label: "Movies",
+      category: "Movies",
     });
 
     expect(callGateway).toHaveBeenCalledWith({
       method: "sessions.patch",
       params: {
         key: "agent:main:main",
-        label: "Movies",
+        category: "Movies",
       },
     });
     expect(result.details).toEqual({
       status: "updated",
       sessionKey: "agent:main:main",
-      updated: ["label"],
+      updated: ["category"],
     });
     const text = (result.content[0] as { text?: string } | undefined)?.text ?? "";
     expect(text).not.toContain('"entry"');
@@ -1030,6 +1037,58 @@ describe("sessions tool", () => {
     expect(callGateway).not.toHaveBeenCalledWith({
       method: "sessions.patch",
       params: expect.objectContaining({ key: "agent:main:other" }),
+    });
+  });
+
+  it("patches visible sessions in one compact batch result", async () => {
+    const callGateway = vi.fn(async (request: AgentToolGatewayRequest) => {
+      if (request.method === "sessions.patchMany") {
+        return {
+          outcomes: [
+            { ok: true, key: "agent:main:main" },
+            {
+              ok: false,
+              key: "agent:main:dashboard:changed",
+              error: { code: "INVALID_REQUEST", message: "session changed; retry" },
+            },
+          ],
+        };
+      }
+      return { key: String(request.params.sessionKey) };
+    });
+    const tool = createSessionsTool({
+      agentSessionKey: "agent:main:main",
+      config: { tools: { sessions: { visibility: "all" } } },
+      callGateway: callGateway as never,
+    });
+
+    const result = await tool.execute("batch-category", {
+      action: "patch_many",
+      targets: [
+        { sessionKey: "agent:main:main", expectedSessionId: "main-session" },
+        { sessionKey: "agent:main:dashboard:changed" },
+      ],
+      category: "Research",
+      unread: false,
+    });
+
+    expect(callGateway).toHaveBeenCalledWith({
+      method: "sessions.patchMany",
+      params: {
+        targets: [
+          { key: "agent:main:main", expectedSessionId: "main-session" },
+          { key: "agent:main:dashboard:changed" },
+        ],
+        patch: { category: "Research", unread: false },
+      },
+    });
+    expect(result.details).toEqual({
+      status: "updated",
+      requested: 2,
+      updated: 1,
+      failed: [
+        { sessionKey: "agent:main:dashboard:changed", error: "session changed; retry" },
+      ],
     });
   });
 });

@@ -3,6 +3,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { Type } from "typebox";
 import type {
   SessionsAssignOwnerResult,
+  SessionsPatchManyResult,
   SessionsPatchResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 import {
@@ -47,6 +48,7 @@ import { resolveSessionReference, shouldResolveSessionIdInput } from "./sessions
 
 const ACTIONS = [
   "patch",
+  "patch_many",
   "reset",
   "delete",
   "assign_owner",
@@ -108,6 +110,12 @@ const SessionsToolSchema = Type.Object(
     label: Type.Optional(
       Type.String({ description: "Sidebar title override. Empty string clears it." }),
     ),
+    category: Type.Optional(
+      Type.Union([Type.String(), Type.Null()], {
+        description: "Sidebar group/category. Null or empty string clears it to Other.",
+      }),
+    ),
+    unread: Type.Optional(Type.Boolean({ description: "Mark the session unread or read." })),
     icon: Type.Optional(
       Type.String({
         description: `Persistent sidebar icon: a single emoji, or a named icon: ${SESSION_ICON_GLYPH_DESCRIPTION}. Empty string clears it. Distinct from attention, which is temporary.`,
@@ -158,6 +166,22 @@ const SessionsToolSchema = Type.Object(
     ),
     name: Type.Optional(Type.String({ description: "Group name" })),
     to: Type.Optional(Type.String({ description: "New group name" })),
+    targets: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            sessionKey: Type.String(),
+            expectedSessionId: Type.Optional(Type.String()),
+          },
+          { additionalProperties: false },
+        ),
+        {
+          minItems: 1,
+          maxItems: 100,
+          description: "Visible sessions for patch_many; maximum 100.",
+        },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -333,7 +357,7 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
     label: "Sessions",
     name: "sessions",
     description:
-      "Session settings, ownership, reset, delete, and sidebar categories: patch label/icon/category/status, pin, archive/restore, model/thinking override; category assigns one session while group_set replaces the ordered category catalog; assign_owner hands responsibility to a human or agent; reset/delete visible sessions; group_list/group_set/group_rename/group_delete.",
+      "Session settings, ownership, reset, delete, and groups: patch label/icon/category/status, unread, pin, archive/restore, model/thinking override; patch_many changes category/unread for up to 100 visible sessions; assign_owner hands responsibility to a human or agent; reset/delete visible sessions; group_list/group_set/group_rename/group_delete.",
     parameters: SessionsToolSchema,
     execute: async (_toolCallId, rawArgs) => {
       const params = rawArgs as Record<string, unknown>;
@@ -444,6 +468,58 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
           }),
         );
       }
+      if (action === "patch_many") {
+        if (!Array.isArray(params.targets) || params.targets.length === 0) {
+          throw new ToolInputError("patch_many requires targets");
+        }
+        if (params.targets.length > 100) {
+          throw new ToolInputError("patch_many supports at most 100 targets");
+        }
+        const patch = {
+          ...(params.category !== undefined
+            ? { category: readClearableString(params, "category") }
+            : {}),
+          ...(params.unread !== undefined ? { unread: readBooleanParam(params, "unread") } : {}),
+        };
+        if (Object.keys(patch).length === 0) {
+          throw new ToolInputError("patch_many requires category or unread");
+        }
+        const targets = await Promise.all(
+          params.targets.map(async (rawTarget, index) => {
+            if (!rawTarget || typeof rawTarget !== "object") {
+              throw new ToolInputError(`targets[${index}] must be an object`);
+            }
+            const target = rawTarget as Record<string, unknown>;
+            const sessionKey = readToolStringParam(target, "sessionKey", { required: true });
+            const resolved = await resolvePatchTarget(
+              { ...opts, config: opts.config ?? getRuntimeConfig() },
+              sessionKey,
+              gatewayRequest,
+            );
+            const expectedSessionId = normalizeOptionalString(
+              readToolStringParam(target, "expectedSessionId"),
+            );
+            return {
+              key: resolved.key,
+              ...(!parseAgentSessionKey(resolved.key) ? { agentId: resolved.agentId } : {}),
+              ...(expectedSessionId ? { expectedSessionId } : {}),
+            };
+          }),
+        );
+        const result = await callGateway<SessionsPatchManyResult>("sessions.patchMany", {
+          targets,
+          patch,
+        });
+        const failed = result.outcomes.flatMap((outcome) =>
+          outcome.ok ? [] : [{ sessionKey: outcome.key, error: outcome.error.message }],
+        );
+        return jsonResult({
+          status: "updated",
+          requested: targets.length,
+          updated: result.outcomes.length - failed.length,
+          failed,
+        });
+      }
       if (action !== "patch") {
         throw new ToolInputError(`Unknown action: ${action}`);
       }
@@ -471,6 +547,10 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
         key,
         ...lifecycleIdentity,
         ...(params.label !== undefined ? { label: readClearableString(params, "label") } : {}),
+        ...(params.category !== undefined
+          ? { category: readClearableString(params, "category") }
+          : {}),
+        ...(params.unread !== undefined ? { unread: readBooleanParam(params, "unread") } : {}),
         ...(params.icon !== undefined ? { icon: readClearableString(params, "icon") } : {}),
         ...(params.category !== undefined
           ? { category: readClearableString(params, "category") }

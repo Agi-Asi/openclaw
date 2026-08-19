@@ -376,8 +376,18 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       actions: {
         patch: {
           label: "update",
-          detailKeys: ["sessionKey", "label", "pinned", "archived", "model", "thinkingLevel"],
+          detailKeys: [
+            "sessionKey",
+            "label",
+            "category",
+            "unread",
+            "pinned",
+            "archived",
+            "model",
+            "thinkingLevel",
+          ],
         },
+        patch_many: { label: "update many", detailKeys: ["category", "unread", "targets"] },
         group_list: { label: "groups" },
         group_set: { label: "set groups", detailKeys: ["names"] },
         group_rename: { label: "rename group", detailKeys: ["name", "to"] },

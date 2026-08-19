@@ -86,6 +86,34 @@ const SessionListRowOutputSchema = Type.Object(
     pinned: Type.Boolean(),
     label: Type.Optional(Type.String()),
     category: Type.Optional(Type.String()),
+    icon: Type.Optional(Type.String()),
+    unread: Type.Optional(Type.Boolean()),
+    owner: Type.Optional(
+      Type.Object(
+        {
+          type: Type.Union([
+            Type.Literal("human"),
+            Type.Literal("agent"),
+            Type.Literal("system"),
+          ]),
+          id: Type.Optional(Type.String()),
+          label: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    projectId: Type.Optional(Type.String()),
+    hasWorktree: Type.Optional(Type.Boolean()),
+    agentStatus: Type.Optional(
+      Type.Object(
+        {
+          note: Type.String(),
+          expiresAt: Type.Number(),
+          attention: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     displayName: Type.Optional(Type.String()),
     derivedTitle: Type.Optional(Type.String()),
     lastMessagePreview: Type.Optional(Type.String()),
@@ -379,6 +407,18 @@ export function createSessionsListTool(opts?: {
         const stateVersion = stateVersions[stateVersionAgentId]?.[key];
         const rowLabel = readStringValue(entry.label);
         const category = readStringValue(entry.category);
+        const icon = readStringValue(entry.icon);
+        const ownerActor = entry.owner?.actor;
+        const owner = ownerActor
+          ? {
+              type: ownerActor.type,
+              ...(ownerActor.id ? { id: ownerActor.id } : {}),
+              ...(ownerActor.label ? { label: ownerActor.label } : {}),
+            }
+          : undefined;
+        const projectId = readStringValue(entry.projectId);
+        const hasWorktree = entry.worktree ? true : undefined;
+        const agentStatus = entry.agentStatus;
         const displayName = readStringValue(entry.displayName);
         const derivedTitle = readStringValue(entry.derivedTitle);
         const lastMessagePreview = readStringValue(entry.lastMessagePreview);
@@ -431,6 +471,12 @@ export function createSessionsListTool(opts?: {
           pinned: entry.pinned === true,
           ...(rowLabel ? { label: rowLabel } : {}),
           ...(category ? { category } : {}),
+          ...(icon ? { icon } : {}),
+          ...(entry.unread !== undefined ? { unread: entry.unread } : {}),
+          ...(owner ? { owner } : {}),
+          ...(projectId ? { projectId } : {}),
+          ...(hasWorktree ? { hasWorktree } : {}),
+          ...(agentStatus ? { agentStatus } : {}),
           ...(displayName ? { displayName } : {}),
           ...(derivedTitle ? { derivedTitle } : {}),
           ...(lastMessagePreview ? { lastMessagePreview } : {}),

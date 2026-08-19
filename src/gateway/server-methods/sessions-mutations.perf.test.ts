@@ -112,6 +112,70 @@ test("single non-label sessions.patch avoids a whole-store projection", async ()
   });
 });
 
+test("sessions.patchMany categorizes 100 sessions without transcript hydration", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    const targets = Array.from({ length: 100 }, (_, index) => ({
+      key: `agent:main:category-perf-${index}`,
+      expectedSessionId: `session-category-perf-${index}`,
+    }));
+    for (const [index, target] of targets.entries()) {
+      await upsertSessionEntryCore(
+        { agentId: "main", sessionKey: target.key },
+        { sessionId: target.expectedSessionId, updatedAt: index + 1 },
+      );
+    }
+
+    const database = openOpenClawAgentDatabase({ agentId: "main", env: state.env });
+    const statements = trackSqliteStatementExecutions(
+      database.db,
+      ["transcript-full-hydration"] as const,
+      (sql) => {
+        const normalized = sql.toLowerCase().replaceAll(/\s+/g, " ").trim();
+        const fromIndex = normalized.indexOf(" from ");
+        const selectedColumns = fromIndex > 0 ? normalized.slice("select ".length, fromIndex) : "";
+        return normalized.startsWith("select ") &&
+          /\b(?:from|join) "transcript_events"(?: |$)/.test(normalized) &&
+          (selectedColumns.includes("event_json") || /(?:^|, )(?:(?:"[^"]+"\.)?\*)/.test(selectedColumns))
+          ? "transcript-full-hydration"
+          : null;
+      },
+    );
+    sqliteTransactionLabels.length = 0;
+    const respond = vi.fn();
+    const startedAt = performance.now();
+    try {
+      await sessionMutationHandlers["sessions.patchMany"]!({
+        params: { targets, patch: { category: "Research" } },
+        respond,
+        context: {
+          getRuntimeConfig: () => ({}),
+          loadGatewayModelCatalog: vi.fn(async () => []),
+          broadcastToConnIds: vi.fn(),
+          getSessionEventSubscriberConnIds: () => new Set(),
+          chatAbortControllers: new Map(),
+          chatQueuedTurns: new Map(),
+          dedupe: new Map(),
+        } as unknown as GatewayRequestContext,
+        client: humanClient(),
+      } as never);
+    } finally {
+      statements.restore();
+    }
+
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+    expect(respond.mock.calls[0]?.[1]?.outcomes).toHaveLength(100);
+    expect(statements.counts["transcript-full-hydration"]).toBe(0);
+    expect(
+      sqliteTransactionLabels.filter((label) => label === "session.entry-replacements"),
+    ).toHaveLength(1);
+    for (const target of targets) {
+      expect(loadSessionEntry({ agentId: "main", sessionKey: target.key })?.category).toBe(
+        "Research",
+      );
+    }
+  });
+});
+
 test("sessions.patchMany archives 30 human sessions without transcript hydration", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const targets = Array.from({ length: 30 }, (_, index) => ({
