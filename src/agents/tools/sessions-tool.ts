@@ -109,11 +109,6 @@ const SessionsToolSchema = Type.Object(
     label: Type.Optional(
       Type.String({ description: "Sidebar title override. Empty string clears it." }),
     ),
-    category: Type.Optional(
-      Type.Union([Type.String(), Type.Null()], {
-        description: "Sidebar group/category. Null or empty string clears it to Other.",
-      }),
-    ),
     unread: Type.Optional(Type.Boolean({ description: "Mark the session unread or read." })),
     icon: Type.Optional(
       Type.String({

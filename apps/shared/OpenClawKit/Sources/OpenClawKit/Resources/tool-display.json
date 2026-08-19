@@ -565,10 +565,20 @@
           "detailKeys": [
             "sessionKey",
             "label",
+            "category",
+            "unread",
             "pinned",
             "archived",
             "model",
             "thinkingLevel"
+          ]
+        },
+        "patch_many": {
+          "label": "update many",
+          "detailKeys": [
+            "category",
+            "unread",
+            "targets"
           ]
         },
         "group_list": {
