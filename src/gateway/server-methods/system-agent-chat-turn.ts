@@ -119,11 +119,24 @@ export async function runSystemAgentChatInput(params: {
     : await params.engine.handle(params.input.message);
 }
 
-export function buildSystemAgentChatResult(params: {
-  sessionId: string;
-  reply: SystemAgentChatReply;
-  proposalId?: string;
-}): SystemAgentChatResult {
+export function buildSystemAgentChatResult(
+  params: {
+    sessionId: string;
+    reply: SystemAgentChatReply;
+    proposalId?: string;
+  },
+  supportsQrCode = false,
+): SystemAgentChatResult {
+  if (params.reply.step) {
+    try {
+      assertWizardStepClientCapability(params.reply.step, supportsQrCode);
+    } catch (error) {
+      if (error instanceof WizardClientCapabilityError) {
+        return { sessionId: params.sessionId, reply: error.message, action: "none" };
+      }
+      throw error;
+    }
+  }
   const action =
     params.reply.action === "open-tui"
       ? "open-agent"

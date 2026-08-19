@@ -441,6 +441,45 @@ describe("openclaw.chat session ownership", () => {
 });
 
 describe("openclaw.chat session responses", () => {
+  it("withholds an active QR turn from the same owner without QR capability", async () => {
+    const engine = makeEngine();
+    engine.handle.mockResolvedValue({
+      text: "Scan to continue.",
+      action: "none",
+      wizardInputPending: true,
+      step: {
+        id: "signal-link",
+        type: "qr",
+        title: "Link Signal",
+        qrDataUrl: "data:image/png;base64,c2VjcmV0",
+        executor: "gateway",
+      },
+    });
+    const sessions = new Map<string, SystemAgentChatSession>([
+      ["qr-turn", seededSession({ engine, ownerKey: "user:owner@example.com" })],
+    ]);
+
+    const call = await callChat(
+      makeContext(sessions),
+      { sessionId: "qr-turn", message: "status" },
+      makeClient({
+        connId: "conn-without-qr",
+        authenticatedUserId: "owner@example.com",
+        caps: [],
+      }),
+    );
+
+    expect(engine.handle).toHaveBeenCalledWith("status");
+    expect(call).toMatchObject({
+      ok: true,
+      payload: {
+        reply: "wizard: this QR step requires a QR-capable client",
+        action: "none",
+      },
+    });
+    expect(JSON.stringify(call)).not.toContain("data:image/png");
+  });
+
   it("rejects an active QR rejoin from the same owner without QR capability", async () => {
     const engine = makeEngine();
     engine.decorateRejoinReply.mockResolvedValue({

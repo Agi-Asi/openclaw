@@ -61,7 +61,7 @@ import {
 } from "./setup-admission.js";
 import { sanitizeSystemAgentChatParams } from "./system-agent-chat-params.js";
 import {
-  buildSystemAgentChatResult,
+  buildSystemAgentChatResult as buildChatResult,
   buildSystemAgentRejoinResult,
   getSystemAgentChatInputError,
   runSystemAgentChatInput,
@@ -744,7 +744,7 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
             });
           }
         }
-        respond(true, buildSystemAgentChatResult({ sessionId, reply, proposalId }), undefined);
+        respond(true, buildChatResult({ sessionId, reply, proposalId }, supportsQrCode), undefined);
       });
     });
   },
