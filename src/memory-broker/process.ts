@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { createMemoryBrokerClient, type MemoryBrokerClient } from "./client.js";
 
 const MEMORY_BROKER_START_TIMEOUT_MS = 10_000;
@@ -50,12 +51,12 @@ export async function startMemoryBrokerProcess(params: {
   startTimeoutMs?: number;
   maintenanceTimeoutMs?: number;
 }): Promise<MemoryBrokerProcess> {
-  if (!(params.agentIds ?? []).every((agentId) => typeof agentId === "string" && agentId.length > 0)) {
+  if (
+    !(params.agentIds ?? []).every((agentId) => typeof agentId === "string" && agentId.length > 0)
+  ) {
     throw new Error("memory broker startup agent IDs are invalid");
   }
-  const agentIds = Object.freeze(
-    [...new Set(params.agentIds ?? [])].toSorted(),
-  );
+  const agentIds = Object.freeze([...new Set(params.agentIds ?? [])].toSorted());
   const directory = await mkdtemp(path.join(tmpdir(), "openclaw-memory-broker-"));
   const socketPath = path.join(directory, "broker.sock");
   const brokerEpoch = randomUUID();
@@ -148,13 +149,7 @@ export async function startMemoryBrokerProcess(params: {
         error ? reject(error) : resolve();
       };
       const onMessage = (message: unknown) => {
-        if (
-          message &&
-          typeof message === "object" &&
-          !Array.isArray(message) &&
-          (message as { type?: unknown }).type === "ready" &&
-          (message as { brokerEpoch?: unknown }).brokerEpoch === brokerEpoch
-        ) {
+        if (isRecord(message) && message.type === "ready" && message.brokerEpoch === brokerEpoch) {
           finish();
           return;
         }
@@ -217,14 +212,12 @@ export async function startMemoryBrokerProcess(params: {
       };
       const onMessage = (message: unknown) => {
         if (
-          message &&
-          typeof message === "object" &&
-          !Array.isArray(message) &&
-          (message as { type?: unknown }).type === "health" &&
-          (message as { requestId?: unknown }).requestId === requestId &&
-          (message as { brokerEpoch?: unknown }).brokerEpoch === brokerEpoch
+          isRecord(message) &&
+          message.type === "health" &&
+          message.requestId === requestId &&
+          message.brokerEpoch === brokerEpoch
         ) {
-          finish((message as { ok?: unknown }).ok === true);
+          finish(message.ok === true);
         }
       };
       const timer = setTimeout(() => finish(false), MEMORY_BROKER_HEALTH_TIMEOUT_MS);
@@ -260,25 +253,17 @@ export async function startMemoryBrokerProcess(params: {
       };
       const onMessage = (message: unknown) => {
         if (
-          message &&
-          typeof message === "object" &&
-          !Array.isArray(message) &&
-          (message as { type?: unknown }).type === "maintenance" &&
-          (message as { requestId?: unknown }).requestId === requestId &&
-          (message as { brokerEpoch?: unknown }).brokerEpoch !== brokerEpoch
+          !isRecord(message) ||
+          message.type !== "maintenance" ||
+          message.requestId !== requestId
         ) {
+          return;
+        }
+        if (message.brokerEpoch !== brokerEpoch) {
           finish(false);
           return;
         }
-        if (
-          message &&
-          typeof message === "object" &&
-          !Array.isArray(message) &&
-          (message as { type?: unknown }).type === "maintenance" &&
-          (message as { requestId?: unknown }).requestId === requestId
-        ) {
-          finish((message as { ok?: unknown }).ok === true);
-        }
+        finish(message.ok === true);
       };
       const timer = setTimeout(() => finish(false), maintenanceTimeoutMs);
       timer.unref?.();

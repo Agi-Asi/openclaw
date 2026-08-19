@@ -389,7 +389,9 @@ export async function resolveBrokeredMemoryRuntime(
       if (!expiresAtMs) {
         throw new Error("memory broker search is unavailable");
       }
-      const result = await request({
+      const result = await request<
+        Awaited<ReturnType<AuthorizedMemoryRuntime["searchAuthorized"]>>
+      >({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.search",
         payload: {
@@ -405,14 +407,14 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker search is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["searchAuthorized"]>>;
+      return result;
     },
     async readAuthorized(params: Parameters<AuthorizedMemoryRuntime["readAuthorized"]>[0]) {
       const expiresAtMs = hasPlanExpiry(params.plan);
       if (!expiresAtMs) {
         throw new Error("memory broker read is unavailable");
       }
-      const result = await request({
+      const result = await request<Awaited<ReturnType<AuthorizedMemoryRuntime["readAuthorized"]>>>({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.read",
         payload: {
@@ -428,31 +430,35 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker read is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["readAuthorized"]>>;
+      return result;
     },
     async writeAuthorized(params: Parameters<AuthorizedMemoryRuntime["writeAuthorized"]>[0]) {
       const expiresAtMs = hasPlanExpiry(params.plan);
       if (!expiresAtMs) {
         throw new Error("memory broker write is unavailable");
       }
-      const result = await request({
-        binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
-        method: "memory.write",
-        payload: { context: params.context, plan: params.plan, mutation: params.mutation },
-        expiresAtMs,
-        ...(params.signal ? { signal: params.signal } : {}),
-      });
+      const result = await request<Awaited<ReturnType<AuthorizedMemoryRuntime["writeAuthorized"]>>>(
+        {
+          binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
+          method: "memory.write",
+          payload: { context: params.context, plan: params.plan, mutation: params.mutation },
+          expiresAtMs,
+          ...(params.signal ? { signal: params.signal } : {}),
+        },
+      );
       if (!result) {
         throw new Error("memory broker write is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["writeAuthorized"]>>;
+      return result;
     },
     async importAuthorized(params: Parameters<AuthorizedMemoryRuntime["importAuthorized"]>[0]) {
       const expiresAtMs = hasPlanExpiry(params.plan);
       if (!expiresAtMs) {
         throw new Error("memory broker import is unavailable");
       }
-      const result = await request({
+      const result = await request<
+        Awaited<ReturnType<AuthorizedMemoryRuntime["importAuthorized"]>>
+      >({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.import",
         payload: { context: params.context, plan: params.plan, mutation: params.mutation },
@@ -462,14 +468,14 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker import is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["importAuthorized"]>>;
+      return result;
     },
     async syncAuthorized(params: Parameters<AuthorizedMemoryRuntime["syncAuthorized"]>[0]) {
       const expiresAtMs = hasPlanExpiry(params.plan);
       if (!expiresAtMs) {
         throw new Error("memory broker sync is unavailable");
       }
-      const result = await request({
+      const result = await request<Awaited<ReturnType<AuthorizedMemoryRuntime["syncAuthorized"]>>>({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.sync",
         payload: { context: params.context, plan: params.plan },
@@ -479,14 +485,16 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker sync is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["syncAuthorized"]>>;
+      return result;
     },
     async exportAuthorized(params: Parameters<AuthorizedMemoryRuntime["exportAuthorized"]>[0]) {
       const expiresAtMs = hasPlanExpiry(params.plan);
       if (!expiresAtMs) {
         throw new Error("memory broker export is unavailable");
       }
-      const result = await request({
+      const result = await request<
+        Awaited<ReturnType<AuthorizedMemoryRuntime["exportAuthorized"]>>
+      >({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.export",
         payload: { context: params.context, plan: params.plan, handles: params.handles },
@@ -496,14 +504,16 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker export is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["exportAuthorized"]>>;
+      return result;
     },
     async statusAuthorized(params: Parameters<AuthorizedMemoryRuntime["statusAuthorized"]>[0]) {
       const expiresAtMs = hasPlanExpiry(params.plan);
       if (!expiresAtMs) {
         throw new Error("memory broker status is unavailable");
       }
-      const result = await request({
+      const result = await request<
+        Awaited<ReturnType<AuthorizedMemoryRuntime["statusAuthorized"]>>
+      >({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.status",
         payload: { context: params.context, plan: params.plan },
@@ -513,7 +523,7 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker status is unavailable");
       }
-      return result as Awaited<ReturnType<AuthorizedMemoryRuntime["statusAuthorized"]>>;
+      return result;
     },
     async materializeAuthorizedVirtualView(params: {
       context: MemoryContentAccessContext<"read">;
@@ -539,7 +549,9 @@ export async function resolveBrokeredMemoryRuntime(
       if (!expiresAtMs) {
         throw new Error("memory broker virtual file is unavailable");
       }
-      const result = await request({
+      const result = await request<
+        Awaited<ReturnType<MemoryPluginVirtualViewProvider["readAuthorizedVirtualFile"]>>
+      >({
         binding: bindingFor(params.context, params.plan.memoryPolicyRevision),
         method: "memory.virtual-file",
         payload: {
@@ -554,9 +566,7 @@ export async function resolveBrokeredMemoryRuntime(
       if (!result) {
         throw new Error("memory broker virtual file is unavailable");
       }
-      return result as Awaited<
-        ReturnType<MemoryPluginVirtualViewProvider["readAuthorizedVirtualFile"]>
-      >;
+      return result;
     },
   };
   return Object.freeze({
@@ -565,7 +575,7 @@ export async function resolveBrokeredMemoryRuntime(
       materializeAuthorizedVirtualView: runtime.materializeAuthorizedVirtualView,
       readAuthorizedVirtualFile: runtime.readAuthorizedVirtualFile,
     }),
-  }) as unknown as BrokeredMemoryRuntime;
+  }) satisfies BrokeredMemoryRuntime;
 }
 
 export async function closeBrokeredMemoryRuntimes(): Promise<void> {

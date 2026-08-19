@@ -11,6 +11,7 @@ import type {
   MemoryBrokerHandler,
   MemoryBrokerStartupContext,
 } from "openclaw/plugin-sdk/memory-broker-runtime";
+import type { MemorySource } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import {
   builtinScopedMemoryAuthorizedRuntime,
   builtinScopedMemoryVirtualView,
@@ -36,7 +37,14 @@ function asPayload(value: unknown): BrokerPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("memory broker payload is unavailable");
   }
+  // SAFETY: authenticated IPC reaches binding and selected-runtime validation before authority is used.
   return value as BrokerPayload;
+}
+
+function isMemorySourceArray(value: unknown): value is MemorySource[] {
+  return (
+    Array.isArray(value) && value.every((source) => source === "memory" || source === "sessions")
+  );
 }
 
 function hasBoundActor(params: {
@@ -123,10 +131,11 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
         }
         return await builtinScopedMemoryAuthorizedRuntime.searchAuthorized({
           context,
+          // SAFETY: readPlan compares the serialized plan and context to broker-local state before content access.
           plan: readPlan(payload) as never,
           query: payload.query,
           limit: payload.limit,
-          ...(Array.isArray(payload.sources) ? { sources: payload.sources as never } : {}),
+          ...(isMemorySourceArray(payload.sources) ? { sources: payload.sources } : {}),
           // The local broker aborts its controller when the Gateway connection closes or the
           // signed deadline elapses. Forward that lifecycle fence into the content runtime so
           // cancellation stops work rather than merely withholding the eventual response.
@@ -140,6 +149,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
         }
         return await builtinScopedMemoryAuthorizedRuntime.readAuthorized({
           context,
+          // SAFETY: readPlan compares the serialized plan and context to broker-local state before content access.
           plan: readPlan(payload) as never,
           handle: payload.handle,
           ...(Number.isSafeInteger(payload.from) ? { from: payload.from } : {}),
@@ -154,6 +164,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
         }
         return await builtinScopedMemoryVirtualView.materializeAuthorizedVirtualView({
           context,
+          // SAFETY: the virtual-view runtime validates the serialized plan against broker-local state before view access.
           plan: readPlan(payload) as never,
           signal,
         });
@@ -169,6 +180,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
         }
         return await builtinScopedMemoryVirtualView.readAuthorizedVirtualFile({
           context,
+          // SAFETY: the virtual-view runtime validates the serialized plan against broker-local state before file access.
           plan: readPlan(payload) as never,
           view: payload.view,
           virtualPath: payload.virtualPath,
@@ -184,6 +196,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           plan: readPlan(payload),
           mutation: payload.mutation,
           signal,
+          // SAFETY: writeAuthorized revalidates its mutation, operation, plan, and context before durable work.
         } as never);
       case "memory.import":
         if (!payload.mutation || payload.mutation.kind !== "import") {
@@ -194,12 +207,14 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           plan: readPlan(payload),
           mutation: payload.mutation,
           signal,
+          // SAFETY: import delegates to the write validator that binds its mutation, operation, and local plan state.
         } as never);
       case "memory.sync":
         return await builtinScopedMemoryAuthorizedRuntime.syncAuthorized({
           context: payload.context,
           plan: readPlan(payload),
           signal,
+          // SAFETY: sync requires its operation and a broker-local plan match before selected-runtime work.
         } as never);
       case "memory.export":
         if (!Array.isArray(payload.handles)) {
@@ -210,12 +225,14 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           plan: readPlan(payload),
           handles: payload.handles,
           signal,
+          // SAFETY: export requires its operation and broker-local plan; the selected runtime rejects unscoped handles.
         } as never);
       case "memory.status":
         return await builtinScopedMemoryAuthorizedRuntime.statusAuthorized({
           context: payload.context,
           plan: readPlan(payload),
           signal,
+          // SAFETY: status requires its operation and a broker-local plan match before selected-runtime state returns.
         } as never);
       default:
         throw new Error("memory broker operation is unavailable");

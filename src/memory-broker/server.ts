@@ -179,6 +179,10 @@ function parseMemoryBrokerRequest(value: unknown): MemoryBrokerRequest | undefin
   return { method: value.method, payload: value.payload };
 }
 
+function isMissingBrokerSocketError(error: unknown): boolean {
+  return isRecord(error) && error.code === "ENOENT";
+}
+
 function writeResponse(socket: net.Socket, response: MemoryBrokerWireResponse): void {
   if (socket.destroyed) {
     return;
@@ -383,7 +387,7 @@ export async function startMemoryBrokerServer(params: {
     });
   });
   await unlink(params.socketPath).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    if (!isMissingBrokerSocketError(error)) {
       throw error;
     }
   });
@@ -412,7 +416,7 @@ export async function startMemoryBrokerServer(params: {
           server.close((error) => (error ? reject(error) : resolve()));
         });
         await unlink(params.socketPath).catch((error: unknown) => {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          if (!isMissingBrokerSocketError(error)) {
             throw error;
           }
         });

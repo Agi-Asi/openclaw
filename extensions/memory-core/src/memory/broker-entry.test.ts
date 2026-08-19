@@ -153,6 +153,33 @@ describe("memory-core broker entry", () => {
     });
   });
 
+  it("omits unrecognized search sources before selected-runtime dispatch", async () => {
+    const handler = createMemoryBrokerHandler();
+    const plan = { memoryPolicyRevision: binding.policyRevision };
+    const searchContext = { ...context, operation: "read" as const };
+    mocks.search.mockResolvedValue({ version: 1, value: { results: [] } });
+
+    await handler({
+      binding,
+      request: {
+        method: "memory.search",
+        payload: {
+          context: searchContext,
+          plan,
+          query: "Alice",
+          limit: 5,
+          sources: ["memory", "untrusted-source"],
+        },
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ context: searchContext, plan, query: "Alice", limit: 5 }),
+    );
+    expect(mocks.search.mock.calls.at(-1)?.[0]).not.toHaveProperty("sources");
+  });
+
   it("forwards the broker cancellation signal into every authorized operation", async () => {
     const handler = createMemoryBrokerHandler();
     const controller = new AbortController();

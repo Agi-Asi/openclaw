@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { requestJsonlSocket } from "../infra/jsonl-socket.js";
 import {
   createMemoryBrokerEnvelope,
@@ -19,6 +20,10 @@ type MemoryBrokerClientRequest = Readonly<{
   expiresAtMs: number;
   signal?: AbortSignal;
 }>;
+
+function isMemoryBrokerResponse(value: unknown): value is MemoryBrokerResponse {
+  return isRecord(value) && typeof value.ok === "boolean";
+}
 
 export type MemoryBrokerClient = Readonly<{
   request<T>(params: MemoryBrokerClientRequest): Promise<T | undefined>;
@@ -72,13 +77,10 @@ export function createMemoryBrokerClient(params: {
         keepWriteOpen: true,
         ...(requestParams.signal ? { signal: requestParams.signal } : {}),
         accept: (value) => {
-          if (!value || typeof value !== "object" || Array.isArray(value)) {
-            return undefined;
-          }
-          const response = value as MemoryBrokerResponse;
-          return typeof response.ok === "boolean" ? response : undefined;
+          return isMemoryBrokerResponse(value) ? value : undefined;
         },
       });
+      // SAFETY: T is selected by the Gateway-only adapter's configured broker-entry method contract.
       return response?.ok === true ? (response.value as T) : undefined;
     },
   });

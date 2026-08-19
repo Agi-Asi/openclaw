@@ -1,5 +1,6 @@
-import { startMemoryBrokerServer } from "./server.js";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { MemoryBrokerChildEntry } from "./entry.js";
+import { startMemoryBrokerServer } from "./server.js";
 
 type BrokerStartMessage = Readonly<{
   type: "start";
@@ -21,6 +22,30 @@ type BrokerMaintenanceMessage = Readonly<{
 let closing = false;
 let server: Awaited<ReturnType<typeof startMemoryBrokerServer>> | undefined;
 
+function isBrokerStartMessage(value: unknown): value is BrokerStartMessage {
+  return (
+    isRecord(value) &&
+    value.type === "start" &&
+    typeof value.socketPath === "string" &&
+    typeof value.brokerId === "string" &&
+    typeof value.brokerEpoch === "string" &&
+    typeof value.secret === "string" &&
+    typeof value.handlerModuleUrl === "string" &&
+    Array.isArray(value.agentIds) &&
+    value.agentIds.every((agentId) => typeof agentId === "string" && agentId.length > 0)
+  );
+}
+
+function isBrokerMaintenanceMessage(value: unknown): value is BrokerMaintenanceMessage {
+  return (
+    isRecord(value) &&
+    value.type === "maintenance" &&
+    typeof value.requestId === "string" &&
+    typeof value.brokerEpoch === "string" &&
+    (value.operation === "quiesce" || value.operation === "resume")
+  );
+}
+
 function send(message: unknown): void {
   if (process.connected) {
     process.send?.(message);
@@ -39,7 +64,7 @@ async function start(message: BrokerStartMessage): Promise<void> {
   if (server || closing) {
     throw new Error("memory broker child has already started");
   }
-  const module = (await import(message.handlerModuleUrl)) as Partial<MemoryBrokerChildEntry>;
+  const module: Partial<MemoryBrokerChildEntry> = await import(message.handlerModuleUrl);
   if (typeof module.createMemoryBrokerHandler !== "function") {
     throw new Error("selected memory plugin has no broker child entry");
   }
@@ -76,12 +101,11 @@ process.once("SIGINT", () => {
   void close().finally(() => process.exit(0));
 });
 process.on("message", (message: unknown) => {
-  if (!message || typeof message !== "object" || Array.isArray(message)) {
+  if (!isRecord(message)) {
     return;
   }
-  if ((message as { type?: unknown }).type === "health") {
-    const requestId = (message as { requestId?: unknown }).requestId;
-    const brokerEpoch = (message as { brokerEpoch?: unknown }).brokerEpoch;
+  if (message.type === "health") {
+    const { requestId, brokerEpoch } = message;
     if (typeof requestId === "string" && typeof brokerEpoch === "string") {
       send({
         type: "health",
@@ -92,16 +116,16 @@ process.on("message", (message: unknown) => {
     }
     return;
   }
-  if ((message as { type?: unknown }).type === "maintenance") {
-    const maintenance = message as Partial<BrokerMaintenanceMessage>;
-    if (
-      typeof maintenance.requestId !== "string" ||
-      typeof maintenance.brokerEpoch !== "string" ||
-      (maintenance.operation !== "quiesce" && maintenance.operation !== "resume")
-    ) {
-      send({ type: "maintenance", requestId: maintenance.requestId, ok: false });
+  if (message.type === "maintenance") {
+    if (!isBrokerMaintenanceMessage(message)) {
+      send({
+        type: "maintenance",
+        ...(typeof message.requestId === "string" ? { requestId: message.requestId } : {}),
+        ok: false,
+      });
       return;
     }
+    const maintenance = message;
     void (async () => {
       const activeServer = server;
       if (!activeServer || closing || activeServer.brokerEpoch !== maintenance.brokerEpoch) {
@@ -134,11 +158,11 @@ process.on("message", (message: unknown) => {
     });
     return;
   }
-  if ((message as { type?: unknown }).type !== "start") {
+  if (!isBrokerStartMessage(message)) {
     send({ type: "failed" });
     return;
   }
-  void start(message as BrokerStartMessage).catch(() => {
+  void start(message).catch(() => {
     send({ type: "failed" });
     void close().finally(() => process.exit(1));
   });
