@@ -64,6 +64,7 @@ export async function runDescendantWake(params: {
   isChildSessionEffectsAllowed: () => boolean;
   hasUsableSessionEntry: UsableSessionEntryGuard;
   deps: DescendantWakeDeps;
+  resolveGatewayContext?: import("../../../gateway/server-methods/types.js").GatewayContextResolver;
   signal?: AbortSignal;
 }): Promise<boolean> {
   if (
@@ -110,6 +111,9 @@ export async function runDescendantWake(params: {
           },
           {
             timeoutMs: announceTimeoutMs,
+            ...(params.resolveGatewayContext
+              ? { resolveGatewayContext: params.resolveGatewayContext }
+              : {}),
           },
         );
       },
@@ -154,6 +158,9 @@ export async function runDescendantWake(params: {
     // Persist the wake message as the replacement run's task so that any
     // post-restart redispatch reconstructs the correct prompt.
     task: wakeMessage,
+    ...(params.resolveGatewayContext
+      ? { gatewayContextResolver: params.resolveGatewayContext }
+      : {}),
   });
   if (!replaced) {
     await terminateUnownedWake();
