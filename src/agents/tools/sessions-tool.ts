@@ -1,3 +1,4 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 /** Session self-service tool. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
@@ -62,6 +63,7 @@ const GROUP_NAMES_MAX_ITEMS = 200;
 const SELF_ARCHIVE_MAX_RETRY_DELAY_MS = 5_000;
 const SESSIONS_TOOL_RESULT_MAX_BYTES = 3_840;
 const RESOLVED_OMITTED_REASON = "response_budget_exceeded";
+const PATCH_MANY_ERROR_MAX_CHARS = 240;
 const SESSION_ICON_GLYPH_DESCRIPTION = SESSION_ICON_GLYPH_IDS.join(", ");
 const log = createSubsystemLogger("agents/sessions");
 
@@ -257,6 +259,7 @@ async function resolvePatchTarget(
 ): Promise<{
   agentId: string;
   cfg: OpenClawConfig;
+  expectedSessionId?: string;
   isRequesterSession: boolean;
   key: string;
   requesterAgentId: string;
@@ -310,6 +313,9 @@ async function resolvePatchTarget(
   });
   const isRequesterSession =
     resolved.key === context.effectiveRequesterKey && agentId === requesterAgentId;
+  let expectedSessionId = isRequesterSession
+    ? normalizeOptionalString(opts.agentSessionId)
+    : undefined;
   if (!isRequesterSession) {
     // Session visibility is the configured read/write scope for session tools;
     // the action only selects error copy. Owner gating remains separate.
@@ -336,10 +342,12 @@ async function resolvePatchTarget(
     if (!access.allowed) {
       throw new ToolAuthorizationError(access.error);
     }
+    expectedSessionId = access.expectedSessionId;
   }
   return {
     agentId,
     cfg: context.cfg,
+    ...(expectedSessionId ? { expectedSessionId } : {}),
     isRequesterSession,
     key: resolved.key,
     requesterAgentId,
@@ -475,6 +483,21 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
         if (params.targets.length > 100) {
           throw new ToolInputError("patch_many supports at most 100 targets");
         }
+        for (const field of [
+          "label",
+          "icon",
+          "statusNote",
+          "attention",
+          "ttlMinutes",
+          "pinned",
+          "archived",
+          "model",
+          "thinkingLevel",
+        ]) {
+          if (params[field] !== undefined) {
+            throw new ToolInputError(`patch_many does not support ${field}`);
+          }
+        }
         const patch = {
           ...(params.category !== undefined
             ? { category: readClearableString(params, "category") }
@@ -486,19 +509,28 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
         }
         const targets = await Promise.all(
           params.targets.map(async (rawTarget, index) => {
-            if (!rawTarget || typeof rawTarget !== "object") {
+            if (!isRecord(rawTarget)) {
               throw new ToolInputError(`targets[${index}] must be an object`);
             }
-            const target = rawTarget as Record<string, unknown>;
-            const sessionKey = readToolStringParam(target, "sessionKey", { required: true });
+            const sessionKey = readToolStringParam(rawTarget, "sessionKey", { required: true });
             const resolved = await resolvePatchTarget(
               { ...opts, config: opts.config ?? getRuntimeConfig() },
               sessionKey,
               gatewayRequest,
             );
-            const expectedSessionId = normalizeOptionalString(
-              readToolStringParam(target, "expectedSessionId"),
+            const requestedSessionId = normalizeOptionalString(
+              readToolStringParam(rawTarget, "expectedSessionId"),
             );
+            if (
+              requestedSessionId &&
+              resolved.expectedSessionId &&
+              requestedSessionId !== resolved.expectedSessionId
+            ) {
+              throw new ToolAuthorizationError(
+                `Session changed after access was granted: ${sessionKey}`,
+              );
+            }
+            const expectedSessionId = requestedSessionId ?? resolved.expectedSessionId;
             return {
               key: resolved.key,
               ...(!parseAgentSessionKey(resolved.key) ? { agentId: resolved.agentId } : {}),
@@ -510,15 +542,29 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
           targets,
           patch,
         });
-        const failed = result.outcomes.flatMap((outcome) =>
-          outcome.ok ? [] : [{ sessionKey: outcome.key, error: outcome.error.message }],
-        );
-        return jsonResult({
+        const failed = result.outcomes.flatMap((outcome) => {
+          if (outcome.ok) {
+            return [];
+          }
+          const error = outcome.error.message.slice(0, PATCH_MANY_ERROR_MAX_CHARS);
+          return [{ sessionKey: outcome.key, error }];
+        });
+        const acknowledgement = {
           status: "updated",
           requested: targets.length,
           updated: result.outcomes.length - failed.length,
           failed,
-        });
+        };
+        return jsonResult(
+          sessionsToolResultFitsBudget(acknowledgement)
+            ? acknowledgement
+            : {
+                status: "updated",
+                requested: targets.length,
+                updated: result.outcomes.length - failed.length,
+                failedOmitted: { count: failed.length, reason: RESOLVED_OMITTED_REASON },
+              },
+        );
       }
       if (action !== "patch") {
         throw new ToolInputError(`Unknown action: ${action}`);

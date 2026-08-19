@@ -1086,9 +1086,52 @@ describe("sessions tool", () => {
       status: "updated",
       requested: 2,
       updated: 1,
-      failed: [
-        { sessionKey: "agent:main:dashboard:changed", error: "session changed; retry" },
-      ],
+      failed: [{ sessionKey: "agent:main:dashboard:changed", error: "session changed; retry" }],
     });
+
+    await expect(
+      tool.execute("batch-unsupported", {
+        action: "patch_many",
+        targets: [{ sessionKey: "agent:main:main" }],
+        category: "Research",
+        archived: true,
+      }),
+    ).rejects.toThrow("patch_many does not support archived");
+  });
+
+  it("bounds failed batch details", async () => {
+    const targetKey = "agent:main:dashboard:scoped";
+    const callGateway = vi.fn(async (request: AgentToolGatewayRequest) => {
+      if (request.method === "sessions.patchMany") {
+        return {
+          outcomes: Array.from({ length: 100 }, (_, index) => ({
+            ok: false,
+            key: `${targetKey}:${index}:${"k".repeat(200)}`,
+            error: { code: "INVALID_REQUEST", message: "e".repeat(1_000) },
+          })),
+        };
+      }
+      return { key: targetKey };
+    });
+    const tool = createSessionsTool({
+      agentSessionKey: "agent:main:main",
+      config: { tools: { sessions: { visibility: "all" } } },
+      callGateway: callGateway as never,
+    });
+
+    const result = await tool.execute("batch-bounded", {
+      action: "patch_many",
+      targets: [{ sessionKey: targetKey, expectedSessionId: "scoped-session" }],
+      unread: false,
+    });
+
+    expect(result.details).toEqual({
+      status: "updated",
+      requested: 1,
+      updated: 0,
+      failedOmitted: { count: 100, reason: "response_budget_exceeded" },
+    });
+    const text = (result.content[0] as { text?: string } | undefined)?.text ?? "";
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(512);
   });
 });
