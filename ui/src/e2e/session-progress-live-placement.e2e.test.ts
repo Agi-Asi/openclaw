@@ -247,7 +247,9 @@ suite.define(() => {
         await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
         const card = page.locator('[data-progress-card-placement="composer"]');
         await expect.poll(() => card.isVisible()).toBe(true);
-        await expect(card.getByRole("button", { name: "Dismiss progress card" })).toHaveCount(0);
+        await expect
+          .poll(() => card.getByRole("button", { name: "Dismiss progress card" }).count())
+          .toBe(0);
         expect(await gateway.getRequests("progressCard.put")).toHaveLength(0);
       },
     );
