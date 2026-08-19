@@ -251,6 +251,26 @@ describe("scripts/lib/docker-e2e-plan", () => {
     expect(plan.needs.functionalImage).toBe(true);
   });
 
+  it("plans the package-backed memory process-isolation lane", () => {
+    const plan = planFor({
+      selectedLaneNames: ["memory-process-isolation"],
+    });
+
+    expect(plan.lanes.map(summarizeLane)).toEqual([
+      {
+        command: "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:memory-process-isolation",
+        imageKind: "functional",
+        live: false,
+        name: "memory-process-isolation",
+        resources: ["docker", "service"],
+        stateScenario: "empty",
+        timeoutMs: 900_000,
+        weight: 4,
+      },
+    ]);
+    expect(plan.needs.functionalImage).toBe(true);
+  });
+
   it("routes trusted Docker scripts through the nested release harness", () => {
     const trustedScripts = new Map([
       ["live-codex-npm-plugin", "e2e/codex-npm-plugin-live-docker.sh"],
