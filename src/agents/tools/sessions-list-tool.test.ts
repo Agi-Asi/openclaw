@@ -418,8 +418,9 @@ describe("sessions-list-tool", () => {
     expect(linkedTool.description.slice(-SESSION_LINK_RULE.length)).toBe(
       linkedDetails.sessionLinkRule,
     );
-    expect(compactToolOutputHint(tool.outputSchema)).toBe(
-      '{ count: number; sessions: Array<{ agentId: string; archived: boolean; channel: string; key: string; kind: "main" | "group" | "cron" | "hook" | "node" | "other"; pinned: boolean; abortedLastRun?: boolean; agentStatus?: { expiresAt: number; note: string; attention?: string }; category?: string; childSessions?: Array<string>; contextTokens?: number; derivedTitle?: string; displayName?: string; hasWorktree?: boolean; icon?: string; label?: string; lastMessagePreview?: string; messages?: Array<unknown>; model?: string; owner?: { type: "human" | "agent" | "system"; id?: string; label?: string }; parentSessionKey?: string; projectId?: string; sessionId?: string; stateVersion?: number; status?: "running" | "done" | "failed" | "killed" | "timeout"; totalTokens?: number; unread?: boolean; updatedAt?: number }>; sessionLinkRule?: string; visibility?: { mode: "self" | "tree" | "agent"; restricted: true; warning: string } }',
+    expect(compactToolOutputHint(tool.outputSchema)).toBeUndefined();
+    expect(tool.description).toContain(
+      "category, unread, icon, owner, project/worktree, and active attention/status",
     );
     expect(result.details).toEqual({
       count: 1,
