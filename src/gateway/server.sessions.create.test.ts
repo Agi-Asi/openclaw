@@ -2869,18 +2869,21 @@ test("sessions.create persists declared spawn lineage for spawn-owned creations"
   expect(created.payload?.entry?.spawnDepth).toBe(2);
 });
 
-test("sessions.create atomically persists trusted visible-spawn tool policy", async () => {
+test("sessions.create inherits a parent category only for trusted visible spawns", async () => {
   const { storePath } = await createSessionStoreDir();
   const parentSessionKey = "agent:main:main";
   await writeSessionStore({
     entries: {
-      [parentSessionKey]: sessionStoreEntry("sess-visible-spawn-parent"),
+      [parentSessionKey]: sessionStoreEntry("sess-visible-spawn-parent", {
+        category: "Projects",
+      }),
     },
   });
 
   const created = await directSessionReq<{
     key?: string;
     entry?: {
+      category?: string;
       label?: string;
       spawnedBy?: string;
       completionOwnerSessionKey?: string;
@@ -2922,6 +2925,7 @@ test("sessions.create atomically persists trusted visible-spawn tool policy", as
   expect(created.ok, JSON.stringify(created.error)).toBe(true);
   expect(created.payload?.key).toMatch(/^agent:main:dashboard:/);
   expect(created.payload?.entry).toMatchObject({
+    category: "Projects",
     label: "Restricted visible child",
     spawnedBy: parentSessionKey,
     completionOwnerSessionKey: "agent:main:discord:direct:alice",
@@ -2933,12 +2937,38 @@ test("sessions.create atomically persists trusted visible-spawn tool policy", as
   });
   const key = requireNonEmptyString(created.payload?.key, "visible child key");
   expect(loadSessionEntry({ agentId: "main", sessionKey: key, storePath })).toMatchObject({
+    category: "Projects",
     spawnedBy: parentSessionKey,
     completionOwnerSessionKey: "agent:main:discord:direct:alice",
     inheritedToolPolicyVersion: 1,
     inheritedToolAllow: ["read", "sessions_spawn"],
     inheritedToolDeny: ["exec"],
   });
+
+  const operatorChild = await directSessionReq<{ entry?: { category?: string } }>(
+    "sessions.create",
+    { agentId: "main", parentSessionKey },
+  );
+  expect(operatorChild.payload?.entry).not.toHaveProperty("category");
+
+  const explicitCategoryChild = await directSessionReq<{ entry?: { category?: string } }>(
+    "sessions.create",
+    { agentId: "main", category: "Research", parentSessionKey },
+    {
+      client: {
+        connect: { scopes: ["operator.write"] },
+        internal: {
+          syntheticClient: true,
+          sessionCreation: {
+            via: "spawn",
+            actor: { type: "agent", id: "main" },
+            requesterSessionKey: parentSessionKey,
+          },
+        },
+      } as never,
+    },
+  );
+  expect(explicitCategoryChild.payload?.entry?.category).toBe("Research");
 });
 
 test("sessions.create accepts a signed agent-runtime visible-spawn policy", async () => {
