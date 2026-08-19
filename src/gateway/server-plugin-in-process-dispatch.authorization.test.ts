@@ -16,7 +16,10 @@ import type {
   GatewayRequestHandlerOptions,
   GatewayRequestOptions,
 } from "./server-methods/types.js";
-import { dispatchGatewayMethodInProcess } from "./server-plugin-in-process-dispatch.js";
+import {
+  dispatchGatewayMethodInProcess,
+  getInProcessGatewayRequestContext,
+} from "./server-plugin-in-process-dispatch.js";
 
 const startTurn = vi.hoisted(() => vi.fn());
 const waitForTurn = vi.hoisted(() => vi.fn());
@@ -232,6 +235,25 @@ describe("typed in-process agent authorization", () => {
     expect(resolveNodeInvokeRuntimeAuthorityError({ context, client: dispatched.client })).toBe(
       "agent runtime approval authority closed before node dispatch",
     );
+  });
+
+  it("rejects a closed owning gateway without falling through to another active scope", async () => {
+    await withPluginRuntimeGatewayRequestScope(
+      { context: createContext(), isWebchatConnect: () => false },
+      async () => {
+        const resolveGatewayContext = () => undefined;
+        expect(getInProcessGatewayRequestContext(resolveGatewayContext)).toBeUndefined();
+
+        await expect(
+          dispatchGatewayMethodInProcess(
+            "agent",
+            { message: "detached completion", idempotencyKey: "detached-completion" },
+            { resolveGatewayContext },
+          ),
+        ).rejects.toThrow("requires a gateway request scope or instance binding");
+      },
+    );
+    expect(startTurn).not.toHaveBeenCalled();
   });
 
   it("rejects a scoped agent turn without operator.write", async () => {
