@@ -16,6 +16,7 @@ import {
   registerPreparedModelRuntimePublicationListener,
   refreshPreparedModelRuntimeSnapshots,
 } from "./prepared-model-runtime.js";
+import { getPreparedPluginRuntimeLoadContext } from "./prepared-model-runtime.plugin-context.js";
 
 const mocks = getPreparedModelRuntimeMocks();
 
@@ -73,6 +74,12 @@ describe("prepared reply dispatch runtime", () => {
     );
     expect(firstSnapshot?.metadataSnapshot).toBe(mocks.pluginMetadataSnapshot);
     expect(Object.isFrozen(firstRuntime)).toBe(true);
+    expect(
+      mocks.loadAgentRuntimePluginRegistryHandle.mock.calls.every(
+        ([params]) =>
+          (params as { preferBuiltPluginArtifacts?: boolean }).preferBuiltPluginArtifacts,
+      ),
+    ).toBe(true);
 
     const replacementCatalog = createDeferred<{ entries: [] }>();
     mocks.prepareStaticCatalog.mockImplementationOnce(async () => await replacementCatalog.promise);
@@ -107,6 +114,12 @@ describe("prepared reply dispatch runtime", () => {
     });
     expect(replacementRuntime).not.toBe(firstRuntime);
     expect(replacementRuntime?.modelCatalog).not.toBe(firstRuntime?.modelCatalog);
+    expect(
+      mocks.loadAgentRuntimePluginRegistryHandle.mock.calls.every(
+        ([params]) =>
+          (params as { preferBuiltPluginArtifacts?: boolean }).preferBuiltPluginArtifacts,
+      ),
+    ).toBe(true);
   });
 
   it("resolves the configured inbound registry across a launch-workspace override", async () => {
@@ -200,6 +213,9 @@ describe("prepared reply dispatch runtime", () => {
     expect(dynamicPreparationRegistries.every(Boolean)).toBe(true);
     expect(catalogGenerationRegistries.every(Boolean)).toBe(true);
     expect(dynamicSelectedBefore).toBe(configuredSelectedBefore);
+    expect(getPreparedPluginRuntimeLoadContext(dynamicSelectedBefore)).toMatchObject({
+      preferBuiltPluginArtifacts: true,
+    });
     const registryCallsBeforeAuth = mocks.loadAgentRuntimePluginRegistryHandle.mock.calls.length;
     const authStorageCallsBeforeAuth = mocks.discoverAuthStorage.mock.calls.length;
     const modelCallsBeforeAuth = mocks.discoverModels.mock.calls.length;

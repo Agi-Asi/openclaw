@@ -185,6 +185,8 @@ export function rebindInputToCommittedConfiguredOwner(
     preserveWorkspaceDirOnRefresh: preserveWorkspaceDir,
     allowGatewaySubagentBinding:
       input.allowGatewaySubagentBinding ?? owner.input.allowGatewaySubagentBinding,
+    preferBuiltPluginArtifacts:
+      input.preferBuiltPluginArtifacts ?? owner.input.preferBuiltPluginArtifacts,
     runtimePluginSelections: input.runtimePluginSelections ?? owner.input.runtimePluginSelections,
   });
 }
@@ -213,6 +215,7 @@ export function normalizePreparedModelRuntimeInput(
 ): PreparedModelRuntimeInput {
   const {
     inheritedAuthDir: _inheritedAuthDir,
+    preferBuiltPluginArtifacts: _preferBuiltPluginArtifacts,
     readOnly,
     runtimePluginSelections: _runtimePluginSelections,
     skipCredentials,
@@ -244,6 +247,7 @@ export function normalizePreparedModelRuntimeInput(
     ...(workspaceDir ? { workspaceDir } : {}),
     ...(env ? { env } : {}),
     ...(input.allowGatewaySubagentBinding === true ? { allowGatewaySubagentBinding: true } : {}),
+    ...(input.preferBuiltPluginArtifacts === true ? { preferBuiltPluginArtifacts: true } : {}),
     ...(runtimePluginSelections?.length ? { runtimePluginSelections } : {}),
   };
 }
@@ -267,6 +271,7 @@ export function ownerKey(input: PreparedModelRuntimeInput): string {
     workspaceDir: input.workspaceDir,
     env: environmentFingerprint(input.env),
     allowGatewaySubagentBinding: input.allowGatewaySubagentBinding === true,
+    preferBuiltPluginArtifacts: input.preferBuiltPluginArtifacts === true,
     runtimePluginSelections: input.runtimePluginSelections,
     config: input.readOnly ? hashRuntimeConfigValue(input.config) : undefined,
   });
@@ -281,7 +286,7 @@ export function resolvePublishedOwner(
   if (exact) {
     return exact;
   }
-  if (!options.allowConfiguredWorkspaceFallback) {
+  if (!options.allowConfiguredWorkspaceFallback && "preferBuiltPluginArtifacts" in input) {
     return undefined;
   }
   // Gateway launch may supply an authoritative workspace outside config. Request readers still
@@ -302,6 +307,8 @@ export function resolvePublishedOwner(
       // rebuild a live ephemeral catalog per request.
       (input.allowGatewaySubagentBinding === undefined ||
         owner.input.allowGatewaySubagentBinding === input.allowGatewaySubagentBinding) &&
+      (input.preferBuiltPluginArtifacts === undefined ||
+        owner.input.preferBuiltPluginArtifacts === input.preferBuiltPluginArtifacts) &&
       (input.runtimePluginSelections === undefined ||
         JSON.stringify(owner.input.runtimePluginSelections) ===
           JSON.stringify(input.runtimePluginSelections)) &&
@@ -327,6 +334,7 @@ export function hasSameLifecycleInput(
     environmentFingerprint(left.env) === environmentFingerprint(right.env) &&
     left.preserveWorkspaceDirOnRefresh === right.preserveWorkspaceDirOnRefresh &&
     left.allowGatewaySubagentBinding === right.allowGatewaySubagentBinding &&
+    left.preferBuiltPluginArtifacts === right.preferBuiltPluginArtifacts &&
     JSON.stringify(left.runtimePluginSelections) === JSON.stringify(right.runtimePluginSelections)
   );
 }

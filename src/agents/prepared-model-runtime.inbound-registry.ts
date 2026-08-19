@@ -15,6 +15,7 @@ function inboundRegistryIdentity(input: PreparedModelRuntimeInput): string {
     env: hashRuntimeConfigValue(input.env ?? process.env),
     workspaceDir: input.workspaceDir,
     allowGatewaySubagentBinding: input.allowGatewaySubagentBinding === true,
+    preferBuiltPluginArtifacts: input.preferBuiltPluginArtifacts === true,
   });
 }
 
@@ -27,6 +28,7 @@ export function preparedModelRuntimeWorkspaceFactsKey(input: PreparedModelRuntim
     loadRuntimePlugins: input.loadRuntimePlugins === true,
     workspaceDir: input.workspaceDir,
     allowGatewaySubagentBinding: input.allowGatewaySubagentBinding === true,
+    preferBuiltPluginArtifacts: input.preferBuiltPluginArtifacts === true,
     runtimePluginSelections: input.runtimePluginSelections,
   });
 }
@@ -45,6 +47,7 @@ export function createPreparedInboundRegistryLoader(): PreparedInboundRegistryLo
       env: input.env ?? process.env,
       ...(input.workspaceDir ? { workspaceDir: input.workspaceDir } : {}),
       ...(input.allowGatewaySubagentBinding ? { allowGatewaySubagentBinding: true } : {}),
+      ...(input.preferBuiltPluginArtifacts ? { preferBuiltPluginArtifacts: true } : {}),
       metadataSnapshot,
     });
     registries.set(key, registry);
@@ -77,6 +80,7 @@ export function prepareWorkspacePluginRegistries(
           env: input.env ?? process.env,
           ...(input.workspaceDir ? { workspaceDir: input.workspaceDir } : {}),
           ...(input.allowGatewaySubagentBinding ? { allowGatewaySubagentBinding: true } : {}),
+          ...(input.preferBuiltPluginArtifacts ? { preferBuiltPluginArtifacts: true } : {}),
           metadataSnapshot,
           selections: input.runtimePluginSelections,
         })

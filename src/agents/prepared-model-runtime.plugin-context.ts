@@ -37,6 +37,7 @@ function preparePluginLoadContext(
   const preparedMetadataSnapshot = metadataSnapshot.discovery
     ? metadataSnapshot
     : { ...metadataSnapshot, discovery: emptyPluginDiscovery };
+  const preparedContext = getPreparedPluginRuntimeLoadContext(registry);
   const context = {
     ...resolvePluginRuntimeLoadContext({
       config,
@@ -44,6 +45,8 @@ function preparePluginLoadContext(
       workspaceDir,
       metadataSnapshot: preparedMetadataSnapshot,
       manifestRegistry: metadataSnapshot.manifestRegistry,
+      preferBuiltPluginArtifacts:
+        input.preferBuiltPluginArtifacts || preparedContext?.preferBuiltPluginArtifacts,
     }),
     metadataSnapshot,
     installRecords: extractPluginInstallRecordsFromInstalledPluginIndex(metadataSnapshot.index),

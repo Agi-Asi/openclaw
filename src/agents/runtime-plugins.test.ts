@@ -148,7 +148,7 @@ describe("agent runtime plugin registries", () => {
     });
   });
 
-  it("preserves the gateway startup scope and ordering", () => {
+  it("preserves the gateway startup scope, artifact selection, and ordering", () => {
     const config = {} as never;
     const metadataSnapshot = createMetadataSnapshot();
 
@@ -156,6 +156,7 @@ describe("agent runtime plugin registries", () => {
       config,
       workspaceDir: "/tmp/workspace",
       metadataSnapshot: metadataSnapshot as never,
+      preferBuiltPluginArtifacts: true,
     });
 
     expect(hoisted.resolveAgentRuntimePluginLoadPlan).toHaveBeenCalledWith({
@@ -168,6 +169,7 @@ describe("agent runtime plugin registries", () => {
     expect(hoisted.loadPluginRegistryHandle).toHaveBeenCalledWith(
       expect.objectContaining({
         channelPluginLoadIntent: "full",
+        preferBuiltPluginArtifacts: true,
       }),
     );
   });
@@ -250,6 +252,9 @@ describe("agent runtime plugin registries", () => {
       runtimeOptions: undefined,
       workspaceDir: snapshot.workspaceDir,
     });
+    expect(hoisted.loadPluginRegistryHandle.mock.calls[0]?.[0]).not.toHaveProperty(
+      "preferBuiltPluginArtifacts",
+    );
   });
 
   it("owns a scoped registry for direct hosts", async () => {

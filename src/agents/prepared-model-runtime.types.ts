@@ -92,6 +92,8 @@ export type PreparedModelRuntimeInput = {
   skipCredentials?: boolean;
   env?: NodeJS.ProcessEnv;
   allowGatewaySubagentBinding?: boolean;
+  /** Gateway lifecycle owners load bundled plugins from packaged build artifacts. */
+  preferBuiltPluginArtifacts?: true;
   runtimePluginSelections?: readonly AgentHarnessPluginSelection[];
   config: OpenClawConfig;
 };

@@ -431,7 +431,10 @@ async function refreshPreparedModelRuntimeSnapshotsNow(
   const entries: Array<{ owner?: PreparedModelRuntimeOwner; input: PreparedModelRuntimeInput }> =
     [];
   const knownKeys = new Set<string>();
-  for (const rawInput of listConfiguredOwnerInputs(config, workspace, bindings)) {
+  for (const configuredInput of listConfiguredOwnerInputs(config, workspace, bindings)) {
+    const rawInput = gatewayLifecycleActive
+      ? { ...configuredInput, preferBuiltPluginArtifacts: true as const }
+      : configuredInput;
     let input = normalizePreparedModelRuntimeInput(rawInput);
     const preservedOwner = [...owners.values()].find(
       (owner) =>

@@ -29,6 +29,7 @@ type AgentRuntimePluginRegistryParams = {
   selections?: readonly AgentHarnessPluginSelection[];
   /** Lifecycle-selected metadata. Omission selects one standalone cold generation. */
   metadataSnapshot?: PluginMetadataSnapshot;
+  preferBuiltPluginArtifacts?: true;
 };
 
 function resolveAgentRuntimePluginRegistryLoad(params: AgentRuntimePluginRegistryParams) {
@@ -44,6 +45,7 @@ function resolveAgentRuntimePluginRegistryLoad(params: AgentRuntimePluginRegistr
         ...(params.env ? { env: params.env } : {}),
         workspaceDir: requestedWorkspaceDir,
         onlyPluginIds: [],
+        ...(params.preferBuiltPluginArtifacts ? { preferBuiltPluginArtifacts: true } : {}),
         runtimeOptions: params.allowGatewaySubagentBinding
           ? { allowGatewaySubagentBinding: true }
           : undefined,
@@ -62,6 +64,7 @@ function resolveAgentRuntimePluginRegistryLoad(params: AgentRuntimePluginRegistr
     ...(metadataSnapshot.discovery ? { discovery: metadataSnapshot.discovery } : {}),
     installRecords: extractPluginInstallRecordsFromInstalledPluginIndex(metadataSnapshot.index),
     manifestRegistry: metadataSnapshot.manifestRegistry,
+    ...(params.preferBuiltPluginArtifacts ? { preferBuiltPluginArtifacts: true } : {}),
     ...(workspaceDir ? { workspaceDir } : {}),
   };
   const requestPluginRegistry = getPluginRuntimeGatewayRequestScope()?.pluginRegistry;

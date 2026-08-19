@@ -29,6 +29,7 @@ describe("prepared model runtime plugin metadata ownership", () => {
     const inputs = ["first", "second"].map((name) => ({
       agentDir: `/tmp/${name}-agent`,
       config,
+      preferBuiltPluginArtifacts: true as const,
       workspaceDir: `/tmp/${name}-workspace`,
     }));
     const pluginGeneration = {
@@ -45,9 +46,10 @@ describe("prepared model runtime plugin metadata ownership", () => {
         expect(prepareOwnedPluginLoadContext(input, process.env, registry, gatewaySnapshot)).toBe(
           gatewaySnapshot,
         );
-        expect(getPreparedPluginRuntimeLoadContext(registry)?.metadataSnapshot).toBe(
-          gatewaySnapshot,
-        );
+        expect(getPreparedPluginRuntimeLoadContext(registry)).toMatchObject({
+          metadataSnapshot: gatewaySnapshot,
+          preferBuiltPluginArtifacts: true,
+        });
         expect(
           withPreparedPluginGenerationScope({ input, pluginGeneration }, (snapshot) => snapshot),
         ).toBe(gatewaySnapshot);
@@ -73,6 +75,7 @@ describe("prepared model runtime plugin metadata ownership", () => {
       .mockReturnValue(directSnapshot);
 
     try {
+      const registry = createEmptyPluginRegistry();
       expect(
         prepareOwnedPluginLoadContext(
           {
@@ -81,9 +84,12 @@ describe("prepared model runtime plugin metadata ownership", () => {
             workspaceDir,
           },
           process.env,
-          undefined,
+          registry,
         ),
       ).toBe(directSnapshot);
+      expect(getPreparedPluginRuntimeLoadContext(registry)).not.toHaveProperty(
+        "preferBuiltPluginArtifacts",
+      );
       expect(resolveMetadata).toHaveBeenCalledWith({
         config,
         env: process.env,
