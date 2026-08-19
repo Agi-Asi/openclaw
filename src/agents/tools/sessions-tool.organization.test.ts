@@ -76,7 +76,7 @@ describe("sessions organization", () => {
     const currentTool = createSessionsTool({
       agentSessionKey: "agent:main:main",
       config: {},
-      callGateway,
+      callGateway: callGateway as never,
     });
     await expect(currentTool.execute("patch-empty", { action: "patch" })).rejects.toThrow(
       "Patch setting required",
