@@ -191,7 +191,6 @@ describe("sessions tool", () => {
     const callGateway = vi.fn();
     const tool = createSessionsTool({
       agentSessionKey: "agent:main:main",
-      agentSessionId: "main-session",
       config: {},
       callGateway,
     });
@@ -1059,6 +1058,7 @@ describe("sessions tool", () => {
     });
     const tool = createSessionsTool({
       agentSessionKey: "agent:main:main",
+      agentSessionId: "main-session",
       config: { tools: { sessions: { visibility: "all" } } },
       callGateway: callGateway as never,
     });
