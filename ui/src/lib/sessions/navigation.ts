@@ -233,34 +233,15 @@ type VisibleSessionRowOptions = {
   archivedFilter?: SessionArchivedFilter;
 };
 
-/**
- * Machine-created probe/system rows (health-check turns, internal effect
- * sessions), classified from recorded creation provenance only — never from
- * message text, which rots and false-positives real chats. Rows without
- * recorded provenance (legacy stores) stay visible.
- *
- * Accepted tradeoff: a profile-less client's unnamed `run` session is
- * indistinguishable from a probe and hides by default too. Operator-named CLI
- * sessions are stamped at creation and remain visible. Unnamed rows stay fully
- * reachable: the selected session always renders in the sidebar, the Sessions
- * page never applies this filter, and the sort-menu toggle reveals all rows.
- */
+/** Machine-created rows are hidden only from explicit provenance. A profile-less
+ * `run` has no actor, so treating an absent actor as system-owned hides real chats. */
 export function isSystemCreatedSessionRow(row: GatewaySessionRow): boolean {
   // Cron rows are owned by the automation toggle; cron creation stamps a
   // system actor, so classifying them here would demand both toggles at once.
   if (isCronSessionKey(row.key)) {
     return false;
   }
-  if (row.createdActor?.type === "system") {
-    return true;
-  }
-  if (row.createdVia !== "run" && row.createdVia !== "internal") {
-    return false;
-  }
-  if (row.createdActor?.type === "human") {
-    return false;
-  }
-  return !(row.label?.trim() || row.displayName?.trim() || row.subject?.trim());
+  return row.createdActor?.type === "system" || row.createdVia === "internal";
 }
 
 export function sessionMatchesArchivedFilter(

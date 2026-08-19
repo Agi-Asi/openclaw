@@ -68,14 +68,15 @@ describe("resolveSessionNavigation", () => {
     ]);
   });
 
-  it("hides system-created probe sessions unless showSystem opts in", () => {
+  it("hides explicitly system-created sessions unless showSystem opts in", () => {
     const rows: GatewaySessionRow[] = [
       { key: "agent:main:chat", kind: "direct", updatedAt: 300 },
       {
         key: "agent:main:explicit:healthcheck",
         kind: "direct",
         updatedAt: 200,
-        createdVia: "run",
+        createdVia: "internal",
+        createdActor: { type: "system" },
       },
     ];
 
@@ -98,16 +99,15 @@ describe("resolveSessionNavigation", () => {
     ]);
   });
 
-  it("keeps a selected system-classified session visible with showSystem off", () => {
-    // Accepted-tradeoff escape hatch: a profile-less explicit CLI session
-    // matches the system classifier, but selecting it must always surface it.
+  it("keeps a selected system session visible with showSystem off", () => {
     const rows: GatewaySessionRow[] = [
       { key: "agent:main:chat", kind: "direct", updatedAt: 300 },
       {
         key: "agent:main:explicit:incident-debug",
         kind: "direct",
         updatedAt: 200,
-        createdVia: "run",
+        createdVia: "internal",
+        createdActor: { type: "system" },
       },
     ];
 
@@ -425,7 +425,7 @@ describe("isSystemCreatedSessionRow", () => {
   });
 
   it.each([
-    ["run + no actor + unnamed is system", { createdVia: "run" }, true],
+    ["run + no actor stays visible", { createdVia: "run" }, false],
     ["internal + no actor + unnamed is system", { createdVia: "internal" }, true],
     ["system actor is system regardless of via", { createdActor: { type: "system" } }, true],
     [
