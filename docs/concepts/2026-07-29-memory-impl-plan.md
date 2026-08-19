@@ -1836,7 +1836,7 @@ Phase 5 is complete only when all of the following are demonstrated:
 - [ ] Documentation states the exact tested process-adversarial boundary and
       names the trusted Gateway, broker backend, selected memory plugin, and
       operator.
-- [ ] Hostile tenants continue to require separate
+- [x] Hostile tenants continue to require separate
       Gateway/process/credential/storage cells.
 
 ### Phase 5 rollback
