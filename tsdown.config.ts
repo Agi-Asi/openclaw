@@ -395,6 +395,9 @@ function buildCoreDistEntries(): Record<string, string> {
     "process/supervisor/service-child-relay": "src/process/supervisor/service-child-relay.ts",
     "process/supervisor/service-child-group-anchor":
       "src/process/supervisor/service-child-group-anchor.ts",
+    // Forked by the selected-memory supervisor; this must remain a stable packaged file rather
+    // than an implementation chunk whose hashed location can change independently of the parent.
+    "memory-broker/child": "src/memory-broker/child.ts",
     // Durable host-side PID for per-session process-isolated worker containers.
     "node-host/node-worker-container-shim": "src/node-host/node-worker-container-shim.ts",
     "telegram-ingress-worker.runtime": bundledPluginFile(

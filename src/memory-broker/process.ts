@@ -60,8 +60,10 @@ export async function startMemoryBrokerProcess(params: {
   const socketPath = path.join(directory, "broker.sock");
   const brokerEpoch = randomUUID();
   const secret = randomBytes(32);
+  // The bundled parent can be a code-split chunk at dist/, while the child is a
+  // deliberate stable entry. Keep the source sibling path for tsx-based development.
   const defaultChildModuleUrl = new URL(
-    import.meta.url.endsWith(".ts") ? "./child.ts" : "./child.js",
+    import.meta.url.endsWith(".ts") ? "./child.ts" : "./memory-broker/child.js",
     import.meta.url,
   );
   const childModuleUrl = params.childModuleUrl ?? defaultChildModuleUrl;

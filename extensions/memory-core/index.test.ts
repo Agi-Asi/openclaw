@@ -362,6 +362,16 @@ describe("memory-core plugin runtime registration", () => {
     });
   });
 
+  it("uses the packaged plugin entry as the selected broker child module", () => {
+    const capability = registerMemoryCoreCapability();
+
+    expect(capability.broker).toEqual({
+      version: 1,
+      kind: "local-child",
+      moduleUrl: new URL("./index.ts", import.meta.url).href,
+    });
+  });
+
   it("binds the host local-service hook to the registered memory runtime", async () => {
     const runtime = registerMemoryCoreRuntime();
     const cfg = {} as OpenClawConfig;

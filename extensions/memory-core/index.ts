@@ -36,6 +36,11 @@ import { registerScopedMemorySharingGatewayMethods } from "./src/memory/scoped-m
 import { buildPromptSection } from "./src/prompt-section.js";
 import { registerSessionBackfillGatewayMethods } from "./src/session-backfill-gateway.js";
 
+export {
+  createMemoryBrokerHandler,
+  initializeMemoryBroker,
+} from "./src/memory/broker-entry.js";
+
 type MemoryToolsModule = typeof import("./src/tools.js");
 type StandingIntentToolModule = typeof import("./src/standing-intents-tool.js");
 
@@ -69,11 +74,9 @@ const loadScopedMemorySharingModule = createLazyRuntimeModule(
   () => import("./src/memory/scoped-memory-sharing.js"),
 );
 
-// Source-checkout workers inherit the TypeScript loader; packaged brokers load the emitted JS.
-const memoryBrokerEntryUrl = new URL(
-  import.meta.url.endsWith(".ts") ? "./src/memory/broker-entry.ts" : "./src/memory/broker-entry.js",
-  import.meta.url,
-).href;
+// The selected broker imports this packaged extension entry, which re-exports its private
+// handler. Do not point at a source-relative helper: package builds only guarantee this entry.
+const memoryBrokerEntryUrl = import.meta.url;
 
 function getToolConfig(options: MemoryToolOptions): OpenClawConfig | undefined {
   return options.getConfig?.() ?? options.config;
