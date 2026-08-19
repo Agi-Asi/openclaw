@@ -1065,10 +1065,7 @@ describe("sessions tool", () => {
 
     const result = await tool.execute("batch-category", {
       action: "patch_many",
-      targets: [
-        { sessionKey: "agent:main:main" },
-        { sessionKey: "agent:main:dashboard:changed" },
-      ],
+      targets: [{ sessionKey: "agent:main:main" }, { sessionKey: "agent:main:dashboard:changed" }],
       category: "Research",
       unread: false,
     });
