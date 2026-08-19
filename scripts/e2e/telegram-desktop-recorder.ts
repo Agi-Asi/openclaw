@@ -93,7 +93,9 @@ export function renderGoldenImagePreflight(): string {
 contract="Telegram Desktop recorder golden image contract"
 fail() { echo "$contract failed: $1" >&2; exit 1; }
 test -x ${TELEGRAM_BINARY} || fail "${TELEGRAM_BINARY} is not executable"
-test "$(cat /var/lib/crabbox/telegram-desktop-version 2>/dev/null)" = "${TELEGRAM_DESKTOP_VERSION}" || fail "/var/lib/crabbox/telegram-desktop-version is not ${TELEGRAM_DESKTOP_VERSION}"
+# The marker sits beside the app, not in Crabbox's state dir: that directory is
+# not traversable by the lease user on AWS desktop images.
+test "$(cat /opt/Telegram/openclaw-image-version 2>/dev/null)" = "${TELEGRAM_DESKTOP_VERSION}" || fail "/opt/Telegram/openclaw-image-version is not ${TELEGRAM_DESKTOP_VERSION}"
 for command in wmctrl xdotool scrot ffmpeg zbarimg xdpyinfo; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not on PATH"
 done
@@ -112,8 +114,11 @@ rm -rf ${shellQuote(TELEGRAM_WORKDIR)}
 # setsid plus closed stdin detaches Telegram from this SSH session: container sshd
 # tears down the session process group on exit, which kills a plain background child.
 setsid ${TELEGRAM_BINARY} -noupdate -workdir ${shellQuote(TELEGRAM_WORKDIR)} </dev/null >${shellQuote(remotePaths.desktopLog)} 2>&1 &
+# setsid execs in place, so this pid becomes Telegram; matching by name would miss
+# the window between fork and exec on a cold, large binary.
+telegram_pid=$!
 for _ in $(seq 1 30); do
-  pgrep -x Telegram >/dev/null 2>&1 || { tail -c 262144 ${shellQuote(remotePaths.desktopLog)} >&2 || true; echo "Telegram Desktop exited before opening a window." >&2; exit 1; }
+  kill -0 "$telegram_pid" 2>/dev/null || { tail -c 262144 ${shellQuote(remotePaths.desktopLog)} >&2 || true; echo "Telegram Desktop exited before opening a window." >&2; exit 1; }
   wmctrl -lx | awk 'tolower($0) ~ /telegramdesktop/ {found=1} END {exit !found}' && exit 0
   sleep 1
 done

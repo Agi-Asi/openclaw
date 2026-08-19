@@ -65,13 +65,13 @@ RUN set -eux; \
     printf '%s  %s\n' "$telegram_desktop_sha256" "$install_root/telegram.tar.xz" | sha256sum --check --status; \
     tar -xJf "$install_root/telegram.tar.xz" -C "$install_root"; \
     test -x "$install_root/Telegram/Telegram"; \
-    install -d -o root -g root -m 0755 /opt/Telegram /var/lib/crabbox; \
+    install -d -o root -g root -m 0755 /opt/Telegram; \
     cp -a "$install_root/Telegram/." /opt/Telegram/; \
     chown -R root:root /opt/Telegram; \
     chmod 0755 /opt/Telegram /opt/Telegram/Telegram; \
     rm -f /opt/Telegram/Updater; \
-    printf '%s\n' "$telegram_desktop_version" >/var/lib/crabbox/telegram-desktop-version; \
-    chmod 0644 /var/lib/crabbox/telegram-desktop-version; \
+    printf '%s\n' "$telegram_desktop_version" >/opt/Telegram/openclaw-image-version; \
+    chmod 0644 /opt/Telegram/openclaw-image-version; \
     rm -rf "$install_root" /var/lib/apt/lists/*
 
 # Fail the build if the base ever drops the account this image defaults to.

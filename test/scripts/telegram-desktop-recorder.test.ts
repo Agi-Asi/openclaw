@@ -323,7 +323,7 @@ describe("Telegram Desktop recorder remote contract", () => {
     expect(scripts).toContain("Telegram Desktop recorder golden image contract");
     expect(scripts).toContain("/opt/Telegram/Telegram");
     expect(scripts).toContain(
-      'test "$(cat /var/lib/crabbox/telegram-desktop-version 2>/dev/null)" = "7.0.9"',
+      'test "$(cat /opt/Telegram/openclaw-image-version 2>/dev/null)" = "7.0.9"',
     );
     expect(scripts).toContain("DISPLAY=:99 xdpyinfo");
     expect(scripts).toContain("wmctrl xdotool scrot ffmpeg zbarimg xdpyinfo");
@@ -331,7 +331,9 @@ describe("Telegram Desktop recorder remote contract", () => {
     // -f patterns also match this script's own shell (its command line contains the
     // binary path), so a -f pkill kills the launcher instead of a stale Telegram.
     expect(scripts).toContain("pkill -x Telegram");
-    expect(scripts).toContain("pgrep -x Telegram");
+    // setsid execs in place, so liveness follows the pid; name matching would miss
+    // the fork-to-exec window on a cold binary.
+    expect(scripts).toContain('kill -0 "$telegram_pid"');
     expect(scripts).not.toMatch(/p(kill|grep) -f [^\n]*Telegram/u);
     // Container sshd tears down the session process group; the client must detach.
     expect(scripts).toContain("setsid /opt/Telegram/Telegram");

@@ -241,10 +241,12 @@ bash scripts/mantis/build-telegram-desktop-image.sh
 
 `--provider aws` targets a Crabbox catalog-only Telegram variant image
 (`--image-sdk telegram-desktop=7.0.9`) so the generic desktop image never
-carries the client. Publishing that variant needs Crabbox coordinator admin
-(`crabbox image create` / `image promote`) and is not part of this repository
-yet; until it is published, use the local Docker image above. Either image must
-provide an
+carries the client. `scripts/mantis/bake-telegram-desktop-image.sh` bakes and
+publishes it; `crabbox image create` and `image promote` are admin-only, so a
+Crabbox coordinator admin runs it with `--run`. Anyone can validate the recipe
+first with `--prep-only --run`, which warms one lease, installs the pinned
+client, runs the recorder's own contract check, and stops without creating an
+image. Either image must provide an
 executable Telegram Desktop at `/opt/Telegram/Telegram`, a readable desktop
 version marker, `wmctrl`, `xdotool`, `scrot`, `ffmpeg`, `zbarimg`, and
 `xdpyinfo`, plus a reachable `DISPLAY=:99`. Crabbox refuses the lease when no
