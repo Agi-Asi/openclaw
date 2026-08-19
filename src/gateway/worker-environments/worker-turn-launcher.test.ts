@@ -469,6 +469,34 @@ describe("worker turn launcher local placement", () => {
     expect([placement?.state, placement?.turnClaim]).toEqual(["active", null]);
   });
 
+  it("rejects enforced memory before remote-exec can run through the local callback", async () => {
+    seedActivePlacement("remote-exec");
+    const environments = unusedEnvironments();
+    const provider = createWorkerSessionTurnPlacementProvider({ environments, placements });
+    const runLocal = vi.fn(async () => ({ meta: { durationMs: 1 } }));
+    const onAdmitted = vi.fn();
+
+    await expect(
+      provider.executeTurn(
+        {
+          sessionId: SESSION_ID,
+          sessionKey: SESSION_KEY,
+          agentId: "main",
+          runId: "run-enforced-remote-exec",
+          requiresProcessIsolation: true,
+        },
+        turn("run-enforced-remote-exec"),
+        runLocal,
+        onAdmitted,
+      ),
+    ).rejects.toThrow("enforced memory cannot execute through remote-exec placement");
+
+    expect(runLocal).not.toHaveBeenCalled();
+    expect(onAdmitted).not.toHaveBeenCalled();
+    expect(environments.acquireTurnCredential).not.toHaveBeenCalled();
+    expect(placements.get(SESSION_ID)).toMatchObject({ state: "active", turnClaim: null });
+  });
+
   it("records a remote-exec reconciliation failure and releases its local claim", async () => {
     seedActivePlacement("remote-exec");
     const reconciliationError = new Error("workspace manifest memo exceeds its entry limit");
@@ -557,6 +585,39 @@ describe("worker turn launcher local placement", () => {
     ).rejects.toThrow("reprovision the worker before launch");
 
     expect(runLocal).not.toHaveBeenCalled();
+    expect(environments.acquireTurnCredential).not.toHaveBeenCalled();
+    expect(environments.startTunnel).not.toHaveBeenCalled();
+    expect(placements.get(SESSION_ID)).toMatchObject({ state: "active", turnClaim: null });
+  });
+
+  it("rejects enforced memory before a host-node worker is admitted", async () => {
+    seedActivePlacement();
+    const environments: WorkerTurnEnvironmentService = {
+      ...unusedEnvironments(),
+      get: vi.fn(() => attachedEnvironment()),
+    };
+    const provider = createWorkerSessionTurnPlacementProvider({ environments, placements });
+    const runLocal = vi.fn(async () => ({ meta: { durationMs: 1 } }));
+    const onAdmitted = vi.fn();
+
+    await expect(
+      provider.executeTurn(
+        {
+          sessionId: SESSION_ID,
+          sessionKey: SESSION_KEY,
+          agentId: "main",
+          runId: "run-enforced-host-worker",
+          requiresProcessIsolation: true,
+        },
+        turn("run-enforced-host-worker"),
+        runLocal,
+        onAdmitted,
+      ),
+    ).rejects.toThrow("enforced memory requires a containerized worker launch");
+
+    expect(runLocal).not.toHaveBeenCalled();
+    expect(onAdmitted).not.toHaveBeenCalled();
+    expect(environments.get).not.toHaveBeenCalled();
     expect(environments.acquireTurnCredential).not.toHaveBeenCalled();
     expect(environments.startTunnel).not.toHaveBeenCalled();
     expect(placements.get(SESSION_ID)).toMatchObject({ state: "active", turnClaim: null });

@@ -82,31 +82,6 @@ export async function execDockerRaw(
   return await execContainerRaw(DOCKER_SANDBOX_ENGINE, args, opts);
 }
 
-import {
-  appendAuthorizedVirtualProjectionMountArgs,
-  assertNoBindsCollideWithAuthorizedVirtualProjectionMounts,
-  formatAuthorizedVirtualProjectionMountHashState,
-  resolveAuthorizedVirtualProjectionMountPlan,
-  type AuthorizedVirtualProjectionMountPlan,
-  type ResolvedAuthorizedVirtualProjectionMount,
-} from "./authorized-virtual-projection-mounts.js";
-import { computeSandboxConfigHash } from "./config-hash.js";
-import { DEFAULT_SANDBOX_IMAGE, SANDBOX_DOCKER_CREATE_ARGS_EPOCH } from "./constants.js";
-import { handleHotSandboxConfigMismatch } from "./current-config.js";
-import { readRegistryEntry, removeRegistryEntry, updateRegistry } from "./registry.js";
-import { buildSandboxContainerName, slugifySessionKey } from "./shared.js";
-import type { SandboxConfig, SandboxDockerConfig, SandboxWorkspaceAccess } from "./types.js";
-import { validateSandboxSecurity } from "./validate-sandbox-security.js";
-import {
-  appendReadOnlyWorkspaceSkillMountArgs,
-  appendWorkspaceMountArgs,
-  filterBindsConflictingWithProtectedMounts,
-  formatReadOnlyWorkspaceSkillMountHashState,
-  resolveReadOnlyWorkspaceSkillMounts,
-  resolveProtectedSkillMountContainerPaths,
-  SANDBOX_MOUNT_FORMAT_VERSION,
-  type ReadOnlyWorkspaceSkillMount,
-} from "./workspace-mounts.js";
 const log = createSubsystemLogger("docker");
 
 const HOT_CONTAINER_WINDOW_MS = 5 * 60 * 1000;

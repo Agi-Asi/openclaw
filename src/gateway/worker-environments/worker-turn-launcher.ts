@@ -536,10 +536,20 @@ export function createWorkerSessionTurnPlacementProvider(options: WorkerTurnLaun
         });
       }
       let placement = requireActivePlacement(routablePlacement);
+      const requiresProcessIsolation = claim.requiresProcessIsolation === true;
+      const remoteExec = placement.executionMode === "remote-exec";
+      if (requiresProcessIsolation) {
+        // Remote-exec invokes the Gateway callback, while worker-turn launches directly on the
+        // node host. Neither path supplies the required broker process boundary yet.
+        throw new Error(
+          remoteExec
+            ? "enforced memory cannot execute through remote-exec placement"
+            : "enforced memory requires a containerized worker launch",
+        );
+      }
       // The placement owns the managed worktree. Callers can carry a default or stale
       // workspace path, but remote results must only reconcile into that canonical root.
       const localWorkspaceDir = await options.resolveWorkspacePath(identity);
-      const remoteExec = placement.executionMode === "remote-exec";
       let turnClaim: WorkerSessionTurnClaim;
       if (remoteExec) {
         turnClaim = options.placements.claimTurn({
