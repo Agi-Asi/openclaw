@@ -112,7 +112,7 @@ async function prepareManagedSignalLink(params: {
   accountId: string;
   runtime: RuntimeEnv;
   prompter: WizardPrompter;
-  options?: { signal?: AbortSignal };
+  options?: { signal?: AbortSignal; beforePersistentEffect?: () => Promise<void> };
   cliPath: string;
 }): Promise<string | undefined> {
   const signal = params.options?.signal;
@@ -133,6 +133,7 @@ async function prepareManagedSignalLink(params: {
     return undefined;
   }
 
+  await params.options?.beforePersistentEffect?.();
   signal.throwIfAborted();
   const lifecycle = createSignalDaemonLifecycle({ abortSignal: signal });
   const onAbort = () => void lifecycle.stop();
