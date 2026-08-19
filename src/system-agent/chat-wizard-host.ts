@@ -528,7 +528,9 @@ export class ChatWizardHost {
     if (!bridge) {
       return { text: "", configWritten: false };
     }
-    const result = await bridge.session.next();
+    const result = await bridge.session.next({
+      supportsQrCode: this.options.supportsQrCode === true,
+    });
     if (result.done) {
       this.bridge = null;
       const label = bridge.label;
