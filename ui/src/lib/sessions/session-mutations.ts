@@ -107,7 +107,8 @@ export function createSessionMutations(host: SessionMutationsHost) {
       return { ...row, ...patch };
     });
     if (changed) {
-      host.publish({ ...state, result: { ...state.result, sessions } });
+      const owners = Object.hasOwn(patch, "owner") ? undefined : state.result.owners;
+      host.publish({ ...state, result: { ...state.result, sessions, owners } });
     }
   };
 
@@ -533,6 +534,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
         return null;
       }
       patchRowLocal(result.key, { owner: result.owner });
+      void host.refreshReplacement(options.agentId);
       return result.owner;
     } catch (error) {
       if (host.connection.isCurrent(scope)) {

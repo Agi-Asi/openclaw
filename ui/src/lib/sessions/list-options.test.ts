@@ -38,6 +38,64 @@ function createSessions(client: GatewayBrowserClient, key: string) {
 }
 
 describe("session list replacement options", () => {
+  it("replaces the complete owner facet after assignment", async () => {
+    const key = "agent:main:owned";
+    const ada = { type: "human" as const, id: "profile-ada", label: "Ada" };
+    const bob = { type: "human" as const, id: "profile-bob", label: "Bob" };
+    const assignedOwner = {
+      actor: ada,
+      assignedBy: ada,
+      assignedAt: 20,
+    };
+    const replacement = deferred<SessionsListResult>();
+    let listCalls = 0;
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.assignOwner") {
+        return { ok: true, key, owner: assignedOwner };
+      }
+      if (method !== "sessions.list") {
+        throw new Error(`Unexpected request: ${method}`);
+      }
+      listCalls += 1;
+      if (listCalls > 1) {
+        return await replacement.promise;
+      }
+      return {
+        ...sessionsResult(
+          [
+            {
+              key,
+              kind: "direct" as const,
+              updatedAt: 10,
+              owner: { actor: bob, assignedBy: ada, assignedAt: 10 },
+            },
+          ],
+          10,
+        ),
+        owners: [ada, bob],
+      };
+    });
+    const sessions = createSessions({ request } as unknown as GatewayBrowserClient, key);
+
+    await sessions.refresh({ agentId: "main", force: true });
+    await expect(sessions.assignOwner(key, ada, { agentId: "main" })).resolves.toEqual(
+      assignedOwner,
+    );
+
+    const pendingOwner = sessions.state.result?.sessions[0]?.owner;
+    const pendingOwners = sessions.state.result?.owners;
+    replacement.resolve({
+      ...sessionsResult([{ key, kind: "direct", updatedAt: 20, owner: assignedOwner }], 20),
+      owners: [ada],
+    });
+
+    expect(pendingOwner).toEqual(assignedOwner);
+    expect(pendingOwners).toBeUndefined();
+    expect(listCalls).toBe(2);
+    await vi.waitFor(() => expect(sessions.state.result?.owners).toEqual([ada]));
+    sessions.dispose();
+  });
+
   it("preserves sidebar metadata hydration when refreshing after session patches", async () => {
     const key = "agent:main:untitled";
     const request = vi.fn(async (method: string, _params?: unknown) => {
