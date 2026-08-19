@@ -9,7 +9,10 @@ import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { GatewayRequestContext, GatewayRequestOptions } from "./server-methods/types.js";
-import { dispatchGatewayMethodInProcess } from "./server-plugin-in-process-dispatch.js";
+import {
+  dispatchGatewayMethodInProcess,
+  getInProcessGatewayRequestContext,
+} from "./server-plugin-in-process-dispatch.js";
 
 const startTurn = vi.hoisted(() => vi.fn());
 const waitForTurn = vi.hoisted(() => vi.fn());
@@ -102,6 +105,25 @@ describe("typed in-process agent authorization", () => {
   beforeEach(() => {
     startTurn.mockReset();
     waitForTurn.mockReset();
+  });
+
+  it("rejects a closed owning gateway without falling through to another active scope", async () => {
+    await withPluginRuntimeGatewayRequestScope(
+      { context: createContext(), isWebchatConnect: () => false },
+      async () => {
+        const resolveGatewayContext = () => undefined;
+        expect(getInProcessGatewayRequestContext(resolveGatewayContext)).toBeUndefined();
+
+        await expect(
+          dispatchGatewayMethodInProcess(
+            "agent",
+            { message: "detached completion", idempotencyKey: "detached-completion" },
+            { resolveGatewayContext },
+          ),
+        ).rejects.toThrow("requires a gateway request scope or instance binding");
+      },
+    );
+    expect(startTurn).not.toHaveBeenCalled();
   });
 
   it("rejects a scoped agent turn without operator.write", async () => {

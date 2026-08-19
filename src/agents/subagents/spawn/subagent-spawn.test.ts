@@ -38,6 +38,7 @@ const hoisted = vi.hoisted(() => ({
 
 let resetSubagentRegistryForTests: typeof import("../registry/subagent-registry.test-helpers.js").resetSubagentRegistryForTests;
 let spawnSubagentDirect: typeof import("./subagent-spawn.js").spawnSubagentDirect;
+let withGatewayToolCallerIdentity: typeof import("../../tools/gateway-caller-context.js").withGatewayToolCallerIdentity;
 
 function createConfigOverride(overrides?: Record<string, unknown>) {
   return createSubagentSpawnTestConfig(os.tmpdir(), {
@@ -178,6 +179,7 @@ describe("spawnSubagentDirect seam flow", () => {
       resolveSandboxRuntimeStatus: () => ({ sandboxed: false }),
       sessionStorePath: "/tmp/subagent-spawn-session-store.json",
     }));
+    ({ withGatewayToolCallerIdentity } = await import("../../tools/gateway-caller-context.js"));
   });
 
   beforeEach(() => {
@@ -513,6 +515,32 @@ describe("spawnSubagentDirect seam flow", () => {
       scopes: ["operator.admin"],
       params: { provider: "openai", model: "gpt-5.4" },
     });
+  });
+
+  it("retains the admitted gateway resolver through a queued collector launch", async () => {
+    hoisted.configOverride = createConfigOverride({ tools: { swarm: true } });
+    const gatewayContextResolver = () => ({ owner: "gateway-a" }) as never;
+    hoisted.dispatchGatewayMethodInProcessMock.mockResolvedValue({ runId: "queued-gateway-run" });
+
+    const result = await withGatewayToolCallerIdentity(
+      { agentId: "main", sessionKey: "agent:main:main", gatewayContextResolver },
+      () =>
+        spawnSubagentDirect(
+          { task: "collect through the owning gateway", collect: true },
+          { agentSessionKey: "agent:main:main", requesterRunId: "parent-run" },
+        ),
+    );
+
+    expect(result).toMatchObject({ status: "accepted" });
+    expect(firstRegisteredSubagentRun().gatewayContextResolver).toBe(gatewayContextResolver);
+    await vi.waitFor(() => expect(hoisted.dispatchGatewayMethodInProcessMock).toHaveBeenCalled());
+    expect(
+      requireRecord(hoisted.dispatchGatewayMethodInProcessMock.mock.calls[0]?.[2])
+        .resolveGatewayContext,
+    ).toBe(gatewayContextResolver);
+    expect(hoisted.callGatewayMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ method: "agent" }),
+    );
   });
 
   it("aborts a collector cancelled while its gateway launch is in flight", async () => {

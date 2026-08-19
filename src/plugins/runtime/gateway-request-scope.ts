@@ -40,6 +40,8 @@ const pluginRuntimeGatewayRequestScope = resolveGlobalSingleton<
   () => new AsyncLocalStorage<PluginRuntimeGatewayRequestScope>(),
 );
 const gatewayContextResolvers = new WeakMap<object, GatewayContextResolver>();
+// A present rejecting resolver keeps mixed owners from escaping into ambient scope.
+const resolveNoGatewayContext: GatewayContextResolver = () => undefined;
 
 export function bindGatewayContextResolver(
   owner: object,
@@ -58,9 +60,14 @@ export function getSharedGatewayContextResolver(
   owners: readonly object[],
 ): GatewayContextResolver | undefined {
   const first = owners[0] ? gatewayContextResolvers.get(owners[0]) : undefined;
+  if (!first) {
+    return owners.some((owner) => gatewayContextResolvers.has(owner))
+      ? resolveNoGatewayContext
+      : undefined;
+  }
   return first && owners.every((owner) => gatewayContextResolvers.get(owner) === first)
     ? first
-    : undefined;
+    : resolveNoGatewayContext;
 }
 
 /**
