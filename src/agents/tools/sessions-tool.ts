@@ -1,10 +1,7 @@
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
-/** Session self-service tool. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
 import type {
   SessionsAssignOwnerResult,
-  SessionsPatchManyResult,
   SessionsPatchResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 import {
@@ -46,6 +43,7 @@ import {
 } from "./sessions-access.js";
 import { resolveSessionToolContext } from "./sessions-helpers.js";
 import { resolveSessionReference, shouldResolveSessionIdInput } from "./sessions-resolution.js";
+import { executeSessionsPatchMany } from "./sessions-tool-patch-many.js";
 
 const ACTIONS = [
   "patch",
@@ -63,7 +61,6 @@ const GROUP_NAMES_MAX_ITEMS = 200;
 const SELF_ARCHIVE_MAX_RETRY_DELAY_MS = 5_000;
 const SESSIONS_TOOL_RESULT_MAX_BYTES = 3_840;
 const RESOLVED_OMITTED_REASON = "response_budget_exceeded";
-const PATCH_MANY_ERROR_MAX_CHARS = 240;
 const SESSION_ICON_GLYPH_DESCRIPTION = SESSION_ICON_GLYPH_IDS.join(", ");
 const log = createSubsystemLogger("agents/sessions");
 
@@ -477,95 +474,18 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
         );
       }
       if (action === "patch_many") {
-        if (!Array.isArray(params.targets) || params.targets.length === 0) {
-          throw new ToolInputError("patch_many requires targets");
-        }
-        if (params.targets.length > 100) {
-          throw new ToolInputError("patch_many supports at most 100 targets");
-        }
-        for (const field of [
-          "label",
-          "icon",
-          "statusNote",
-          "attention",
-          "ttlMinutes",
-          "pinned",
-          "archived",
-          "model",
-          "thinkingLevel",
-        ]) {
-          if (params[field] !== undefined) {
-            throw new ToolInputError(`patch_many does not support ${field}`);
-          }
-        }
-        const patch = {
-          ...(params.category !== undefined
-            ? { category: readClearableString(params, "category") }
-            : {}),
-          ...(params.unread !== undefined ? { unread: readBooleanParam(params, "unread") } : {}),
-        };
-        if (Object.keys(patch).length === 0) {
-          throw new ToolInputError("patch_many requires category or unread");
-        }
-        const targets = await Promise.all(
-          params.targets.map(async (rawTarget, index) => {
-            if (!isRecord(rawTarget)) {
-              throw new ToolInputError(`targets[${index}] must be an object`);
-            }
-            const sessionKey = readToolStringParam(rawTarget, "sessionKey", { required: true });
-            const resolved = await resolvePatchTarget(
-              { ...opts, config: opts.config ?? getRuntimeConfig() },
-              sessionKey,
-              gatewayRequest,
-            );
-            const requestedSessionId = normalizeOptionalString(
-              readToolStringParam(rawTarget, "expectedSessionId"),
-            );
-            if (
-              requestedSessionId &&
-              resolved.expectedSessionId &&
-              requestedSessionId !== resolved.expectedSessionId
-            ) {
-              throw new ToolAuthorizationError(
-                `Session changed after access was granted: ${sessionKey}`,
-              );
-            }
-            const expectedSessionId = requestedSessionId ?? resolved.expectedSessionId;
-            return {
-              key: resolved.key,
-              ...(!parseAgentSessionKey(resolved.key) ? { agentId: resolved.agentId } : {}),
-              ...(expectedSessionId ? { expectedSessionId } : {}),
-            };
-          }),
-        );
-        const result = await callGateway<SessionsPatchManyResult>("sessions.patchMany", {
-          targets,
-          patch,
-        });
-        const failed = result.outcomes.flatMap((outcome) => {
-          if (outcome.ok) {
-            return [];
-          }
-          const error = outcome.error.message.slice(0, PATCH_MANY_ERROR_MAX_CHARS);
-          return [{ sessionKey: outcome.key, error }];
-        });
-        const updated = result.outcomes.length - failed.length;
-        const status = updated === 0 ? "failed" : failed.length > 0 ? "partial" : "updated";
-        const acknowledgement = {
-          status,
-          requested: targets.length,
-          updated,
-          failed,
-        };
         return jsonResult(
-          sessionsToolResultFitsBudget(acknowledgement)
-            ? acknowledgement
-            : {
-                status,
-                requested: targets.length,
-                updated,
-                failedOmitted: { count: failed.length, reason: RESOLVED_OMITTED_REASON },
-              },
+          await executeSessionsPatchMany({
+            raw: params,
+            callGateway: gatewayRequest,
+            resolveTarget: async (sessionKey) =>
+              await resolvePatchTarget(
+                { ...opts, config: opts.config ?? getRuntimeConfig() },
+                sessionKey,
+                gatewayRequest,
+              ),
+            resultFitsBudget: sessionsToolResultFitsBudget,
+          }),
         );
       }
       if (action !== "patch") {
