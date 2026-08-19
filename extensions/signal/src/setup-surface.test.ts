@@ -186,6 +186,26 @@ describe("Signal hosted setup linking", () => {
     expect(result?.credentialValues?.signalNumber).toBe("+15555550125");
   });
 
+  it("rejects stale hosted authority before starting device linking", async () => {
+    const guardError = new Error("verified inference changed");
+    const beforePersistentEffect = vi.fn(async () => {
+      throw guardError;
+    });
+    const prompt = createPrompter();
+
+    await expect(
+      prepareSignal({
+        prompter: prompt.prompter,
+        beforePersistentEffect,
+      }),
+    ).rejects.toBe(guardError);
+
+    expect(beforePersistentEffect).toHaveBeenCalledOnce();
+    expect(mocks.spawnDaemon).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(prompt.qrCode).not.toHaveBeenCalled();
+  });
+
   it.each([
     { label: "without QR support", includeSignal: true, includeQr: false, cfg: {} },
     { label: "without hosted cancellation", includeSignal: false, includeQr: true, cfg: {} },
