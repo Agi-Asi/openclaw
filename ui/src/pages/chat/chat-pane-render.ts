@@ -160,6 +160,7 @@ export class ChatPane extends ChatPaneLayoutRender {
     const gatewaySnapshot = this.context.gateway.snapshot;
     const canDismissProgressCard =
       state.connected &&
+      !sessionParticipationBlocked &&
       hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
       isGatewayMethodAdvertised(gatewaySnapshot, "progressCard.put") === true;
     const onDismissProgressCard = canDismissProgressCard
