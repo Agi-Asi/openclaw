@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAuthorizedMemoryReadHost } from "../agents/memory-authorized-read-host.js";
+import { createChannelMemoryIdentityAdmission } from "../channels/message-access/memory-identity-admission.js";
 import { referenceMemoryAuthorizationConformanceAdapter } from "../plugin-sdk/memory-authorization-conformance.js";
 import {
   COMPLETE_MEMORY_AUTHORIZATION_CAPABILITIES,
@@ -11,19 +12,26 @@ import {
   type AuthorizedMemorySearchResult,
   type MemoryContentAccessContext,
 } from "../plugin-sdk/memory-authorization.js";
-import { ensureMemoryOperationalPrincipal } from "../state/memory-identity.js";
+import { adminLinkAdmittedMemoryIdentity } from "../state/memory-identity.js";
 import { persistMemorySessionSubject } from "../state/memory-session-subject.js";
 import {
   closeOpenClawAgentDatabasesForTest,
   openOpenClawAgentDatabase,
 } from "../state/openclaw-agent-db.js";
 import { ensureOpenClawAgentScopedMemorySchema } from "../state/openclaw-agent-scoped-memory-schema.js";
+import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { resetMemoryIsolationCutoverForTest } from "./memory-cutover.js";
 import { MEMORY_INVOCATION_UNAVAILABLE } from "./memory-invocation.js";
 import { createEmptyPluginRegistry } from "./registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "./runtime.js";
 
 const roots: string[] = [];
+const mocks = vi.hoisted(() => ({ brokeredRuntime: undefined as unknown }));
+
+vi.mock("./memory-broker-runtime.js", () => ({
+  resolveBrokeredMemoryRuntime: async () => mocks.brokeredRuntime,
+}));
 
 function createPlan(
   context: MemoryContentAccessContext<"read">,
@@ -53,8 +61,9 @@ function createAuthorizedReadHost() {
   vi.stubEnv("OPENCLAW_STATE_DIR", root);
   const env = { ...process.env, OPENCLAW_STATE_DIR: root };
   const agentId = "main";
-  const sessionKey = "agent:main:internal:memory-invocation";
+  const sessionKey = "agent:main:direct:memory-invocation";
   const sessionId = "memory-invocation-session";
+  const recipientId = "memory-invocation-recipient";
   const options = { agentId, env };
   const database = openOpenClawAgentDatabase(options);
   ensureOpenClawAgentScopedMemorySchema(database.db);
@@ -67,18 +76,34 @@ function createAuthorizedReadHost() {
     .prepare(
       `INSERT INTO session_windows
        (session_id, session_key, created_at, updated_at, chat_type, channel, account_id)
-       VALUES (?, ?, 1, 1, 'direct', 'internal', 'default')`,
+       VALUES (?, ?, 1, 1, 'direct', 'telegram', 'default')`,
     )
     .run(sessionId, sessionKey);
-  const principal = ensureMemoryOperationalPrincipal({
-    kind: "service",
-    stableRef: "memory-invocation-test-service",
+  const profile = ensureProfileForEmail("memory-invocation@example.com", { env });
+  const admission = createChannelMemoryIdentityAdmission({
+    pluginId: "telegram",
+    adapterId: "plugin:telegram",
+    ownsChannel: (channel) => channel === "telegram",
+    isActive: () => true,
+  }).admitVerifiedDirectPairingSender({
+    channel: "telegram",
+    accountId: "default",
+    stableSenderId: recipientId,
+  });
+  if (!admission) {
+    throw new Error("fixture failed to create an admitted direct sender");
+  }
+  const binding = adminLinkAdmittedMemoryIdentity({
+    admission,
+    authenticatedOperatorProfileId: profile.id,
+    targetProfileId: profile.id,
+    authenticatedOperatorScopes: ["operator.admin"],
     options: { env },
   });
   persistMemorySessionSubject({
     sessionKey,
     sessionId,
-    subject: { kind: "service", principalId: principal.principalId },
+    bindingId: binding.bindingId,
     options,
   });
   database.db
@@ -95,6 +120,7 @@ function createAuthorizedReadHost() {
     sessionKey,
     sessionId,
     runId: "run-1",
+    deliveryContext: { channel: "telegram", accountId: "default", to: recipientId },
   });
   if (!host) {
     throw new Error("failed to create authorized memory read host");
@@ -109,6 +135,10 @@ function registerSelectedCapability(capability: unknown) {
     pluginId: "selected-memory",
     capability,
   } as never);
+  mocks.brokeredRuntime =
+    capability && typeof capability === "object" && "runtime" in capability
+      ? capability.runtime
+      : undefined;
   setActivePluginRegistry(registry);
 }
 
@@ -139,6 +169,8 @@ afterEach(() => {
   resetPluginRuntimeStateForTest();
   resetMemoryIsolationCutoverForTest();
   closeOpenClawAgentDatabasesForTest();
+  closeOpenClawStateDatabaseForTest();
+  mocks.brokeredRuntime = undefined;
   vi.unstubAllEnvs();
   for (const root of roots.splice(0)) {
     fs.rmSync(root, { force: true, recursive: true });

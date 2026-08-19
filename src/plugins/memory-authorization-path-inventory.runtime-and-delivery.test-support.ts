@@ -168,7 +168,6 @@ export const MEMORY_AUTHORIZATION_RUNTIME_AND_DELIVERY_PATH_ENTRIES = Object.fre
     "extensions/memory-core/src/cli-status.runtime.ts",
     "src/commands/doctor-memory-search.ts",
     "src/gateway/server-methods/doctor.ts",
-    "src/gateway/server-methods/doctor.memory-core-runtime.ts",
     "src/plugin-sdk/memory-core-bundled-runtime.ts",
     "extensions/memory-core/src/cli-rem.runtime.ts",
     "extensions/memory-core/src/session-backfill.ts",
@@ -185,7 +184,6 @@ export const MEMORY_AUTHORIZATION_RUNTIME_AND_DELIVERY_PATH_ENTRIES = Object.fre
     "extensions/memory-core/src/rem-evidence.ts",
     "extensions/memory-core/src/rem-harness.ts",
     "src/gateway/server-methods/doctor.ts",
-    "src/gateway/server-methods/doctor.memory-core-runtime.ts",
     "src/plugin-sdk/memory-core-bundled-runtime.ts",
   ),
   entry(
