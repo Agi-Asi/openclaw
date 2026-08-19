@@ -55,7 +55,9 @@ function sessionLoaderDeps(
 
 function sessionRenderOwnerKey(match: SessionOwnerMatch): string | undefined {
   const data = match.data as ChatRouteData | undefined;
-  return data?.kind === "session" ? CHAT_PAGE_OWNER_KEY : undefined;
+  return data?.kind === "ambiguous" || data?.kind === "route-error"
+    ? undefined
+    : CHAT_PAGE_OWNER_KEY;
 }
 
 function renderRouteError(data: Extract<ChatRouteData, { kind: "route-error" }>) {

@@ -1,5 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { buildControlUiCatalogSharePath } from "@openclaw/session-url-contract/share";
+import { buildControlUiCatalogSharePath } from "@openclaw/session-url-contract";
 import type { SessionCatalog } from "../../../../packages/gateway-protocol/src/index.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { isReservedAppRouteSegment, pathForRoute } from "../../app-route-paths.ts";
