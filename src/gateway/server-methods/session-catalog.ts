@@ -1,5 +1,6 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
+import { isControlUiReservedRouteSegment } from "@openclaw/session-url-contract";
 import {
   ErrorCodes,
   errorShape,
@@ -96,7 +97,9 @@ function catalogRegistrationSnapshot(): CatalogRegistrationSnapshot {
   );
   const providerList = sortedRegistrations.map((entry) => entry.provider);
   const validRoutes = providerList.flatMap((provider) =>
-    provider.shareRoute && validateSessionCatalogShareRoute(provider.shareRoute)
+    provider.shareRoute &&
+    validateSessionCatalogShareRoute(provider.shareRoute) &&
+    !isControlUiReservedRouteSegment(provider.shareRoute.routeSegment)
       ? [{ provider, route: provider.shareRoute }]
       : [],
   );

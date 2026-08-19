@@ -2,7 +2,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { buildControlUiCatalogSharePath } from "@openclaw/session-url-contract";
 import type { SessionCatalog } from "../../../../packages/gateway-protocol/src/index.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import { isReservedAppRouteSegment, pathForRoute } from "../../app-route-paths.ts";
+import { pathForRoute } from "../../app-route-paths.ts";
 import { pathForSession } from "../../app-session-path-builder.ts";
 import type { ApplicationNavigationOptions, ApplicationContext } from "../../app/context.ts";
 import type { BoardFace } from "../board/settings.ts";
@@ -170,9 +170,7 @@ export function sessionNavigationTarget<TRouteId extends string>(
   const catalogKey = parseCatalogSessionKey(row?.key ?? sessionKey);
   const catalogShareRoute = params.catalogShareRoute;
   const catalogSharePath =
-    catalogKey &&
-    catalogShareRoute?.hostId === catalogKey.hostId &&
-    !isReservedAppRouteSegment(catalogShareRoute.routeSegment)
+    catalogKey && catalogShareRoute?.hostId === catalogKey.hostId
       ? buildControlUiCatalogSharePath({
           shareRoute: catalogShareRoute,
           threadId: catalogKey.threadId,
