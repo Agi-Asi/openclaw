@@ -104,15 +104,11 @@ const execFile = vi.fn((...args: unknown[]) => {
 });
 const spawn = vi.fn();
 const { defaultRuntime: runtimeCapture, resetRuntimeCapture } = createCliRuntimeCapture();
-const inheritedServiceEnvKeys = [
+const serviceEnvSnapshot = captureEnv([
   "OPENCLAW_SERVICE_MARKER",
   "OPENCLAW_SERVICE_KIND",
   GATEWAY_SERVICE_RUNTIME_PID_ENV,
-  "OPENCLAW_LAUNCHD_LABEL",
-  "OPENCLAW_SYSTEMD_UNIT",
-  "OPENCLAW_WINDOWS_TASK_NAME",
-] as const;
-const serviceEnvSnapshot = captureEnv([...inheritedServiceEnvKeys]);
+]);
 
 vi.mock("@clack/prompts", () => ({
   confirm,
@@ -1001,14 +997,6 @@ describe("update-cli", () => {
 
   const FRESH_POST_UPDATE_ENTRYPOINT = "/tmp/openclaw-updated-entry.mjs";
 
-  const mockFreshDoctorEntrypoints = (count = 1) => {
-    for (let index = 0; index < count; index += 1) {
-      vi.mocked(resolveGatewayInstallEntrypoint).mockResolvedValueOnce(
-        FRESH_POST_UPDATE_ENTRYPOINT,
-      );
-    }
-  };
-
   const mockCurrentProcessFreshDoctor = (params: { postCoreResumeAttempt?: boolean } = {}) => {
     if (params.postCoreResumeAttempt !== false) {
       vi.mocked(resolveGatewayInstallEntrypoint).mockResolvedValueOnce(undefined);
@@ -1355,9 +1343,9 @@ describe("update-cli", () => {
   };
 
   beforeEach(() => {
-    for (const key of inheritedServiceEnvKeys) {
-      delete process.env[key];
-    }
+    delete process.env.OPENCLAW_SERVICE_MARKER;
+    delete process.env.OPENCLAW_SERVICE_KIND;
+    delete process.env[GATEWAY_SERVICE_RUNTIME_PID_ENV];
     restartHealthTestControl.snapshot = undefined;
     vi.clearAllMocks();
     serviceEnabled.mockResolvedValue(true);
@@ -7548,8 +7536,7 @@ describe("update-cli", () => {
     });
   });
 
-  it("updateFinalizeCommand defers plugin installation during fresh pre-plugin doctor", async () => {
-    mockFreshDoctorEntrypoints();
+  it("updateFinalizeCommand defers plugin installation during pre-plugin doctor", async () => {
     await withEnvAsync(
       {
         OPENCLAW_UPDATE_IN_PROGRESS: undefined,
@@ -7558,6 +7545,10 @@ describe("update-cli", () => {
         OPENCLAW_UPDATE_POST_CORE_CONVERGENCE: "1",
       },
       async () => {
+        let doctorEnv: NodeJS.ProcessEnv | undefined;
+        vi.mocked(doctorCommand).mockImplementationOnce(async () => {
+          doctorEnv = { ...process.env };
+        });
         vi.mocked(defaultRuntime.writeJson).mockClear();
 
         await updateFinalizeCommand({
@@ -7568,30 +7559,19 @@ describe("update-cli", () => {
           acknowledgeClawHubRisk: true,
         });
 
-        const doctorCall = vi
-          .mocked(runExec)
-          .mock.calls.find(([, args]) => args[0] === FRESH_POST_UPDATE_ENTRYPOINT);
-        const doctorOptions = doctorCall?.[2];
-        const doctorEnv = typeof doctorOptions === "number" ? undefined : doctorOptions?.env;
-        expect(doctorCall?.[1]).toEqual([
-          FRESH_POST_UPDATE_ENTRYPOINT,
-          "doctor",
-          "--repair",
-          "--non-interactive",
-          "--no-workspace-suggestions",
-          "--yes",
-        ]);
-        expect(doctorEnv).toMatchObject({
-          OPENCLAW_UPDATE_IN_PROGRESS: "1",
-          OPENCLAW_UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR: "1",
-          OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
-        });
+        expect(doctorEnv?.OPENCLAW_UPDATE_IN_PROGRESS).toBe("1");
+        expect(doctorEnv?.OPENCLAW_UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR).toBe("1");
+        expect(doctorEnv?.OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE).toBe("1");
         expect(doctorEnv?.OPENCLAW_UPDATE_POST_CORE_CONVERGENCE).toBeUndefined();
         expect(process.env.OPENCLAW_UPDATE_IN_PROGRESS).toBeUndefined();
         expect(process.env.OPENCLAW_UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR).toBeUndefined();
         expect(process.env.OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE).toBeUndefined();
         expect(process.env.OPENCLAW_UPDATE_POST_CORE_CONVERGENCE).toBe("1");
-        expect(doctorCommand).not.toHaveBeenCalled();
+        expect(doctorCommand).toHaveBeenCalledWith(defaultRuntime, {
+          nonInteractive: true,
+          repair: true,
+          yes: true,
+        });
         expect(syncPluginCall()?.channel).toBe("stable");
         expect(syncPluginCall()?.acknowledgeClawHubRisk).toBe(true);
         expect(lastNpmPluginUpdateCall()?.timeoutMs).toBe(9_000);
@@ -7635,7 +7615,7 @@ describe("update-cli", () => {
   });
 
   it("updateFinalizeCommand repairs doctor by default and refreshes plugin state after doctor", async () => {
-    mockFreshDoctorEntrypoints(2);
+    vi.mocked(resolveGatewayInstallEntrypoint).mockResolvedValueOnce("/tmp/openclaw-entry.mjs");
     const preDoctorConfig = {
       update: { channel: "stable" },
       plugins: { entries: { pre: { enabled: true } } },
@@ -7670,28 +7650,30 @@ describe("update-cli", () => {
 
     await updateFinalizeCommand({ json: true, timeout: "9", restart: false });
 
-    expect(doctorCommand).not.toHaveBeenCalled();
-    const freshDoctorCalls = vi
+    expect(doctorCommand).toHaveBeenCalledWith(defaultRuntime, {
+      nonInteractive: true,
+      repair: true,
+      yes: false,
+    });
+    expect(doctorCommand).toHaveBeenCalledTimes(1);
+    const freshDoctorCall = vi
       .mocked(runExec)
-      .mock.calls.filter(([, args]) => args.includes("doctor"));
-    expect(freshDoctorCalls).toHaveLength(2);
-    expect(freshDoctorCalls[0]?.[1]).toEqual([
-      FRESH_POST_UPDATE_ENTRYPOINT,
+      .mock.calls.find(([, args]) => args.includes("doctor"));
+    expect(freshDoctorCall?.[1]).toEqual([
+      "/tmp/openclaw-entry.mjs",
       "doctor",
       "--repair",
       "--non-interactive",
       "--no-workspace-suggestions",
     ]);
-    expect(freshDoctorCalls[0]?.[2]).toMatchObject({
+    expect(freshDoctorCall?.[2]).toMatchObject({
       cwd: process.cwd(),
       env: {
         OPENCLAW_UPDATE_IN_PROGRESS: "1",
         OPENCLAW_UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR: "1",
         OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
+        OPENCLAW_UPDATE_POST_CORE_CONVERGENCE: "1",
       },
-    });
-    expect(freshDoctorCalls[1]?.[2]).toMatchObject({
-      env: { OPENCLAW_UPDATE_POST_CORE_CONVERGENCE: "1" },
     });
     expect(syncPluginCall()?.channel).toBe("beta");
     expect(syncPluginCall()?.config).toEqual({
@@ -7702,14 +7684,13 @@ describe("update-cli", () => {
       },
     });
     expect(lastReplaceConfigCall()?.baseHash).toBe("post-doctor");
-    expect(vi.mocked(runExec).mock.invocationCallOrder[0] ?? 0).toBeLessThan(
+    expect(vi.mocked(doctorCommand).mock.invocationCallOrder[0] ?? 0).toBeLessThan(
       loadInstalledPluginIndexInstallRecords.mock.invocationCallOrder[0] ?? 0,
     );
     expect((lastWriteJsonCall() as { channel?: string } | undefined)?.channel).toBe("beta");
   });
 
   it("updateFinalizeCommand restores channels from the RPC pre-update config payload", async () => {
-    mockFreshDoctorEntrypoints();
     const tempDir = createCaseDir("openclaw-rpc-finalize");
     const sourceConfigPath = path.join(tempDir, "source-config.json");
     const preUpdateConfig = {
@@ -7756,7 +7737,6 @@ describe("update-cli", () => {
   });
 
   it("updateFinalizeCommand reapplies requested channel against post-doctor config", async () => {
-    mockFreshDoctorEntrypoints();
     const preDoctorConfig = { update: { channel: "stable" } } as OpenClawConfig;
     const postDoctorConfig = { update: { channel: "beta" } } as OpenClawConfig;
     const preDoctorSnapshot = configSnapshot(preDoctorConfig, {
@@ -7784,7 +7764,6 @@ describe("update-cli", () => {
   });
 
   it("updateFinalizeCommand converges on the effective channel from env without persisting update.channel", async () => {
-    mockFreshDoctorEntrypoints();
     const noChannelConfig = {} as OpenClawConfig;
     const noChannelSnapshot = configSnapshot(noChannelConfig, {
       parsed: baseSnapshot.parsed,

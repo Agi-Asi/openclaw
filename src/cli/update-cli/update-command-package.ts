@@ -1,5 +1,12 @@
 import path from "node:path";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
+import {
+  UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV,
+  UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION_ENV,
+  UPDATE_PARENT_ALLOWS_GATEWAY_SERVICE_REPAIR_ENV,
+  UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV,
+  UPDATE_PARENT_SUPPORTS_GATEWAY_RESTART_ENV,
+} from "../../commands/doctor/shared/update-phase.js";
 import { resolveGatewayInstallEntrypoint } from "../../daemon/gateway-entrypoint.js";
 import { createLowDiskSpaceWarning } from "../../infra/disk-space.js";
 import {
@@ -17,7 +24,6 @@ import {
   resolveGlobalInstallTarget,
   type ResolvedGlobalInstallTarget,
 } from "../../infra/update-global.js";
-import { buildUpdateDoctorEnv } from "../../infra/update-runner-doctor.js";
 import {
   resolveUpdateDoctorExecutionPolicy,
   type UpdateRunResult,
@@ -139,27 +145,30 @@ export async function runPackageInstallUpdate(params: {
         total: 0,
       };
       params.progress?.onStepStart?.(doctorProgressInfo);
-      const doctorBaseEnv = resolvePostInstallDoctorEnv({
-        serviceEnv: params.managedServiceEnv,
-        invocationCwd: params.invocationCwd,
-      });
       const doctorStep = await runUpdateStep({
         name: `${CLI_NAME} doctor`,
         argv: doctorArgv,
         cwd: verifiedPackageRoot,
         env: {
-          ...doctorBaseEnv,
-          ...buildUpdateDoctorEnv({
-            allowGatewayServiceRepair: params.allowGatewayServiceRepair,
-            allowGatewayActivation: params.allowGatewayActivation,
-            ...(doctorPolicy.serviceRepairPolicy
-              ? { serviceRepairPolicy: doctorPolicy.serviceRepairPolicy }
-              : {}),
-            deferConfiguredPluginInstallRepair: true,
-            compatibilityHostVersion: candidateHostVersion,
-            ...(doctorBaseEnv.NODE_OPTIONS ? { nodeOptions: doctorBaseEnv.NODE_OPTIONS } : {}),
+          ...resolvePostInstallDoctorEnv({
+            serviceEnv: params.managedServiceEnv,
+            invocationCwd: params.invocationCwd,
           }),
+          OPENCLAW_UPDATE_IN_PROGRESS: "1",
+          [UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV]: "1",
+          [UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV]: "1",
+          [UPDATE_PARENT_SUPPORTS_GATEWAY_RESTART_ENV]: "1",
+          [UPDATE_PARENT_ALLOWS_GATEWAY_SERVICE_REPAIR_ENV]: params.allowGatewayServiceRepair
+            ? "1"
+            : "0",
+          [UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION_ENV]: params.allowGatewayActivation ? "1" : "0",
+          ...(doctorPolicy.serviceRepairPolicy
+            ? { OPENCLAW_SERVICE_REPAIR_POLICY: doctorPolicy.serviceRepairPolicy }
+            : {}),
           [UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV]: doctorResultPath,
+          ...(candidateHostVersion === null
+            ? {}
+            : { OPENCLAW_COMPATIBILITY_HOST_VERSION: candidateHostVersion }),
         },
         timeoutMs: params.timeoutMs,
       });

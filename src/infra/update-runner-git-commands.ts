@@ -1,9 +1,9 @@
 import { DEV_BRANCH } from "./update-channels.js";
+import { resolveUpdateNodeOptions } from "./update-node-options.js";
 import {
   managerInstallIgnoreScriptsArgs,
   type UpdatePackageManagerFailureReason,
 } from "./update-package-manager.js";
-import { resolveUpdateNodeOptions } from "./update-runner-doctor.js";
 import type { UpdateRunResult, UpdateStepResult } from "./update-runner-types.js";
 
 const DEV_PREFLIGHT_LINT_ENV: NodeJS.ProcessEnv = {
@@ -28,16 +28,12 @@ export function shouldPreferIgnoreScriptsForWindowsPreflight(
   return process.platform === "win32" && manager === "pnpm";
 }
 
-function resolveBuildNodeOptions(baseOptions: string | undefined): string {
-  return resolveUpdateNodeOptions(baseOptions);
-}
-
 export function resolveBuildEnv(
   env?: NodeJS.ProcessEnv,
   buildCacheRoot?: string,
 ): NodeJS.ProcessEnv | undefined {
   const currentNodeOptions = env?.NODE_OPTIONS ?? process.env.NODE_OPTIONS;
-  const nextNodeOptions = resolveBuildNodeOptions(currentNodeOptions);
+  const nextNodeOptions = resolveUpdateNodeOptions(currentNodeOptions);
   if (nextNodeOptions === currentNodeOptions && !buildCacheRoot) {
     return env;
   }

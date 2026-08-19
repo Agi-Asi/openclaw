@@ -33,7 +33,6 @@ import {
   buildPostCoreHandoffEnv,
   type PreUpdateConfigRestoreInput,
 } from "./update-post-core-context.js";
-import { resolveUpdateNodeOptions } from "./update-runner-doctor.js";
 import type { UpdateRunResult } from "./update-runner.js";
 
 // Whole-process backstop for the finalizer. `update finalize` runs several timed
@@ -64,7 +63,6 @@ function buildFinalizeEnv(
     compatHostVersion,
     sourceConfigPath,
   });
-  env.NODE_OPTIONS = resolveUpdateNodeOptions(env.NODE_OPTIONS);
   delete env.OPENCLAW_SERVICE_MARKER;
   delete env.OPENCLAW_SERVICE_KIND;
   delete env[GATEWAY_SERVICE_RUNTIME_PID_ENV];

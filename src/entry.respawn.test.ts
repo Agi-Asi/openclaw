@@ -163,10 +163,13 @@ describe("buildCliRespawnPlan", () => {
     ).toBeNull();
   });
 
-  it("does not overwrite an existing NODE_EXTRA_CA_CERTS value", () => {
+  it("preserves startup env while applying the update heap budget", () => {
     const plan = buildCliRespawnPlan({
-      argv: ["node", "openclaw", "status"],
-      env: { NODE_EXTRA_CA_CERTS: "/custom/ca.pem" },
+      argv: ["node", "openclaw", "update", "repair"],
+      env: {
+        NODE_EXTRA_CA_CERTS: "/custom/ca.pem",
+        NODE_OPTIONS: "--trace-warnings --max-old-space-size=1024",
+      },
       execArgv: [],
       autoNodeExtraCaCerts: "/etc/ssl/certs/ca-certificates.crt",
       platform: "linux",
@@ -174,6 +177,7 @@ describe("buildCliRespawnPlan", () => {
 
     const respawnPlan = expectCliRespawnPlan(plan);
     expect(respawnPlan.env.NODE_EXTRA_CA_CERTS).toBe("/custom/ca.pem");
+    expect(respawnPlan.env.NODE_OPTIONS).toBe("--trace-warnings --max-old-space-size=8192");
   });
 
   it("returns null when both respawn guards are already satisfied", () => {

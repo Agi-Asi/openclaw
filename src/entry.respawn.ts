@@ -2,6 +2,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { resolveNodeStartupTlsEnvironment } from "./bootstrap/node-startup-env.js";
+import { resolveCliArgvInvocation } from "./cli/argv-invocation.js";
 import {
   isTerminalInteractiveRespawnArgv,
   shouldSkipRespawnForArgv,
@@ -9,6 +10,7 @@ import {
 } from "./cli/respawn-policy.js";
 import { normalizeWindowsArgv } from "./cli/windows-argv.js";
 import { isTruthyEnvValue } from "./infra/env.js";
+import { resolveUpdateNodeOptions } from "./infra/update-node-options.js";
 import { attachChildProcessBridge } from "./process/child-process-bridge.js";
 import {
   runRespawnChildWithSignalBridge,
@@ -100,6 +102,17 @@ export function buildCliRespawnPlan(
   const childEnv: NodeJS.ProcessEnv = { ...env };
   const childExecArgv = [...execArgv];
   let needsRespawn = false;
+
+  const invocation = resolveCliArgvInvocation(normalizedArgv);
+  if (invocation.primary === "update" && invocation.commandPath[1] !== "status") {
+    // Update Doctor may inspect large recovered state before spawning another process.
+    // Apply the existing build heap budget at startup, while V8 can still honor it.
+    const nodeOptions = resolveUpdateNodeOptions(childEnv.NODE_OPTIONS);
+    if (nodeOptions !== childEnv.NODE_OPTIONS) {
+      childEnv.NODE_OPTIONS = nodeOptions;
+      needsRespawn = true;
+    }
+  }
 
   if (platform === "win32") {
     if (!hasStackSizeConfigured(childExecArgv)) {

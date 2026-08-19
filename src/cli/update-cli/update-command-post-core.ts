@@ -7,6 +7,7 @@ import { parseStrictPositiveInteger } from "@openclaw/normalization-core/number-
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
+import { doctorCommand } from "../../commands/doctor.js";
 import {
   assertConfigWriteAllowedInCurrentMode,
   readConfigFileSnapshot,
@@ -44,7 +45,6 @@ import {
   POST_CORE_UPDATE_SOURCE_CONFIG_PATH_ENV,
   type PreUpdateConfigRestoreInput,
 } from "../../infra/update-post-core-context.js";
-import { resolveUpdateNodeOptions } from "../../infra/update-runner-doctor.js";
 import type { UpdateRunResult } from "../../infra/update-runner.js";
 import { getWindowsSystem32ExePath } from "../../infra/windows-install-roots.js";
 import {
@@ -79,7 +79,7 @@ import {
 } from "./update-command-config.js";
 import {
   completePostCorePluginUpdate,
-  runUpdateFinalizationDoctorInFreshProcess,
+  withPrePluginUpdateDoctorEnv,
 } from "./update-command-fresh-doctor.js";
 import {
   updatePluginsAfterCoreUpdate,
@@ -220,48 +220,48 @@ export async function updateFinalizeCommand(opts: UpdateFinalizeOptions): Promis
   }
 
   const completedPluginUpdate = await withPluginLifecycleLease({}, async () => {
-    await createUpdateConfigSnapshot();
-    await runUpdateFinalizationDoctorInFreshProcess({
-      phase: "pre-plugin",
-      root,
-      yes: opts.yes === true,
-      json: opts.json === true,
-      timeoutMs: timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS,
-    });
-    configSnapshot = await readConfigFileSnapshot({ skipPluginValidation: true });
-    if (requestedChannel) {
-      configSnapshot = await persistRequestedUpdateChannel({
-        configSnapshot,
-        requestedChannel,
+    const initialPluginUpdate = await withPrePluginUpdateDoctorEnv(async () => {
+      await createUpdateConfigSnapshot();
+      await doctorCommand(defaultRuntime, {
+        nonInteractive: true,
+        repair: true,
+        yes: opts.yes === true,
       });
-    }
-    const restoredConfig = restoreDroppedPreUpdateChannels(configSnapshot, preFinalizeConfig);
-    configSnapshot = restoredConfig.snapshot;
-    const postDoctorStoredChannel = configSnapshot.valid
-      ? normalizeUpdateChannel(configSnapshot.config.update?.channel)
-      : null;
-    const postDoctorChannel =
-      requestedChannel ??
-      postDoctorStoredChannel ??
-      storedChannel ??
-      effectiveChannel ??
-      DEFAULT_PACKAGE_CHANNEL;
-    const pluginInstallRecords = await loadInstalledPluginIndexInstallRecords();
-    const initialPluginUpdate = await updatePluginsAfterCoreUpdate({
-      root,
-      channel: postDoctorChannel,
-      configSnapshot,
-      configChanged: restoredConfig.changed,
-      restoredAuthoredChannels: restoredConfig.authoredChannels,
-      opts: {
-        json: opts.json,
-        timeout: opts.timeout,
-        yes: opts.yes,
-        restart: false,
-        acknowledgeClawHubRisk: opts.acknowledgeClawHubRisk,
-      },
-      timeoutMs: timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS,
-      pluginInstallRecords,
+      configSnapshot = await readConfigFileSnapshot({ skipPluginValidation: true });
+      if (requestedChannel) {
+        configSnapshot = await persistRequestedUpdateChannel({
+          configSnapshot,
+          requestedChannel,
+        });
+      }
+      const restoredConfig = restoreDroppedPreUpdateChannels(configSnapshot, preFinalizeConfig);
+      configSnapshot = restoredConfig.snapshot;
+      const postDoctorStoredChannel = configSnapshot.valid
+        ? normalizeUpdateChannel(configSnapshot.config.update?.channel)
+        : null;
+      const postDoctorChannel =
+        requestedChannel ??
+        postDoctorStoredChannel ??
+        storedChannel ??
+        effectiveChannel ??
+        DEFAULT_PACKAGE_CHANNEL;
+      const pluginInstallRecords = await loadInstalledPluginIndexInstallRecords();
+      return await updatePluginsAfterCoreUpdate({
+        root,
+        channel: postDoctorChannel,
+        configSnapshot,
+        configChanged: restoredConfig.changed,
+        restoredAuthoredChannels: restoredConfig.authoredChannels,
+        opts: {
+          json: opts.json,
+          timeout: opts.timeout,
+          yes: opts.yes,
+          restart: false,
+          acknowledgeClawHubRisk: opts.acknowledgeClawHubRisk,
+        },
+        timeoutMs: timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS,
+        pluginInstallRecords,
+      });
     });
     return await completePostCorePluginUpdate({
       root,
@@ -579,7 +579,6 @@ export async function continuePostCoreUpdateInFreshProcess(params: {
       requestedChannel: params.requestedChannel,
       sourceConfigPath: params.preUpdateConfig ? sourceConfigPath : undefined,
     });
-    handoffEnv.NODE_OPTIONS = resolveUpdateNodeOptions(handoffEnv.NODE_OPTIONS);
     const child = spawn(params.nodeRunner ?? resolveNodeRunner(), argv, {
       stdio: childStdio,
       env: {
