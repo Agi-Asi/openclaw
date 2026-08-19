@@ -13,6 +13,8 @@ type RunWorkerCommandOptions = {
 
 export type WorkerCommandLifetime = {
   dispose: () => void;
+  /** The supervisor only accepts this after it bound the gate to one exact launch. */
+  reportExecutionStarted: () => void;
   reportConnectionFailure: (cause: string | undefined) => void;
   signal: AbortSignal;
   started: Promise<boolean>;
@@ -77,6 +79,9 @@ export async function runWorkerCommand(options: RunWorkerCommandOptions): Promis
     if (options.lifetime?.signal.aborted) {
       stopForLifetime();
     }
+    // Descriptor parsing and the start gate both completed. The host worker is
+    // now allowed to execute; tell the supervisor before entering user code.
+    options.lifetime?.reportExecutionStarted();
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
     const result = await runWorkerDescriptor(descriptor, {

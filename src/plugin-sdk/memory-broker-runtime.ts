@@ -7,3 +7,4 @@ export type {
   MemoryBrokerRequest,
 } from "../memory-broker/protocol.js";
 export type { MemoryBrokerHandler } from "../memory-broker/server.js";
+export type { MemoryBrokerChildEntry, MemoryBrokerStartupContext } from "../memory-broker/entry.js";

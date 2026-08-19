@@ -44,9 +44,18 @@ export type MemoryBrokerProcess = Readonly<{
 export async function startMemoryBrokerProcess(params: {
   brokerId: string;
   handlerModuleUrl: string;
+  /** Configured agent IDs only; passed over inherited IPC before the broker binds its socket. */
+  agentIds?: readonly string[];
   childModuleUrl?: string | URL;
   startTimeoutMs?: number;
+  maintenanceTimeoutMs?: number;
 }): Promise<MemoryBrokerProcess> {
+  if (!(params.agentIds ?? []).every((agentId) => typeof agentId === "string" && agentId.length > 0)) {
+    throw new Error("memory broker startup agent IDs are invalid");
+  }
+  const agentIds = Object.freeze(
+    [...new Set(params.agentIds ?? [])].toSorted(),
+  );
   const directory = await mkdtemp(path.join(tmpdir(), "openclaw-memory-broker-"));
   const socketPath = path.join(directory, "broker.sock");
   const brokerEpoch = randomUUID();
@@ -87,6 +96,9 @@ export async function startMemoryBrokerProcess(params: {
   });
   let childExited = false;
   let directoryRemoved = false;
+  let retirePromise: Promise<void> | undefined;
+  const hasChildExited = () =>
+    childExited || child.exitCode !== null || child.signalCode !== null || child.killed;
   const removeDirectory = async () => {
     if (directoryRemoved) {
       return;
@@ -100,6 +112,18 @@ export async function startMemoryBrokerProcess(params: {
     // The Gateway recreates the child with a fresh epoch on the next operation.
     void removeDirectory();
   });
+  const retireChild = async () => {
+    retirePromise ??= (async () => {
+      if (!hasChildExited()) {
+        child.kill("SIGKILL");
+      }
+      if (!hasChildExited()) {
+        await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      }
+      await removeDirectory();
+    })();
+    await retirePromise;
+  };
   let startupStderr = "";
   child.stderr?.on("data", (chunk: Buffer) => {
     // Startup diagnostics never include request bodies or the parent-child secret. Keep enough
@@ -159,6 +183,7 @@ export async function startMemoryBrokerProcess(params: {
         brokerEpoch,
         secret: secret.toString("base64url"),
         handlerModuleUrl: params.handlerModuleUrl,
+        agentIds,
       });
     });
   } catch (error) {
@@ -173,7 +198,7 @@ export async function startMemoryBrokerProcess(params: {
     secret,
   });
   const isHealthy = async (): Promise<boolean> => {
-    if (childExited || child.exitCode !== null || child.killed || !child.connected) {
+    if (hasChildExited() || !child.connected) {
       return false;
     }
     return await new Promise<boolean>((resolve) => {
@@ -210,8 +235,13 @@ export async function startMemoryBrokerProcess(params: {
       });
     });
   };
-  const maintain = async (operation: "quiesce" | "resume"): Promise<void> => {
-    if (childExited || child.exitCode !== null || child.killed || !child.connected) {
+  const maintenanceTimeoutMs = params.maintenanceTimeoutMs ?? MEMORY_BROKER_MAINTENANCE_TIMEOUT_MS;
+  if (!Number.isSafeInteger(maintenanceTimeoutMs) || maintenanceTimeoutMs < 1) {
+    await retireChild();
+    throw new Error("memory broker maintenance timeout is invalid");
+  }
+  const maintainNow = async (operation: "quiesce" | "resume"): Promise<void> => {
+    if (hasChildExited() || !child.connected) {
       throw new Error("memory broker child is unavailable for maintenance");
     }
     const requestId = randomUUID();
@@ -248,7 +278,7 @@ export async function startMemoryBrokerProcess(params: {
           finish((message as { ok?: unknown }).ok === true);
         }
       };
-      const timer = setTimeout(() => finish(false), MEMORY_BROKER_MAINTENANCE_TIMEOUT_MS);
+      const timer = setTimeout(() => finish(false), maintenanceTimeoutMs);
       timer.unref?.();
       child.on("message", onMessage);
       child.send({ type: "maintenance", requestId, brokerEpoch, operation }, (error) => {
@@ -258,20 +288,32 @@ export async function startMemoryBrokerProcess(params: {
       });
     });
     if (!ok) {
+      // A late child acknowledgement could otherwise arrive after the parent has given up and
+      // leave a healthy-but-quiesced socket rejecting every future request. Retire the whole
+      // epoch instead; the next independently authorized request creates a fresh child/secret.
+      await retireChild();
       throw new Error(`memory broker ${operation} is unavailable`);
     }
+  };
+  let maintenanceTail = Promise.resolve();
+  const maintain = (operation: "quiesce" | "resume"): Promise<void> => {
+    const current = maintenanceTail.then(() => maintainNow(operation));
+    // Parent-child maintenance messages must preserve order even when a caller observes a
+    // failure. Swallow only for tail progression; the original caller still receives the error.
+    maintenanceTail = current.catch(() => undefined);
+    return current;
   };
   return Object.freeze({
     client,
     brokerEpoch,
-    isRunning: () => !childExited && child.exitCode === null && !child.killed,
+    isRunning: () => !hasChildExited(),
     isHealthy,
     quiesce: () => maintain("quiesce"),
     resume: () => maintain("resume"),
     close: async () => {
       await maintain("quiesce").catch(() => undefined);
       await new Promise<void>((resolve) => {
-        if (child.exitCode !== null || child.killed) {
+        if (hasChildExited()) {
           resolve();
           return;
         }

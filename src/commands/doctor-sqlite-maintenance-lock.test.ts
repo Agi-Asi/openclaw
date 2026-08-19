@@ -141,6 +141,50 @@ describe("doctor SQLite maintenance lock", () => {
     await gatewayLock.release();
   });
 
+  it("recognizes a live backup process as an offline maintenance owner", async () => {
+    const fixture = await createLockFixture();
+    const lockOptions = {
+      ...fixture.lockOptions,
+      readProcessCmdline: () => ["openclaw", "backup", "sqlite", "create"],
+    };
+    let allowMaintenanceToFinish: (() => void) | undefined;
+    let markMaintenanceStarted: (() => void) | undefined;
+    const maintenanceMayFinish = new Promise<void>((resolve) => {
+      allowMaintenanceToFinish = resolve;
+    });
+    const maintenanceStarted = new Promise<void>((resolve) => {
+      markMaintenanceStarted = resolve;
+    });
+    const maintenance = withDoctorSqliteMaintenanceLock(
+      {
+        env: fixture.env,
+        operation: "SQLite snapshot",
+        run: async () => {
+          markMaintenanceStarted?.();
+          await maintenanceMayFinish;
+        },
+      },
+      { lockOptions },
+    );
+    await maintenanceStarted;
+
+    try {
+      await expect(
+        withDoctorSqliteMaintenanceLock(
+          {
+            env: fixture.env,
+            operation: "state SQLite compaction",
+            run: vi.fn(),
+          },
+          { lockOptions },
+        ),
+      ).rejects.toBeInstanceOf(DoctorSqliteMaintenanceLockUnavailableError);
+    } finally {
+      allowMaintenanceToFinish?.();
+      await maintenance;
+    }
+  });
+
   it("releases ownership after maintenance fails", async () => {
     const fixture = await createLockFixture();
 

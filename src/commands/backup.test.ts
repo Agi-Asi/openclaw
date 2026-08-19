@@ -25,6 +25,14 @@ import {
   tarCreateMock,
 } from "./backup.test-support.js";
 
+const withDoctorSqliteMaintenanceLock = vi.hoisted(() =>
+  vi.fn(async (params: { run: () => Promise<unknown> }) => await params.run()),
+);
+
+vi.mock("./doctor-sqlite-maintenance-lock.js", () => ({
+  withDoctorSqliteMaintenanceLock,
+}));
+
 const { backupCreateCommand } = await import("./backup.js");
 
 type CapturedBackupManifest = {
@@ -91,6 +99,10 @@ describe("backup commands", () => {
       assetCount: 1,
       entryCount: 2,
     });
+    withDoctorSqliteMaintenanceLock.mockClear();
+    withDoctorSqliteMaintenanceLock.mockImplementation(
+      async (params: { run: () => Promise<unknown> }) => await params.run(),
+    );
   });
 
   afterEach(async () => {
@@ -633,9 +645,10 @@ describe("backup commands", () => {
     setTestEnvValue("OPENCLAW_CONFIG_PATH", configPath);
     try {
       const plan = await resolveBackupPlanFromDisk({ nowMs: 123 });
+      const canonicalWorkspaceDir = await fs.realpath(workspaceDir);
 
       expect(plan.included).toContainEqual(
-        expect.objectContaining({ kind: "workspace", sourcePath: workspaceDir }),
+        expect.objectContaining({ kind: "workspace", sourcePath: canonicalWorkspaceDir }),
       );
       expect(await fs.readFile(configPath, "utf8")).toBe(originalRaw);
       expect(plan.configPath).toBe(configPath);

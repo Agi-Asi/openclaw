@@ -29,6 +29,9 @@ const repairDreamingArtifacts = vi.hoisted(() => vi.fn());
 const repairShortTermPromotionArtifacts = vi.hoisted(() => vi.fn());
 const noteWorkspaceMemoryHealth = vi.hoisted(() => vi.fn(async () => undefined));
 const maybeRepairWorkspaceMemoryHealth = vi.hoisted(() => vi.fn(async () => undefined));
+const withDoctorSqliteMaintenanceLock = vi.hoisted(() =>
+  vi.fn(async (params: { run: () => Promise<unknown> }) => await params.run()),
+);
 
 vi.mock("../../packages/terminal-core/src/note.js", () => ({
   note,
@@ -99,6 +102,10 @@ vi.mock("./doctor-workspace.js", async (importOriginal) => {
   };
 });
 
+vi.mock("./doctor-sqlite-maintenance-lock.js", () => ({
+  withDoctorSqliteMaintenanceLock,
+}));
+
 import {
   noteMemorySearchHealth,
   maybeRepairMemoryRecallHealth,
@@ -158,6 +165,10 @@ function resetMemoryRecallMocks() {
   });
   noteWorkspaceMemoryHealth.mockClear();
   maybeRepairWorkspaceMemoryHealth.mockClear();
+  withDoctorSqliteMaintenanceLock.mockClear();
+  withDoctorSqliteMaintenanceLock.mockImplementation(
+    async (params: { run: () => Promise<unknown> }) => await params.run(),
+  );
 }
 
 function firstNoteMessage(): string {
@@ -1199,6 +1210,9 @@ describe("memory recall doctor integration", () => {
     expect(repairShortTermPromotionArtifacts).toHaveBeenCalledWith({
       workspaceDir: "/tmp/agent-default/workspace",
     });
+    expect(withDoctorSqliteMaintenanceLock).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "memory recall artifact repair", run: expect.any(Function) }),
+    );
     expect(note).toHaveBeenCalledTimes(1);
     expectFirstNoteContains(
       "Memory recall artifacts repaired:",
@@ -1251,6 +1265,9 @@ describe("memory recall doctor integration", () => {
     expect(repairDreamingArtifacts).toHaveBeenCalledWith({
       workspaceDir: "/tmp/agent-default/workspace",
     });
+    expect(withDoctorSqliteMaintenanceLock).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "dreaming artifact repair", run: expect.any(Function) }),
+    );
     const message = String(note.mock.calls[note.mock.calls.length - 1]?.[0] ?? "");
     expect(message).toContain("Dreaming artifacts repaired:");
     expect(message).toContain("archived session corpus");

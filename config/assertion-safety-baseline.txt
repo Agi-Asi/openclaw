@@ -3479,11 +3479,10 @@ src/node-host/invoke-payload.ts	5
 src/node-host/invoke.ts	7
 src/node-host/mcp.ts	3
 src/node-host/node-worker-bundle-installer.ts	1
-src/node-host/node-worker-supervisor.ts	1
 src/node-host/node-worker-transfer-client.ts	3
 src/node-host/node-worker-transfer-http.ts	2
 src/node-host/node-worker-tree-control.ts	2
-src/node-host/node-worker-workspace.ts	7
+src/node-host/node-worker-workspace.ts	6
 src/node-host/plugin-node-host.ts	1
 src/node-host/pty-command.ts	11
 src/node-host/runtime.ts	2
@@ -3979,7 +3978,7 @@ src/worker/node-workspace-protocol.ts	3
 src/worker/worker-command.runtime.ts	1
 src/worker/worker-connection-admission.ts	2
 src/worker/worker-connection-frames.ts	4
-src/worker/worker-process.ts	2
+src/worker/worker-process.ts	1
 src/worker/worker-session-tools.ts	4
 src/worker/workspace-rsync-receiver.ts	1
 ui/src/api/gateway.ts	1

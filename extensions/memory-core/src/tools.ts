@@ -776,7 +776,8 @@ export function createMemoryGetTool(options: {
     parameters: MemoryGetSchema,
     execute:
       ({ cfg, agentId }) =>
-      async (_toolCallId, params) => {
+      async (_toolCallId, params, callerSignal) => {
+        callerSignal?.throwIfAborted();
         const rawParams = asToolParamsRecord(params);
         const from = readPositiveIntegerParam(rawParams, "from");
         const lines = readPositiveIntegerParam(rawParams, "lines");
@@ -790,7 +791,9 @@ export function createMemoryGetTool(options: {
             handleId,
             ...(from !== undefined ? { from } : {}),
             ...(lines !== undefined ? { lines } : {}),
+            ...(callerSignal ? { signal: callerSignal } : {}),
           });
+          callerSignal?.throwIfAborted();
           return isAuthorizedMemoryUnavailable(result)
             ? authorizedMemoryUnavailableResult()
             : jsonResult(result);

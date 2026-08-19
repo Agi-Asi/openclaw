@@ -30,6 +30,7 @@ const descriptor = {
   },
   assignment: {
     agentId: "agent-1",
+    memoryReadEnforced: false,
     operationalRunInstance: { instanceId: "instance-run-1", runId: "run-1" },
     agentRuntimeIdentityToken: "signed-runtime-token",
     runId: "run-1",
@@ -65,11 +66,13 @@ function lifetimeHarness() {
     resolveStarted = resolve;
   });
   const dispose = vi.fn();
+  const reportExecutionStarted = vi.fn();
   const reportConnectionFailure = vi.fn();
   const terminateOwnedTree = vi.fn();
   return {
     contract: {
       dispose,
+      reportExecutionStarted,
       reportConnectionFailure,
       signal: controller.signal,
       started,
@@ -78,6 +81,7 @@ function lifetimeHarness() {
     disconnectAfterStart: () => controller.abort(new Error("worker supervisor lifetime ended")),
     disconnectBeforeStart: () => resolveStarted(false),
     dispose,
+    reportExecutionStarted,
     open: () => resolveStarted(true),
     terminateOwnedTree,
   };

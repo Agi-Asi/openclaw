@@ -7,6 +7,8 @@ import {
 import type { WorkerLaunchPlan } from "../worker/launch-descriptor.js";
 import type { WorkerConnectionEndpoint } from "../worker/worker-connection-endpoint.js";
 import {
+  NODE_WORKER_EXECUTION_HOST_V1,
+  nodeWorkerMemoryProjectionLaunchBinding,
   nodeWorkerPlanHash,
   type NodeWorkerLaunchInput,
   type NodeWorkerSupervisorIdentity,
@@ -55,13 +57,33 @@ const onMessage = (message) => {
     typeof message !== "object" ||
     message === null ||
     Array.isArray(message) ||
-    Object.keys(message).length !== 1 ||
-    message.type !== "openclaw-worker-start-v1"
+    Object.keys(message).length !== 3 ||
+    message.type !== "openclaw-worker-start-v1" ||
+    typeof message.launchId !== "string" ||
+    !/^[a-f0-9]{64}$/.test(message.planHash)
   ) {
     hardTerminate();
     return;
   }
   started = true;
+  const executionAcknowledgement = {
+    type: "openclaw-worker-execution-started-v1",
+    launchId: message.launchId,
+    planHash: message.planHash,
+  };
+  if (descriptor.assignment.prompt === "wrong-execution-ack") {
+    process.send({ ...executionAcknowledgement, launchId: "another-launch" }, () => {});
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (descriptor.assignment.prompt === "wait-before-execution-ack") {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  process.send(executionAcknowledgement, () => {});
+  if (descriptor.assignment.prompt === "replayed-execution-ack") {
+    setTimeout(() => process.send(executionAcknowledgement, () => {}), 25);
+  }
   resolveStart();
 };
 const onDisconnect = () => {
@@ -98,6 +120,8 @@ if (mode === "connection-failure") {
   );
   setInterval(() => {}, 1000);
 } else if (mode === "wait") {
+  setInterval(() => {}, 1000);
+} else if (mode === "replayed-execution-ack") {
   setInterval(() => {}, 1000);
 } else if (mode === "tree") {
   grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -164,6 +188,7 @@ export function testWorkerDescriptor(workspaceDir: string, prompt = "success"): 
     },
     assignment: {
       agentId: "agent-1",
+      memoryReadEnforced: false,
       operationalRunInstance: { instanceId: "instance-1", runId: "run-1" },
       agentRuntimeIdentityToken: "signed-runtime-token",
       runId: "run-1",
@@ -195,6 +220,20 @@ export function testNodeWorkerLaunchIdentity(
   };
 }
 
+export function testNodeWorkerMemoryProjection(
+  input: Omit<NodeWorkerLaunchInput, "memoryProjection">,
+) {
+  return {
+    version: 1 as const,
+    reference: "a".repeat(43),
+    binding: {
+      launch: nodeWorkerMemoryProjectionLaunchBinding(input),
+      authorization: "b".repeat(64),
+    },
+    expiresAtMs: Date.now() + 60_000,
+  };
+}
+
 export function writeNodeWorkerFixture(root: string) {
   const stateDir = path.join(root, "state-root");
   const bundleRoot = path.join(root, "bundles-root");
@@ -217,5 +256,6 @@ export function testWorkerLaunchInput(
     expectedBundleHash: TEST_BUNDLE_HASH,
     placementGeneration: 4,
     descriptor: testWorkerDescriptor(workspaceDir, prompt),
+    execution: { kind: NODE_WORKER_EXECUTION_HOST_V1 },
   };
 }

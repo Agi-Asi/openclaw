@@ -49,6 +49,7 @@ import { defaultSlotIdForKey } from "../plugins/slots.js";
 import { getProviderEnvVars } from "../secrets/provider-env-vars.js";
 import { resolveUserPath } from "../utils.js";
 import type { DoctorPrompter } from "./doctor-prompter.js";
+import { withDoctorSqliteMaintenanceLock } from "./doctor-sqlite-maintenance-lock.js";
 import { maybeRepairWorkspaceMemoryHealth, noteWorkspaceMemoryHealth } from "./doctor-workspace.js";
 import { isRecord } from "./doctor/shared/legacy-config-record-shared.js";
 
@@ -378,7 +379,10 @@ export async function maybeRepairMemoryRecallHealth(params: {
           initialValue: true,
         });
         if (approved) {
-          const repair = await repairShortTermPromotionArtifacts({ workspaceDir });
+          const repair = await withDoctorSqliteMaintenanceLock({
+            operation: "memory recall artifact repair",
+            run: async () => await repairShortTermPromotionArtifacts({ workspaceDir }),
+          });
           if (repair.changed) {
             const removedOverflowEntries = repair.removedOverflowEntries ?? 0;
             const details = [
@@ -424,7 +428,10 @@ export async function maybeRepairMemoryRecallHealth(params: {
       if (!approvedDreamingRepair) {
         continue;
       }
-      const dreamingRepair = await repairDreamingArtifacts({ workspaceDir });
+      const dreamingRepair = await withDoctorSqliteMaintenanceLock({
+        operation: "dreaming artifact repair",
+        run: async () => await repairDreamingArtifacts({ workspaceDir }),
+      });
       if (!dreamingRepair.changed) {
         continue;
       }

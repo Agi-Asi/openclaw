@@ -231,6 +231,26 @@ describe("scripts/lib/docker-e2e-plan", () => {
     expect(plan.needs.functionalImage).toBe(true);
   });
 
+  it("plans the package-backed Fleet separate-cell isolation lane", () => {
+    const plan = planFor({
+      selectedLaneNames: ["fleet-separate-cell"],
+    });
+
+    expect(plan.lanes.map(summarizeLane)).toEqual([
+      {
+        command: "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:fleet-separate-cell",
+        imageKind: "functional",
+        live: false,
+        name: "fleet-separate-cell",
+        resources: ["docker", "service"],
+        stateScenario: "empty",
+        timeoutMs: 900_000,
+        weight: 4,
+      },
+    ]);
+    expect(plan.needs.functionalImage).toBe(true);
+  });
+
   it("routes trusted Docker scripts through the nested release harness", () => {
     const trustedScripts = new Map([
       ["live-codex-npm-plugin", "e2e/codex-npm-plugin-live-docker.sh"],

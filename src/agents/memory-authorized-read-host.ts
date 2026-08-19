@@ -45,7 +45,7 @@ const authorizedMemoryVirtualBroker: unique symbol = Symbol(
 /** Core-private bridge for generic filesystem tools; it is absent from plugin contexts. */
 export type AuthorizedMemoryVirtualFileBroker = Readonly<{
   view: AuthorizedMemoryVirtualView;
-  readFile: (virtualPath: string) => Promise<string | undefined>;
+  readFile: (virtualPath: string, signal?: AbortSignal) => Promise<string | undefined>;
 }>;
 
 /** Core-private sealed compaction capability; plugins never receive this host. */
@@ -58,16 +58,19 @@ export type AuthorizedSealedCompactionHost = Readonly<{
 
 type AuthorizedMemoryReadHostWithVirtualBroker = AuthorizedMemoryReadHost &
   Readonly<{
-    [authorizedMemoryVirtualBroker]: () => Promise<AuthorizedMemoryVirtualFileBroker | undefined>;
+    [authorizedMemoryVirtualBroker]: (
+      signal?: AbortSignal,
+    ) => Promise<AuthorizedMemoryVirtualFileBroker | undefined>;
   }>;
 
 export async function resolveAuthorizedMemoryVirtualFileBroker(
   host: AuthorizedMemoryReadHost | undefined,
+  signal?: AbortSignal,
 ): Promise<AuthorizedMemoryVirtualFileBroker | undefined> {
   if (!host || !(authorizedMemoryVirtualBroker in host)) {
     return undefined;
   }
-  return (host as AuthorizedMemoryReadHostWithVirtualBroker)[authorizedMemoryVirtualBroker]();
+  return (host as AuthorizedMemoryReadHostWithVirtualBroker)[authorizedMemoryVirtualBroker](signal);
 }
 
 function hash(value: unknown): string {
@@ -318,28 +321,34 @@ function createAuthorizedMemoryContentHost(
         ? createAuthorizedMemoryDeriveInvocation({ context: trusted })
         : createAuthorizedMemoryReadInvocation({ context: trusted }));
   let virtualBroker: Promise<AuthorizedMemoryVirtualFileBroker | undefined> | undefined;
-  const getVirtualBroker = () =>
-    (virtualBroker ??= (async () => {
+  const createVirtualBroker = async (signal?: AbortSignal) => {
+    signal?.throwIfAborted();
       const active = await getInvocation();
       if ("unavailable" in active) {
         return undefined;
       }
-      const view = await materializeAuthorizedMemoryVirtualView({ invocation: active });
+      const view = await materializeAuthorizedMemoryVirtualView({
+        invocation: active,
+        ...(signal ? { signal } : {}),
+      });
       if ("unavailable" in view) {
         return undefined;
       }
       return Object.freeze({
         view,
-        async readFile(virtualPath) {
+        async readFile(virtualPath, signal) {
           const result = await readAuthorizedMemoryVirtualFile({
             invocation: active,
             view,
             virtualPath,
+            ...(signal ? { signal } : {}),
           });
           return "unavailable" in result ? undefined : result.text;
         },
       });
-    })());
+    };
+  const getVirtualBroker = (signal?: AbortSignal) =>
+    signal ? createVirtualBroker(signal) : (virtualBroker ??= createVirtualBroker());
   return Object.freeze({
     async search(search) {
       const active = await getInvocation();

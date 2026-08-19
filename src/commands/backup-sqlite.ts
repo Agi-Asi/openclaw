@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { withDoctorSqliteMaintenanceLock } from "./doctor-sqlite-maintenance-lock.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
@@ -77,12 +78,13 @@ export async function backupSqliteCreateCommand(
   const repositoryPath = resolveRequiredPath(options.repository, "--repository");
   try {
     const database = await resolveSnapshotDatabase(options);
-    // A selected broker owns memory writes. Ask it to drain before the trusted Gateway snapshots
-    // an agent database, then always reopen admission; workers never receive a DB path or broker IPC.
-    const { withBrokeredMemoryMaintenance } = await import("../plugins/memory-broker-runtime.js");
-    const result = await withBrokeredMemoryMaintenance(
-      async () => await createLocalSqliteSnapshotProvider({ repositoryPath }).create(database),
-    );
+    // A CLI snapshot runs outside the Gateway, so its local broker map cannot prove exclusion
+    // against the live owner. The state lock is the cross-process ownership boundary.
+    const result = await withDoctorSqliteMaintenanceLock({
+      operation: "SQLite snapshot",
+      protectedPaths: [database.path],
+      run: async () => await createLocalSqliteSnapshotProvider({ repositoryPath }).create(database),
+    });
     const report: BackupSqliteCreateResult = {
       ok: true,
       snapshotPath: result.ref.path,

@@ -13,6 +13,8 @@ import {
 import { createChatRunState } from "../server-chat-state.js";
 import { prepareSessionArchiveLifecycle } from "../server-methods/sessions-archive-lifecycle.js";
 import type { GatewayRequestContext } from "../server-methods/types.js";
+import { NODE_WORKER_EXECUTION_CONTAINER_V1 } from "../../worker/node-supervisor-protocol.js";
+import { bindDeviceWorkerExecutionEligibility } from "./device-provider.js";
 import type { WorkerTunnelHandle } from "./tunnel-contract.js";
 import {
   ENVIRONMENT_ID,
@@ -590,13 +592,24 @@ describe("worker turn launcher local placement", () => {
     expect(placements.get(SESSION_ID)).toMatchObject({ state: "active", turnClaim: null });
   });
 
-  it("rejects enforced memory before a host-node worker is admitted", async () => {
+  it("fails an enforced worker turn before workspace, credential, or tunnel work when v6 is unavailable", async () => {
     seedActivePlacement();
+    const environment = attachedEnvironment();
+    environment.nodeDeviceId = "node-1";
     const environments: WorkerTurnEnvironmentService = {
       ...unusedEnvironments(),
-      get: vi.fn(() => attachedEnvironment()),
+      get: vi.fn(() => environment),
     };
-    const provider = createWorkerSessionTurnPlacementProvider({ environments, placements });
+    const assertEligible = vi.fn(async () => {
+      throw new Error("device worker node does not attest to the required process-isolation boundary");
+    });
+    bindDeviceWorkerExecutionEligibility(environments, assertEligible);
+    const resolveWorkspacePath = vi.fn(async () => "/workspace/should-not-resolve");
+    const provider = createWorkerSessionTurnPlacementProvider({
+      environments,
+      placements,
+      resolveWorkspacePath,
+    });
     const runLocal = vi.fn(async () => ({ meta: { durationMs: 1 } }));
     const onAdmitted = vi.fn();
 
@@ -613,11 +626,16 @@ describe("worker turn launcher local placement", () => {
         runLocal,
         onAdmitted,
       ),
-    ).rejects.toThrow("enforced memory requires a containerized worker launch");
+    ).rejects.toThrow("does not attest to the required process-isolation boundary");
 
     expect(runLocal).not.toHaveBeenCalled();
     expect(onAdmitted).not.toHaveBeenCalled();
-    expect(environments.get).not.toHaveBeenCalled();
+    expect(environments.get).toHaveBeenCalledWith(ENVIRONMENT_ID);
+    expect(assertEligible).toHaveBeenCalledWith({
+      deviceId: "node-1",
+      execution: { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 },
+    });
+    expect(resolveWorkspacePath).not.toHaveBeenCalled();
     expect(environments.acquireTurnCredential).not.toHaveBeenCalled();
     expect(environments.startTunnel).not.toHaveBeenCalled();
     expect(placements.get(SESSION_ID)).toMatchObject({ state: "active", turnClaim: null });

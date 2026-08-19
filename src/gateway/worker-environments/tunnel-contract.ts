@@ -2,6 +2,7 @@ import type { WorkerTunnelStatus } from "@openclaw/gateway-protocol";
 import { NODE_WORKER_CAPACITY_EXHAUSTED_ERROR_CODE } from "../../infra/node-commands.js";
 import type { SpawnResult } from "../../process/exec.js";
 import type { WorkerLaunchPlan } from "../../worker/launch-descriptor.js";
+import type { AuthorizedMemoryVirtualFileBroker } from "../../agents/memory-authorized-read-host.js";
 import type { NodeWorkerWorkspaceTransferInput } from "../../worker/node-workspace-transfer-protocol.js";
 import type { WorkerSessionTurnClaim } from "./placement-record.js";
 import type {
@@ -102,9 +103,13 @@ export type WorkerWorkspaceQuiescence = {
 export type WorkerTurnLaunchRequest = {
   plan: WorkerLaunchPlan;
   turnClaim: WorkerSessionTurnClaim;
+  /** Gateway-only broker capability. It must never enter the serialized worker plan. */
+  memoryProjection?: AuthorizedMemoryVirtualFileBroker;
   timeoutMs?: number;
   signal?: AbortSignal;
   onDispatchReady?: () => void;
+  /** Fires only after the node has durably attested real worker execution. */
+  onExecutionReady?: () => void;
 };
 
 export type WorkerWorkspaceTunnelHandle = {

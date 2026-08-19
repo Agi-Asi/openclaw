@@ -353,6 +353,7 @@ export type MemoryPluginVirtualViewProvider = {
   materializeAuthorizedVirtualView(params: {
     context: MemoryContentAccessContext<"read">;
     plan: AuthorizedMemoryContentPlan<"read">;
+    signal?: AbortSignal;
   }): Promise<AuthorizedMemoryVirtualView | undefined>;
   readAuthorizedVirtualFile(params: {
     context: MemoryContentAccessContext<"read">;
@@ -360,6 +361,7 @@ export type MemoryPluginVirtualViewProvider = {
     view: AuthorizedMemoryVirtualView;
     /** Virtual-only slash-separated path, never a host filesystem path. */
     virtualPath: string;
+    signal?: AbortSignal;
   }): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>>;
 };
 

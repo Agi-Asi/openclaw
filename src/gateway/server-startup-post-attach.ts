@@ -1345,9 +1345,14 @@ export async function startGatewayPostAttachRuntime(
           // than becoming a first-request outage after agents have begun work.
           const memoryBrokerSupervisor = selectedMemory?.capability.broker
             ? await measureStartup(params.startupTrace, "memory-broker.ready", async () => {
-                const { startBrokeredMemoryRuntimeSupervisor } =
-                  await loadMemoryBrokerRuntimeModule();
-                return await startBrokeredMemoryRuntimeSupervisor(selectedMemory.capability);
+                const [{ startBrokeredMemoryRuntimeSupervisor }, { listAgentIds }] =
+                  await Promise.all([
+                    loadMemoryBrokerRuntimeModule(),
+                    import("../agents/agent-scope.js"),
+                  ]);
+                return await startBrokeredMemoryRuntimeSupervisor(selectedMemory.capability, {
+                  agentIds: listAgentIds(params.gatewayPluginConfigAtStart),
+                });
               })
             : undefined;
           if (params.isClosing?.()) {

@@ -64,6 +64,7 @@ type PreparedNodeHostRuntime = {
     onInventoryChanged?: (inventory: NodeHostInventory) => void;
     onManifestChanged?: (manifest: NodeHostManifest) => void;
     onRunnerCapacityChanged?: (capacity: NodeWorkerCapacitySnapshot) => void;
+    onWorkerSupervisorReadinessChanged?: (ready: boolean) => void;
   }): ActiveNodeHostRuntime;
 };
 
@@ -322,7 +323,13 @@ export async function prepareNodeHostRuntime(params?: {
     manifest,
     workerHostingEnabled: workerRunsEnabled,
     initialInventory,
-    start({ client, onInventoryChanged, onManifestChanged, onRunnerCapacityChanged }) {
+    start({
+      client,
+      onInventoryChanged,
+      onManifestChanged,
+      onRunnerCapacityChanged,
+      onWorkerSupervisorReadinessChanged,
+    }) {
       const mcpAbort = new AbortController();
       const workerWorkspace = workerRunsEnabled
         ? new NodeWorkerWorkspaceRuntime({ env })
@@ -338,9 +345,16 @@ export async function prepareNodeHostRuntime(params?: {
           })
         : undefined;
       if (workerSupervisor) {
-        void workerSupervisor.initialize().catch((error: unknown) => {
-          logDebug(`node-host: worker capacity reconciliation failed: ${String(error)}`);
-        });
+        // A reconciled slot count is not enough to assert process isolation: a
+        // failed recovery can leave a durable relay, projection, or container alive.
+        onWorkerSupervisorReadinessChanged?.(false);
+        void workerSupervisor
+          .initialize()
+          .then(() => onWorkerSupervisorReadinessChanged?.(true))
+          .catch((error: unknown) => {
+            onWorkerSupervisorReadinessChanged?.(false);
+            logDebug(`node-host: worker capacity reconciliation failed: ${String(error)}`);
+          });
       }
       const skillBins = new SkillBinsCache(client, pathEnv);
       const activeInvokes = new Map<string, ActiveNodeInvoke>();

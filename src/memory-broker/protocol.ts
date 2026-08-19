@@ -4,6 +4,24 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 export const MEMORY_BROKER_PROTOCOL_VERSION = 1 as const;
 
 export const MEMORY_BROKER_MAXIMUM_NONCE_LENGTH = 256;
+export const MEMORY_BROKER_MAXIMUM_CANONICAL_DEPTH = 64;
+export const MEMORY_BROKER_MAXIMUM_CANONICAL_NODES = 10_000;
+
+/**
+ * A signed broker frame must bind the actor identity as well as the evidence revision. Revisions
+ * can be shared by a provider snapshot, so binding only that revision would let a caller retarget
+ * a valid Alice request to Bob while preserving every other frame field.
+ */
+export type MemoryBrokerActorBinding =
+  | Readonly<{
+      kind: "principal";
+      actorKind: "human" | "agent" | "service" | "system";
+      principalId: string;
+    }>
+  | Readonly<{
+      kind: "unattributed";
+      transportAuditRef: string;
+    }>;
 
 export type MemoryBrokerAuthorizationBinding = Readonly<{
   agentId: string;
@@ -11,6 +29,7 @@ export type MemoryBrokerAuthorizationBinding = Readonly<{
   runId: string;
   contextFingerprint: string;
   subjectRevision: string;
+  actor: MemoryBrokerActorBinding;
   actorRevision: string;
   capabilitySnapshotId: string;
   policyRevision: string;
@@ -62,7 +81,17 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  * The MAC covers a deterministic JSON representation. Rejecting non-JSON values is deliberate:
  * a request that cannot be reproduced byte-for-byte cannot be safely bound to a single-use grant.
  */
-function canonicalize(value: unknown): string | undefined {
+function canonicalize(
+  value: unknown,
+  state: { nodes: number } = { nodes: 0 },
+  depth = 0,
+): string | undefined {
+  if (
+    depth > MEMORY_BROKER_MAXIMUM_CANONICAL_DEPTH ||
+    ++state.nodes > MEMORY_BROKER_MAXIMUM_CANONICAL_NODES
+  ) {
+    return undefined;
+  }
   if (value === null) {
     return "null";
   }
@@ -77,7 +106,7 @@ function canonicalize(value: unknown): string | undefined {
       if (Array.isArray(value)) {
         const items: string[] = [];
         for (const item of value) {
-          const serialized = canonicalize(item);
+          const serialized = canonicalize(item, state, depth + 1);
           if (serialized === undefined) {
             return undefined;
           }
@@ -90,7 +119,7 @@ function canonicalize(value: unknown): string | undefined {
       }
       const entries: string[] = [];
       for (const key of Object.keys(value).toSorted()) {
-        const serialized = canonicalize(value[key]);
+        const serialized = canonicalize(value[key], state, depth + 1);
         if (serialized === undefined) {
           return undefined;
         }
@@ -125,24 +154,42 @@ function hasSafeIdentifier(value: unknown): value is string {
   );
 }
 
+function isActorBinding(value: unknown): value is MemoryBrokerActorBinding {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  if (value.kind === "principal") {
+    return (
+      (value.actorKind === "human" ||
+        value.actorKind === "agent" ||
+        value.actorKind === "service" ||
+        value.actorKind === "system") &&
+      hasSafeIdentifier(value.principalId)
+    );
+  }
+  return value.kind === "unattributed" && hasSafeIdentifier(value.transportAuditRef);
+}
+
 function isBinding(value: unknown): value is MemoryBrokerAuthorizationBinding {
   if (!isPlainRecord(value)) {
     return false;
   }
-  return [
-    value.agentId,
-    value.sessionId,
-    value.runId,
-    value.contextFingerprint,
-    value.subjectRevision,
-    value.actorRevision,
-    value.capabilitySnapshotId,
-    value.policyRevision,
-    value.deliveryRevision,
-  ].every(hasSafeIdentifier);
+  return (
+    [
+      value.agentId,
+      value.sessionId,
+      value.runId,
+      value.contextFingerprint,
+      value.subjectRevision,
+      value.actorRevision,
+      value.capabilitySnapshotId,
+      value.policyRevision,
+      value.deliveryRevision,
+    ].every(hasSafeIdentifier) && isActorBinding(value.actor)
+  );
 }
 
-function isEnvelope(value: unknown): value is MemoryBrokerEnvelope {
+export function isMemoryBrokerEnvelope(value: unknown): value is MemoryBrokerEnvelope {
   if (
     !isPlainRecord(value) ||
     value.version !== MEMORY_BROKER_PROTOCOL_VERSION ||
@@ -185,7 +232,7 @@ export function createMemoryBrokerEnvelope(params: {
     expiresAtMs: params.expiresAtMs,
     requestDigest: requestDigest ?? "",
   };
-  if (!requestDigest || !isEnvelope({ ...unsigned, signature: "pending" })) {
+  if (!requestDigest || !isMemoryBrokerEnvelope({ ...unsigned, signature: "pending" })) {
     return undefined;
   }
   const signature = sign(params.secret, unsigned);
@@ -203,7 +250,7 @@ export function verifyMemoryBrokerEnvelope(params: {
   nowMs: number;
 }): MemoryBrokerEnvelopeVerification {
   const { envelope } = params;
-  if (!isEnvelope(envelope)) {
+  if (!isMemoryBrokerEnvelope(envelope)) {
     return { ok: false, reason: "invalid-envelope" };
   }
   if (envelope.brokerId !== params.brokerId) {

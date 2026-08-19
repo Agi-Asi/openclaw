@@ -1,9 +1,14 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { validateWorkerAdmissionHandshake } from "../../packages/gateway-protocol/src/index.js";
 import { WORKER_BUNDLE_PREWARM_VERSION } from "../../packages/gateway-protocol/src/schema/worker-admission.js";
+import { NODE_WORKER_EXECUTION_CONTAINER_V1 } from "../worker/node-supervisor-protocol.js";
 
 export const NODE_RUNNER_INVENTORY_UPDATE_METHOD = "node.runnerInventory.update";
 export const NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE = "node-worker-supervisor-v5";
+export const NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE =
+  "node-worker-supervisor-v6";
+export const NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE =
+  "node-worker-supervisor-v7";
 export const NODE_WORKER_SUPERVISOR_BINARY_CAPACITY_PROTOCOL_FEATURE = "node-worker-supervisor-v4";
 export const NODE_WORKER_SUPERVISOR_EXECUTION_CONTEXT_V1_PROTOCOL_FEATURE =
   "node-worker-supervisor-v3";
@@ -25,6 +30,10 @@ export type NodeWorkerCapacitySnapshot = Readonly<{
   total: number;
   available: number;
 }>;
+export type NodeWorkerProcessIsolationDeclaration = Readonly<{
+  kind: typeof NODE_WORKER_EXECUTION_CONTAINER_V1;
+  memoryProjection?: 1;
+}>;
 
 export type NodeWorkerHostDeclaration =
   | { enabled: false }
@@ -34,6 +43,8 @@ export type NodeWorkerHostDeclaration =
       bundlePrewarm?: typeof WORKER_BUNDLE_PREWARM_VERSION;
       bundleRetention?: typeof NODE_WORKER_BUNDLE_RETENTION_VERSION;
       bundleStatus?: typeof NODE_WORKER_BUNDLE_STATUS_VERSION;
+      /** Present only on v6 hosts that passed the local container-runtime gate. */
+      processIsolation?: NodeWorkerProcessIsolationDeclaration;
     };
 
 export type NodeRunnerInventoryDeclaration =
@@ -47,7 +58,11 @@ export type NodeRunnerInventoryDeclaration =
       ];
     }
   | {
-      protocolFeatures: readonly [typeof NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE];
+      protocolFeatures: readonly [
+        | typeof NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE
+        | typeof NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE
+        | typeof NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
+      ];
       workerHost: NodeWorkerHostDeclaration;
     };
 
@@ -73,19 +88,52 @@ function parseCapacitySnapshot(value: unknown): NodeWorkerCapacitySnapshot | nul
     : null;
 }
 
-function parseWorkerHostDeclaration(value: unknown): NodeWorkerHostDeclaration | null {
+function parseProcessIsolationDeclaration(
+  value: unknown,
+  requireMemoryProjection: boolean,
+): NodeWorkerProcessIsolationDeclaration | null {
+  if (
+    !isRecord(value) ||
+    !Object.hasOwn(value, "kind") ||
+    value.kind !== NODE_WORKER_EXECUTION_CONTAINER_V1 ||
+    (requireMemoryProjection
+      ? Object.keys(value).length !== 2 || value.memoryProjection !== 1
+      : Object.keys(value).length !== 1)
+  ) {
+    return null;
+  }
+  return requireMemoryProjection
+    ? { kind: NODE_WORKER_EXECUTION_CONTAINER_V1, memoryProjection: 1 }
+    : { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 };
+}
+
+function parseWorkerHostDeclaration(params: {
+  value: unknown;
+  requireProcessIsolation: boolean;
+  requireMemoryProjection?: boolean;
+}): NodeWorkerHostDeclaration | null {
+  const { value } = params;
   if (!isRecord(value) || typeof value.enabled !== "boolean") {
     return null;
   }
   const keys = Object.keys(value);
   if (!value.enabled) {
-    return keys.length === 1 && keys[0] === "enabled" ? { enabled: false } : null;
+    return !params.requireProcessIsolation && keys.length === 1 && keys[0] === "enabled"
+      ? { enabled: false }
+      : null;
   }
   const capacity = parseCapacitySnapshot(value.capacity);
+  const processIsolation =
+    value.processIsolation === undefined
+      ? undefined
+      : parseProcessIsolationDeclaration(
+          value.processIsolation,
+          params.requireMemoryProjection === true,
+        );
   if (
     !capacity ||
     keys.length < 2 ||
-    keys.length > 5 ||
+    keys.length > 6 ||
     !keys.includes("enabled") ||
     !keys.includes("capacity") ||
     keys.some(
@@ -94,14 +142,17 @@ function parseWorkerHostDeclaration(value: unknown): NodeWorkerHostDeclaration |
         key !== "capacity" &&
         key !== "bundlePrewarm" &&
         key !== "bundleRetention" &&
-        key !== "bundleStatus",
+        key !== "bundleStatus" &&
+        key !== "processIsolation",
     ) ||
     (value.bundlePrewarm !== undefined && value.bundlePrewarm !== WORKER_BUNDLE_PREWARM_VERSION) ||
     (value.bundleRetention !== undefined &&
       value.bundleRetention !== NODE_WORKER_BUNDLE_RETENTION_VERSION) ||
     (value.bundleStatus !== undefined &&
       value.bundleStatus !== NODE_WORKER_BUNDLE_STATUS_VERSION) ||
-    (value.bundleStatus !== undefined && value.bundleRetention === undefined)
+    (value.bundleStatus !== undefined && value.bundleRetention === undefined) ||
+    (value.processIsolation !== undefined && !processIsolation) ||
+    (params.requireProcessIsolation !== Boolean(processIsolation))
   ) {
     return null;
   }
@@ -117,6 +168,7 @@ function parseWorkerHostDeclaration(value: unknown): NodeWorkerHostDeclaration |
     ...(value.bundleStatus === NODE_WORKER_BUNDLE_STATUS_VERSION
       ? { bundleStatus: NODE_WORKER_BUNDLE_STATUS_VERSION }
       : {}),
+    ...(processIsolation ? { processIsolation } : {}),
   };
 }
 
@@ -190,12 +242,23 @@ export function parseNodeRunnerInventoryDeclaration(
       ? { protocolFeatures: [feature] }
       : null;
   }
-  if (feature !== NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE || keys.length !== 2) {
+  if (
+    (feature !== NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE &&
+      feature !== NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE &&
+      feature !== NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE) ||
+    keys.length !== 2
+  ) {
     return null;
   }
-  const workerHost = parseWorkerHostDeclaration(value.workerHost);
+  const workerHost = parseWorkerHostDeclaration({
+    value: value.workerHost,
+    requireProcessIsolation:
+      feature === NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE ||
+      feature === NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
+    requireMemoryProjection: feature === NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
+  });
   return workerHost
-    ? { protocolFeatures: [NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE], workerHost }
+    ? { protocolFeatures: [feature], workerHost }
     : null;
 }
 

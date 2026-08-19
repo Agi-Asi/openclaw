@@ -72,12 +72,16 @@ function resolveChildInvocation(params: {
 }
 
 type ChildAdapter = SpawnProcessAdapter<NodeJS.Signals | null>;
+type WorkerStartIdentity = {
+  launchId: string;
+  planHash: string;
+};
 type WorkerChildAdapter = ChildAdapter & {
   closeStartGate?: () => void;
-  openStartGate?: () => Promise<void>;
+  openStartGate?: (identity: WorkerStartIdentity) => Promise<void>;
 };
 
-const WORKER_START_MESSAGE = { type: "openclaw-worker-start-v1" } as const;
+const WORKER_START_MESSAGE_TYPE = "openclaw-worker-start-v1";
 
 function isServiceManagedRuntime(): boolean {
   return Boolean(process.env.OPENCLAW_SERVICE_MARKER?.trim());
@@ -516,7 +520,7 @@ export async function createChildAdapter(params: {
 
   let startGateOpened = false;
   const openStartGate = params.ownedWorker
-    ? async () => {
+    ? async (identity: WorkerStartIdentity) => {
         if (startGateOpened) {
           return;
         }
@@ -527,7 +531,7 @@ export async function createChildAdapter(params: {
             return;
           }
           try {
-            child.send(WORKER_START_MESSAGE, (error) => {
+            child.send({ type: WORKER_START_MESSAGE_TYPE, ...identity }, (error) => {
               if (error) {
                 reject(error);
                 return;

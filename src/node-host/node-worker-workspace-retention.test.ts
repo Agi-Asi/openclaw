@@ -97,6 +97,28 @@ afterEach(() => {
 });
 
 describe("node worker workspace retention", () => {
+  it.runIf(process.platform !== "win32" && typeof process.getuid === "function" && process.getuid() > 0)(
+    "uses a private short-lived relay directory with a portable Unix socket path",
+    async () => {
+      const workspace = new NodeWorkerWorkspaceRuntime({
+        root: tempDirs.make("node-worker-workspace-relay-root-"),
+      });
+      const params = {
+        gatewayNamespace: "gateway-relay",
+        launchId: "relay-path-test",
+        planHash: "a".repeat(64),
+      };
+
+      const relayDir = workspace.resolveContainerRelayDirectory(params);
+      expect(relayDir).toMatch(/^\/tmp\/openclaw-worker-relays-[0-9]+\/[a-f0-9]{32}$/u);
+      expect(Buffer.byteLength(path.join(relayDir, "gateway.sock"), "utf8")).toBeLessThanOrEqual(100);
+      expect(fs.statSync(relayDir).mode & 0o077).toBe(0);
+
+      await workspace.removeContainerRelayDirectory(params);
+      expect(fs.existsSync(relayDir)).toBe(false);
+    },
+  );
+
   it("does not delete workspaces before the first Gateway snapshot", async () => {
     const root = tempDirs.make("node-worker-workspace-retention-startup-");
     const { bundleRoot, env, workspaceDir } = writeNodeWorkerFixture(root);

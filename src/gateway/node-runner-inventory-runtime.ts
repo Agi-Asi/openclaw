@@ -4,11 +4,18 @@ import {
   NODE_WORKER_SUPERVISOR_BINARY_CAPACITY_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_BUILD_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_EXECUTION_CONTEXT_V1_PROTOCOL_FEATURE,
+  NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
+  NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_LEGACY_PROTOCOL_FEATURE,
   type NodeRunnerInventoryIssue,
   type NodeWorkerHostDeclaration,
 } from "../infra/node-runner-inventory.js";
+import {
+  NODE_WORKER_EXECUTION_CONTAINER_V1,
+  NODE_WORKER_EXECUTION_HOST_V1,
+  type NodeWorkerExecution,
+} from "../worker/node-supervisor-protocol.js";
 
 export type NodeRunnerRegistrySession = {
   nodeId: string;
@@ -28,7 +35,10 @@ export type NodeWorkerSupervisorNodeProof = {
   pairingGeneration: string;
   clientId: typeof GATEWAY_CLIENT_IDS.NODE_HOST;
   clientMode: "node";
-  protocolFeature: typeof NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE;
+  protocolFeature:
+    | typeof NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE
+    | typeof NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE
+    | typeof NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE;
   workerHost: Extract<NodeWorkerHostDeclaration, { enabled: true }>;
   commands: readonly string[];
 };
@@ -53,7 +63,25 @@ export function sameNodeWorkerHostDeclaration(
         left.capacity.available === right.capacity.available &&
         left.bundlePrewarm === right.bundlePrewarm &&
         left.bundleRetention === right.bundleRetention &&
-        left.bundleStatus === right.bundleStatus))
+        left.bundleStatus === right.bundleStatus &&
+        left.processIsolation?.kind === right.processIsolation?.kind &&
+        left.processIsolation?.memoryProjection === right.processIsolation?.memoryProjection))
+  );
+}
+
+/** Returns true only for the execution boundary this exact inventory proof attests. */
+export function supportsNodeWorkerExecution(
+  node: NodeWorkerSupervisorNodeProof,
+  execution: NodeWorkerExecution,
+): boolean {
+  if (execution.kind === NODE_WORKER_EXECUTION_HOST_V1) {
+    return true;
+  }
+  return (
+    execution.kind === NODE_WORKER_EXECUTION_CONTAINER_V1 &&
+    node.protocolFeature === NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE &&
+    node.workerHost.processIsolation?.kind === NODE_WORKER_EXECUTION_CONTAINER_V1 &&
+    node.workerHost.processIsolation.memoryProjection === 1
   );
 }
 
@@ -72,7 +100,12 @@ export function resolveNodeWorkerSupervisorProof(
     declaration.pairingIdentity !== node.pairingIdentity ||
     declaration.clientId !== node.clientId ||
     declaration.clientMode !== node.clientMode ||
-    !declaration.protocolFeatures.includes(NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE) ||
+    declaration.protocolFeatures.length !== 1 ||
+    (declaration.protocolFeatures[0] !== NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE &&
+      declaration.protocolFeatures[0] !==
+        NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE &&
+      declaration.protocolFeatures[0] !==
+        NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE) ||
     declaration.workerHost?.enabled !== true
   ) {
     return undefined;
@@ -84,10 +117,13 @@ export function resolveNodeWorkerSupervisorProof(
     pairingGeneration: node.pairingGeneration,
     clientId: GATEWAY_CLIENT_IDS.NODE_HOST,
     clientMode: "node",
-    protocolFeature: NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
+    protocolFeature: declaration.protocolFeatures[0],
     workerHost: {
       ...declaration.workerHost,
       capacity: { ...declaration.workerHost.capacity },
+      ...(declaration.workerHost.processIsolation
+        ? { processIsolation: { ...declaration.workerHost.processIsolation } }
+        : {}),
     },
     commands: [...node.commands],
   };

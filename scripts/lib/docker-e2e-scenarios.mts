@@ -530,6 +530,11 @@ export const mainLanes: DockerE2eLane[] = [
     },
   ),
   serviceLane("gateway-network", "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:gateway-network"),
+  serviceLane(
+    "fleet-separate-cell",
+    "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:fleet-separate-cell",
+    { stateScenario: "empty", timeoutMs: 15 * 60 * 1000, weight: 4 },
+  ),
   serviceLane("browser-cdp-snapshot", "pnpm test:docker:browser-cdp-snapshot", {
     stateScenario: "empty",
     timeoutMs: 20 * 60 * 1000,

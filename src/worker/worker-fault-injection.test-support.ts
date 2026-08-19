@@ -306,6 +306,7 @@ export class ComposedGatewayHarness {
       },
       assignment: {
         agentId: "worker-agent",
+        memoryReadEnforced: false,
         runId,
         operationalRunInstance: createOperationalRunInstanceRef(runId),
         agentRuntimeIdentityToken: "test-agent-runtime-token",

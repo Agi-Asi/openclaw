@@ -271,9 +271,9 @@ describe("createChildAdapter", () => {
     expect(firstSpawnWithFallbackParams().fallbacks).toEqual([]);
     expect(firstSpawnWithFallbackParams().options?.stdio).toEqual(["pipe", "pipe", "pipe", "ipc"]);
 
-    await adapter.openStartGate?.();
+    await adapter.openStartGate?.({ launchId: "turn-1", planHash: "a".repeat(64) });
     expect(sendMock).toHaveBeenCalledWith(
-      { type: "openclaw-worker-start-v1" },
+      { type: "openclaw-worker-start-v1", launchId: "turn-1", planHash: "a".repeat(64) },
       expect.any(Function),
     );
     adapter.closeStartGate?.();

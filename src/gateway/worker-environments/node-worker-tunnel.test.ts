@@ -14,7 +14,11 @@ import { createDeferred } from "../../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner-inventory.js";
 import { parseWorkerLaunchPlan } from "../../worker/launch-descriptor.js";
-import type { NodeWorkerSupervisorReceipt } from "../../worker/node-supervisor-protocol.js";
+import {
+  NODE_WORKER_EXECUTION_CONTAINER_V1,
+  NODE_WORKER_EXECUTION_HOST_V1,
+  type NodeWorkerSupervisorReceipt,
+} from "../../worker/node-supervisor-protocol.js";
 import type { NodeWorkerWorkspaceExecInput } from "../../worker/node-workspace-protocol.js";
 import {
   NODE_WORKSPACE_TRANSFER_ERROR_CODE,
@@ -24,6 +28,7 @@ import type { NodeWorkerSupervisorTransport } from "../node-registry-private.js"
 import type { createDeviceWorkerRuntime } from "./device-provider.js";
 import { createNodeWorkerTunnelManager } from "./node-worker-tunnel.js";
 import type { NodeWorkspaceTransferService } from "./node-workspace-transfer-service.js";
+import type { NodeWorkerProjectionTransferService } from "./node-worker-projection-transfer-service.js";
 import { sameWorkerSessionTurnClaim } from "./placement-record.js";
 import type { WorkerEnvironmentRecord } from "./store.js";
 import { serializeWorkerWorkspaceManifest } from "./workspace-manifest.js";
@@ -96,6 +101,7 @@ function plan() {
     },
     assignment: {
       agentId: "main",
+      memoryReadEnforced: false,
       operationalRunInstance: { instanceId: "instance-1", runId: "run-1" },
       agentRuntimeIdentityToken: "runtime-token",
       runId: "run-1",
@@ -160,7 +166,101 @@ function workspaceTransfer(): NodeWorkspaceTransferService {
   } as unknown as NodeWorkspaceTransferService;
 }
 
+function projectionTransfer(): NodeWorkerProjectionTransferService {
+  return {
+    prepare: vi.fn(async () => ({
+      version: 1 as const,
+      reference: "a".repeat(43),
+      binding: { launch: "b".repeat(64), authorization: "c".repeat(64) },
+      expiresAtMs: Date.now() + 60_000,
+    })),
+  } as unknown as NodeWorkerProjectionTransferService;
+}
+
 describe("node worker tunnel manager", () => {
+  it.each([
+    [false, NODE_WORKER_EXECUTION_HOST_V1],
+    [true, NODE_WORKER_EXECUTION_CONTAINER_V1],
+  ] as const)(
+    "derives %s memory launches as %s execution",
+    async (memoryReadEnforced, executionKind) => {
+      const launchNodeWorker = vi.fn<NodeWorkerLaunch>(async (request) => ({
+        launchId: request.input.launchId,
+        planHash: "b".repeat(64),
+        environmentId: request.input.descriptor.admission.environmentId,
+        sessionId: request.input.descriptor.admission.sessionId,
+        ownerEpoch: request.input.descriptor.admission.ownerEpoch,
+        placementGeneration: request.input.placementGeneration,
+        runId: request.input.descriptor.assignment.runId,
+        state: "completed",
+        resultJson: "{}",
+      }));
+      const manager = createNodeWorkerTunnelManager({
+        gatewayDeviceId: "gateway-device-1",
+        getEnvironment: () => environment(),
+        getTransport: transport,
+        launchNodeWorker,
+        validateWorkerTurn: () => true,
+        projectionTransfer: projectionTransfer(),
+        workspaceTransfer: workspaceTransfer(),
+      });
+      const launchPlan = plan();
+      launchPlan.assignment.memoryReadEnforced = memoryReadEnforced;
+      const handle = await manager.start(startRequest());
+
+      await handle.launchTurn({
+        plan: launchPlan,
+        turnClaim: turnClaim(),
+        ...(memoryReadEnforced ? { memoryProjection: {} as never } : {}),
+      });
+
+      expect(launchNodeWorker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ execution: { kind: executionKind } }),
+        }),
+      );
+    },
+  );
+
+  it("forwards transport dispatch and execution readiness as distinct signals", async () => {
+    const events: string[] = [];
+    const launchNodeWorker = vi.fn<NodeWorkerLaunch>(async (request) => {
+      request.onDispatchReady?.();
+      expect(events).toEqual(["dispatch"]);
+      request.onExecutionReady?.();
+      return {
+        launchId: request.input.launchId,
+        planHash: "b".repeat(64),
+        environmentId: request.input.descriptor.admission.environmentId,
+        sessionId: request.input.descriptor.admission.sessionId,
+        ownerEpoch: request.input.descriptor.admission.ownerEpoch,
+        placementGeneration: request.input.placementGeneration,
+        runId: request.input.descriptor.assignment.runId,
+        state: "completed",
+        resultJson: "{}",
+      };
+    });
+    const manager = createNodeWorkerTunnelManager({
+      gatewayDeviceId: "gateway-device-1",
+      getEnvironment: () => environment(),
+      getTransport: transport,
+      launchNodeWorker,
+      validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
+      workspaceTransfer: workspaceTransfer(),
+    });
+    const handle = await manager.start(startRequest());
+
+    await handle.launchTurn({
+      plan: plan(),
+      turnClaim: turnClaim(),
+      onDispatchReady: () => events.push("dispatch"),
+      onExecutionReady: () => events.push("execution"),
+    });
+
+    expect(events).toEqual(["dispatch", "execution"]);
+  });
+
   it("revalidates the exact claim when a same-run replacement launches", async () => {
     const record = environment();
     let currentClaim = turnClaim();
@@ -181,9 +281,11 @@ describe("node worker tunnel manager", () => {
           runId: request.input.descriptor.assignment.runId,
           state: "cancelled",
           errorText: "test launch finished",
+          executionStarted: false,
         };
       }),
       validateWorkerTurn: (claim) => sameWorkerSessionTurnClaim(claim, currentClaim),
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: workspaceTransfer(),
     });
     const handle = await manager.start(startRequest());
@@ -214,8 +316,10 @@ describe("node worker tunnel manager", () => {
         runId: request.input.descriptor.assignment.runId,
         state: "cancelled",
         errorText,
+        executionStarted: false,
       })),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: workspaceTransfer(),
     });
     const handle = await manager.start(startRequest());
@@ -237,6 +341,7 @@ describe("node worker tunnel manager", () => {
       getTransport: transport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: workspaceTransfer(),
     });
 
@@ -257,6 +362,7 @@ describe("node worker tunnel manager", () => {
       getTransport: transport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: workspaceTransfer(),
     });
     manager.bindWorkspaceBindingResolver(resolveWorkspaceBinding);
@@ -289,6 +395,7 @@ describe("node worker tunnel manager", () => {
         getTransport: transport,
         launchNodeWorker: vi.fn(),
         validateWorkerTurn: () => true,
+        projectionTransfer: projectionTransfer(),
         workspaceTransfer: transfer,
       });
       manager.bindWorkspaceBindingResolver(resolveWorkspaceBinding);
@@ -319,6 +426,7 @@ describe("node worker tunnel manager", () => {
       getTransport: transport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: transfer,
     });
     manager.bindWorkspaceBindingResolver(async () => {
@@ -378,6 +486,7 @@ describe("node worker tunnel manager", () => {
         getTransport: () => nodeTransport,
         launchNodeWorker: vi.fn(),
         validateWorkerTurn: () => true,
+        projectionTransfer: projectionTransfer(),
         workspaceTransfer: transfer,
       });
       manager.bindWorkspaceBindingResolver(async () => ({
@@ -472,6 +581,7 @@ describe("node worker tunnel manager", () => {
       },
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: transfer,
     });
     const resolveWorkspaceBinding = vi.fn(async () => ({
@@ -570,6 +680,7 @@ describe("node worker tunnel manager", () => {
       getTransport: () => nodeTransport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: transfer,
     });
     manager.bindWorkspaceBindingResolver(async () => ({
@@ -629,6 +740,7 @@ describe("node worker tunnel manager", () => {
       getTransport: () => nodeTransport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: transfer,
     });
     const handle = await manager.start(startRequest());
@@ -668,6 +780,7 @@ describe("node worker tunnel manager", () => {
                 runId: request.input.descriptor.assignment.runId,
                 state: "cancelled",
                 errorText: "node worker cancelled",
+                executionStarted: false,
               });
             });
           },
@@ -681,6 +794,7 @@ describe("node worker tunnel manager", () => {
       getTransport: transport,
       launchNodeWorker,
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: workspaceTransfer(),
     });
     const first = await manager.start(startRequest());
@@ -729,6 +843,7 @@ describe("node worker tunnel manager", () => {
               runId: request.input.descriptor.assignment.runId,
               state: "cancelled",
               errorText: "node worker cancelled",
+              executionStarted: true,
             });
           },
           { once: true },
@@ -742,6 +857,7 @@ describe("node worker tunnel manager", () => {
       getTransport: transport,
       launchNodeWorker,
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: workspaceTransfer(),
     });
     const handle = await manager.start(startRequest());
@@ -818,6 +934,7 @@ describe("node worker tunnel manager", () => {
       getTransport: () => nodeTransport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: transfer,
     });
     const handle = await manager.start(startRequest());
@@ -886,6 +1003,7 @@ describe("node worker tunnel manager", () => {
       getTransport: () => nodeTransport,
       launchNodeWorker: vi.fn(),
       validateWorkerTurn: () => true,
+      projectionTransfer: projectionTransfer(),
       workspaceTransfer: transfer,
     });
     const handle = await manager.start(startRequest());

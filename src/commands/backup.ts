@@ -5,10 +5,12 @@ import {
   type BackupCreateOptions,
   type BackupCreateResult,
 } from "../infra/backup-create.js";
+import { resolveStateDir } from "../config/paths.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 import { recordBackupRunOutcome } from "../state/backup-run-records.js";
+import { withDoctorSqliteMaintenanceLock } from "./doctor-sqlite-maintenance-lock.js";
 
 type BackupVerifyRuntime = typeof import("./backup-verify.js");
 
@@ -27,10 +29,22 @@ export async function backupCreateCommand(
 ): Promise<BackupCreateResult> {
   let archivePath = opts.output ?? process.cwd();
   try {
-    const result = await createBackupArchive({
-      ...opts,
-      log: opts.log ?? (opts.json ? undefined : (message: string) => runtime.log(message)),
-    });
+    const createArchive = async () =>
+      await createBackupArchive({
+        ...opts,
+        log: opts.log ?? (opts.json ? undefined : (message: string) => runtime.log(message)),
+      });
+    // Archive creation captures the selected memory state and its SQLite snapshots. A CLI cannot
+    // quiesce a live Gateway-owned broker, so require offline state ownership instead of taking a
+    // potentially inconsistent archive while the broker can still activate artifacts.
+    const result =
+      opts.dryRun || opts.onlyConfig
+        ? await createArchive()
+        : await withDoctorSqliteMaintenanceLock({
+            operation: "backup archive creation",
+            protectedPaths: [resolveStateDir(process.env)],
+            run: createArchive,
+          });
     archivePath = result.archivePath;
     if (opts.verify && !opts.dryRun) {
       const { backupVerifyCommand } = await loadBackupVerifyRuntime();

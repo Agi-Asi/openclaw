@@ -17,10 +17,12 @@ import {
   requireNodeWorkerProcessIdentity,
 } from "./node-worker-process-identity.js";
 import { createNodeWorkerSupervisor } from "./node-worker-supervisor.js";
+import { NodeWorkerMemoryProjectionRuntime } from "./node-worker-memory-projection.js";
 import {
   TEST_WORKER_CREDENTIAL,
   TEST_WORKER_ENDPOINT,
   TEST_WORKER_SOURCE,
+  testNodeWorkerMemoryProjection,
   testNodeWorkerLaunchIdentity,
   testWorkerDescriptor,
   testWorkerLaunchInput,
@@ -69,6 +71,85 @@ async function waitForTerminal(supervisor: NodeWorkerSupervisor, launchId: strin
 }
 
 describe("node worker supervisor", () => {
+  it("rejects an enforced-memory host launch before claiming a worker slot", async () => {
+    const { env, supervisor, workspaceDir } = fixture();
+    const input = launchInput(workspaceDir, "enforced-memory-host-downgrade");
+    input.descriptor.assignment.memoryReadEnforced = true;
+
+    await expect(supervisor.launch(input, TEST_WORKER_ENDPOINT)).rejects.toThrow(
+      "requires container-v1 execution",
+    );
+    expect(new NodeWorkerLaunchStore({ env }).get(input.launchId)).toBeUndefined();
+    await supervisor.close();
+  });
+
+  it("rejects a cross-session memory projection replay before claiming a worker slot", async () => {
+    const { env, supervisor, workspaceDir } = fixture();
+    const input = launchInput(workspaceDir, "enforced-memory-cross-session-replay");
+    input.execution = { kind: "container-v1" };
+    input.descriptor.assignment.memoryReadEnforced = true;
+    input.descriptor.assignment.workspaceDir = "/workspace";
+    input.memoryProjection = testNodeWorkerMemoryProjection(input);
+    const replay = structuredClone(input);
+    replay.descriptor.admission.sessionId = "another-session";
+
+    await expect(supervisor.launch(replay, TEST_WORKER_ENDPOINT)).rejects.toThrow(
+      "memory projection does not match its worker launch",
+    );
+    expect(new NodeWorkerLaunchStore({ env }).get(replay.launchId)).toBeUndefined();
+    await supervisor.close();
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "persists cancellation and cleans the staged projection before a container can spawn",
+    async () => {
+      const { bundleRoot, env, root, workspaceDir } = fixture();
+      const bin = path.join(root, "bin");
+      const commandLog = path.join(root, "docker-commands.log");
+      fs.mkdirSync(bin, { recursive: true });
+      fs.writeFileSync(
+        path.join(bin, "docker"),
+        `#!/bin/sh\nprintf '%s\\n' "$1" >> ${JSON.stringify(commandLog)}\nif [ "$1" = info ]; then printf 'test-engine'; fi\nexit 0\n`,
+        { mode: 0o755 },
+      );
+      vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH ?? ""}`);
+      try {
+        const controller = new AbortController();
+        const projection = {
+          stage: vi.fn(async () => {
+            controller.abort(new Error("Gateway revoked the projection"));
+            return path.join(root, "staged-projection");
+          }),
+          remove: vi.fn(async () => undefined),
+        } as unknown as NodeWorkerMemoryProjectionRuntime;
+        const supervisor = createNodeWorkerSupervisor({ bundleRoot, env, memoryProjection: projection });
+        const input = launchInput(workspaceDir, "cancelled-before-container-start");
+        input.execution = { kind: "container-v1" };
+        input.descriptor.assignment.memoryReadEnforced = true;
+        input.descriptor.assignment.workspaceDir = "/workspace";
+        input.memoryProjection = testNodeWorkerMemoryProjection(input);
+
+        await expect(supervisor.launch(input, TEST_WORKER_ENDPOINT, controller.signal)).resolves.toMatchObject({
+          state: "cancelled",
+          errorText: "node worker launch cancelled before process start",
+        });
+        expect(projection.stage).toHaveBeenCalledOnce();
+        expect(projection.remove).toHaveBeenCalledWith({
+          gatewayNamespace: input.gatewayNamespace,
+          launchId: input.launchId,
+          planHash: testNodeWorkerLaunchIdentity(input).planHash,
+        });
+        expect(fs.readFileSync(commandLog, "utf8").split("\n")).not.toContain("run");
+        expect(new NodeWorkerLaunchStore({ env }).get(input.launchId)).toMatchObject({
+          state: "cancelled",
+        });
+        await supervisor.close();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   it("keeps construction and close inert without resolving process identity", async () => {
     const root = tempDirs.make("node-worker-inert-");
     const { bundleRoot, env } = writeNodeWorkerFixture(root);
@@ -513,7 +594,7 @@ describe("node worker supervisor", () => {
     },
   );
 
-  it("does not open or signal a child after markRunning observes its terminal receipt", async () => {
+  it("returns a terminal receipt when execution-ready races an immediate child completion", async () => {
     const { supervisor, workspaceDir } = fixture();
     const input = launchInput(workspaceDir, "fast-terminal-launch", "fast-terminal");
     vi.spyOn(NodeWorkerLaunchStore.prototype, "markRunning").mockImplementation(
@@ -536,7 +617,7 @@ describe("node worker supervisor", () => {
     await new Promise((resolve) => {
       setTimeout(resolve, 150);
     });
-    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.existsSync(marker)).toBe(true);
     await supervisor.close();
   });
 
@@ -549,7 +630,88 @@ describe("node worker supervisor", () => {
     const terminal = await waitForTerminal(supervisor, input.launchId);
 
     expect(fs.existsSync(exitedPath)).toBe(true);
-    expect(terminal.state).toBe("failed");
+    expect(terminal).toMatchObject({ state: "failed", worker: null });
+    await supervisor.close();
+  });
+
+  it("fails closed before durable running when the child acknowledges another launch", async () => {
+    const { env, supervisor, workspaceDir } = fixture();
+    const input = launchInput(workspaceDir, "wrong-execution-ack-launch", "wrong-execution-ack");
+
+    await expect(supervisor.launch(input, TEST_WORKER_ENDPOINT)).resolves.toMatchObject({
+      state: "interrupted",
+      worker: null,
+    });
+    expect(new NodeWorkerLaunchStore({ env }).get(input.launchId)).toMatchObject({
+      state: "interrupted",
+      worker: null,
+    });
+    await supervisor.close();
+  });
+
+  it("persists cancellation before a child acknowledgement without a worker identity", async () => {
+    const { env, supervisor, workspaceDir } = fixture();
+    const input = launchInput(
+      workspaceDir,
+      "cancel-before-execution-ack-launch",
+      "wait-before-execution-ack",
+    );
+    const launching = supervisor.launch(input, TEST_WORKER_ENDPOINT);
+    await vi.waitFor(async () => {
+      expect((await supervisor.status(input.launchId))?.state).toBe("pending");
+    });
+
+    await expect(supervisor.cancel(testNodeWorkerLaunchIdentity(input))).resolves.toMatchObject({
+      state: "cancelled",
+      worker: null,
+    });
+    await expect(launching).resolves.toMatchObject({ state: "cancelled", worker: null });
+    expect(new NodeWorkerLaunchStore({ env }).get(input.launchId)).toMatchObject({
+      state: "cancelled",
+      worker: null,
+    });
+    await supervisor.close();
+  });
+
+  it("interrupts a pending child on close without a durable worker identity", async () => {
+    const { env, supervisor, workspaceDir } = fixture();
+    const input = launchInput(
+      workspaceDir,
+      "close-before-execution-ack-launch",
+      "wait-before-execution-ack",
+    );
+    const launching = supervisor.launch(input, TEST_WORKER_ENDPOINT);
+    await vi.waitFor(async () => {
+      expect((await supervisor.status(input.launchId))?.state).toBe("pending");
+    });
+
+    await supervisor.close();
+    await expect(launching).resolves.toMatchObject({ state: "interrupted", worker: null });
+    expect(new NodeWorkerLaunchStore({ env }).get(input.launchId)).toMatchObject({
+      state: "interrupted",
+      worker: null,
+    });
+  });
+
+  it("retires a child that replays its execution acknowledgement after durable readiness", async () => {
+    const { supervisor, workspaceDir } = fixture();
+    const input = launchInput(
+      workspaceDir,
+      "replayed-execution-ack-launch",
+      "replayed-execution-ack",
+    );
+
+    await expect(supervisor.launch(input, TEST_WORKER_ENDPOINT)).resolves.toMatchObject({
+      state: "running",
+      worker: expect.any(Object),
+    });
+    await vi.waitFor(async () => {
+      expect((await supervisor.status(input.launchId))?.state).toBe("interrupted");
+    });
+    expect(await supervisor.status(input.launchId)).toMatchObject({
+      state: "interrupted",
+      worker: expect.any(Object),
+    });
     await supervisor.close();
   });
 
@@ -606,7 +768,7 @@ describe("node worker supervisor", () => {
     ["cancel", "cancelled"],
     ["close", "interrupted"],
   ] as const)(
-    "%s during startup closes the gate before worker code runs",
+    "%s after execution readiness settles the durable terminal receipt",
     async (operation, state) => {
       const { supervisor, workspaceDir } = fixture();
       const input = launchInput(workspaceDir, `${operation}-startup-launch`, "tree");
@@ -630,7 +792,6 @@ describe("node worker supervisor", () => {
       await stopping;
 
       expect((await supervisor.status(input.launchId))?.state).toBe(state);
-      expect(fs.existsSync(path.join(workspaceDir, "grandchild.pid"))).toBe(false);
       await supervisor.close();
     },
   );

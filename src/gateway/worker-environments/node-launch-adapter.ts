@@ -9,10 +9,13 @@ import {
   nodeWorkerPlanHash,
   parseNodeWorkerLaunchInput,
   parseNodeWorkerSupervisorReceipt,
+  type NodeWorkerExecution,
   type NodeWorkerLaunchInput,
   type NodeWorkerSupervisorIdentity,
   type NodeWorkerSupervisorReceipt,
 } from "../../worker/node-supervisor-protocol.js";
+import type { NodeWorkerMemoryProjection } from "../../worker/node-memory-projection-protocol.js";
+import { supportsNodeWorkerExecution } from "../node-runner-inventory-runtime.js";
 import type {
   NodeWorkerSupervisorNodeProof,
   NodeWorkerSupervisorTransport,
@@ -43,11 +46,20 @@ type TerminalNodeWorkerSupervisorReceipt = Extract<
 type DeviceWorkerLaunchRequest = {
   deviceId: string;
   input: NodeWorkerLaunchInput;
+  /** Mints the opaque projection only after this adapter has proved the exact node connection. */
+  prepareMemoryProjection?: (
+    node: NodeWorkerSupervisorNodeProof,
+  ) => Promise<NodeWorkerMemoryProjection>;
   isDispatchAuthorized: () => boolean;
   isCancellationAuthorized: () => boolean;
   timeoutMs: number;
   signal?: AbortSignal;
   onDispatchReady?: () => void;
+  onExecutionReady?: () => void;
+};
+
+type PreparedDeviceWorkerLaunchRequest = DeviceWorkerLaunchRequest & {
+  boundNode?: NodeWorkerSupervisorNodeProof;
 };
 
 type NodeWorkerLaunchAdapterOptions = {
@@ -123,6 +135,18 @@ function receiptMatchesIdentity(
     receipt.ownerEpoch === expected.ownerEpoch &&
     receipt.placementGeneration === expected.placementGeneration &&
     receipt.runId === expected.runId
+  );
+}
+
+function sameNodeConnection(
+  left: NodeWorkerSupervisorNodeProof,
+  right: NodeWorkerSupervisorNodeProof,
+): boolean {
+  return (
+    left.nodeId === right.nodeId &&
+    left.connId === right.connId &&
+    left.pairingIdentity === right.pairingIdentity &&
+    left.pairingGeneration === right.pairingGeneration
   );
 }
 
@@ -209,7 +233,8 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
   const findNode = async (params: {
     transport: NodeWorkerSupervisorTransport;
     deviceId: string;
-    requireLaunchAvailability?: boolean;
+    execution: NodeWorkerExecution;
+    requireLaunchEligibility: boolean;
     signal: AbortSignal;
   }): Promise<NodeWorkerSupervisorNodeProof> => {
     let nodes: readonly NodeWorkerSupervisorNodeProof[];
@@ -224,16 +249,21 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
         "device worker node discovery is unavailable",
       );
     }
-    const node = nodes.find(
-      (candidate) =>
-        candidate.nodeId === params.deviceId &&
-        (!params.requireLaunchAvailability || candidate.workerHost.capacity.available > 0),
-    );
+    const node = nodes.find((candidate) => candidate.nodeId === params.deviceId);
     if (!node) {
       throw new NodeWorkerLaunchTransportError(
         "NOT_CONNECTED",
         "device worker node is not currently connected",
       );
+    }
+    if (params.requireLaunchEligibility && !supportsNodeWorkerExecution(node, params.execution)) {
+      throw new NodeWorkerLaunchTransportError(
+        "PROCESS_ISOLATION_UNAVAILABLE",
+        "device worker node does not attest to the required process-isolation boundary",
+      );
+    }
+    if (params.requireLaunchEligibility && node.workerHost.capacity.available <= 0) {
+      throw new WorkerRunnerCapacityError();
     }
     return node;
   };
@@ -245,9 +275,10 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
       | typeof NODE_WORKER_SUPERVISOR_STATUS_COMMAND
       | typeof NODE_WORKER_SUPERVISOR_CANCEL_COMMAND;
     payload: unknown;
-    requireLaunchAvailability?: boolean;
+    execution: NodeWorkerExecution;
     isAuthorized: () => boolean;
     deadline: OperationDeadline;
+    boundNode?: NodeWorkerSupervisorNodeProof;
     onDispatchReady?: () => void;
   }): Promise<NodeWorkerSupervisorReceipt | null> => {
     if (!params.isAuthorized()) {
@@ -284,9 +315,18 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
       const node = await findNode({
         transport,
         deviceId: params.deviceId,
-        requireLaunchAvailability: params.requireLaunchAvailability,
+        execution: params.execution,
+        requireLaunchEligibility: params.command === NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
         signal,
       });
+      if (params.boundNode && !sameNodeConnection(node, params.boundNode)) {
+        // A projection bearer is bound to this exact paired connection. Retrying against a
+        // replacement node would silently turn a stale capability into a confused deputy.
+        throw new NodeWorkerLaunchTransportError(
+          "NODE_IDENTITY_CHANGED",
+          "device worker node identity changed after memory projection preparation",
+        );
+      }
       const operation = transport.invoke({
         node,
         command: params.command,
@@ -352,7 +392,7 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
   };
 
   const cancelUntilTerminal = async (params: {
-    request: DeviceWorkerLaunchRequest;
+    request: PreparedDeviceWorkerLaunchRequest;
     expected: NodeWorkerSupervisorIdentity;
   }): Promise<TerminalNodeWorkerSupervisorReceipt> => {
     const deadline = createDeadline({
@@ -371,8 +411,10 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
             deviceId: params.request.deviceId,
             command: NODE_WORKER_SUPERVISOR_CANCEL_COMMAND,
             payload: params.expected,
+            execution: params.request.input.execution,
             isAuthorized: params.request.isCancellationAuthorized,
             deadline,
+            ...(params.request.boundNode ? { boundNode: params.request.boundNode } : {}),
           });
           if (receipt) {
             const validated = validateReceipt(receipt, params.expected);
@@ -403,9 +445,6 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
   const launch = async (
     request: DeviceWorkerLaunchRequest,
   ): Promise<TerminalNodeWorkerSupervisorReceipt> => {
-    const input = snapshotLaunchInput(request.input);
-    const stableRequest = { ...request, input };
-    const expected = expectedIdentity(input);
     const deadline = createDeadline({
       now,
       timeoutMs: request.timeoutMs,
@@ -418,8 +457,12 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
       signal: deadline.signal,
       label: "node worker availability",
     });
+    let input: NodeWorkerLaunchInput;
+    let expected: NodeWorkerSupervisorIdentity | undefined;
+    let stableRequest: PreparedDeviceWorkerLaunchRequest | undefined;
     let mayHaveLaunched = false;
     let dispatchReady = false;
+    let executionReady = false;
     let pollStatus = false;
     let delayMs = pollIntervalMs;
     const markDispatchReady = () => {
@@ -429,7 +472,47 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
         stableRequest.onDispatchReady?.();
       }
     };
+    const markExecutionReady = (receipt: NodeWorkerSupervisorReceipt) => {
+      if (
+        executionReady ||
+        !(
+          receipt.state === "running" ||
+          receipt.state === "completed" ||
+          (isTerminalReceipt(receipt) && receipt.executionStarted)
+        )
+      ) {
+        return;
+      }
+      executionReady = true;
+      stableRequest?.onExecutionReady?.();
+    };
     try {
+      if (request.prepareMemoryProjection) {
+        const transport = options.getTransport();
+        if (!transport) {
+          throw new NodeWorkerLaunchTransportError(
+            "UNAVAILABLE",
+            "device worker node transport is unavailable",
+          );
+        }
+        const node = await findNode({
+          transport,
+          deviceId: request.deviceId,
+          execution: request.input.execution,
+          requireLaunchEligibility: true,
+          signal: availabilityDeadline.signal,
+        });
+        const memoryProjection = await raceWithSignal(
+          request.prepareMemoryProjection(node),
+          availabilityDeadline.signal,
+        );
+        input = snapshotLaunchInput({ ...request.input, memoryProjection });
+        stableRequest = { ...request, input, boundNode: node };
+      } else {
+        input = snapshotLaunchInput(request.input);
+        stableRequest = { ...request, input };
+      }
+      expected = expectedIdentity(input);
       while (true) {
         if (deadline.signal.aborted) {
           throw signalError(deadline.signal, "node worker launch aborted");
@@ -448,9 +531,10 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
               ? NODE_WORKER_SUPERVISOR_STATUS_COMMAND
               : NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
             payload: pollStatus ? { launchId: input.launchId } : input,
-            ...(!pollStatus ? { requireLaunchAvailability: true } : {}),
+            execution: input.execution,
             isAuthorized: stableRequest.isDispatchAuthorized,
             deadline: attemptDeadline,
+            ...(stableRequest.boundNode ? { boundNode: stableRequest.boundNode } : {}),
             ...(!pollStatus
               ? {
                   onDispatchReady: markDispatchReady,
@@ -465,6 +549,7 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
             }
             const validated = validateReceipt(receipt, expected);
             mayHaveLaunched = true;
+            markExecutionReady(validated);
             if (isTerminalReceipt(validated)) {
               return validated;
             }
@@ -505,7 +590,10 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
       }
       let terminal: TerminalNodeWorkerSupervisorReceipt;
       try {
-        terminal = await cancelUntilTerminal({ request: stableRequest, expected });
+        terminal = await cancelUntilTerminal({
+          request: stableRequest!,
+          expected: expected!,
+        });
       } catch (cancelError) {
         throw Object.assign(
           new Error("node worker launch failed and cancellation could not be confirmed", {
@@ -524,5 +612,39 @@ export function createNodeWorkerLaunchAdapter(options: NodeWorkerLaunchAdapterOp
     }
   };
 
-  return { launch };
+  const assertExecutionEligible = async (params: {
+    deviceId: string;
+    execution: NodeWorkerExecution;
+    signal?: AbortSignal;
+  }): Promise<void> => {
+    const transport = options.getTransport();
+    if (!transport) {
+      throw new NodeWorkerLaunchTransportError(
+        "UNAVAILABLE",
+        "device worker node transport is unavailable",
+      );
+    }
+    const timeout = new AbortController();
+    const timer = setTimeout(
+      () => timeout.abort(new Error("node worker eligibility check timed out")),
+      DEFAULT_AVAILABILITY_TIMEOUT_MS,
+    );
+    timer.unref?.();
+    const signal = params.signal
+      ? AbortSignal.any([params.signal, timeout.signal])
+      : timeout.signal;
+    try {
+      await findNode({
+        transport,
+        deviceId: params.deviceId,
+        execution: params.execution,
+        requireLaunchEligibility: true,
+        signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  return { assertExecutionEligible, launch };
 }

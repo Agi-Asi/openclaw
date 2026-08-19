@@ -1,9 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { stableStringify } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
@@ -16,9 +14,11 @@ import {
   requireNodeWorkerProcessIdentity,
   type NodeWorkerProcessIdentity,
 } from "./node-worker-process-identity.js";
+import { nodeWorkerPlanHash } from "./node-worker-supervisor-contract.js";
 import { createNodeWorkerSupervisor } from "./node-worker-supervisor.js";
 import {
   testNodeWorkerLaunchIdentity,
+  testNodeWorkerMemoryProjection,
   TEST_WORKER_ENDPOINT,
   testWorkerLaunchInput,
   writeNodeWorkerFixture,
@@ -58,16 +58,7 @@ function fixture(label: string) {
 }
 
 function planHash(input: ReturnType<typeof testWorkerLaunchInput>): string {
-  return createHash("sha256")
-    .update(
-      stableStringify({
-        expectedBundleHash: input.expectedBundleHash,
-        descriptor: input.descriptor,
-        gatewayNamespace: input.gatewayNamespace,
-        placementGeneration: input.placementGeneration,
-      }),
-    )
-    .digest("hex");
+  return nodeWorkerPlanHash(input);
 }
 
 function insertLaunch(params: {
@@ -246,6 +237,110 @@ describe("node worker supervisor recovery", () => {
     ]);
     await supervisor.close();
   });
+
+  it.runIf(process.platform !== "win32")(
+    "does not settle a stale pending container launch until durable cleanup succeeds",
+    async () => {
+      const { bundleRoot, env, root, workspaceDir } = fixture("node-worker-pending-container-");
+      const bin = path.join(root, "bin");
+      const docker = path.join(bin, "docker");
+      const commandLog = path.join(root, "docker-commands.log");
+      fs.mkdirSync(bin, { recursive: true });
+      const writeDocker = (exitCode: number) => {
+        fs.writeFileSync(
+          docker,
+          `#!/bin/sh\nprintf '%s\\n' "$1" >> ${JSON.stringify(commandLog)}\nexit ${String(exitCode)}\n`,
+          { mode: 0o755 },
+        );
+      };
+      writeDocker(1);
+      vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH ?? ""}`);
+      try {
+        const store = new NodeWorkerLaunchStore({ env });
+        store.get("schema-probe");
+        const input = testWorkerLaunchInput(workspaceDir, "pending-container-launch");
+        input.execution = { kind: "container-v1" };
+        input.descriptor.assignment.memoryReadEnforced = true;
+        input.descriptor.assignment.workspaceDir = "/workspace";
+        input.memoryProjection = testNodeWorkerMemoryProjection(input);
+        insertLaunch({
+          env,
+          input,
+          state: "pending",
+          supervisor: { pid: 2_147_483_647, startTime: 1 },
+        });
+        store.recordContainerLaunch({
+          launchId: input.launchId,
+          planHash: planHash(input),
+          engine: "docker",
+          expiresAtMs: input.memoryProjection.expiresAtMs,
+        });
+
+        const first = createNodeWorkerSupervisor({ bundleRoot, env });
+        await expect(first.initialize()).rejects.toThrow("Docker command failed");
+        expect(store.get(input.launchId)).toMatchObject({ state: "pending" });
+        await first.close().catch(() => undefined);
+
+        writeDocker(0);
+        const recovered = createNodeWorkerSupervisor({ bundleRoot, env });
+        await recovered.initialize();
+        expect(await recovered.status(input.launchId)).toMatchObject({ state: "interrupted" });
+        expect(fs.readFileSync(commandLog, "utf8").split("\n").filter(Boolean)).toEqual([
+          "ps",
+          "ps",
+        ]);
+        await recovered.close();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "withdraws an expired durable projection lease during stale container recovery",
+    async () => {
+      const { bundleRoot, env, root, workspaceDir } = fixture("node-worker-expired-container-");
+      const bin = path.join(root, "bin");
+      fs.mkdirSync(bin, { recursive: true });
+      fs.writeFileSync(
+        path.join(bin, "docker"),
+        "#!/bin/sh\nexit 0\n",
+        { mode: 0o755 },
+      );
+      vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH ?? ""}`);
+      try {
+        const store = new NodeWorkerLaunchStore({ env });
+        store.get("schema-probe");
+        const input = testWorkerLaunchInput(workspaceDir, "expired-container-launch");
+        input.execution = { kind: "container-v1" };
+        input.descriptor.assignment.memoryReadEnforced = true;
+        input.descriptor.assignment.workspaceDir = "/workspace";
+        input.memoryProjection = { ...testNodeWorkerMemoryProjection(input), expiresAtMs: 1 };
+        insertLaunch({
+          env,
+          input,
+          state: "pending",
+          supervisor: { pid: 2_147_483_647, startTime: 1 },
+        });
+        store.recordContainerLaunch({
+          launchId: input.launchId,
+          planHash: planHash(input),
+          engine: "docker",
+          expiresAtMs: input.memoryProjection.expiresAtMs,
+        });
+
+        const recovered = createNodeWorkerSupervisor({ bundleRoot, env, now: () => 2 });
+        await recovered.initialize();
+        await expect(recovered.status(input.launchId)).resolves.toMatchObject({
+          state: "cancelled",
+          errorText: "node worker memory projection lease expired before the worker launch started",
+        });
+        await recovered.close();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it.runIf(process.platform !== "win32").each([
     { operation: "replay" as const, state: "interrupted" as const },

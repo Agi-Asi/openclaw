@@ -2,7 +2,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { getRuntimeConfig } from "../config/config.js";
 import { loadOrCreateProcessDeviceIdentity } from "../infra/device-identity.js";
-import { getPairedDevice } from "../infra/device-pairing.js";
+import { getPairedDevice, resolveNodePairingState } from "../infra/device-pairing.js";
 import type { PluginRegistry } from "../plugins/registry-types.js";
 import {
   getActiveSecretsRuntimeConfigSnapshot,
@@ -14,6 +14,7 @@ import type { NodeWorkerSupervisorTransport } from "./node-registry-private.js";
 import type { WorkerBundleProducer, WorkerNpmArtifact } from "./worker-environments/bundle.js";
 import {
   bindDeviceWorkerAvailability,
+  bindDeviceWorkerExecutionEligibility,
   bindDeviceWorkerReconciliation,
   createDeviceWorkerRuntime,
   DEVICE_WORKER_PROVIDER_ID,
@@ -21,6 +22,7 @@ import {
 import type { WorkerLiveEventReceiver } from "./worker-environments/live-events.js";
 import { createWorkerNodeEnrollmentManager } from "./worker-environments/node-enrollment.js";
 import type { NodeWorkerBundleTransferHttpCallback } from "./worker-environments/node-worker-bundle-transfer-http.js";
+import type { NodeWorkerProjectionTransferHttpCallback } from "./worker-environments/node-worker-projection-transfer-http.js";
 import { nodeWorkerGatewayNamespace as resolveNodeWorkerGatewayNamespace } from "./worker-environments/node-worker-gateway-namespace.js";
 import type { NodeWorkerWorkspaceBindingResolver } from "./worker-environments/node-worker-tunnel.js";
 import type { NodeWorkspaceTransferHttpCallback } from "./worker-environments/node-workspace-transfer-http-contract.js";
@@ -56,6 +58,7 @@ export type GatewayWorkerEnvironmentRuntime = {
   bindDeviceNodeControl?: (transport: NodeWorkerSupervisorTransport) => void;
   bindNodeWorkspaceBindingResolver?: (resolver: NodeWorkerWorkspaceBindingResolver) => void;
   handleNodeWorkerBundleTransferRequest?: NodeWorkerBundleTransferHttpCallback;
+  handleNodeWorkerProjectionTransferRequest?: NodeWorkerProjectionTransferHttpCallback;
   handleNodeWorkspaceTransferRequest?: NodeWorkspaceTransferHttpCallback;
 };
 
@@ -119,6 +122,8 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     { createGatewayNodeWorkerBundleInstaller },
     { createNodeWorkerBundleTransferService },
     { createNodeWorkerBundleTransferHttpCallback },
+    { createNodeWorkerProjectionTransferService },
+    { createNodeWorkerProjectionTransferHttpCallback },
     { createNodeWorkspaceTransferService },
     { createNodeWorkspaceTransferHttpCallback },
     { createWorkerSessionToolExecutor },
@@ -133,6 +138,8 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     import("./worker-environments/node-worker-bundle-installer.js"),
     import("./worker-environments/node-worker-bundle-transfer-service.js"),
     import("./worker-environments/node-worker-bundle-transfer-http.js"),
+    import("./worker-environments/node-worker-projection-transfer-service.js"),
+    import("./worker-environments/node-worker-projection-transfer-http.js"),
     import("./worker-environments/node-workspace-transfer-service.js"),
     import("./worker-environments/node-workspace-transfer-http.js"),
     import("./worker-environments/worker-session-tool-executor.js"),
@@ -204,6 +211,20 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     desktopSessionRegistry: params.desktopSessionRegistry,
   });
   const nodeWorkerBundleTransfer = createNodeWorkerBundleTransferService();
+  let nodeWorkerSupervisorTransport: NodeWorkerSupervisorTransport | undefined;
+  const nodeWorkerProjectionTransfer = createNodeWorkerProjectionTransferService({
+    resolveNodePublicKey: async (node) => {
+      const paired = await getPairedDevice(node.nodeId);
+      const currentPairing = resolveNodePairingState(paired);
+      return currentPairing?.identity.key === node.pairingIdentity &&
+        currentPairing.generation?.key === node.pairingGeneration
+        ? paired?.publicKey
+        : undefined;
+    },
+    // The node claims its launch slot before it fetches this already-issued projection.
+    // Keep exact connection/pairing proof, but do not reject a capacity-one node's own fetch.
+    isNodeCurrent: (node) => nodeWorkerSupervisorTransport?.isCurrent(node) === true,
+  });
   const nodeWorkspaceTransfer = createNodeWorkspaceTransferService({
     getOwner: (environmentId) => params.startup.store.getTransferOwner(environmentId),
   });
@@ -216,6 +237,7 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     getTransport: () => deviceRuntime.getNodeTransport(),
     launchNodeWorker: async (request) => await deviceRuntime.launchNodeWorker(request),
     validateWorkerTurn: (binding) => placementGate.validateWorkerTurn(binding),
+    projectionTransfer: nodeWorkerProjectionTransfer,
     workspaceTransfer: nodeWorkspaceTransfer,
   });
   const ensureNodeWorkerBundle = createGatewayNodeWorkerBundleInstaller({
@@ -255,7 +277,10 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     retireNodeEnrollment: nodeEnrollment.retire,
     tunnelManager: workerTunnelManager,
     nodeTunnelManager: nodeWorkerTunnelManager,
-    stopNodeWorkerBundleTransfers: () => nodeWorkerBundleTransfer.closeAll(),
+    stopNodeWorkerBundleTransfers: () => {
+      nodeWorkerBundleTransfer.closeAll();
+      nodeWorkerProjectionTransfer.closeAll();
+    },
     applyTranscriptCommit: createWorkerTranscriptCommitter({
       getConfig: getRuntimeConfig,
     }).commit,
@@ -304,6 +329,10 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
   });
   const workerEnvironmentService = workerEnvironmentServiceBase;
   bindDeviceWorkerAvailability(workerEnvironmentService, deviceRuntime.resolveAvailability);
+  bindDeviceWorkerExecutionEligibility(
+    workerEnvironmentService,
+    deviceRuntime.assertNodeWorkerExecutionEligible,
+  );
   bindDeviceWorkerReconciliation(workerEnvironmentService, async (deviceId) => {
     const environmentIds = params.startup.store
       .listForReconcile()
@@ -344,11 +373,16 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     bindWorkerSessionDispatch: (dispatch) => {
       dispatchChild = dispatch;
     },
-    bindDeviceNodeControl: deviceRuntime.bindNodeTransport,
+    bindDeviceNodeControl: (transport) => {
+      nodeWorkerSupervisorTransport = transport;
+      deviceRuntime.bindNodeTransport(transport);
+    },
     bindNodeWorkspaceBindingResolver: (resolver) =>
       nodeWorkerTunnelManager.bindWorkspaceBindingResolver(resolver),
     handleNodeWorkerBundleTransferRequest:
       createNodeWorkerBundleTransferHttpCallback(nodeWorkerBundleTransfer),
+    handleNodeWorkerProjectionTransferRequest:
+      createNodeWorkerProjectionTransferHttpCallback(nodeWorkerProjectionTransfer),
     handleNodeWorkspaceTransferRequest:
       createNodeWorkspaceTransferHttpCallback(nodeWorkspaceTransfer),
   };

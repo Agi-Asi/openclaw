@@ -19,6 +19,7 @@ import {
   NODE_RUNNER_INVENTORY_UPDATE_METHOD,
   NODE_WORKER_BUNDLE_RETENTION_VERSION,
   NODE_WORKER_BUNDLE_STATUS_VERSION,
+  NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
   type NodeWorkerCapacitySnapshot,
 } from "../infra/node-runner-inventory.js";
@@ -35,6 +36,7 @@ import {
   coerceNodeInvokePayload,
 } from "./invoke-payload.js";
 import { prepareNodeHostRuntime, type NodeHostInventory } from "./runtime.js";
+import { resolveNodeWorkerContainerEngine } from "./node-worker-container-runtime.js";
 import { runStartupMigrations } from "./startup-state-migrations.js";
 
 type NodeHostRunOptions = {
@@ -304,6 +306,8 @@ export async function runNodeHost(opts: NodeHostRunOptions): Promise<void> {
 
   let inventory: NodeHostInventory = preparedRuntime.initialInventory;
   let workerCapacity: NodeWorkerCapacitySnapshot | undefined;
+  let workerSupervisorReady = false;
+  let workerProcessIsolationAvailable = false;
   let gatewayHelloReceived = false;
   let gatewayConnectionGeneration = 0;
   let connectedGatewayProtocol = 0;
@@ -515,12 +519,22 @@ export async function runNodeHost(opts: NodeHostRunOptions): Promise<void> {
   };
 
   const publishRunnerInventory = () => {
+    const workerHostAvailable =
+      preparedRuntime.workerHostingEnabled && workerSupervisorReady && workerCapacity !== undefined;
+    const processIsolation =
+      workerHostAvailable && workerProcessIsolationAvailable
+        ? { kind: "container-v1" as const }
+        : undefined;
     queueOptionalPublication(
       NODE_RUNNER_INVENTORY_UPDATE_METHOD,
       {
-        protocolFeatures: [NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE],
+        protocolFeatures: [
+          processIsolation
+            ? NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE
+            : NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
+        ],
         workerHost:
-          preparedRuntime.workerHostingEnabled && workerCapacity
+          workerHostAvailable && workerCapacity
             ? {
                 enabled: true,
                 capacity: workerCapacity,
@@ -530,6 +544,9 @@ export async function runNodeHost(opts: NodeHostRunOptions): Promise<void> {
                   : {}),
                 ...(gatewaySupportsBundleRetention && gatewaySupportsBundleStatus
                   ? { bundleStatus: NODE_WORKER_BUNDLE_STATUS_VERSION }
+                  : {}),
+                ...(processIsolation
+                  ? { processIsolation: { ...processIsolation, memoryProjection: 1 } }
                   : {}),
               }
             : { enabled: false },
@@ -656,6 +673,10 @@ export async function runNodeHost(opts: NodeHostRunOptions): Promise<void> {
       workerCapacity = capacity;
       publishRunnerInventory();
     },
+    onWorkerSupervisorReadinessChanged: (ready) => {
+      workerSupervisorReady = ready;
+      publishRunnerInventory();
+    },
     onManifestChanged: (manifest) => {
       // Manifest changes force a reconnect. Retire the current publication queue
       // now so it cannot drain against the closing connection.
@@ -665,6 +686,15 @@ export async function runNodeHost(opts: NodeHostRunOptions): Promise<void> {
   });
 
   let stopping = false;
+  if (preparedRuntime.workerHostingEnabled) {
+    void resolveNodeWorkerContainerEngine().then((engine) => {
+      if (stopping || !engine) {
+        return;
+      }
+      workerProcessIsolationAvailable = true;
+      publishRunnerInventory();
+    });
+  }
   let resolveStopped: (() => void) | undefined;
   const stopped = new Promise<void>((resolve) => {
     resolveStopped = resolve;

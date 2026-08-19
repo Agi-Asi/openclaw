@@ -850,7 +850,9 @@ describe("startGatewayPostAttachRuntime", () => {
       },
     };
     const startGatewaySidecars = vi.fn(async () => {
-      expect(hoisted.startBrokeredMemoryRuntimeSupervisor).toHaveBeenCalledWith(selectedCapability);
+      expect(hoisted.startBrokeredMemoryRuntimeSupervisor).toHaveBeenCalledWith(selectedCapability, {
+        agentIds: ["main"],
+      });
       expect(unavailableGatewayMethods).toEqual(new Set(STARTUP_UNAVAILABLE_GATEWAY_METHODS));
       return { pluginServices: null, postReadySidecars: [] };
     });

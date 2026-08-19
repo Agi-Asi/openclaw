@@ -397,12 +397,14 @@ export type AuthorizedMemoryReadParams<Operation extends MemoryContentAccessOper
   handle: AuthorizedResourceHandle;
   from?: number;
   lines?: number;
+  signal?: AbortSignal;
 }>;
 
 /** Every authorized method is bound to the operation that produced its plan. */
 type AuthorizedMemoryOperationParams<Operation extends MemoryOperation> = Readonly<{
   context: MemoryAccessContext & Readonly<{ operation: Operation }>;
   plan: AuthorizedMemoryPlan & Readonly<{ operation: Operation }>;
+  signal?: AbortSignal;
 }>;
 
 type AuthorizedMemoryContentMutation = Readonly<{
@@ -450,6 +452,7 @@ export type AuthorizedSealedCompactionStageParams = Readonly<{
   plan: AuthorizedMemoryPlan & Readonly<{ operation: "derive" }>;
   content: string;
   transcriptSource: AuthorizedTranscriptDerivationSource;
+  signal?: AbortSignal;
 }>;
 
 export type AuthorizedMemoryMutation =

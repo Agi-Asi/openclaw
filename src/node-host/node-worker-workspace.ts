@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveStateDir } from "../config/paths.js";
 import { isPathInside } from "../infra/path-guards.js";
 import { KeyedAsyncQueue } from "../plugin-sdk/keyed-async-queue.js";
@@ -29,6 +30,12 @@ const WORKSPACE_RETENTION_DELETE_LIMIT = 256;
 const ENVIRONMENT_HASH_PATTERN = /^[a-f0-9]{16}$/u;
 const SESSION_HASH_PATTERN = /^[a-f0-9]{32}$/u;
 const MANIFEST_FILE_PATTERN = /^[a-f0-9]{64}\.json$/u;
+const NODE_WORKER_CONTAINER_RELAY_ROOT_PREFIX = "/tmp/openclaw-worker-relays-";
+const NODE_WORKER_CONTAINER_RELAY_SOCKET_NAME = "gateway.sock";
+// macOS accepts fewer bytes than Linux for a filesystem Unix-domain socket.
+// Keep the portable bound below both limits rather than advertise a sandbox
+// that will only fail after the supervisor has durably launched it.
+const NODE_WORKER_CONTAINER_RELAY_SOCKET_MAX_BYTES = 100;
 
 type NodeWorkerWorkspaceLaunchReference = {
   gatewayNamespace: string;
@@ -206,6 +213,67 @@ function ensureContainedDirectory(parent: string, name: string): string {
   return resolved;
 }
 
+function currentNonRootUid(): number {
+  if (process.platform === "win32" || typeof process.getuid !== "function") {
+    throw new Error("node worker container relays require a non-root POSIX host user");
+  }
+  const uid = process.getuid();
+  if (!Number.isSafeInteger(uid) || uid <= 0) {
+    throw new Error("node worker container relays require a non-root POSIX host user");
+  }
+  return uid;
+}
+
+function containerRelayPaths(params: {
+  gatewayNamespace: string;
+  launchId: string;
+  planHash: string;
+}): { root: string; directory: string } {
+  const uid = currentNonRootUid();
+  const name = hashPathComponent(
+    `${params.gatewayNamespace}\0${params.launchId}\0${params.planHash}`,
+    32,
+  );
+  return {
+    root: `${NODE_WORKER_CONTAINER_RELAY_ROOT_PREFIX}${uid}`,
+    directory: path.join(`${NODE_WORKER_CONTAINER_RELAY_ROOT_PREFIX}${uid}`, name),
+  };
+}
+
+function ensurePrivateRelayDirectory(candidate: string, expectedParent?: string): void {
+  fs.mkdirSync(candidate, { recursive: true, mode: 0o700 });
+  const initialStats = fs.lstatSync(candidate);
+  if (
+    initialStats.isSymbolicLink() ||
+    !initialStats.isDirectory() ||
+    initialStats.uid !== currentNonRootUid()
+  ) {
+    throw new Error(
+      "INVALID_REQUEST: node worker container relay path is not a private owned directory",
+    );
+  }
+  fs.chmodSync(candidate, 0o700);
+  const stats = fs.lstatSync(candidate);
+  const resolved = fs.realpathSync.native(candidate);
+  if (
+    stats.isSymbolicLink() ||
+    !stats.isDirectory() ||
+    stats.uid !== currentNonRootUid() ||
+    (stats.mode & 0o077) !== 0 ||
+    (expectedParent !== undefined &&
+      fs.realpathSync.native(path.dirname(candidate)) !== expectedParent)
+  ) {
+    throw new Error(
+      "INVALID_REQUEST: node worker container relay path is not a private owned directory",
+    );
+  }
+  if (resolved !== fs.realpathSync.native(candidate)) {
+    throw new Error(
+      "INVALID_REQUEST: node worker container relay path changed while it was prepared",
+    );
+  }
+}
+
 function resolveArgumentPath(workspaceDir: string, arg: string): string | undefined {
   if (path.isAbsolute(arg)) {
     return arg;
@@ -233,7 +301,7 @@ function assertWorkspaceArgv(workspaceDir: string, argv: readonly string[]): voi
     try {
       resolved = fs.realpathSync.native(candidate);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      if (!isRecord(error) || error.code !== "ENOENT") {
         throw error;
       }
     }
@@ -336,6 +404,81 @@ export class NodeWorkerWorkspaceRuntime {
       GIT_TERMINAL_PROMPT: "0",
       SSH_ASKPASS: "",
     };
+  }
+
+  /**
+   * Container launches never accept a Gateway-provided host path. The node
+   * derives this one canonical session/epoch workspace before mounting it at
+   * the fixed in-container `/workspace` path.
+   */
+  resolveContainerWorkspace(reference: NodeWorkerWorkspaceLaunchReference): string {
+    if (!Number.isSafeInteger(reference.ownerEpoch) || reference.ownerEpoch < 0) {
+      throw new Error("INVALID_REQUEST: node worker container owner epoch is invalid");
+    }
+    const environmentHash = hashPathComponent(reference.environmentId, 16);
+    const sessionHash = hashPathComponent(reference.sessionId, 32);
+    const gatewayRoot = ensureContainedDirectory(this.root, reference.gatewayNamespace);
+    const workspacesRoot = ensureContainedDirectory(gatewayRoot, "workspaces");
+    const environmentRoot = ensureContainedDirectory(workspacesRoot, environmentHash);
+    const sessionRoot = ensureContainedDirectory(environmentRoot, sessionHash);
+    return ensureContainedDirectory(sessionRoot, String(reference.ownerEpoch));
+  }
+
+  /**
+   * The relay is node-private staging, outside the worker-writable workspace.
+   * Its name is derived from the durable launch identity, not from request data.
+   */
+  resolveContainerRelayDirectory(params: {
+    gatewayNamespace: string;
+    launchId: string;
+    planHash: string;
+  }): string {
+    if (!/^[a-f0-9]{64}$/u.test(params.planHash)) {
+      throw new Error("INVALID_REQUEST: node worker container plan hash is invalid");
+    }
+    const paths = containerRelayPaths(params);
+    // The mounted directory is host-private, but the Unix socket must retain
+    // this short lexical `/tmp` spelling. Canonical state paths exceed macOS'
+    // socket limit before the container can even connect to the relay.
+    ensurePrivateRelayDirectory(paths.root);
+    const canonicalRoot = fs.realpathSync.native(paths.root);
+    ensurePrivateRelayDirectory(paths.directory, canonicalRoot);
+    const socketPath = path.join(paths.directory, NODE_WORKER_CONTAINER_RELAY_SOCKET_NAME);
+    if (Buffer.byteLength(socketPath, "utf8") > NODE_WORKER_CONTAINER_RELAY_SOCKET_MAX_BYTES) {
+      throw new Error(
+        "INVALID_REQUEST: node worker container relay socket path exceeds the portable limit",
+      );
+    }
+    return paths.directory;
+  }
+
+  async removeContainerRelayDirectory(params: {
+    gatewayNamespace: string;
+    launchId: string;
+    planHash: string;
+  }): Promise<void> {
+    if (!/^[a-f0-9]{64}$/u.test(params.planHash)) {
+      return;
+    }
+    const paths = containerRelayPaths(params);
+    try {
+      const rootStats = await fsp.lstat(paths.root);
+      if (
+        rootStats.isSymbolicLink() ||
+        !rootStats.isDirectory() ||
+        rootStats.uid !== currentNonRootUid() ||
+        (rootStats.mode & 0o077) !== 0
+      ) {
+        return;
+      }
+      const canonicalRoot = await fsp.realpath(paths.root);
+      await removeOwnedDirectory(canonicalRoot, paths.directory);
+      await removeIfEmpty(paths.root);
+    } catch (error) {
+      if (!isRecord(error) || error.code !== "ENOENT") {
+        throw error;
+      }
+    }
   }
 
   private beginWorkspaceOperation(gatewayNamespace: string, generationKey: string): () => void {

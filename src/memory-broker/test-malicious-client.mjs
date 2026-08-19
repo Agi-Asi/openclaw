@@ -18,6 +18,7 @@ const envelope = {
     runId: "run-b",
     contextFingerprint: "context-b",
     subjectRevision: "subject-b",
+    actor: { kind: "principal", actorKind: "human", principalId: "mallory" },
     actorRevision: "actor-b",
     capabilitySnapshotId: "capability-b",
     policyRevision: "policy-b",

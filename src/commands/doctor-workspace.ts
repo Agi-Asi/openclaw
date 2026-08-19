@@ -16,6 +16,7 @@ import {
 } from "../memory/root-memory-files.js";
 import { shortenHomePath } from "../utils.js";
 import type { DoctorPrompter } from "./doctor-prompter.js";
+import { withDoctorSqliteMaintenanceLock } from "./doctor-sqlite-maintenance-lock.js";
 
 // AGENTS.md is only scanned for a memory-system reference; a small cap prevents
 // a huge file from being buffered just for one regex check.
@@ -374,7 +375,12 @@ export async function maybeRepairWorkspaceMemoryHealth(params: {
     if (!approvedLegacyMigration) {
       return;
     }
-    const migration = await migrateLegacyRootMemoryFile(configuredWorkspaceDir);
+    // Prompting remains outside the lease. Once approved, stop the live Gateway from changing
+    // memory-derived workspace state while this doctor command archives and merges root memory.
+    const migration = await withDoctorSqliteMaintenanceLock({
+      operation: "workspace root memory repair",
+      run: async () => await migrateLegacyRootMemoryFile(configuredWorkspaceDir),
+    });
     if (migration.readLimitExceeded) {
       note(
         [

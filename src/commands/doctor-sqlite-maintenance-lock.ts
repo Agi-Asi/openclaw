@@ -161,7 +161,9 @@ export async function withDoctorSqliteMaintenanceLock<T>(
       allowInTests: true,
       env,
       pollIntervalMs: lockOptions?.pollIntervalMs ?? MAINTENANCE_LOCK_POLL_INTERVAL_MS,
-      role: "sqlite-maintenance",
+      // Doctor and `backup sqlite create` both mutate/read the same state files while offline.
+      // Their lock must survive stale-owner checks for either CLI command.
+      role: "offline-maintenance",
       timeoutMs: lockOptions?.timeoutMs ?? MAINTENANCE_LOCK_TIMEOUT_MS,
     });
   } catch (error) {

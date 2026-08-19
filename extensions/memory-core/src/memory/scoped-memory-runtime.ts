@@ -466,7 +466,9 @@ function readPlan(params: {
 function materializeAuthorizedVirtualView(params: {
   context: MemoryContentAccessContext<"read">;
   plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+  signal?: AbortSignal;
 }): AuthorizedMemoryVirtualView | undefined {
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   pruneExpiredVirtualViews();
   const state = readPlan(params);
   if (!state || state.stores.length !== state.plan.mounts.length) {
@@ -483,6 +485,7 @@ function materializeAuthorizedVirtualView(params: {
   );
   const revisionByVirtualPath = new Map<string, string>();
   const files = state.stores.flatMap((store, index) => {
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     const root = roots[index]!;
     const rows = withScopedMemoryDatabase(
       params.context.agentId,
@@ -504,6 +507,7 @@ function materializeAuthorizedVirtualView(params: {
         }>,
     );
     return rows.flatMap((row, ordinal) => {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       const virtualPath = `${root.virtualRoot}/${ordinal + 1}.md`;
       revisionByVirtualPath.set(virtualPath, row.revision_id);
       return [
@@ -542,7 +546,9 @@ function readAuthorizedVirtualFile(params: {
   plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
   view: AuthorizedMemoryVirtualView;
   virtualPath: string;
+  signal?: AbortSignal;
 }): AuthorizedMemoryResultEnvelope<MemoryReadResult> {
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   pruneExpiredVirtualViews();
   const state = readPlan(params);
   const allocation = virtualViews.get(params.view.viewId);
@@ -571,6 +577,7 @@ function readAuthorizedVirtualFile(params: {
   if (!snapshot) {
     throw new Error("authorized memory virtual view is unavailable");
   }
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   return createEnvelope({
     state,
     context: params.context,
@@ -777,6 +784,14 @@ function syncDirectory(directory: string): void {
       throw error;
     }
   }
+}
+
+/**
+ * Broker cancellation is an authorization fence: check it before any recovery,
+ * filesystem staging, or durable write so cancelled work cannot be recovered as a new revision.
+ */
+function throwIfAuthorizedMemoryOperationAborted(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
 }
 
 function readVerifiedFile(params: {
@@ -1360,6 +1375,34 @@ function quarantineWriteIntent(params: {
   });
 }
 
+/**
+ * A cancelled write may already have durable pending rows and staged/final bytes. Quarantine both
+ * before surfacing the abort so recovery never promotes the cancelled revision on a later request.
+ */
+function throwIfPendingWriteAborted(params: {
+  signal?: AbortSignal;
+  database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
+  directory: string;
+  intentId: string;
+  revisionId: string;
+  stagedPath: string;
+  finalPath: string;
+}): void {
+  if (!params.signal?.aborted) {
+    return;
+  }
+  quarantineWriteIntent({
+    database: params.database,
+    intentId: params.intentId,
+    revisionId: params.revisionId,
+    nowMs: Date.now(),
+    reasonCode: "authorized-write-cancelled-before-activation",
+  });
+  quarantineArtifact({ directory: params.directory, pathname: params.stagedPath });
+  quarantineArtifact({ directory: params.directory, pathname: params.finalPath });
+  params.signal.throwIfAborted();
+}
+
 function indexRecoveredRevision(params: {
   database: Parameters<typeof getNodeSqliteKysely<ScopedMemoryDatabase>>[0];
   intentId: string;
@@ -1709,16 +1752,32 @@ function recoverPendingWrites(agentId: string): void {
   });
 }
 
+/**
+ * The selected broker calls this before accepting its first socket request. Recovery is explicit
+ * at the broker lifecycle boundary so a replaced child cannot defer pending-write repair until a
+ * later caller happens to authorize or mutate that agent's memory.
+ */
+export function recoverBuiltinScopedMemoryPendingWrites(agentIds: readonly string[]): void {
+  for (const agentId of [...new Set(agentIds)].toSorted()) {
+    recoverPendingWrites(agentId);
+  }
+}
+
 async function writeAuthorizedMutation(params: {
   context: MemoryAccessContext;
   plan: AuthorizedMemoryPlan;
   mutation: AuthorizedMemoryMutation;
+  signal?: AbortSignal;
 }): Promise<MemoryWriteResult> {
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   assertMutationShape(params.mutation);
   if (params.context.operation !== mutationOperation(params.mutation)) {
     throw new Error("authorized memory mutation is unavailable");
   }
+  // Recovery can activate a durable pending revision, so it must never run after cancellation.
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   recoverPendingWrites(params.context.agentId);
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   const state = readPlan(params);
   if (!state) {
     throw new Error("authorized memory mutation is unavailable");
@@ -1726,6 +1785,7 @@ async function writeAuthorizedMutation(params: {
   const nowMs = Date.now();
   const agentId = params.context.agentId;
   if (params.mutation.kind === "sync") {
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     drainMemoryAuditOutbox(agentId);
     return Object.freeze({
       version: 1,
@@ -1737,6 +1797,7 @@ async function writeAuthorizedMutation(params: {
   }
 
   if (params.mutation.kind === "project") {
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     if (params.context.actor.kind !== "principal" || params.mutation.sourceHandles.length !== 1) {
       throw new Error("authorized memory projection is unavailable");
     }
@@ -1772,6 +1833,8 @@ async function writeAuthorizedMutation(params: {
       expiry,
       nowMs,
     });
+    // Projection creation is its activation point. Do not turn a committed projection into a
+    // cancellation acknowledgement if the caller disconnects after this synchronous commit.
     const targetSnapshot = withScopedMemoryDatabase(agentId, (database) => {
       const db = getNodeSqliteKysely<ScopedMemoryDatabase>(database);
       return executeSqliteQueryTakeFirstSync(
@@ -1801,6 +1864,7 @@ async function writeAuthorizedMutation(params: {
   }
 
   const result = withScopedMemoryDatabase(agentId, (database, databasePath) => {
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     const store = selectWriteStore({ database, agentId, state });
     const db = getNodeSqliteKysely<ScopedMemoryDatabase>(database);
     const derivationSources =
@@ -1853,6 +1917,9 @@ async function writeAuthorizedMutation(params: {
       if (existingIntent.mutation_id !== params.mutation.mutationId) {
         throw new Error("authorized memory mutation idempotency conflict");
       }
+      if (existingIntent.state === "quarantined") {
+        throw new Error("authorized memory mutation is unavailable");
+      }
       return Object.freeze({
         version: 1,
         mutationId: params.mutation.mutationId,
@@ -1869,11 +1936,13 @@ async function writeAuthorizedMutation(params: {
       (params.mutation.kind === "delete" || params.mutation.kind === "tombstone") &&
       "target" in params.mutation
     ) {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       const mutation = params.mutation;
       if (!existing) {
         throw new Error("authorized memory mutation is unavailable");
       }
       const intentId = randomUUID();
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       runSqliteImmediateTransactionSync(database, () => {
         const current = resolveWriteTarget({
           database,
@@ -2025,6 +2094,7 @@ async function writeAuthorizedMutation(params: {
     const finalLocator = `r1_${revisionId}.md`;
     const stageLocator = `mwst1_${intentId}.tmp`;
     const directory = path.join(resolveScopedMemoryArtifactBase(databasePath), store.pathKey);
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const stagePath = path.join(directory, stageLocator);
     const finalPath = resolveBuiltinScopedMemoryArtifactPath({
@@ -2043,8 +2113,13 @@ async function writeAuthorizedMutation(params: {
       fs.closeSync(descriptor);
     }
     syncDirectory(directory);
+    if (params.signal?.aborted) {
+      quarantineArtifact({ directory, pathname: stagePath });
+      params.signal.throwIfAborted();
+    }
     const resourceId = existing?.resourceId ?? randomUUID();
     try {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       runSqliteImmediateTransactionSync(database, () => {
         const currentStore = selectWriteStore({ database, agentId, state });
         if (
@@ -2240,8 +2315,26 @@ async function writeAuthorizedMutation(params: {
       } catch {}
       throw error;
     }
+    throwIfPendingWriteAborted({
+      signal: params.signal,
+      database,
+      directory,
+      intentId,
+      revisionId,
+      stagedPath: stagePath,
+      finalPath,
+    });
     fs.renameSync(stagePath, finalPath);
     syncDirectory(directory);
+    throwIfPendingWriteAborted({
+      signal: params.signal,
+      database,
+      directory,
+      intentId,
+      revisionId,
+      stagedPath: stagePath,
+      finalPath,
+    });
     const verified = readVerifiedFile({
       pathname: finalPath,
       contentHash: hash,
@@ -2250,6 +2343,17 @@ async function writeAuthorizedMutation(params: {
     if (verified === undefined) {
       throw new Error("authorized memory finalized artifact is unavailable");
     }
+    // This is the write linearization point. A cancellation observed before it quarantines the
+    // pending revision below; a cancellation after it is a committed write, never a fake abort.
+    throwIfPendingWriteAborted({
+      signal: params.signal,
+      database,
+      directory,
+      intentId,
+      revisionId,
+      stagedPath: stagePath,
+      finalPath,
+    });
     runSqliteImmediateTransactionSync(database, () => {
       const currentStore = selectWriteStore({ database, agentId, state });
       if (
@@ -2382,6 +2486,7 @@ async function writeAuthorizedMutation(params: {
 async function stageSealedCompaction(
   params: AuthorizedSealedCompactionStageParams,
 ): Promise<AuthorizedSealedCompactionArtifact> {
+  throwIfAuthorizedMemoryOperationAborted(params.signal);
   if (!params.content.trim()) {
     throw new Error("sealed compaction content is unavailable");
   }
@@ -2391,6 +2496,7 @@ async function stageSealedCompaction(
   }
   const agentId = params.context.agentId;
   return withScopedMemoryDatabase(agentId, (database, databasePath) => {
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     const store = selectWriteStore({ database, agentId, state });
     const source = resolveTranscriptDerivationSource({
       database,
@@ -2412,6 +2518,7 @@ async function stageSealedCompaction(
     const stagePath = path.join(directory, stageLocator);
     const hash = contentHash(params.content);
     const bytes = Buffer.byteLength(params.content);
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const descriptor = fs.openSync(stagePath, "wx", 0o600);
     try {
@@ -2422,8 +2529,17 @@ async function stageSealedCompaction(
       fs.closeSync(descriptor);
     }
     syncDirectory(directory);
+    if (params.signal?.aborted) {
+      quarantineArtifact({ directory, pathname: stagePath });
+      params.signal.throwIfAborted();
+    }
+    throwIfAuthorizedMemoryOperationAborted(params.signal);
     fs.renameSync(stagePath, finalPath);
     syncDirectory(directory);
+    if (params.signal?.aborted) {
+      quarantineArtifact({ directory, pathname: finalPath });
+      params.signal.throwIfAborted();
+    }
     const verified = readVerifiedFile({
       pathname: finalPath,
       contentHash: hash,
@@ -2435,6 +2551,9 @@ async function stageSealedCompaction(
     return Object.freeze({
       resourceRevisionId: revisionId,
       commitInTransaction({ database: transactionDatabase, compactionPolicyId, eventSeq }) {
+        // This callback runs inside the caller's SQLite transaction. It may only read the abort
+        // state; filesystem cleanup belongs to staging before a transaction can begin.
+        throwIfAuthorizedMemoryOperationAborted(params.signal);
         if (state.expiresAtMs <= Date.now()) {
           throw new Error("sealed compaction authorization is unavailable");
         }
@@ -2644,6 +2763,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
     async searchAuthorized(
       params: AuthorizedMemorySearchParams<"read"> | AuthorizedMemorySearchParams<"derive">,
     ): Promise<AuthorizedMemoryResultEnvelope<readonly AuthorizedMemorySearchResult[]>> {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       if (params.context.operation !== "read" && params.context.operation !== "derive") {
         throw new Error("authorized memory search is unavailable");
       }
@@ -2664,9 +2784,11 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
           offset: 0,
         }),
       );
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       const results: AuthorizedMemorySearchResult[] = [];
       const sourcePolicySetIds: string[] = [];
       for (const candidate of candidates) {
+        throwIfAuthorizedMemoryOperationAborted(params.signal);
         if (results.length >= limit) {
           break;
         }
@@ -2690,6 +2812,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
         results.push(result);
         sourcePolicySetIds.push(`mps1_${snapshot.policyRevisionId}`);
       }
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       return createEnvelope({
         state,
         context: params.context,
@@ -2703,6 +2826,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
     async readAuthorized(
       params: AuthorizedMemoryReadParams<"read"> | AuthorizedMemoryReadParams<"derive">,
     ): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>> {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       if (params.context.operation !== "read" && params.context.operation !== "derive") {
         throw new Error("authorized memory read is unavailable");
       }
@@ -2727,6 +2851,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
       if (!snapshot || snapshot.policyRevisionId !== storedHandle.policyRevision) {
         throw new Error("authorized memory read is unavailable");
       }
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       const lines = snapshot.content.split("\n");
       const from = Math.max(1, Math.trunc(params.from ?? 1));
       const lineCount = Math.max(1, Math.min(1000, Math.trunc(params.lines ?? 200)));
@@ -2753,6 +2878,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
       context: MemoryAccessContext;
       plan: AuthorizedMemoryPlan;
       mutation: AuthorizedMemoryMutation;
+      signal?: AbortSignal;
     }): Promise<MemoryWriteResult> {
       if (params.mutation.kind === "admin-reclassify") {
         throw new Error("authorized memory reclassification is unavailable");
@@ -2768,6 +2894,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
       context: MemoryAccessContext;
       plan: AuthorizedMemoryPlan;
       mutation: Extract<AuthorizedMemoryMutation, { kind: "import" }>;
+      signal?: AbortSignal;
     }): Promise<MemoryWriteResult> {
       return await writeAuthorizedMutation(params);
     },
@@ -2775,7 +2902,9 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
     async syncAuthorized(params: {
       context: MemoryAccessContext;
       plan: AuthorizedMemoryPlan;
+      signal?: AbortSignal;
     }): Promise<AuthorizedMemoryResultEnvelope<MemorySyncResult>> {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       if (params.context.operation !== "sync") {
         throw new Error("authorized memory sync is unavailable");
       }
@@ -2783,6 +2912,7 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
       if (!state) {
         throw new Error("authorized memory sync is unavailable");
       }
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       drainMemoryAuditOutbox(params.context.agentId);
       return createEnvelope({
         state,
@@ -2797,7 +2927,9 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
       context: MemoryAccessContext;
       plan: AuthorizedMemoryPlan;
       handles: readonly AuthorizedResourceHandle[];
+      signal?: AbortSignal;
     }): Promise<AuthorizedMemoryResultEnvelope<MemoryExportResult>> {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       if (params.context.operation !== "export") {
         throw new Error("authorized memory export is unavailable");
       }
@@ -2826,7 +2958,9 @@ export function createBuiltinScopedMemoryAuthorizedRuntime(
     async statusAuthorized(params: {
       context: MemoryAccessContext;
       plan: AuthorizedMemoryPlan;
+      signal?: AbortSignal;
     }): Promise<AuthorizedMemoryResultEnvelope<AuthorizedMemoryStatus>> {
+      throwIfAuthorizedMemoryOperationAborted(params.signal);
       if (params.context.operation !== "status") {
         throw new Error("authorized memory status is unavailable");
       }
@@ -2852,6 +2986,7 @@ export const builtinScopedMemoryVirtualView = Object.freeze({
   async materializeAuthorizedVirtualView(params: {
     context: MemoryContentAccessContext<"read">;
     plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
+    signal?: AbortSignal;
   }): Promise<AuthorizedMemoryVirtualView | undefined> {
     return materializeAuthorizedVirtualView(params);
   },
@@ -2860,6 +2995,7 @@ export const builtinScopedMemoryVirtualView = Object.freeze({
     plan: AuthorizedMemoryPlan & Readonly<{ operation: "read" }>;
     view: AuthorizedMemoryVirtualView;
     virtualPath: string;
+    signal?: AbortSignal;
   }): Promise<AuthorizedMemoryResultEnvelope<MemoryReadResult>> {
     return readAuthorizedVirtualFile(params);
   },

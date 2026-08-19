@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { startMemoryBrokerProcess, type MemoryBrokerProcess } from "./process.js";
+import type { MemoryBrokerAuthorizationBinding } from "./protocol.js";
 
 let broker: MemoryBrokerProcess | undefined;
 
@@ -78,6 +79,7 @@ describe("memory broker child", () => {
           runId: "run-a",
           contextFingerprint: "context-a",
           subjectRevision: "subject-a",
+          actor: { kind: "principal", actorKind: "human", principalId: "alice" },
           actorRevision: "actor-a",
           capabilitySnapshotId: "capability-a",
           policyRevision: "policy-a",
@@ -88,6 +90,46 @@ describe("memory broker child", () => {
         expiresAtMs: Date.now() + 30_000,
       }),
     ).resolves.toEqual({ agentId: "agent-a", method: "memory.search" });
+  });
+
+  it("runs selected-runtime startup recovery with sorted configured agents before serving", async () => {
+    broker = await startMemoryBrokerProcess({
+      brokerId: "broker-a",
+      childModuleUrl: new URL("./child.ts", import.meta.url),
+      handlerModuleUrl: new URL("./test-handler.mjs", import.meta.url).href,
+      agentIds: ["work", "main", "work"],
+    });
+
+    await expect(
+      broker.client.request({
+        binding: {
+          agentId: "main",
+          sessionId: "session-a",
+          runId: "run-a",
+          contextFingerprint: "context-a",
+          subjectRevision: "subject-a",
+          actor: { kind: "principal", actorKind: "human", principalId: "alice" },
+          actorRevision: "actor-a",
+          capabilitySnapshotId: "capability-a",
+          policyRevision: "policy-a",
+          deliveryRevision: "delivery-a",
+        },
+        method: "memory.startup",
+        payload: {},
+        expiresAtMs: Date.now() + 30_000,
+      }),
+    ).resolves.toEqual({ agentIds: ["main", "work"] });
+  });
+
+  it("does not report ready when selected-runtime startup recovery fails", async () => {
+    await expect(
+      startMemoryBrokerProcess({
+        brokerId: "broker-a",
+        childModuleUrl: new URL("./child.ts", import.meta.url),
+        handlerModuleUrl: new URL("./test-handler.mjs", import.meta.url).href,
+        agentIds: ["fail-startup"],
+      }),
+    ).rejects.toThrow("memory broker child did not become ready");
   });
 
   it("retires a stopped child and gives its replacement a new broker epoch", async () => {
@@ -121,12 +163,13 @@ describe("memory broker child", () => {
     });
     const crashedBroker = broker;
     const firstEpoch = crashedBroker.brokerEpoch;
-    const binding = {
+    const binding: MemoryBrokerAuthorizationBinding = {
       agentId: "agent-a",
       sessionId: "session-a",
       runId: "run-a",
       contextFingerprint: "context-a",
       subjectRevision: "subject-a",
+      actor: { kind: "principal", actorKind: "human", principalId: "alice" },
       actorRevision: "actor-a",
       capabilitySnapshotId: "capability-a",
       policyRevision: "policy-a",
@@ -160,6 +203,37 @@ describe("memory broker child", () => {
     ).resolves.toEqual({ agentId: "agent-a", method: "memory.search" });
   });
 
+  it("retires a child killed by an external signal without waiting for a second exit event", async () => {
+    broker = await startMemoryBrokerProcess({
+      brokerId: "broker-a",
+      childModuleUrl: new URL("./child.ts", import.meta.url),
+      handlerModuleUrl: new URL("./test-handler.mjs", import.meta.url).href,
+    });
+    const killedBroker = broker;
+    await expect(
+      killedBroker.client.request({
+        binding: {
+          agentId: "agent-a",
+          sessionId: "session-a",
+          runId: "run-a",
+          contextFingerprint: "context-a",
+          subjectRevision: "subject-a",
+          actor: { kind: "principal", actorKind: "human", principalId: "alice" },
+          actorRevision: "actor-a",
+          capabilitySnapshotId: "capability-a",
+          policyRevision: "policy-a",
+          deliveryRevision: "delivery-a",
+        },
+        method: "memory.kill",
+        payload: {},
+        expiresAtMs: Date.now() + 30_000,
+      }),
+    ).resolves.toBeUndefined();
+    await waitFor(() => !killedBroker.isRunning(), "memory broker child did not exit after SIGKILL");
+
+    await expect(killedBroker.close()).resolves.toBeUndefined();
+  });
+
   it("does not inherit arbitrary Gateway environment secrets", async () => {
     const previous = process.env.OPENCLAW_MEMORY_BROKER_TEST_SECRET;
     process.env.OPENCLAW_MEMORY_BROKER_TEST_SECRET = "gateway-only-secret";
@@ -177,6 +251,7 @@ describe("memory broker child", () => {
             runId: "run-a",
             contextFingerprint: "context-a",
             subjectRevision: "subject-a",
+            actor: { kind: "principal", actorKind: "human", principalId: "alice" },
             actorRevision: "actor-a",
             capabilitySnapshotId: "capability-a",
             policyRevision: "policy-a",
@@ -230,6 +305,7 @@ describe("memory broker child", () => {
           runId: "run-a",
           contextFingerprint: "context-a",
           subjectRevision: "subject-a",
+          actor: { kind: "principal", actorKind: "human", principalId: "alice" },
           actorRevision: "actor-a",
           capabilitySnapshotId: "capability-a",
           policyRevision: "policy-a",
@@ -249,6 +325,7 @@ describe("memory broker child", () => {
           runId: "run-a",
           contextFingerprint: "context-a",
           subjectRevision: "subject-a",
+          actor: { kind: "principal", actorKind: "human", principalId: "alice" },
           actorRevision: "actor-a",
           capabilitySnapshotId: "capability-a",
           policyRevision: "policy-a",
@@ -259,5 +336,37 @@ describe("memory broker child", () => {
         expiresAtMs: Date.now() + 30_000,
       }),
     ).resolves.toEqual({ agentId: "agent-a", method: "memory.search" });
+  });
+
+  it("retires a noncooperative child instead of leaving a healthy broker quiesced", async () => {
+    broker = await startMemoryBrokerProcess({
+      brokerId: "broker-a",
+      childModuleUrl: new URL("./child.ts", import.meta.url),
+      handlerModuleUrl: new URL("./test-handler.mjs", import.meta.url).href,
+      maintenanceTimeoutMs: 40,
+    });
+    const pending = broker.client.request({
+      binding: {
+        agentId: "agent-a",
+        sessionId: "session-a",
+        runId: "run-a",
+        contextFingerprint: "context-a",
+        subjectRevision: "subject-a",
+        actor: { kind: "principal", actorKind: "human", principalId: "alice" },
+        actorRevision: "actor-a",
+        capabilitySnapshotId: "capability-a",
+        policyRevision: "policy-a",
+        deliveryRevision: "delivery-a",
+      },
+      method: "memory.hang",
+      payload: {},
+      expiresAtMs: Date.now() + 30_000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await expect(broker.quiesce()).rejects.toThrow("memory broker quiesce is unavailable");
+    await expect(pending).resolves.toBeUndefined();
+    expect(broker.isRunning()).toBe(false);
+    await expect(broker.isHealthy()).resolves.toBe(false);
   });
 });

@@ -16,7 +16,6 @@ import {
 import {
   hasConfiguredStartupChannel,
   declaresAllowedEnterpriseIdentityProvider,
-  listPotentialEnabledChannelIds,
   resolveAuthorizedGatewayStartupDreamingPluginIds,
   resolveContextEngineSlotStartupPluginId,
   resolveMemorySlotStartupPluginId,

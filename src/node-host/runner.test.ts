@@ -6,6 +6,7 @@ import { getConfigResolutionFacts, setConfigResolutionFacts } from "../config/re
 import type { GatewayClientOptions } from "../gateway/client.js";
 import {
   NODE_RUNNER_INVENTORY_UPDATE_METHOD,
+  NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
 } from "../infra/node-runner-inventory.js";
 import type { configureNodeHost } from "./config.js";
@@ -34,6 +35,8 @@ const mocks = vi.hoisted(() => ({
   runnerCapacityChanged: undefined as
     | ((capacity: { total: number; available: number }) => void)
     | undefined,
+  workerSupervisorReadinessChanged: undefined as ((ready: boolean) => void) | undefined,
+  resolveNodeWorkerContainerEngine: vi.fn(async () => undefined),
   nodeHostCommands: [] as string[],
   nodeHostCaps: [] as string[],
   availabilityOnWatch: undefined as { caps: string[]; commands: string[] } | undefined,
@@ -106,6 +109,10 @@ vi.mock("../infra/device-identity.js", () => ({
     id: "device-test",
     publicKey: "public-key-test",
     privateKey: "private-key-test",
+  })),
+  loadOrCreateProcessDeviceIdentity: vi.fn(() => ({
+    deviceId: "device-test",
+    privateKeyPem: "private-key-test",
   })),
 }));
 
@@ -199,12 +206,17 @@ vi.mock("./runtime.js", async (importOriginal) => {
         start: (params) => {
           mocks.runtimeClient = params.client;
           mocks.runnerCapacityChanged = params.onRunnerCapacityChanged;
+          mocks.workerSupervisorReadinessChanged = params.onWorkerSupervisorReadinessChanged;
           return mocks.activeRuntime;
         },
       };
     },
   };
 });
+
+vi.mock("./node-worker-container-runtime.js", () => ({
+  resolveNodeWorkerContainerEngine: mocks.resolveNodeWorkerContainerEngine,
+}));
 
 function lastCapturedOptions(): GatewayClientOptions | undefined {
   const list = mocks.capturedGatewayClientOptions;
@@ -232,6 +244,8 @@ describe("runNodeHost", () => {
     mocks.useFakeRuntime = false;
     mocks.fakeRuntimeWorkerHosting = false;
     mocks.runnerCapacityChanged = undefined;
+    mocks.workerSupervisorReadinessChanged = undefined;
+    mocks.resolveNodeWorkerContainerEngine.mockResolvedValue(undefined);
     mocks.nodeHostCommands = [];
     mocks.nodeHostCaps = [];
     mocks.availabilityOnWatch = undefined;
@@ -689,6 +703,8 @@ describe("runNodeHost", () => {
   });
 
   it("publishes opt-in consent and capacity in the atomic runner inventory", async () => {
+    mocks.useFakeRuntime = true;
+    mocks.fakeRuntimeWorkerHosting = true;
     mocks.getRuntimeConfig.mockReturnValue({
       gateway: { handshakeTimeoutMs: 1_000 },
       nodeHost: { workerRuns: { enabled: true } },
@@ -698,6 +714,9 @@ describe("runNodeHost", () => {
     );
     const options = mocks.capturedGatewayClientOptions[0];
     const client = mocks.capturedGatewayClients[0];
+
+    mocks.runnerCapacityChanged?.({ total: 2, available: 2 });
+    mocks.workerSupervisorReadinessChanged?.(true);
 
     options?.onHelloOk?.({
       protocol: 4,
@@ -725,6 +744,7 @@ describe("runNodeHost", () => {
     expect(options?.workerRuns).toBeUndefined();
 
     mocks.runnerCapacityChanged?.({ total: 2, available: 2 });
+    mocks.workerSupervisorReadinessChanged?.(true);
     options?.onHelloOk?.({
       protocol: 4,
       features: {
@@ -788,6 +808,88 @@ describe("runNodeHost", () => {
       await expectPublishedSlots(available);
     }
     expect(client?.updateNodeManifest).not.toHaveBeenCalled();
+  });
+
+  it("withholds and withdraws process isolation until supervisor recovery is healthy", async () => {
+    mocks.useFakeRuntime = true;
+    mocks.fakeRuntimeWorkerHosting = true;
+    mocks.startGatewayClientWhenEventLoopReady.mockResolvedValueOnce({
+      ready: true,
+      aborted: false,
+      elapsedMs: 0,
+    });
+    let resolveEngine!: (value: unknown) => void;
+    mocks.resolveNodeWorkerContainerEngine.mockImplementationOnce(
+      async () =>
+        await new Promise((resolve) => {
+          resolveEngine = resolve;
+        }),
+    );
+    const processOnceSpy = vi.spyOn(process, "once");
+    const previousExitCode = process.exitCode;
+    try {
+      const running = runNodeHost({ gatewayHost: "127.0.0.1", gatewayPort: 18789 });
+      await vi.waitFor(() => expect(mocks.workerSupervisorReadinessChanged).toBeTypeOf("function"));
+      await vi.waitFor(() => expect(resolveEngine).toBeTypeOf("function"));
+      const options = mocks.capturedGatewayClientOptions[0];
+      const client = mocks.capturedGatewayClients[0];
+      const latestRunnerInventory = () =>
+        client?.request.mock.calls
+          .filter(([method]) => method === NODE_RUNNER_INVENTORY_UPDATE_METHOD)
+          .at(-1)?.[1];
+
+      mocks.runnerCapacityChanged?.({ total: 2, available: 2 });
+      options?.onHelloOk?.({
+        protocol: 7,
+        features: { methods: [], events: [] },
+      } as unknown as Parameters<NonNullable<GatewayClientOptions["onHelloOk"]>>[0]);
+      await vi.waitFor(() =>
+        expect(latestRunnerInventory()).toEqual({
+          protocolFeatures: [NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE],
+          workerHost: { enabled: false },
+        }),
+      );
+
+      resolveEngine({ id: "docker" });
+      await vi.waitFor(() => expect(mocks.resolveNodeWorkerContainerEngine).toHaveBeenCalledOnce());
+      expect(latestRunnerInventory()).toEqual({
+        protocolFeatures: [NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE],
+        workerHost: { enabled: false },
+      });
+
+      mocks.workerSupervisorReadinessChanged?.(true);
+      await vi.waitFor(() =>
+        expect(latestRunnerInventory()).toEqual({
+          protocolFeatures: [NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE],
+          workerHost: {
+            enabled: true,
+            capacity: { total: 2, available: 2 },
+            bundlePrewarm: 1,
+            processIsolation: { kind: "container-v1", memoryProjection: 1 },
+          },
+        }),
+      );
+
+      mocks.workerSupervisorReadinessChanged?.(false);
+      await vi.waitFor(() =>
+        expect(latestRunnerInventory()).toEqual({
+          protocolFeatures: [NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE],
+          workerHost: { enabled: false },
+        }),
+      );
+
+      const onSigterm = processOnceSpy.mock.calls.find(([event]) => event === "SIGTERM")?.[1];
+      onSigterm?.("SIGTERM");
+      await running;
+    } finally {
+      for (const [event, listener] of processOnceSpy.mock.calls) {
+        if ((event === "SIGINT" || event === "SIGTERM") && typeof listener === "function") {
+          process.off(event, listener);
+        }
+      }
+      process.exitCode = previousExitCode;
+      processOnceSpy.mockRestore();
+    }
   });
 
   it("clears gateway plugin tools when the final node-hosted tool disappears", async () => {

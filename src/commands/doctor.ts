@@ -48,7 +48,7 @@ export async function doctorCommand(runtime?: RuntimeEnv, options?: DoctorOption
   if (options?.memoryIsolation) {
     const outputRuntime = runtime ?? defaultRuntime;
     const { runDoctorMemoryIsolation } = await import("./doctor-memory-isolation.js");
-    const report = runDoctorMemoryIsolation({
+    const report = await runDoctorMemoryIsolation({
       action: options.memoryIsolation,
       ...(options.memoryIsolationAgent ? { agentId: options.memoryIsolationAgent } : {}),
     });

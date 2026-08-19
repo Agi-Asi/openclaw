@@ -339,6 +339,7 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
   const searchMemory = async (
     identity: WorkerConnectionIdentity,
     request: WorkerMemorySearchParams,
+    signal?: AbortSignal,
   ): Promise<WorkerMemoryServiceResult> => {
     const binding = validateMemoryRequest(identity);
     if (!binding.ok) {
@@ -351,6 +352,7 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
     const result = await host.host.search({
       query: request.query,
       ...(request.limit === undefined ? {} : { limit: request.limit }),
+      ...(signal ? { signal } : {}),
     });
     const current = validateMemoryRequest(identity);
     if (!current.ok) {
@@ -364,6 +366,7 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
   const readMemory = async (
     identity: WorkerConnectionIdentity,
     request: WorkerMemoryReadParams,
+    signal?: AbortSignal,
   ): Promise<WorkerMemoryServiceResult> => {
     const binding = validateMemoryRequest(identity);
     if (!binding.ok) {
@@ -377,6 +380,7 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
       handleId: request.handleId,
       ...(request.from === undefined ? {} : { from: request.from }),
       ...(request.lines === undefined ? {} : { lines: request.lines }),
+      ...(signal ? { signal } : {}),
     });
     const current = validateMemoryRequest(identity);
     if (!current.ok) {

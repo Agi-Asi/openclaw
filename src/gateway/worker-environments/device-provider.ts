@@ -10,6 +10,7 @@ import {
   type WorkerProfile,
   type WorkerProvider,
 } from "../../plugins/types.js";
+import type { NodeWorkerExecution } from "../../worker/node-supervisor-protocol.js";
 import type {
   NodeWorkerSupervisorNodeProof,
   NodeWorkerSupervisorTransport,
@@ -31,8 +32,14 @@ export type DeviceWorkerAvailability = {
 };
 type DeviceWorkerAvailabilityResolver = (deviceId: string) => Promise<DeviceWorkerAvailability>;
 type DeviceWorkerReconciliation = (deviceId: string) => Promise<readonly string[]>;
+type DeviceWorkerExecutionEligibility = (params: {
+  deviceId: string;
+  execution: NodeWorkerExecution;
+  signal?: AbortSignal;
+}) => Promise<void>;
 const DEVICE_WORKER_AVAILABILITY = new WeakMap<object, DeviceWorkerAvailabilityResolver>();
 const DEVICE_WORKER_RECONCILIATION = new WeakMap<object, DeviceWorkerReconciliation>();
+const DEVICE_WORKER_EXECUTION_ELIGIBILITY = new WeakMap<object, DeviceWorkerExecutionEligibility>();
 
 export function bindDeviceWorkerAvailability(
   service: object,
@@ -78,6 +85,36 @@ export async function reconcileDeviceWorker(
 ): Promise<readonly string[]> {
   const reconcile = service ? DEVICE_WORKER_RECONCILIATION.get(service) : undefined;
   return reconcile ? await reconcile(deviceId) : [];
+}
+
+export function bindDeviceWorkerExecutionEligibility(
+  service: object,
+  assertEligible: DeviceWorkerExecutionEligibility,
+): void {
+  DEVICE_WORKER_EXECUTION_ELIGIBILITY.set(service, assertEligible);
+}
+
+/**
+ * Enforced launches must prove the node boundary before any turn credential,
+ * tunnel, or workspace operation is created.
+ */
+export async function assertDeviceWorkerExecutionEligibility(params: {
+  service: object | undefined;
+  deviceId: string;
+  execution: NodeWorkerExecution;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const assertEligible = params.service
+    ? DEVICE_WORKER_EXECUTION_ELIGIBILITY.get(params.service)
+    : undefined;
+  if (!assertEligible) {
+    throw new WorkerProviderError("device worker process-isolation eligibility is unavailable");
+  }
+  await assertEligible({
+    deviceId: params.deviceId,
+    execution: params.execution,
+    ...(params.signal ? { signal: params.signal } : {}),
+  });
 }
 
 function requireDeviceId(profile: WorkerProfile): string {
@@ -170,6 +207,7 @@ export function createDeviceWorkerRuntime(options: DeviceWorkerRuntimeOptions) {
   return {
     provider,
     resolveAvailability,
+    assertNodeWorkerExecutionEligible: launchAdapter.assertExecutionEligible,
     launchNodeWorker: launchAdapter.launch,
     getNodeTransport: () => nodeTransport,
     bindNodeTransport: (transport: NodeWorkerSupervisorTransport) => {

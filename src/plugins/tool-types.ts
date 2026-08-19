@@ -53,6 +53,7 @@ export type AuthorizedMemoryReadHost = Readonly<{
     handleId: string;
     from?: number;
     lines?: number;
+    signal?: AbortSignal;
   }) => Promise<MemoryReadResult | AuthorizedMemoryReadUnavailable>;
 }>;
 

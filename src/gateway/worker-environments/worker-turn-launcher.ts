@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { mapThinkingLevelForProvider } from "../../agents/embedded-agent-runner/utils.js";
-import { createAuthorizedMemoryReadHost } from "../../agents/memory-authorized-read-host.js";
+import {
+  createAuthorizedMemoryReadHost,
+  resolveAuthorizedMemoryVirtualFileBroker,
+} from "../../agents/memory-authorized-read-host.js";
 import type { SandboxContext } from "../../agents/sandbox/types.js";
 import {
   withSessionPlacementForcedTerminalSettlement,
@@ -17,6 +20,7 @@ import { redactSensitiveText } from "../../logging/redact.js";
 import { isMemoryIsolationCutoverAgent } from "../../plugins/memory-cutover.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { parseWorkerLaunchPlan } from "../../worker/launch-descriptor.js";
+import { NODE_WORKER_EXECUTION_CONTAINER_V1 } from "../../worker/node-supervisor-protocol.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "../../worker/transcript-message.js";
 import {
   STALE_WORKER_BUILD_REASON,
@@ -24,6 +28,7 @@ import {
   supportsWorkerExecutionContextLaunch,
 } from "./admission.js";
 import { registerWorkerMemoryHost } from "./memory-host.js";
+import { assertDeviceWorkerExecutionEligibility } from "./device-provider.js";
 import { placementTurnOwner } from "./placement-record.js";
 import { createRemoteExecPlacementSandbox } from "./placement-sandbox.js";
 import type {
@@ -221,6 +226,23 @@ async function executeWorkerTurn(params: {
   if (memoryReadEnforced && !memoryHost) {
     throw new WorkerTurnExecutionError("Enforced memory could not create a trusted worker host");
   }
+  const memoryProjection = memoryHost
+    ? await resolveAuthorizedMemoryVirtualFileBroker(memoryHost, turn.abortSignal)
+    : undefined;
+  if (memoryReadEnforced && !memoryProjection) {
+    throw new WorkerTurnExecutionError(
+      "Enforced memory could not materialize an authorized virtual memory view",
+    );
+  }
+  const memoryProjectionExpiresAtMs = memoryProjection
+    ? Date.parse(memoryProjection.view.expiresAt)
+    : undefined;
+  if (
+    memoryProjectionExpiresAtMs !== undefined &&
+    (!Number.isFinite(memoryProjectionExpiresAtMs) || memoryProjectionExpiresAtMs <= Date.now())
+  ) {
+    throw new WorkerTurnExecutionError("Enforced memory virtual view expired before process launch");
+  }
   const { browser, toolAuthority } = resolveWorkerBrowserLaunchPlan({
     desktop: environment.desktop,
     modelRef,
@@ -262,11 +284,13 @@ async function executeWorkerTurn(params: {
           turnId: randomUUID(),
           prompt: turn.prompt,
           suppressPromptTranscript: true,
-          workspaceDir: placement.remoteWorkspaceDir,
+          workspaceDir: memoryReadEnforced ? "/workspace" : placement.remoteWorkspaceDir,
           ...(turn.permissionMode
             ? {
                 permissionMode: turn.permissionMode,
-                workerContainmentRoot: placement.remoteWorkspaceDir,
+                workerContainmentRoot: memoryReadEnforced
+                  ? "/workspace"
+                  : placement.remoteWorkspaceDir,
               }
             : {}),
           modelRef,
@@ -317,13 +341,13 @@ async function executeWorkerTurn(params: {
   const handoffAbort = new AbortController();
   let handoffError: Error | undefined;
   let dispatchReady = false;
+  let executionReady = false;
   const onDispatchReady = () => {
     if (dispatchReady) {
       return;
     }
     dispatchReady = true;
     params.onHandoff();
-    turn.onExecutionPhase?.({ phase: "process_spawned", backend: "cloud-worker" });
     try {
       if (!params.environments.acknowledgeCredentialDelivery(credential)) {
         handoffError = new Error("Cloud worker credential owner changed during process handoff");
@@ -335,6 +359,13 @@ async function executeWorkerTurn(params: {
       handoffAbort.abort(handoffError);
     }
   };
+  const onExecutionReady = () => {
+    if (executionReady) {
+      return;
+    }
+    executionReady = true;
+    turn.onExecutionPhase?.({ phase: "process_spawned", backend: "cloud-worker" });
+  };
   if (!tunnel.launchTurn) {
     throw new Error("Worker tunnel does not support worker turns");
   }
@@ -343,11 +374,22 @@ async function executeWorkerTurn(params: {
       return await tunnel.launchTurn({
         plan,
         turnClaim: params.turnClaim,
-        timeoutMs: turn.timeoutMs,
+        ...(memoryProjection ? { memoryProjection } : {}),
+        timeoutMs:
+          memoryProjectionExpiresAtMs === undefined
+            ? turn.timeoutMs
+            : Math.max(
+                1,
+                Math.min(
+                  turn.timeoutMs ?? 60_000,
+                  memoryProjectionExpiresAtMs - Date.now(),
+                ),
+              ),
         signal: turn.abortSignal
           ? AbortSignal.any([turn.abortSignal, handoffAbort.signal])
           : handoffAbort.signal,
         onDispatchReady,
+        onExecutionReady,
       });
     } finally {
       // A completed or failed process must not retain memory authority for a later turn.
@@ -538,14 +580,24 @@ export function createWorkerSessionTurnPlacementProvider(options: WorkerTurnLaun
       let placement = requireActivePlacement(routablePlacement);
       const requiresProcessIsolation = claim.requiresProcessIsolation === true;
       const remoteExec = placement.executionMode === "remote-exec";
+      if (requiresProcessIsolation && remoteExec) {
+        // Remote-exec invokes the Gateway callback rather than the node-worker protocol, so it
+        // cannot attest to the container boundary required for an enforced memory turn.
+        throw new Error("enforced memory cannot execute through remote-exec placement");
+      }
       if (requiresProcessIsolation) {
-        // Remote-exec invokes the Gateway callback, while worker-turn launches directly on the
-        // node host. Neither path supplies the required broker process boundary yet.
-        throw new Error(
-          remoteExec
-            ? "enforced memory cannot execute through remote-exec placement"
-            : "enforced memory requires a containerized worker launch",
-        );
+        const environment = options.environments.get(placement.environmentId);
+        if (!environment?.nodeDeviceId) {
+          throw new Error("enforced memory requires a device worker node");
+        }
+        // Prove the exact connected node's advertised boundary before any credential, tunnel,
+        // workspace, or claim work can create host-visible state for the enforced turn.
+        await assertDeviceWorkerExecutionEligibility({
+          service: options.environments,
+          deviceId: environment.nodeDeviceId,
+          execution: { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 },
+          ...(turn.abortSignal ? { signal: turn.abortSignal } : {}),
+        });
       }
       // The placement owns the managed worktree. Callers can carry a default or stale
       // workspace path, but remote results must only reconcile into that canonical root.

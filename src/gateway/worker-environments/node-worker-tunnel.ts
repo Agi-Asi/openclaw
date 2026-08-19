@@ -6,7 +6,14 @@ import { NODE_WORKER_WORKSPACE_EXEC_COMMAND } from "../../infra/node-commands.js
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { SpawnResult } from "../../process/exec.js";
 import { createDeferredCore, type Deferred } from "../../shared/deferred.js";
-import type { NodeWorkerSupervisorReceipt } from "../../worker/node-supervisor-protocol.js";
+import {
+  NODE_WORKER_EXECUTION_CONTAINER_V1,
+  NODE_WORKER_EXECUTION_HOST_V1,
+  nodeWorkerMemoryProjectionLaunchBinding,
+  type NodeWorkerExecution,
+  type NodeWorkerSupervisorReceipt,
+} from "../../worker/node-supervisor-protocol.js";
+import type { NodeWorkerMemoryProjection } from "../../worker/node-memory-projection-protocol.js";
 import {
   parseNodeWorkerWorkspaceExecResult,
   type NodeWorkerWorkspaceExecInput,
@@ -27,6 +34,7 @@ import {
   recordNodeSyncPath,
 } from "./node-worker-workspace-fallback.js";
 import type { NodeWorkspaceTransferService } from "./node-workspace-transfer-service.js";
+import type { NodeWorkerProjectionTransferService } from "./node-worker-projection-transfer-service.js";
 import type { WorkerSessionTurnClaim } from "./placement-record.js";
 import type { WorkerEnvironmentRecord } from "./store.js";
 import type {
@@ -74,12 +82,18 @@ type NodeWorkerLaunch = (request: {
     expectedBundleHash: string;
     placementGeneration: number;
     descriptor: WorkerTurnLaunchRequest["plan"];
+    execution: NodeWorkerExecution;
+    memoryProjection?: NodeWorkerMemoryProjection;
   };
+  prepareMemoryProjection?: (
+    node: NodeWorkerSupervisorNodeProof,
+  ) => Promise<NodeWorkerMemoryProjection>;
   isDispatchAuthorized: () => boolean;
   isCancellationAuthorized: () => boolean;
   timeoutMs: number;
   signal?: AbortSignal;
   onDispatchReady?: () => void;
+  onExecutionReady?: () => void;
 }) => Promise<TerminalNodeWorkerSupervisorReceipt>;
 
 type NodeWorkerWorkspaceBinding = {
@@ -100,6 +114,7 @@ type NodeWorkerTunnelManagerOptions = {
   getTransport: () => NodeWorkerSupervisorTransport | undefined;
   launchNodeWorker: NodeWorkerLaunch;
   validateWorkerTurn: (claim: WorkerSessionTurnClaim) => boolean;
+  projectionTransfer: NodeWorkerProjectionTransferService;
   workspaceTransfer: NodeWorkspaceTransferService;
 };
 
@@ -529,22 +544,50 @@ export function createNodeWorkerTunnelManager(options: NodeWorkerTunnelManagerOp
           claim.sessionId === plan.admission.sessionId &&
           claim.runId === plan.assignment.runId &&
           options.validateWorkerTurn(claim);
+        const execution: NodeWorkerExecution = plan.assignment.memoryReadEnforced
+          ? { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 }
+          : { kind: NODE_WORKER_EXECUTION_HOST_V1 };
+        if (execution.kind === NODE_WORKER_EXECUTION_CONTAINER_V1 && !request.memoryProjection) {
+          throw new Error("enforced node worker launch is missing its authorized memory projection");
+        }
+        const launchSignal = request.signal
+          ? AbortSignal.any([entry.abortController.signal, request.signal])
+          : entry.abortController.signal;
+        const input = {
+          launchId: plan.assignment.turnId,
+          gatewayNamespace,
+          expectedBundleHash: entry.expectedBuild.bundleHash,
+          placementGeneration: claim.placementGeneration,
+          descriptor: plan,
+          execution,
+        };
         const operation = options.launchNodeWorker({
           deviceId: entry.deviceId,
-          input: {
-            launchId: plan.assignment.turnId,
-            gatewayNamespace,
-            expectedBundleHash: entry.expectedBuild.bundleHash,
-            placementGeneration: claim.placementGeneration,
-            descriptor: plan,
-          },
+          input,
+          ...(request.memoryProjection
+            ? {
+                prepareMemoryProjection: async (node) =>
+                  await options.projectionTransfer.prepare({
+                    node,
+                    broker: request.memoryProjection!,
+                    environmentId: entry.environmentId,
+                    sessionId: entry.sessionId,
+                    ownerEpoch: entry.ownerEpoch,
+                    placementGeneration: claim.placementGeneration,
+                    runId: plan.assignment.runId,
+                    launchId: plan.assignment.turnId,
+                    launchBinding: nodeWorkerMemoryProjectionLaunchBinding(input),
+                    isAuthorized: isDispatchAuthorized,
+                    signal: launchSignal,
+                  }),
+              }
+            : {}),
           isDispatchAuthorized,
           isCancellationAuthorized: () => hasDurableBinding(entry as NodeTunnelEntry),
           timeoutMs: request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
           onDispatchReady: request.onDispatchReady,
-          signal: request.signal
-            ? AbortSignal.any([entry.abortController.signal, request.signal])
-            : entry.abortController.signal,
+          onExecutionReady: request.onExecutionReady,
+          signal: launchSignal,
         });
         entry.launchTasks.add(operation);
         try {

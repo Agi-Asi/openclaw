@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { stableStringify } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { parseWorkerLaunchPlan, type WorkerLaunchPlan } from "./launch-descriptor.js";
+import {
+  parseNodeWorkerMemoryProjection,
+  type NodeWorkerMemoryProjection,
+} from "./node-memory-projection-protocol.js";
 
 const IDENTIFIER_MAX_CHARS = 256;
 const GATEWAY_NAMESPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
@@ -10,6 +14,17 @@ const NODE_WORKER_RESULT_JSON_MAX_BYTES = 64 * 1024;
 const NODE_WORKER_ERROR_TEXT_MAX_BYTES = 4 * 1024;
 const NODE_WORKER_CONNECTION_FAILURE_CAUSE_MAX_BYTES = 64 * 1024;
 export const NODE_WORKER_CONNECTION_FAILURE_MESSAGE_TYPE = "openclaw-worker-connection-failure-v1";
+export const NODE_WORKER_EXECUTION_STARTED_MESSAGE_TYPE = "openclaw-worker-execution-started-v1";
+export const NODE_WORKER_EXECUTION_HOST_V1 = "host-v1";
+export const NODE_WORKER_EXECUTION_CONTAINER_V1 = "container-v1";
+
+/**
+ * The launch execution boundary is selected by the Gateway and hashed with the
+ * rest of the launch. A node must never reinterpret a container launch as host work.
+ */
+export type NodeWorkerExecution =
+  | { kind: typeof NODE_WORKER_EXECUTION_HOST_V1 }
+  | { kind: typeof NODE_WORKER_EXECUTION_CONTAINER_V1 };
 
 export type NodeWorkerLaunchInput = {
   launchId: string;
@@ -17,6 +32,8 @@ export type NodeWorkerLaunchInput = {
   expectedBundleHash: string;
   placementGeneration: number;
   descriptor: WorkerLaunchPlan;
+  execution: NodeWorkerExecution;
+  memoryProjection?: NodeWorkerMemoryProjection;
 };
 
 export type NodeWorkerSupervisorIdentity = {
@@ -41,6 +58,8 @@ type NodeWorkerSupervisorCompletedReceipt = NodeWorkerSupervisorIdentity & {
 type NodeWorkerSupervisorErrorReceipt = NodeWorkerSupervisorIdentity & {
   state: "failed" | "interrupted" | "cancelled";
   errorText: string;
+  /** A terminal worker identity is only durably recorded after child execution started. */
+  executionStarted: boolean;
 };
 
 export type NodeWorkerSupervisorReceipt =
@@ -51,6 +70,13 @@ export type NodeWorkerSupervisorReceipt =
 export type NodeWorkerConnectionFailureMessage = {
   type: typeof NODE_WORKER_CONNECTION_FAILURE_MESSAGE_TYPE;
   cause: string | null;
+};
+
+/** Private child-to-supervisor acknowledgement for the exact gate release. */
+export type NodeWorkerExecutionStartedMessage = {
+  type: typeof NODE_WORKER_EXECUTION_STARTED_MESSAGE_TYPE;
+  launchId: string;
+  planHash: string;
 };
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -91,6 +117,34 @@ function isPlanHash(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
 
+function parseNodeWorkerExecution(value: unknown): NodeWorkerExecution | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["kind"])) {
+    return null;
+  }
+  if (value.kind === NODE_WORKER_EXECUTION_HOST_V1) {
+    return { kind: NODE_WORKER_EXECUTION_HOST_V1 };
+  }
+  if (value.kind === NODE_WORKER_EXECUTION_CONTAINER_V1) {
+    return { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 };
+  }
+  return null;
+}
+
+function requiresContainerWorkspaceRoot(descriptor: WorkerLaunchPlan): boolean {
+  if (!descriptor.assignment.memoryReadEnforced) {
+    return false;
+  }
+  return (
+    descriptor.assignment.workspaceDir !== "/workspace" ||
+    (descriptor.assignment.workerContainmentRoot !== undefined &&
+      descriptor.assignment.workerContainmentRoot !== "/workspace")
+  );
+}
+
+function requiresMemoryProjection(descriptor: WorkerLaunchPlan): boolean {
+  return descriptor.assignment.memoryReadEnforced;
+}
+
 function decodeRequest(raw?: string | null): unknown {
   if (!raw) {
     throw new Error("INVALID_REQUEST: paramsJSON required");
@@ -106,13 +160,27 @@ export function parseNodeWorkerLaunchInput(raw?: string | null): NodeWorkerLaunc
   const value = decodeRequest(raw);
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      "launchId",
-      "gatewayNamespace",
-      "expectedBundleHash",
-      "placementGeneration",
-      "descriptor",
-    ])
+    !hasExactKeys(
+      value,
+      value.memoryProjection === undefined
+        ? [
+            "launchId",
+            "gatewayNamespace",
+            "expectedBundleHash",
+            "placementGeneration",
+            "descriptor",
+            "execution",
+          ]
+        : [
+            "launchId",
+            "gatewayNamespace",
+            "expectedBundleHash",
+            "placementGeneration",
+            "descriptor",
+            "execution",
+            "memoryProjection",
+          ],
+    )
   ) {
     throw new Error("INVALID_REQUEST: invalid node worker launch request");
   }
@@ -135,6 +203,45 @@ export function parseNodeWorkerLaunchInput(raw?: string | null): NodeWorkerLaunc
   if (descriptor.admission.handshake.bundleHash !== value.expectedBundleHash) {
     throw new Error("INVALID_REQUEST: descriptor bundle hash does not match expectedBundleHash");
   }
+  const execution = parseNodeWorkerExecution(value.execution);
+  if (!execution) {
+    throw new Error("INVALID_REQUEST: invalid node worker execution");
+  }
+  if (
+    descriptor.assignment.memoryReadEnforced &&
+    execution.kind !== NODE_WORKER_EXECUTION_CONTAINER_V1
+  ) {
+    throw new Error("INVALID_REQUEST: enforced memory worker requires container-v1 execution");
+  }
+  if (requiresContainerWorkspaceRoot(descriptor)) {
+    throw new Error(
+      "INVALID_REQUEST: enforced container worker descriptor must use the /workspace root",
+    );
+  }
+  const memoryProjection =
+    value.memoryProjection === undefined
+      ? undefined
+      : parseNodeWorkerMemoryProjection(value.memoryProjection);
+  if (value.memoryProjection !== undefined && !memoryProjection) {
+    throw new Error("INVALID_REQUEST: invalid node worker memory projection");
+  }
+  if (requiresMemoryProjection(descriptor) !== Boolean(memoryProjection)) {
+    throw new Error("INVALID_REQUEST: enforced container worker requires an issued memory projection");
+  }
+  if (
+    memoryProjection &&
+    memoryProjection.binding.launch !==
+      nodeWorkerMemoryProjectionLaunchBinding({
+        launchId,
+        gatewayNamespace,
+        expectedBundleHash: value.expectedBundleHash,
+        placementGeneration: value.placementGeneration,
+        descriptor,
+        execution,
+      })
+  ) {
+    throw new Error("INVALID_REQUEST: memory projection does not match its worker launch");
+  }
   return {
     launchId,
     gatewayNamespace,
@@ -144,6 +251,8 @@ export function parseNodeWorkerLaunchInput(raw?: string | null): NodeWorkerLaunc
       "placementGeneration",
     ),
     descriptor,
+    execution,
+    ...(memoryProjection ? { memoryProjection } : {}),
   };
 }
 
@@ -194,7 +303,12 @@ export function parseNodeWorkerCancelInput(raw?: string | null): NodeWorkerSuper
 export function nodeWorkerPlanHash(
   input: Pick<
     NodeWorkerLaunchInput,
-    "descriptor" | "expectedBundleHash" | "gatewayNamespace" | "placementGeneration"
+    | "descriptor"
+    | "execution"
+    | "expectedBundleHash"
+    | "gatewayNamespace"
+    | "memoryProjection"
+    | "placementGeneration"
   >,
 ): string {
   return createHash("sha256")
@@ -202,8 +316,45 @@ export function nodeWorkerPlanHash(
       stableStringify({
         expectedBundleHash: input.expectedBundleHash,
         descriptor: input.descriptor,
+        execution: input.execution,
         gatewayNamespace: input.gatewayNamespace,
+        memoryProjection: input.memoryProjection,
         placementGeneration: input.placementGeneration,
+      }),
+    )
+    .digest("hex");
+}
+
+/**
+ * A node can recompute this non-secret fence before fetching projection bytes.
+ * The second opaque projection hash is verified by the Gateway against the
+ * selected broker view, so swapping either launch or memory authority fails.
+ */
+export function nodeWorkerMemoryProjectionLaunchBinding(
+  input: Pick<
+    NodeWorkerLaunchInput,
+    | "launchId"
+    | "gatewayNamespace"
+    | "expectedBundleHash"
+    | "placementGeneration"
+    | "descriptor"
+    | "execution"
+  >,
+): string {
+  return createHash("sha256")
+    .update(
+      stableStringify({
+        launchId: input.launchId,
+        gatewayNamespace: input.gatewayNamespace,
+        expectedBundleHash: input.expectedBundleHash,
+        placementGeneration: input.placementGeneration,
+        execution: input.execution,
+        environmentId: input.descriptor.admission.environmentId,
+        sessionId: input.descriptor.admission.sessionId,
+        ownerEpoch: input.descriptor.admission.ownerEpoch,
+        agentId: input.descriptor.assignment.agentId,
+        runId: input.descriptor.assignment.runId,
+        turnId: input.descriptor.assignment.turnId,
       }),
     )
     .digest("hex");
@@ -286,6 +437,25 @@ export function parseNodeWorkerConnectionFailureMessage(
   };
 }
 
+export function parseNodeWorkerExecutionStartedMessage(
+  value: unknown,
+): NodeWorkerExecutionStartedMessage | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["type", "launchId", "planHash"]) ||
+    value.type !== NODE_WORKER_EXECUTION_STARTED_MESSAGE_TYPE ||
+    !isIdentifier(value.launchId) ||
+    !isPlanHash(value.planHash)
+  ) {
+    return null;
+  }
+  return {
+    type: NODE_WORKER_EXECUTION_STARTED_MESSAGE_TYPE,
+    launchId: value.launchId,
+    planHash: value.planHash,
+  };
+}
+
 export function parseNodeWorkerSupervisorReceipt(
   value: unknown,
 ): NodeWorkerSupervisorReceipt | null {
@@ -308,9 +478,15 @@ export function parseNodeWorkerSupervisorReceipt(
       : null;
   }
   if (value.state === "failed" || value.state === "interrupted" || value.state === "cancelled") {
-    return hasExactKeys(value, [...RECEIPT_IDENTITY_KEYS, "state", "errorText"]) &&
-      isBoundedErrorText(value.errorText)
-      ? { ...identity, state: value.state, errorText: value.errorText }
+    return hasExactKeys(value, [...RECEIPT_IDENTITY_KEYS, "state", "errorText", "executionStarted"]) &&
+      isBoundedErrorText(value.errorText) &&
+      typeof value.executionStarted === "boolean"
+      ? {
+          ...identity,
+          state: value.state,
+          errorText: value.errorText,
+          executionStarted: value.executionStarted,
+        }
       : null;
   }
   return null;

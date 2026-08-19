@@ -15,6 +15,7 @@ const binding: MemoryBrokerAuthorizationBinding = {
   runId: "run-a",
   contextFingerprint: "context-a",
   subjectRevision: "subject-a",
+  actor: { kind: "principal", actorKind: "human", principalId: "alice" },
   actorRevision: "actor-a",
   capabilitySnapshotId: "capability-a",
   policyRevision: "policy-a",
@@ -58,6 +59,26 @@ function verify(
 }
 
 describe("memory broker envelope", () => {
+  it("refuses a request whose canonical form exceeds the nesting budget", () => {
+    let payload: unknown = "leaf";
+    for (let depth = 0; depth < 65; depth += 1) {
+      payload = [payload];
+    }
+
+    expect(
+      createMemoryBrokerEnvelope({
+        secret,
+        brokerId: "broker-a",
+        brokerEpoch: "epoch-a",
+        binding,
+        nonce: "nested-request",
+        request: { method: "memory.search", payload },
+        issuedAtMs: 1_000,
+        expiresAtMs: 2_000,
+      }),
+    ).toBeUndefined();
+  });
+
   it("binds a deterministic request and every Gateway-derived authorization revision", () => {
     const envelope = createEnvelope();
     expect(verify(envelope)).toEqual({ ok: true });
@@ -83,6 +104,16 @@ describe("memory broker envelope", () => {
         }),
       ).toEqual({ ok: false, reason: "binding-mismatch" });
     }
+    expect(
+      verify(envelope, {
+        expectedBinding: { ...binding, actor: { ...binding.actor, principalId: "bob" } },
+      }),
+    ).toEqual({ ok: false, reason: "binding-mismatch" });
+    expect(
+      verify(envelope, {
+        expectedBinding: { ...binding, actor: { ...binding.actor, actorKind: "service" } },
+      }),
+    ).toEqual({ ok: false, reason: "binding-mismatch" });
   });
 
   it("rejects cross-broker, stale-epoch, expired, and forged envelopes", () => {

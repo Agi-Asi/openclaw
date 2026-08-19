@@ -586,6 +586,7 @@ export async function createAuthorizedMemoryWriteInvocation(params: {
 export async function writeAuthorizedMemoryForInvocation(params: {
   invocation: AuthorizedMemoryWriteInvocation;
   mutation: AuthorizedMemoryMutation;
+  signal?: AbortSignal;
 }): Promise<MemoryWriteResult | MemoryInvocationUnavailable> {
   const state = writeInvocationStates.get(params.invocation);
   const context = state ? readCurrentWriteContext(state) : undefined;
@@ -597,6 +598,7 @@ export async function writeAuthorizedMemoryForInvocation(params: {
       context,
       plan: state.plan,
       mutation: params.mutation,
+      ...(params.signal ? { signal: params.signal } : {}),
     } as never);
   } catch {
     logMemoryInvocationDiagnostic("authorization-failed");
@@ -613,6 +615,7 @@ export async function stageAuthorizedMemorySealedCompactionForInvocation(params:
   invocation: AuthorizedMemoryWriteInvocation;
   content: string;
   transcriptSource: AuthorizedTranscriptDerivationSource;
+  signal?: AbortSignal;
 }): Promise<AuthorizedSealedCompactionArtifact | MemoryInvocationUnavailable> {
   const state = writeInvocationStates.get(params.invocation);
   const context = state ? readCurrentWriteContext(state) : undefined;
@@ -632,6 +635,7 @@ export async function stageAuthorizedMemorySealedCompactionForInvocation(params:
       plan: state.plan,
       content: params.content,
       transcriptSource: params.transcriptSource,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
   } catch {
     logMemoryInvocationDiagnostic("authorization-failed");
@@ -646,6 +650,7 @@ export async function stageAuthorizedMemorySealedCompactionForInvocation(params:
  */
 export async function materializeAuthorizedMemoryVirtualView(params: {
   invocation: AuthorizedMemoryReadInvocation;
+  signal?: AbortSignal;
 }): Promise<AuthorizedMemoryVirtualView | MemoryInvocationUnavailable> {
   const state = readState(params.invocation);
   const context = state ? readCurrentContext(state) : undefined;
@@ -664,6 +669,7 @@ export async function materializeAuthorizedMemoryVirtualView(params: {
     const view = await state.virtualView.materializeAuthorizedVirtualView({
       context,
       plan: state.plan,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
     const canonical = view
       ? canonicalizeAuthorizedVirtualView({ view, context, plan: state.plan })
@@ -687,6 +693,7 @@ export async function readAuthorizedMemoryVirtualFile(params: {
   invocation: AuthorizedMemoryReadInvocation;
   view: AuthorizedMemoryVirtualView;
   virtualPath: string;
+  signal?: AbortSignal;
 }): Promise<MemoryReadResult | MemoryInvocationUnavailable> {
   const state = readState(params.invocation);
   const context = state ? readCurrentContext(state) : undefined;
@@ -708,6 +715,7 @@ export async function readAuthorizedMemoryVirtualFile(params: {
       plan: state.plan,
       view: params.view,
       virtualPath: params.virtualPath,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
     if (
       !validateEnvelope({
@@ -781,6 +789,7 @@ export async function readAuthorizedMemoryForInvocation(params: {
   handleId: string;
   from?: number;
   lines?: number;
+  signal?: AbortSignal;
 }): Promise<MemoryReadResult | MemoryInvocationUnavailable> {
   const state = readState(params.invocation);
   const context = state ? readCurrentContext(state) : undefined;
@@ -800,6 +809,7 @@ export async function readAuthorizedMemoryForInvocation(params: {
       handle,
       ...(params.from !== undefined ? { from: params.from } : {}),
       ...(params.lines !== undefined ? { lines: params.lines } : {}),
+      ...(params.signal ? { signal: params.signal } : {}),
     } as never);
     if (
       !validateEnvelope({

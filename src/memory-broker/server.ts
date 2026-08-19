@@ -3,13 +3,15 @@ import net from "node:net";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   MemoryBrokerNonceLedger,
+  isMemoryBrokerEnvelope,
   verifyMemoryBrokerEnvelope,
   type MemoryBrokerAuthorizationBinding,
-  type MemoryBrokerEnvelope,
   type MemoryBrokerRequest,
 } from "./protocol.js";
 
 export const MEMORY_BROKER_MAXIMUM_REQUEST_BYTES = 1_048_576;
+export const MEMORY_BROKER_MAXIMUM_CONNECTIONS = 32;
+export const MEMORY_BROKER_PREAUTH_IDLE_TIMEOUT_MS = 5_000;
 
 type MemoryBrokerWireRequest = Readonly<{
   envelope: unknown;
@@ -34,6 +36,7 @@ type PendingMemoryBrokerRequest = Readonly<{
   deadlineMs: number;
   execute: () => Promise<void>;
   rejectBusy: () => void;
+  rejectCancelled: () => void;
 }>;
 
 /**
@@ -43,6 +46,7 @@ type PendingMemoryBrokerRequest = Readonly<{
 class MemoryBrokerAdmissionQueue {
   private readonly pending: PendingMemoryBrokerRequest[] = [];
   private readonly idleWaiters = new Set<() => void>();
+  private deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   private running = 0;
   private accepting = true;
 
@@ -61,17 +65,21 @@ class MemoryBrokerAdmissionQueue {
     }
   }
 
-  submit(request: PendingMemoryBrokerRequest): void {
+  submit(request: PendingMemoryBrokerRequest): () => void {
     if (
       !this.accepting ||
-      request.deadlineMs <= this.now() ||
       (this.running >= this.maximumRunning && this.pending.length >= this.maximumPending)
     ) {
       request.rejectBusy();
-      return;
+      return () => {};
+    }
+    if (request.deadlineMs <= this.now()) {
+      request.rejectCancelled();
+      return () => {};
     }
     this.pending.push(request);
     this.drain();
+    return () => this.cancel(request);
   }
 
   async quiesce(): Promise<void> {
@@ -101,7 +109,7 @@ class MemoryBrokerAdmissionQueue {
     while (this.running < this.maximumRunning && this.pending.length > 0) {
       const next = this.pending.shift()!;
       if (next.deadlineMs <= this.now()) {
-        next.rejectBusy();
+        next.rejectCancelled();
         continue;
       }
       this.running += 1;
@@ -111,7 +119,49 @@ class MemoryBrokerAdmissionQueue {
         this.notifyIdle();
       });
     }
+    this.schedulePendingDeadline();
     this.notifyIdle();
+  }
+
+  private cancel(request: PendingMemoryBrokerRequest): void {
+    const index = this.pending.indexOf(request);
+    if (index === -1) {
+      return;
+    }
+    this.pending.splice(index, 1);
+    this.schedulePendingDeadline();
+    this.drain();
+  }
+
+  private schedulePendingDeadline(): void {
+    if (this.deadlineTimer) {
+      clearTimeout(this.deadlineTimer);
+      this.deadlineTimer = undefined;
+    }
+    const nextDeadline = this.pending.reduce<number | undefined>(
+      (earliest, request) =>
+        earliest === undefined || request.deadlineMs < earliest ? request.deadlineMs : earliest,
+      undefined,
+    );
+    if (nextDeadline === undefined) {
+      return;
+    }
+    this.deadlineTimer = setTimeout(
+      () => {
+        this.deadlineTimer = undefined;
+        const now = this.now();
+        for (let index = this.pending.length - 1; index >= 0; index -= 1) {
+          const request = this.pending[index];
+          if (request.deadlineMs <= now) {
+            this.pending.splice(index, 1);
+            request.rejectCancelled();
+          }
+        }
+        this.drain();
+      },
+      Math.max(1, nextDeadline - this.now()),
+    );
+    this.deadlineTimer.unref?.();
   }
 }
 
@@ -140,15 +190,12 @@ function writeResponse(socket: net.Socket, response: MemoryBrokerWireResponse): 
   }
 }
 
-function asEnvelope(value: unknown): MemoryBrokerEnvelope | undefined {
-  if (
-    !isRecord(value) ||
-    typeof value.nonce !== "string" ||
-    typeof value.expiresAtMs !== "number"
-  ) {
-    return undefined;
-  }
-  return value as unknown as MemoryBrokerEnvelope;
+/**
+ * A successful mutation handler has crossed its durable activation boundary. Its response must
+ * remain committed even if the caller disconnects while the broker is serializing the reply.
+ */
+function isDurableMemoryMutation(request: MemoryBrokerRequest): boolean {
+  return request.method === "memory.write" || request.method === "memory.import";
 }
 
 export type MemoryBrokerServer = Readonly<{
@@ -174,53 +221,96 @@ export async function startMemoryBrokerServer(params: {
   nonceCapacity?: number;
   maximumPending?: number;
   maximumRunning?: number;
+  /** Bound unauthenticated sockets before they can consume a broker worker slot. */
+  maximumConnections?: number;
+  /** A partial frame is untrusted admission state, never an indefinitely retained request. */
+  preauthIdleTimeoutMs?: number;
   maximumRequestBytes?: number;
   now?: () => number;
 }): Promise<MemoryBrokerServer> {
   const now = params.now ?? Date.now;
   const maximumRequestBytes = params.maximumRequestBytes ?? MEMORY_BROKER_MAXIMUM_REQUEST_BYTES;
+  const maximumConnections = params.maximumConnections ?? MEMORY_BROKER_MAXIMUM_CONNECTIONS;
+  const preauthIdleTimeoutMs = params.preauthIdleTimeoutMs ?? MEMORY_BROKER_PREAUTH_IDLE_TIMEOUT_MS;
+  if (
+    !Number.isSafeInteger(maximumConnections) ||
+    maximumConnections < 1 ||
+    !Number.isSafeInteger(preauthIdleTimeoutMs) ||
+    preauthIdleTimeoutMs < 1
+  ) {
+    throw new Error("memory broker connection limits are invalid");
+  }
   const nonceLedger = new MemoryBrokerNonceLedger(params.nonceCapacity ?? 1_024);
   const queue = new MemoryBrokerAdmissionQueue(
     params.maximumPending ?? 128,
     params.maximumRunning ?? 8,
     now,
   );
+  const sockets = new Set<net.Socket>();
   const server = net.createServer({ allowHalfOpen: true }, (socket) => {
-    let buffer = Buffer.alloc(0);
+    // A client that has not completed one bounded signed frame has no broker authority. Keep its
+    // footprint bounded before parsing so partial-frame clients cannot exhaust the broker.
+    if (sockets.size >= maximumConnections) {
+      socket.destroy();
+      return;
+    }
+    sockets.add(socket);
+    // Do not repeatedly concatenate an attacker-controlled partial frame: a byte-at-a-time
+    // slowloris would turn that into quadratic copying before the absolute admission deadline.
+    const frameChunks: Buffer[] = [];
+    let frameByteLength = 0;
     let consumed = false;
     const requestAbort = new AbortController();
+    const preauthIdleTimer = setTimeout(() => {
+      if (!consumed) {
+        consumed = true;
+        requestAbort.abort();
+        socket.destroy();
+      }
+    }, preauthIdleTimeoutMs);
+    preauthIdleTimer.unref?.();
     socket.on("end", () => requestAbort.abort());
-    socket.on("close", () => requestAbort.abort());
+    socket.once("close", () => {
+      clearTimeout(preauthIdleTimer);
+      requestAbort.abort();
+      sockets.delete(socket);
+    });
     socket.on("error", () => requestAbort.abort());
     socket.on("data", (chunk: Buffer) => {
       if (consumed) {
         socket.destroy();
         return;
       }
-      if (buffer.byteLength + chunk.byteLength > maximumRequestBytes) {
+      if (frameByteLength + chunk.byteLength > maximumRequestBytes) {
         consumed = true;
         writeResponse(socket, { ok: false, error: "invalid-request" });
         return;
       }
-      buffer = Buffer.concat([buffer, chunk]);
-      const newline = buffer.indexOf(0x0a);
+      frameChunks.push(chunk);
+      frameByteLength += chunk.byteLength;
+      // Every prior chunk has been checked and contains no newline, so only the latest chunk
+      // needs scanning until there is one complete frame to concatenate exactly once.
+      const newline = chunk.indexOf(0x0a);
       if (newline === -1) {
         return;
       }
       consumed = true;
-      if (buffer.subarray(newline + 1).some((byte) => byte !== 0x0a && byte !== 0x0d)) {
+      clearTimeout(preauthIdleTimer);
+      const buffer = Buffer.concat(frameChunks, frameByteLength);
+      const frameNewline = buffer.indexOf(0x0a);
+      if (buffer.subarray(frameNewline + 1).some((byte) => byte !== 0x0a && byte !== 0x0d)) {
         writeResponse(socket, { ok: false, error: "invalid-request" });
         return;
       }
       let frame: MemoryBrokerWireRequest | undefined;
       try {
-        frame = parseRequest(JSON.parse(buffer.subarray(0, newline).toString("utf8")));
+        frame = parseRequest(JSON.parse(buffer.subarray(0, frameNewline).toString("utf8")));
       } catch {
         frame = undefined;
       }
       const request = frame ? parseMemoryBrokerRequest(frame.request) : undefined;
-      const envelope = frame ? asEnvelope(frame.envelope) : undefined;
-      if (!request || !envelope) {
+      const envelope = frame?.envelope;
+      if (!request || !isMemoryBrokerEnvelope(envelope)) {
         writeResponse(socket, { ok: false, error: "invalid-request" });
         return;
       }
@@ -246,9 +336,10 @@ export async function startMemoryBrokerServer(params: {
         writeResponse(socket, { ok: false, error: "replayed" });
         return;
       }
-      queue.submit({
+      const cancelPending = queue.submit({
         deadlineMs: envelope.expiresAtMs,
         rejectBusy: () => writeResponse(socket, { ok: false, error: "busy" }),
+        rejectCancelled: () => writeResponse(socket, { ok: false, error: "cancelled" }),
         execute: async () => {
           if (requestAbort.signal.aborted || now() >= envelope.expiresAtMs) {
             writeResponse(socket, { ok: false, error: "cancelled" });
@@ -264,18 +355,31 @@ export async function startMemoryBrokerServer(params: {
               request,
               signal: requestAbort.signal,
             });
-            if (requestAbort.signal.aborted || now() >= envelope.expiresAtMs) {
+            if (
+              !isDurableMemoryMutation(request) &&
+              (requestAbort.signal.aborted || now() >= envelope.expiresAtMs)
+            ) {
               writeResponse(socket, { ok: false, error: "cancelled" });
               return;
             }
             writeResponse(socket, { ok: true, value });
           } catch {
-            writeResponse(socket, { ok: false, error: "failed" });
+            writeResponse(socket, {
+              ok: false,
+              error:
+                requestAbort.signal.aborted || now() >= envelope.expiresAtMs
+                  ? "cancelled"
+                  : "failed",
+            });
           } finally {
             clearTimeout(deadline);
           }
         },
       });
+      requestAbort.signal.addEventListener("abort", cancelPending, { once: true });
+      if (requestAbort.signal.aborted) {
+        cancelPending();
+      }
     });
   });
   await unlink(params.socketPath).catch((error: unknown) => {
@@ -291,20 +395,29 @@ export async function startMemoryBrokerServer(params: {
     });
   });
   await chmod(params.socketPath, 0o600);
+  let closePromise: Promise<void> | undefined;
   return Object.freeze({
     socketPath: params.socketPath,
     brokerEpoch: params.brokerEpoch,
     quiesce: () => queue.quiesce(),
     resume: () => queue.resume(),
-    close: async () => {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-      await unlink(params.socketPath).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          throw error;
+    close: () => {
+      closePromise ??= (async () => {
+        // net.Server.close waits for every accepted socket. Destroy incomplete and in-flight
+        // connections first so shutdown cannot be held hostage by a slowloris or stalled client.
+        for (const socket of sockets) {
+          socket.destroy();
         }
-      });
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+        await unlink(params.socketPath).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+          }
+        });
+      })();
+      return closePromise;
     },
   });
 }

@@ -115,10 +115,12 @@ type WorkerInferenceConnectionService = WorkerConnectionService & {
   searchMemory?: (
     identity: WorkerConnectionIdentity,
     request: WorkerMemorySearchParams,
+    signal?: AbortSignal,
   ) => Promise<WorkerServiceResult<unknown, { reason: string }>>;
   readMemory?: (
     identity: WorkerConnectionIdentity,
     request: WorkerMemoryReadParams,
+    signal?: AbortSignal,
   ) => Promise<WorkerServiceResult<unknown, { reason: string }>>;
   startInference?: (
     identity: WorkerConnectionIdentity,
@@ -255,7 +257,7 @@ async function dispatchWorkerRequest(params: {
       rejectWorkerRequest({ ...params, reason: "method-not-allowed" });
       return;
     }
-    const outcome = await service.searchMemory(params.identity, params.request.params);
+    const outcome = await service.searchMemory(params.identity, params.request.params, params.signal);
     if (outcome.ok) {
       params.respond(true, outcome.result);
       return;
@@ -284,7 +286,7 @@ async function dispatchWorkerRequest(params: {
       rejectWorkerRequest({ ...params, reason: "method-not-allowed" });
       return;
     }
-    const outcome = await service.readMemory(params.identity, params.request.params);
+    const outcome = await service.readMemory(params.identity, params.request.params, params.signal);
     if (outcome.ok) {
       params.respond(true, outcome.result);
       return;
@@ -425,6 +427,7 @@ export function attachWorkerWsMessageHandler(params: WorkerWsMessageHandlerParam
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   const sessionOperations = new Set<string>();
+  const memoryOperations = new Map<string, AbortController>();
   const cleanup = () => {
     if (disposed) {
       return;
@@ -432,6 +435,10 @@ export function attachWorkerWsMessageHandler(params: WorkerWsMessageHandlerParam
     disposed = true;
     clearTimeout(expiryTimer);
     sessionOperations.clear();
+    for (const controller of memoryOperations.values()) {
+      controller.abort(new Error("worker memory RPC connection closed"));
+    }
+    memoryOperations.clear();
     params.socket.off("message", onMessage);
   };
   const closeWorker = (code: number, reason: WorkerProtocolCloseReason) => {
@@ -693,6 +700,24 @@ export function attachWorkerWsMessageHandler(params: WorkerWsMessageHandlerParam
         .finally(() => {
           sessionOperations.delete(parsed.id);
         });
+      return;
+    }
+    const isMemoryOperation =
+      parsed.method === WORKER_MEMORY_METHODS[0] || parsed.method === WORKER_MEMORY_METHODS[1];
+    if (isMemoryOperation) {
+      if (memoryOperations.has(parsed.id)) {
+        failFrame(1008, "invalid-frame");
+        return;
+      }
+      const controller = new AbortController();
+      memoryOperations.set(parsed.id, controller);
+      try {
+        await dispatch(controller.signal);
+      } finally {
+        if (memoryOperations.get(parsed.id) === controller) {
+          memoryOperations.delete(parsed.id);
+        }
+      }
       return;
     }
     await dispatch();

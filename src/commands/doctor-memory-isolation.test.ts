@@ -19,6 +19,9 @@ describe("runDoctorMemoryIsolation", () => {
   beforeEach(() => {
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-doctor-memory-isolation-"));
     vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    const configPath = path.join(stateDir, "openclaw.json");
+    fs.writeFileSync(configPath, "{}\n", "utf8");
+    vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
     const database = openOpenClawAgentDatabase({ agentId: "main" });
     database.db
       .prepare(
@@ -36,27 +39,29 @@ describe("runDoctorMemoryIsolation", () => {
     fs.rmSync(stateDir, { force: true, recursive: true });
   });
 
-  it("owns the reversible configured-agent shadow lifecycle", () => {
-    expect(runDoctorMemoryIsolation({ action: "status", cfg })).toEqual({
+  it("owns the reversible configured-agent shadow lifecycle", async () => {
+    await expect(runDoctorMemoryIsolation({ action: "status", cfg })).resolves.toEqual({
       agentId: "main",
       mode: "legacy",
       restartRequired: false,
     });
-    expect(runDoctorMemoryIsolation({ action: "shadow-read-only", cfg, nowMs: 1 })).toEqual({
+    await expect(
+      runDoctorMemoryIsolation({ action: "shadow-read-only", cfg, nowMs: 1 }),
+    ).resolves.toEqual({
       agentId: "main",
       mode: "shadow-read-only",
       restartRequired: true,
     });
-    expect(runDoctorMemoryIsolation({ action: "legacy", cfg })).toEqual({
+    await expect(runDoctorMemoryIsolation({ action: "legacy", cfg })).resolves.toEqual({
       agentId: "main",
       mode: "legacy",
       restartRequired: true,
     });
   });
 
-  it("refuses an agent outside runtime configuration", () => {
-    expect(() =>
+  it("refuses an agent outside runtime configuration", async () => {
+    await expect(
       runDoctorMemoryIsolation({ action: "shadow-read-only", agentId: "missing", cfg }),
-    ).toThrow('Unknown configured agent id "missing".');
+    ).rejects.toThrow('Unknown configured agent id "missing".');
   });
 });

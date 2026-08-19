@@ -25,9 +25,19 @@ type NodeWorkerLaunchState =
   | "interrupted"
   | "cancelled";
 export type NodeWorkerTerminalState = Exclude<NodeWorkerLaunchState, "pending" | "running">;
+export type NodeWorkerContainerEngineId = "docker" | "podman";
 
-type NodeWorkerLaunchDatabase = Pick<OpenClawStateDatabase, "node_worker_launches">;
+type NodeWorkerLaunchDatabase = Pick<
+  OpenClawStateDatabase,
+  "node_worker_container_launches" | "node_worker_container_leases" | "node_worker_launches"
+>;
 type NodeWorkerLaunchRow = Selectable<NodeWorkerLaunchDatabase["node_worker_launches"]>;
+type NodeWorkerContainerLaunchRow = Selectable<
+  NodeWorkerLaunchDatabase["node_worker_container_launches"]
+>;
+type NodeWorkerContainerLeaseRow = Selectable<
+  NodeWorkerLaunchDatabase["node_worker_container_leases"]
+>;
 
 export type NodeWorkerLaunchReceipt = {
   launchId: string;
@@ -107,6 +117,32 @@ function readRow(database: DatabaseSync, launchId: string): NodeWorkerLaunchRow 
   );
 }
 
+function readContainerLaunchRow(
+  database: DatabaseSync,
+  launchId: string,
+): NodeWorkerContainerLaunchRow | undefined {
+  return executeSqliteQueryTakeFirstSync(
+    database,
+    query(database)
+      .selectFrom("node_worker_container_launches")
+      .selectAll()
+      .where("launch_id", "=", launchId),
+  );
+}
+
+function readContainerLeaseRow(
+  database: DatabaseSync,
+  launchId: string,
+): NodeWorkerContainerLeaseRow | undefined {
+  return executeSqliteQueryTakeFirstSync(
+    database,
+    query(database)
+      .selectFrom("node_worker_container_leases")
+      .selectAll()
+      .where("launch_id", "=", launchId),
+  );
+}
+
 function readNonterminalCount(database: DatabaseSync): number {
   return (
     executeSqliteQueryTakeFirstSync(
@@ -153,6 +189,18 @@ function pruneTerminalRows(params: {
   if (launchIds.length === 0) {
     return 0;
   }
+  executeSqliteQuerySync(
+    params.database,
+    query(params.database)
+      .deleteFrom("node_worker_container_launches")
+      .where("launch_id", "in", launchIds),
+  );
+  executeSqliteQuerySync(
+    params.database,
+    query(params.database)
+      .deleteFrom("node_worker_container_leases")
+      .where("launch_id", "in", launchIds),
+  );
   const result = executeSqliteQuerySync(
     params.database,
     query(params.database)
@@ -208,6 +256,12 @@ function validateIdentifier(value: string, label: string): void {
 function validatePlanHash(value: string): void {
   if (!/^[a-f0-9]{64}$/u.test(value)) {
     throw new Error("node worker plan hash must be 64 lowercase hexadecimal characters");
+  }
+}
+
+function validateContainerEngine(value: string): asserts value is NodeWorkerContainerEngineId {
+  if (value !== "docker" && value !== "podman") {
+    throw new Error("node worker container engine must be docker or podman");
   }
 }
 
@@ -477,6 +531,98 @@ export class NodeWorkerLaunchStore {
     return this.write("node-worker-launch.get", (database) => {
       const row = readRow(database, launchId);
       return row ? receiptFromRow(row) : undefined;
+    });
+  }
+
+  recordContainerLaunch(params: {
+    launchId: string;
+    planHash: string;
+    engine: NodeWorkerContainerEngineId;
+    expiresAtMs: number;
+  }): void {
+    validateIdentifier(params.launchId, "node worker launch id");
+    validatePlanHash(params.planHash);
+    validateContainerEngine(params.engine);
+    validateTimestamp(params.expiresAtMs);
+    this.write("node-worker-launch.record-container", (database) => {
+      const launch = requireMatchingRow(database, params.launchId, params.planHash);
+      if (TERMINAL_STATES.has(launch.state)) {
+        throw new Error("cannot record a container for a terminal node worker launch");
+      }
+      const existing = readContainerLaunchRow(database, params.launchId);
+      if (!existing) {
+        executeSqliteQuerySync(
+          database,
+          query(database).insertInto("node_worker_container_launches").values({
+            launch_id: params.launchId,
+            plan_hash: params.planHash,
+            container_engine: params.engine,
+          }),
+        );
+      } else if (
+        existing.plan_hash !== params.planHash ||
+        existing.container_engine !== params.engine
+      ) {
+        throw new Error("node worker container launch metadata does not match the durable launch");
+      }
+      const lease = readContainerLeaseRow(database, params.launchId);
+      if (!lease) {
+        executeSqliteQuerySync(
+          database,
+          query(database).insertInto("node_worker_container_leases").values({
+            launch_id: params.launchId,
+            plan_hash: params.planHash,
+            expires_at_ms: params.expiresAtMs,
+          }),
+        );
+      } else if (lease.plan_hash !== params.planHash || lease.expires_at_ms !== params.expiresAtMs) {
+        throw new Error("node worker container lease does not match the durable launch");
+      }
+    });
+  }
+
+  getContainerLaunchEngine(params: {
+    launchId: string;
+    planHash: string;
+  }): NodeWorkerContainerEngineId | undefined {
+    validateIdentifier(params.launchId, "node worker launch id");
+    validatePlanHash(params.planHash);
+    return this.write("node-worker-launch.get-container", (database) => {
+      const metadata = readContainerLaunchRow(database, params.launchId);
+      if (!metadata) {
+        return undefined;
+      }
+      if (metadata.plan_hash !== params.planHash) {
+        throw new Error("node worker container launch metadata does not match the durable launch");
+      }
+      validateContainerEngine(metadata.container_engine);
+      return metadata.container_engine;
+    });
+  }
+
+  getContainerLaunchLease(params: {
+    launchId: string;
+    planHash: string;
+  }): { engine: NodeWorkerContainerEngineId; expiresAtMs: number } | undefined {
+    validateIdentifier(params.launchId, "node worker launch id");
+    validatePlanHash(params.planHash);
+    return this.write("node-worker-launch.get-container-lease", (database) => {
+      const metadata = readContainerLaunchRow(database, params.launchId);
+      const lease = readContainerLeaseRow(database, params.launchId);
+      if (!metadata && !lease) {
+        return undefined;
+      }
+      if (!metadata || !lease) {
+        // Launches written before leases existed still recover through the
+        // engine metadata and are interrupted conservatively on restart.
+        return undefined;
+      }
+      if (metadata.plan_hash !== params.planHash || lease.plan_hash !== params.planHash) {
+        throw new Error("node worker container lease metadata does not match the durable launch");
+      }
+      validateContainerEngine(metadata.container_engine);
+      validateTimestamp(lease.expires_at_ms);
+      return { engine: metadata.container_engine, expiresAtMs: lease.expires_at_ms };
     });
   }
 

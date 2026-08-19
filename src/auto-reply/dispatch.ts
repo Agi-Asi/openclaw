@@ -337,7 +337,6 @@ export async function dispatchInboundMessage(params: {
   }
   let settledReceipt: DispatchFromConfigResult["settledReceipt"];
   installMemoryEgressAdmission(params.dispatcher, finalized, replyPayloadRunState);
-  let settledReceipt: DispatchFromConfigResult["settledReceipt"];
   const result = await withReplyDispatcher({
     dispatcher: params.dispatcher,
     onSettled: params.onSettled,

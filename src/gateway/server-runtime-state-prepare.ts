@@ -166,6 +166,7 @@ export async function prepareGatewayKernelState(params: {
     bindDeviceNodeControl,
     bindNodeWorkspaceBindingResolver,
     handleNodeWorkerBundleTransferRequest,
+    handleNodeWorkerProjectionTransferRequest,
     handleNodeWorkspaceTransferRequest,
   } = workerEnvironmentRuntime;
   // Assigned once approval managers exist; placement dispatch must not run before then.
@@ -461,6 +462,7 @@ export async function prepareGatewayKernelState(params: {
     handleWatchNodeRequest: async (req: IncomingMessage, res: ServerResponse) =>
       (await watchNodeRequestHandler.current?.(req, res)) ?? false,
     handleNodeWorkerBundleTransferRequest,
+    handleNodeWorkerProjectionTransferRequest,
     handleNodeWorkspaceTransferRequest,
     workerIngressEnabled: Boolean(workerEnvironmentService),
     desktopSessionRegistry,

@@ -83,6 +83,51 @@ function launchIds(database: ReturnType<typeof openOpenClawStateDatabase>["db"])
 }
 
 describe("node worker launch store pruning", () => {
+  it("persists the selected container engine with the durable launch identity", () => {
+    const { database, store } = fixture();
+    const supervisor = requireNodeWorkerProcessIdentity(process.pid);
+    const launchId = "container-launch";
+    const planHash = "c".repeat(64);
+    store.claim(
+      {
+        launchId,
+        planHash,
+        gatewayNamespace: "gateway-1",
+        environmentId: "environment-1",
+        sessionId: "session-1",
+        ownerEpoch: 3,
+        placementGeneration: 4,
+        runId: "run-1",
+      },
+      supervisor,
+      2,
+      NOW_MS,
+    );
+
+    store.recordContainerLaunch({
+      launchId,
+      planHash,
+      engine: "podman",
+      expiresAtMs: NOW_MS + DAY_MS,
+    });
+
+    expect(store.getContainerLaunchEngine({ launchId, planHash })).toBe("podman");
+    expect(store.getContainerLaunchLease({ launchId, planHash })).toEqual({
+      engine: "podman",
+      expiresAtMs: NOW_MS + DAY_MS,
+    });
+    expect(
+      database
+        .prepare("SELECT plan_hash, container_engine FROM node_worker_container_launches")
+        .all(),
+    ).toEqual([{ plan_hash: planHash, container_engine: "podman" }]);
+    expect(
+      database
+        .prepare("SELECT plan_hash, expires_at_ms FROM node_worker_container_leases")
+        .all(),
+    ).toEqual([{ plan_hash: planHash, expires_at_ms: NOW_MS + DAY_MS }]);
+  });
+
   it("lazily ensures the terminal expiry index for existing databases", () => {
     const { database, env } = fixture();
     expect(hasTerminalExpiryIndex(database)).toBe(true);

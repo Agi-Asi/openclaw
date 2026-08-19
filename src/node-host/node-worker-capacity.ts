@@ -9,10 +9,7 @@ import {
   type NodeWorkerLaunchClaimResult,
   type NodeWorkerLaunchReceipt,
 } from "./node-worker-launch-store.js";
-import {
-  inspectNodeWorkerProcessIdentity,
-  type NodeWorkerProcessIdentity,
-} from "./node-worker-process-identity.js";
+import { type NodeWorkerProcessIdentity } from "./node-worker-process-identity.js";
 
 const DEFAULT_WORKER_CAPACITY = 2;
 const DEFAULT_CAPACITY_WAIT_MS = 10_000;
@@ -69,28 +66,14 @@ export class NodeWorkerCapacity {
   }
 
   async initialize(
-    recoverRunning: (receipt: NodeWorkerLaunchReceipt) => Promise<void>,
+    recoverNonterminal: (receipt: NodeWorkerLaunchReceipt) => Promise<void>,
   ): Promise<void> {
     this.onCapacityChanged?.(this.publishedCapacity);
     for (const receipt of this.store.listNonterminal()) {
-      if (receipt.state === "pending") {
-        const supervisorState = inspectNodeWorkerProcessIdentity(receipt.supervisor);
-        if (supervisorState === "dead" || supervisorState === "reused") {
-          this.finish(
-            {
-              launchId: receipt.launchId,
-              planHash: receipt.planHash,
-              supervisor: receipt.supervisor,
-              worker: null,
-              state: "interrupted",
-              errorText: "node host stopped before the worker launch started",
-            },
-            false,
-          );
-        }
-        continue;
-      }
-      await recoverRunning(receipt);
+      // Pending work can already own a staged projection or relay directory.
+      // Recovery therefore belongs to the supervisor, which owns those paths,
+      // rather than directly settling the launch slot here.
+      await recoverNonterminal(receipt);
     }
     this.store.pruneExpiredTerminal();
     this.refresh(true);

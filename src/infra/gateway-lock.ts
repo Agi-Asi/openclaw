@@ -54,7 +54,13 @@ const LockPayloadSchema = z.object({
   configPath: z.string(),
   port: z.number().int().min(1).max(65_535).optional(),
   role: z
-    .enum(["gateway", "agent-embedded", "skill-workshop-apply", "sqlite-maintenance"])
+    .enum([
+      "gateway",
+      "agent-embedded",
+      "skill-workshop-apply",
+      "sqlite-maintenance",
+      "offline-maintenance",
+    ])
     .optional(),
   stateDir: z.string().optional(),
   startTime: z.number().optional(),
@@ -69,7 +75,12 @@ type GatewayLockHandle = {
   release: () => Promise<void>;
 };
 
-type GatewayLockRole = "gateway" | "agent-embedded" | "skill-workshop-apply" | "sqlite-maintenance";
+type GatewayLockRole =
+  | "gateway"
+  | "agent-embedded"
+  | "skill-workshop-apply"
+  | "sqlite-maintenance"
+  | "offline-maintenance";
 
 export type GatewayLockIdentity = {
   pid: number;
@@ -215,6 +226,7 @@ async function resolveGatewayOwnerStatus(
   if (
     role === "agent-embedded" ||
     role === "sqlite-maintenance" ||
+    role === "offline-maintenance" ||
     role === "skill-workshop-apply"
   ) {
     const args = readFn(pid);
@@ -226,6 +238,11 @@ async function resolveGatewayOwnerStatus(
       // local TUI, and CLI model probes), so validate the owning OpenClaw process
       // instead of baking one command spelling into stale-lock recovery.
       return isOpenClawArgv(args) ? "alive" : "dead";
+    }
+    if (role === "offline-maintenance") {
+      return isOpenClawCommandArgv(args, "doctor") || isOpenClawCommandArgv(args, "backup")
+        ? "alive"
+        : "dead";
     }
     const command = role === "sqlite-maintenance" ? "doctor" : "skills";
     return isOpenClawCommandArgv(args, command) ? "alive" : "dead";

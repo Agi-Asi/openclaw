@@ -8,9 +8,17 @@ import {
   WORKER_RPC_SET_VERSION,
 } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
 import { NODE_WORKER_CAPACITY_EXHAUSTED_ERROR_CODE } from "../../infra/node-commands.js";
-import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner-inventory.js";
 import {
+  NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE,
+  NODE_WORKER_SUPERVISOR_PROCESS_ISOLATION_PROTOCOL_FEATURE,
+  NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
+} from "../../infra/node-runner-inventory.js";
+import {
+  NODE_WORKER_EXECUTION_CONTAINER_V1,
+  NODE_WORKER_EXECUTION_HOST_V1,
+  nodeWorkerMemoryProjectionLaunchBinding,
   nodeWorkerPlanHash,
+  type NodeWorkerExecution,
   type NodeWorkerLaunchInput,
   type NodeWorkerSupervisorReceipt,
 } from "../../worker/node-supervisor-protocol.js";
@@ -27,7 +35,12 @@ const WORKER_RUNS = {
   protocolFeatures: [...WORKER_PROTOCOL_FEATURES],
 };
 
-function nodeProof(connId = "conn-1", available = 2): NodeWorkerSupervisorNodeProof {
+function nodeProof(
+  connId = "conn-1",
+  available = 2,
+  execution: NodeWorkerExecution = { kind: NODE_WORKER_EXECUTION_HOST_V1 },
+): NodeWorkerSupervisorNodeProof {
+  const container = execution.kind === NODE_WORKER_EXECUTION_CONTAINER_V1;
   return {
     nodeId: DEVICE_ID,
     connId,
@@ -35,8 +48,16 @@ function nodeProof(connId = "conn-1", available = 2): NodeWorkerSupervisorNodePr
     pairingGeneration: "generation-1",
     clientId: GATEWAY_CLIENT_IDS.NODE_HOST,
     clientMode: GATEWAY_CLIENT_MODES.NODE,
-    protocolFeature: NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
-    workerHost: { enabled: true, capacity: { total: 2, available } },
+    protocolFeature: container
+      ? NODE_WORKER_SUPERVISOR_MEMORY_PROJECTION_PROTOCOL_FEATURE
+      : NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
+    workerHost: {
+      enabled: true,
+      capacity: { total: 2, available },
+      ...(container
+        ? { processIsolation: { kind: NODE_WORKER_EXECUTION_CONTAINER_V1, memoryProjection: 1 } }
+        : {}),
+    },
     commands: ["system.run"],
   };
 }
@@ -47,6 +68,7 @@ function launchInput(): NodeWorkerLaunchInput {
     gatewayNamespace: "gateway-1",
     expectedBundleHash: WORKER_RUNS.bundleHash,
     placementGeneration: 4,
+    execution: { kind: NODE_WORKER_EXECUTION_HOST_V1 },
     descriptor: {
       version: 4,
       admission: {
@@ -59,6 +81,7 @@ function launchInput(): NodeWorkerLaunchInput {
       },
       assignment: {
         agentId: "agent-1",
+        memoryReadEnforced: false,
         operationalRunInstance: { instanceId: "instance-1", runId: "run-1" },
         agentRuntimeIdentityToken: "signed-runtime-token",
         runId: "run-1",
@@ -80,6 +103,7 @@ function launchInput(): NodeWorkerLaunchInput {
 function receipt(
   input: NodeWorkerLaunchInput,
   state: NodeWorkerSupervisorReceipt["state"],
+  executionStarted = true,
 ): NodeWorkerSupervisorReceipt {
   const identity = {
     launchId: input.launchId,
@@ -102,7 +126,7 @@ function receipt(
     };
   }
   if (state === "failed" || state === "interrupted" || state === "cancelled") {
-    return { ...identity, state, errorText: `worker ${state}` };
+    return { ...identity, state, errorText: `worker ${state}`, executionStarted };
   }
   return { ...identity, state };
 }
@@ -125,6 +149,18 @@ function launchRequest(input = launchInput()) {
     isDispatchAuthorized: () => true,
     isCancellationAuthorized: () => true,
     timeoutMs: 10_000,
+  };
+}
+
+function issuedProjection(input: Omit<NodeWorkerLaunchInput, "memoryProjection">, reference: string) {
+  return {
+    version: 1 as const,
+    reference,
+    binding: {
+      launch: nodeWorkerMemoryProjectionLaunchBinding(input),
+      authorization: "b".repeat(64),
+    },
+    expiresAtMs: Date.now() + 60_000,
   };
 }
 
@@ -170,6 +206,70 @@ describe("node worker launch adapter", () => {
       "worker.launch.v1",
       "worker.status.v1",
     ]);
+  });
+
+  it("reports execution readiness only after the durable worker receipt", async () => {
+    const input = launchInput();
+    const callbacks: string[] = [];
+    let statusCalls = 0;
+    const invoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>(async (request) => {
+      if (request.command === "worker.launch.v1") {
+        request.onDispatchReady?.("invoke-1");
+        return wire(receipt(input, "pending"));
+      }
+      statusCalls += 1;
+      return wire(receipt(input, statusCalls === 1 ? "running" : "completed"));
+    });
+    const adapter = createNodeWorkerLaunchAdapter({
+      getTransport: () => transportWith(invoke),
+      sleep: async () => {},
+    });
+
+    const launched = adapter.launch({
+      ...launchRequest(input),
+      onDispatchReady: () => callbacks.push("dispatch"),
+      onExecutionReady: () => callbacks.push("execution"),
+    });
+
+    await expect(launched).resolves.toEqual(receipt(input, "completed"));
+    expect(callbacks).toEqual(["dispatch", "execution"]);
+  });
+
+  it("does not report execution readiness when a launch terminates before child acknowledgement", async () => {
+    const input = launchInput();
+    const callbacks: string[] = [];
+    const invoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>(async (request) => {
+      request.onDispatchReady?.("invoke-1");
+      return wire(receipt(input, "cancelled", false));
+    });
+    const adapter = createNodeWorkerLaunchAdapter({
+      getTransport: () => transportWith(invoke),
+    });
+
+    await expect(
+      adapter.launch({
+        ...launchRequest(input),
+        onDispatchReady: () => callbacks.push("dispatch"),
+        onExecutionReady: () => callbacks.push("execution"),
+      }),
+    ).resolves.toEqual(receipt(input, "cancelled", false));
+    expect(callbacks).toEqual(["dispatch"]);
+  });
+
+  it("rejects a container launch on a v5 node before invoking the supervisor", async () => {
+    const input = {
+      ...launchInput(),
+      execution: { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 } as const,
+    };
+    const invoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>();
+    const adapter = createNodeWorkerLaunchAdapter({
+      getTransport: () => transportWith(invoke),
+    });
+
+    await expect(adapter.launch(launchRequest(input))).rejects.toMatchObject({
+      code: "PROCESS_ISOLATION_UNAVAILABLE",
+    });
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("reacquires the node and replays the identical launch after ambiguous disconnect", async () => {
@@ -270,6 +370,101 @@ describe("node worker launch adapter", () => {
       "worker.launch.v1",
       "worker.status.v1",
     ]);
+  });
+
+  it("keeps status and cancellation bound to the prepared container connection after inventory changes", async () => {
+    const base = {
+      ...launchInput(),
+      execution: { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 } as const,
+      descriptor: {
+        ...launchInput().descriptor,
+        assignment: {
+          ...launchInput().descriptor.assignment,
+          memoryReadEnforced: true,
+          workspaceDir: "/workspace",
+        },
+      },
+    };
+    const input = { ...base, memoryProjection: issuedProjection(base, "a".repeat(43)) };
+    const controller = new AbortController();
+    let discoveryCount = 0;
+    let sleepCount = 0;
+    const invoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>(async (request) => {
+      if (request.command === "worker.launch.v1") {
+        return wire(receipt(input, "running"));
+      }
+      if (request.command === "worker.status.v1") {
+        return wire(receipt(input, "running"));
+      }
+      return wire(receipt(input, "cancelled"));
+    });
+    const adapter = createNodeWorkerLaunchAdapter({
+      getTransport: () =>
+        transportWith(invoke, async () => [
+          discoveryCount++ <= 1
+            ? nodeProof("conn-container", 2, input.execution)
+            : nodeProof("conn-container"),
+        ]),
+      sleep: async () => {
+        if (++sleepCount === 2) {
+          controller.abort();
+        }
+      },
+    });
+
+    await expect(
+      adapter.launch({
+        ...launchRequest(input),
+        prepareMemoryProjection: async () => input.memoryProjection,
+        signal: controller.signal,
+      }),
+    ).resolves.toEqual(receipt(input, "cancelled"));
+    expect(invoke.mock.calls.map(([request]) => request.command)).toEqual([
+      "worker.launch.v1",
+      "worker.status.v1",
+      "worker.cancel.v1",
+    ]);
+    expect(invoke.mock.calls.slice(1).map(([request]) => request.node.connId)).toEqual([
+      "conn-container",
+      "conn-container",
+    ]);
+  });
+
+  it("does not replay, poll, or cancel an issued projection through a replacement node connection", async () => {
+    const base = {
+      ...launchInput(),
+      execution: { kind: NODE_WORKER_EXECUTION_CONTAINER_V1 } as const,
+      descriptor: {
+        ...launchInput().descriptor,
+        assignment: {
+          ...launchInput().descriptor.assignment,
+          memoryReadEnforced: true,
+          workspaceDir: "/workspace",
+        },
+      },
+    };
+    const input = { ...base, memoryProjection: issuedProjection(base, "b".repeat(43)) };
+    const invoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>(async () =>
+      wire(receipt(input, "running")),
+    );
+    let discoveryCount = 0;
+    const adapter = createNodeWorkerLaunchAdapter({
+      getTransport: () =>
+        transportWith(invoke, async () => [
+          discoveryCount++ <= 1
+            ? nodeProof("conn-issued", 2, input.execution)
+            : nodeProof("conn-replacement"),
+        ]),
+      sleep: async () => {},
+    });
+
+    await expect(
+      adapter.launch({
+        ...launchRequest(input),
+        prepareMemoryProjection: async () => input.memoryProjection,
+      }),
+    ).rejects.toThrow("cancellation could not be confirmed");
+    expect(invoke.mock.calls.map(([request]) => request.command)).toEqual(["worker.launch.v1"]);
   });
 
   it("replays launch when status cannot find the durable receipt", async () => {

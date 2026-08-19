@@ -9,10 +9,12 @@ import type {
 import type {
   MemoryBrokerAuthorizationBinding,
   MemoryBrokerHandler,
+  MemoryBrokerStartupContext,
 } from "openclaw/plugin-sdk/memory-broker-runtime";
 import {
   builtinScopedMemoryAuthorizedRuntime,
   builtinScopedMemoryVirtualView,
+  recoverBuiltinScopedMemoryPendingWrites,
 } from "./scoped-memory-runtime.js";
 
 type BrokerPayload = Readonly<{
@@ -37,6 +39,27 @@ function asPayload(value: unknown): BrokerPayload {
   return value as BrokerPayload;
 }
 
+function hasBoundActor(params: {
+  binding: MemoryBrokerAuthorizationBinding["actor"];
+  context: MemoryAccessContext;
+}): boolean {
+  const { binding, context } = params;
+  if (context.actor.kind !== binding.kind) {
+    return false;
+  }
+  if (binding.kind === "principal") {
+    return (
+      context.actor.kind === "principal" &&
+      context.actor.actorKind === binding.actorKind &&
+      context.actor.principalId === binding.principalId
+    );
+  }
+  return (
+    context.actor.kind === "unattributed" &&
+    context.actor.transportAuditRef === binding.transportAuditRef
+  );
+}
+
 function assertBoundContext(params: {
   binding: MemoryBrokerAuthorizationBinding;
   context: MemoryAccessContext;
@@ -52,6 +75,7 @@ function assertBoundContext(params: {
     context.runId !== binding.runId ||
     context.contextFingerprint !== binding.contextFingerprint ||
     context.subjectRevision !== binding.subjectRevision ||
+    !hasBoundActor({ binding: binding.actor, context }) ||
     context.actor.evidenceRevision !== binding.actorRevision ||
     capabilitySnapshotId !== binding.capabilitySnapshotId ||
     policyRevision !== binding.policyRevision ||
@@ -73,6 +97,11 @@ function readPlan(payload: BrokerPayload): AuthorizedMemoryPlan {
     throw new Error("memory broker plan is unavailable");
   }
   return payload.plan;
+}
+
+/** Complete selected-memory recovery before the broker child exposes its authenticated socket. */
+export function initializeMemoryBroker(context: MemoryBrokerStartupContext): void {
+  recoverBuiltinScopedMemoryPendingWrites(context.agentIds);
 }
 
 /**
@@ -115,6 +144,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           handle: payload.handle,
           ...(Number.isSafeInteger(payload.from) ? { from: payload.from } : {}),
           ...(Number.isSafeInteger(payload.lines) ? { lines: payload.lines } : {}),
+          signal,
         });
       }
       case "memory.virtual-view": {
@@ -125,6 +155,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
         return await builtinScopedMemoryVirtualView.materializeAuthorizedVirtualView({
           context,
           plan: readPlan(payload) as never,
+          signal,
         });
       }
       case "memory.virtual-file": {
@@ -141,6 +172,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           plan: readPlan(payload) as never,
           view: payload.view,
           virtualPath: payload.virtualPath,
+          signal,
         });
       }
       case "memory.write":
@@ -151,6 +183,7 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           context: payload.context,
           plan: readPlan(payload),
           mutation: payload.mutation,
+          signal,
         } as never);
       case "memory.import":
         if (!payload.mutation || payload.mutation.kind !== "import") {
@@ -160,11 +193,13 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           context: payload.context,
           plan: readPlan(payload),
           mutation: payload.mutation,
+          signal,
         } as never);
       case "memory.sync":
         return await builtinScopedMemoryAuthorizedRuntime.syncAuthorized({
           context: payload.context,
           plan: readPlan(payload),
+          signal,
         } as never);
       case "memory.export":
         if (!Array.isArray(payload.handles)) {
@@ -174,11 +209,13 @@ export function createMemoryBrokerHandler(): MemoryBrokerHandler {
           context: payload.context,
           plan: readPlan(payload),
           handles: payload.handles,
+          signal,
         } as never);
       case "memory.status":
         return await builtinScopedMemoryAuthorizedRuntime.statusAuthorized({
           context: payload.context,
           plan: readPlan(payload),
+          signal,
         } as never);
       default:
         throw new Error("memory broker operation is unavailable");

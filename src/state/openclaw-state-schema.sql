@@ -1350,6 +1350,30 @@ CREATE TABLE IF NOT EXISTS node_worker_launches (
   )
 ) STRICT;
 
+-- Container launch metadata is deliberately separate from the public receipt.
+-- Recovery needs the selected engine to prove cleanup; worker descriptors and
+-- credentials remain process memory only.
+CREATE TABLE IF NOT EXISTS node_worker_container_launches (
+  launch_id TEXT NOT NULL PRIMARY KEY
+    CHECK (length(launch_id) BETWEEN 1 AND 256 AND instr(launch_id, char(0)) = 0),
+  plan_hash TEXT NOT NULL
+    CHECK (length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'),
+  container_engine TEXT NOT NULL CHECK (container_engine IN ('docker', 'podman')),
+  FOREIGN KEY (launch_id) REFERENCES node_worker_launches(launch_id) ON DELETE CASCADE
+) STRICT;
+
+-- The container lease is separate from the launch receipt and engine metadata.
+-- It lets a restarted node withdraw an expired projection without retaining the
+-- descriptor, projection content, or any Gateway credential in durable state.
+CREATE TABLE IF NOT EXISTS node_worker_container_leases (
+  launch_id TEXT NOT NULL PRIMARY KEY
+    CHECK (length(launch_id) BETWEEN 1 AND 256 AND instr(launch_id, char(0)) = 0),
+  plan_hash TEXT NOT NULL
+    CHECK (length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'),
+  expires_at_ms INTEGER NOT NULL CHECK (expires_at_ms BETWEEN 0 AND 9007199254740991),
+  FOREIGN KEY (launch_id) REFERENCES node_worker_launches(launch_id) ON DELETE CASCADE
+) STRICT;
+
 CREATE INDEX IF NOT EXISTS idx_node_worker_launches_terminal_completed
   ON node_worker_launches(completed_at_ms, launch_id)
   WHERE completed_at_ms IS NOT NULL;

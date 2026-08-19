@@ -8,6 +8,9 @@ const backupVerifyCommandMock = vi.hoisted(() => vi.fn());
 const writeRuntimeJsonMock = vi.hoisted(() => vi.fn());
 const formatBackupCreateSummaryMock = vi.hoisted(() => vi.fn(() => ["backup ok"]));
 const recordBackupRunOutcomeMock = vi.hoisted(() => vi.fn());
+const withDoctorSqliteMaintenanceLockMock = vi.hoisted(() =>
+  vi.fn(async (params: { run: () => Promise<unknown> }) => await params.run()),
+);
 
 vi.mock("../infra/backup-create.js", () => ({
   createBackupArchive: createBackupArchiveMock,
@@ -28,6 +31,10 @@ vi.mock("../runtime.js", async () => {
 
 vi.mock("../state/backup-run-records.js", () => ({
   recordBackupRunOutcome: recordBackupRunOutcomeMock,
+}));
+
+vi.mock("./doctor-sqlite-maintenance-lock.js", () => ({
+  withDoctorSqliteMaintenanceLock: withDoctorSqliteMaintenanceLockMock,
 }));
 
 function createRuntime(): RuntimeEnv {
@@ -54,6 +61,10 @@ describe("backupCreateCommand verify wrapper", () => {
     formatBackupCreateSummaryMock.mockReset();
     formatBackupCreateSummaryMock.mockReturnValue(["backup ok"]);
     recordBackupRunOutcomeMock.mockReset();
+    withDoctorSqliteMaintenanceLockMock.mockReset();
+    withDoctorSqliteMaintenanceLockMock.mockImplementation(
+      async (params: { run: () => Promise<unknown> }) => await params.run(),
+    );
   });
 
   it("optionally verifies the archive after writing it", async () => {
@@ -93,6 +104,31 @@ describe("backupCreateCommand verify wrapper", () => {
     });
     expect(verifyLog).not.toBe(runtime.log);
     expect(typeof verifyLog).toBe("function");
+    expect(withDoctorSqliteMaintenanceLockMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "backup archive creation",
+        protectedPaths: [expect.any(String)],
+        run: expect.any(Function),
+      }),
+    );
+  });
+
+  it("does not take offline state ownership for dry runs or config-only archives", async () => {
+    createBackupArchiveMock.mockResolvedValue({
+      archivePath: "/tmp/openclaw-backup.tar.gz",
+      archiveRoot: "openclaw-backup",
+      createdAt: "2026-04-07T00:00:00.000Z",
+      assets: [],
+      verified: false,
+      dryRun: true,
+      includeWorkspace: false,
+      onlyConfig: false,
+    });
+
+    await backupCreateCommand(createRuntime(), { dryRun: true });
+    await backupCreateCommand(createRuntime(), { onlyConfig: true });
+
+    expect(withDoctorSqliteMaintenanceLockMock).not.toHaveBeenCalled();
   });
 
   it("does not claim completion when both backup and outcome recording fail", async () => {

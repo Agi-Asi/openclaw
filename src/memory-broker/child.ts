@@ -1,4 +1,5 @@
-import { startMemoryBrokerServer, type MemoryBrokerHandler } from "./server.js";
+import { startMemoryBrokerServer } from "./server.js";
+import type { MemoryBrokerChildEntry } from "./entry.js";
 
 type BrokerStartMessage = Readonly<{
   type: "start";
@@ -7,10 +8,7 @@ type BrokerStartMessage = Readonly<{
   brokerEpoch: string;
   secret: string;
   handlerModuleUrl: string;
-}>;
-
-type BrokerChildEntry = Readonly<{
-  createMemoryBrokerHandler: () => MemoryBrokerHandler | Promise<MemoryBrokerHandler>;
+  agentIds: readonly string[];
 }>;
 
 type BrokerMaintenanceMessage = Readonly<{
@@ -41,10 +39,19 @@ async function start(message: BrokerStartMessage): Promise<void> {
   if (server || closing) {
     throw new Error("memory broker child has already started");
   }
-  const module = (await import(message.handlerModuleUrl)) as Partial<BrokerChildEntry>;
+  const module = (await import(message.handlerModuleUrl)) as Partial<MemoryBrokerChildEntry>;
   if (typeof module.createMemoryBrokerHandler !== "function") {
     throw new Error("selected memory plugin has no broker child entry");
   }
+  if (
+    !Array.isArray(message.agentIds) ||
+    !message.agentIds.every((agentId) => typeof agentId === "string" && agentId.length > 0)
+  ) {
+    throw new Error("memory broker startup agents are unavailable");
+  }
+  // Recovery happens before the socket exists, so a fresh/replacement child never reports
+  // healthy while pending revisions can still become visible or need quarantine.
+  await module.initializeMemoryBroker?.({ agentIds: Object.freeze([...message.agentIds]) });
   const handler = await module.createMemoryBrokerHandler();
   if (typeof handler !== "function") {
     throw new Error("selected memory plugin returned an invalid broker handler");

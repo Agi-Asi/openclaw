@@ -7,9 +7,16 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { DoctorPrompter } from "./doctor-prompter.js";
 
 const note = vi.hoisted(() => vi.fn());
+const withDoctorSqliteMaintenanceLock = vi.hoisted(() =>
+  vi.fn(async (params: { run: () => Promise<unknown> }) => await params.run()),
+);
 
 vi.mock("../../packages/terminal-core/src/note.js", () => ({
   note,
+}));
+
+vi.mock("./doctor-sqlite-maintenance-lock.js", () => ({
+  withDoctorSqliteMaintenanceLock,
 }));
 
 import {
@@ -46,6 +53,10 @@ describe("root memory repair", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-root-memory-"));
     note.mockClear();
+    withDoctorSqliteMaintenanceLock.mockClear();
+    withDoctorSqliteMaintenanceLock.mockImplementation(
+      async (params: { run: () => Promise<unknown> }) => await params.run(),
+    );
   });
 
   afterEach(async () => {
@@ -202,6 +213,9 @@ describe("root memory repair", () => {
       message: "Merge legacy root memory.md into canonical MEMORY.md and remove the shadowed file?",
       initialValue: true,
     });
+    expect(withDoctorSqliteMaintenanceLock).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "workspace root memory repair", run: expect.any(Function) }),
+    );
     const canonical = await fs.readFile(path.join(tmpDir, "MEMORY.md"), "utf8");
     expect(canonical).toContain("# Legacy");
     await expectPathMissing(path.join(tmpDir, "memory.md"));

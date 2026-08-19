@@ -775,6 +775,30 @@ describe("enforced memory tools", () => {
     expect(host.read).toHaveBeenCalledWith({ handleId: "mhandle1_allowed" });
   });
 
+  it("forwards caller cancellation into enforced memory_get", async () => {
+    const host = {
+      search: vi.fn(async () => ({ results: [] })),
+      read: vi.fn(async () => ({ text: "allowed", path: "memory/MEMORY.md" })),
+    };
+    const get = createMemoryGetTool({
+      config: createDefaultMemoryToolConfig(),
+      memoryReadEnforced: true,
+      authorizedMemoryRead: host,
+    });
+    if (!get) {
+      throw new Error("memory_get missing");
+    }
+    const controller = new AbortController();
+
+    await expect(
+      get.execute("authorized-read-with-cancellation", { handleId: "mhandle1_allowed" }, controller.signal),
+    ).resolves.toMatchObject({ details: { text: "allowed", path: "memory/MEMORY.md" } });
+    expect(host.read).toHaveBeenCalledWith({
+      handleId: "mhandle1_allowed",
+      signal: controller.signal,
+    });
+  });
+
   it("does not fall back to legacy memory when its host is unavailable", async () => {
     const search = createMemorySearchToolOrThrow({ memoryReadEnforced: true });
     const result = await search.execute("missing-authorized-host", { query: "private" });

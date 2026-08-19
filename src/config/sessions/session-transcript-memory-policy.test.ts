@@ -626,14 +626,23 @@ describe("transcript memory policy companions", () => {
       },
     );
 
-    vi.stubEnv("OPENCLAW_STATE_DIR", env.OPENCLAW_STATE_DIR ?? "");
-    expect(
+    const stateDir = env.OPENCLAW_STATE_DIR ?? "";
+    const configPath = path.join(stateDir, "openclaw.json");
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(configPath, "{}\n", "utf8");
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
+    await expect(
       runDoctorMemoryIsolation({
         action: "shadow-read-only",
         cfg: { agents: { list: [{ id: AGENT_ID, default: true }] } } as OpenClawConfig,
         nowMs: 1,
       }),
-    ).toMatchObject({ agentId: AGENT_ID, mode: "shadow-read-only", restartRequired: true });
+    ).resolves.toMatchObject({
+      agentId: AGENT_ID,
+      mode: "shadow-read-only",
+      restartRequired: true,
+    });
     // Doctor writes out of process. Refresh the process-owned snapshot to model the required
     // Gateway restart before proving the protected transcript boundary.
     resetMemoryIsolationCutoverForTest();

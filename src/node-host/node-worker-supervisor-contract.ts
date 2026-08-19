@@ -12,12 +12,16 @@ import type { WorkerConnectionEndpoint } from "../worker/worker-connection-endpo
 import type { NodeWorkerLaunchReceipt } from "./node-worker-launch-store.js";
 
 export {
+  NODE_WORKER_EXECUTION_CONTAINER_V1,
+  NODE_WORKER_EXECUTION_HOST_V1,
+  nodeWorkerMemoryProjectionLaunchBinding,
   nodeWorkerPlanHash,
   parseNodeWorkerCancelInput,
   parseNodeWorkerLaunchInput,
   parseNodeWorkerLookupInput,
 } from "../worker/node-supervisor-protocol.js";
 export type {
+  NodeWorkerExecution,
   NodeWorkerLaunchInput,
   NodeWorkerSupervisorIdentity,
   NodeWorkerSupervisorReceipt,
@@ -55,7 +59,14 @@ export function projectNodeWorkerSupervisorReceipt(
       : receipt.state === "failed" ||
           receipt.state === "interrupted" ||
           receipt.state === "cancelled"
-        ? { ...identity, state: receipt.state, errorText: receipt.errorText }
+        ? {
+            ...identity,
+            state: receipt.state,
+            errorText: receipt.errorText,
+            // Worker identity is persisted only by markRunning, after the private child
+            // acknowledgement. Do not expose the PID, only the durable execution fact.
+            executionStarted: receipt.worker !== null,
+          }
         : { ...identity, state: receipt.state };
   const parsed = parseNodeWorkerSupervisorReceipt(projected);
   if (!parsed) {

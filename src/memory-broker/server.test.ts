@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
+import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import { requestJsonlSocket } from "../infra/jsonl-socket.js";
 import { createMemoryBrokerClient } from "./client.js";
 import {
   createMemoryBrokerEnvelope,
+  MEMORY_BROKER_MAXIMUM_CANONICAL_DEPTH,
   type MemoryBrokerAuthorizationBinding,
   type MemoryBrokerRequest,
 } from "./protocol.js";
@@ -19,6 +21,7 @@ const binding: MemoryBrokerAuthorizationBinding = {
   runId: "run-a",
   contextFingerprint: "context-a",
   subjectRevision: "subject-a",
+  actor: { kind: "principal", actorKind: "human", principalId: "alice" },
   actorRevision: "actor-a",
   capabilitySnapshotId: "capability-a",
   policyRevision: "policy-a",
@@ -32,7 +35,7 @@ let server: MemoryBrokerServer | undefined;
 type StartOptions = Partial<
   Pick<
     Parameters<typeof startMemoryBrokerServer>[0],
-    "handler" | "maximumPending" | "maximumRunning"
+    "handler" | "maximumPending" | "maximumRunning" | "maximumConnections" | "preauthIdleTimeoutMs"
   >
 >;
 
@@ -77,14 +80,33 @@ function frame(overrides: Partial<{ envelope: unknown; request: unknown; nonce: 
   return { envelope, request, ...overrides };
 }
 
-async function send(socketPath: string, value: unknown, options: { keepWriteOpen?: boolean } = {}) {
+async function send(
+  socketPath: string,
+  value: unknown,
+  options: { keepWriteOpen?: boolean; timeoutMs?: number } = {},
+) {
   return await requestJsonlSocket({
     socketPath,
-    requestLine: JSON.stringify(value),
-    timeoutMs: 5_000,
+    requestLine: typeof value === "string" ? value : JSON.stringify(value),
+    timeoutMs: options.timeoutMs ?? 5_000,
     ...options,
     accept: (response) => response as { ok: boolean; value?: unknown; error?: string },
   });
+}
+
+async function openPartialSocket(socketPath: string): Promise<net.Socket> {
+  return await new Promise<net.Socket>((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+    socket.once("connect", () => resolve(socket));
+    socket.once("error", reject);
+  });
+}
+
+async function waitForSocketClose(socket: net.Socket): Promise<void> {
+  if (socket.destroyed) {
+    return;
+  }
+  await new Promise<void>((resolve) => socket.once("close", () => resolve()));
 }
 
 describe("memory broker server", () => {
@@ -280,6 +302,124 @@ describe("memory broker server", () => {
     await expect(handlerAborted).resolves.toBeUndefined();
   });
 
+  it("reclaims a cancelled queued request before it can exhaust the broker admission limit", async () => {
+    let release: (() => void) | undefined;
+    let started: (() => void) | undefined;
+    const handlerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const handlerRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const socketPath = await start({
+      maximumPending: 1,
+      maximumRunning: 1,
+      handler: async () => {
+        started?.();
+        await handlerRelease;
+        return { ok: true };
+      },
+    });
+    const first = send(socketPath, frame({ nonce: "nonce-running" }), { keepWriteOpen: true });
+    await handlerStarted;
+
+    const controller = new AbortController();
+    const client = createMemoryBrokerClient({
+      socketPath,
+      brokerId: "broker-a",
+      brokerEpoch: "epoch-a",
+      secret,
+      nonce: () => "nonce-cancelled-queued",
+    });
+    const cancelled = client.request({
+      binding,
+      method: "memory.search",
+      payload: { query: "queued then cancelled" },
+      expiresAtMs: Date.now() + 60_000,
+      signal: controller.signal,
+    });
+    // Let the client finish its connect/write turn, then prove it holds the sole pending slot.
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    await expect(send(socketPath, frame({ nonce: "nonce-before-cancel" }))).resolves.toEqual({
+      ok: false,
+      error: "busy",
+    });
+
+    controller.abort();
+    await expect(cancelled).resolves.toBeUndefined();
+    const reclaimed = send(socketPath, frame({ nonce: "nonce-after-cancel" }), {
+      keepWriteOpen: true,
+    });
+    // The admission decision must happen while the first handler is still saturated. Without
+    // queue-owned cancellation, this request is synchronously rejected as busy.
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    release?.();
+    await expect(first).resolves.toEqual({ ok: true, value: { ok: true } });
+    await expect(reclaimed).resolves.toEqual({ ok: true, value: { ok: true } });
+  });
+
+  it("expires queued work without waiting for a running handler to drain", async () => {
+    let release: (() => void) | undefined;
+    let started: (() => void) | undefined;
+    const handlerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const handlerRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const socketPath = await start({
+      maximumPending: 1,
+      maximumRunning: 1,
+      handler: async () => {
+        started?.();
+        await handlerRelease;
+        return { ok: true };
+      },
+    });
+    const first = send(socketPath, frame({ nonce: "nonce-running" }), { keepWriteOpen: true });
+    await handlerStarted;
+
+    const expiresAtMs = Date.now() + 100;
+    const expired = send(
+      socketPath,
+      frame({
+        nonce: "nonce-queued-expiry",
+        envelope: createMemoryBrokerEnvelope({
+          secret,
+          brokerId: "broker-a",
+          brokerEpoch: "epoch-a",
+          binding,
+          nonce: "nonce-queued-expiry",
+          request,
+          issuedAtMs: Date.now(),
+          expiresAtMs,
+        }),
+      }),
+      { keepWriteOpen: true, timeoutMs: 1_000 },
+    );
+    await expect(expired).resolves.toEqual({ ok: false, error: "cancelled" });
+
+    const reclaimed = send(socketPath, frame({ nonce: "nonce-after-expiry" }), {
+      keepWriteOpen: true,
+    });
+    release?.();
+    await expect(first).resolves.toEqual({ ok: true, value: { ok: true } });
+    await expect(reclaimed).resolves.toEqual({ ok: true, value: { ok: true } });
+  });
+
+  it("rejects a deeply nested forged request without unwinding the socket callback", async () => {
+    const socketPath = await start();
+    const envelope = frame({ nonce: "nonce-deep-forgery" }).envelope;
+    const depth = MEMORY_BROKER_MAXIMUM_CANONICAL_DEPTH * 512;
+    const payload = `${"[".repeat(depth)}0${"]".repeat(depth)}`;
+    const rawFrame = `{"envelope":${JSON.stringify(envelope)},"request":{"method":"memory.search","payload":${payload}}}`;
+
+    await expect(send(socketPath, rawFrame, { timeoutMs: 1_000 })).resolves.toEqual({
+      ok: false,
+      error: "unauthorized",
+    });
+  });
+
   it("cancels an in-flight handler at the signed request deadline", async () => {
     let started: (() => void) | undefined;
     const handlerStarted = new Promise<void>((resolve) => {
@@ -313,5 +453,67 @@ describe("memory broker server", () => {
     );
     await handlerStarted;
     await expect(pending).resolves.toEqual({ ok: false, error: "cancelled" });
+  });
+
+  it("acknowledges a durable mutation that commits as its reply deadline expires", async () => {
+    let started: (() => void) | undefined;
+    const handlerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const socketPath = await start({
+      handler: async ({ signal }) => {
+        started?.();
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { status: "committed" };
+      },
+    });
+    const mutationRequest: MemoryBrokerRequest = {
+      method: "memory.write",
+      payload: { mutation: "durably-activated" },
+    };
+    const deadline = Date.now() + 100;
+    const pending = send(
+      socketPath,
+      frame({
+        nonce: "nonce-committed-after-deadline",
+        request: mutationRequest,
+        envelope: createMemoryBrokerEnvelope({
+          secret,
+          brokerId: "broker-a",
+          brokerEpoch: "epoch-a",
+          binding,
+          nonce: "nonce-committed-after-deadline",
+          request: mutationRequest,
+          issuedAtMs: Date.now(),
+          expiresAtMs: deadline,
+        }),
+      }),
+    );
+    await handlerStarted;
+    await expect(pending).resolves.toEqual({ ok: true, value: { status: "committed" } });
+  });
+
+  it("bounds unauthenticated partial-frame sockets and reclaims their admission slots", async () => {
+    const socketPath = await start({ maximumConnections: 1, preauthIdleTimeoutMs: 40 });
+    const slowloris = await openPartialSocket(socketPath);
+    slowloris.write('{"envelope":');
+
+    await expect(send(socketPath, frame({ nonce: "nonce-over-limit" }))).resolves.toBeNull();
+    await waitForSocketClose(slowloris);
+    await expect(send(socketPath, frame({ nonce: "nonce-after-idle" }))).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  it("tears down partial-frame sockets before broker shutdown", async () => {
+    const socketPath = await start({ preauthIdleTimeoutMs: 60_000 });
+    const slowloris = await openPartialSocket(socketPath);
+    slowloris.write('{"envelope":');
+
+    await expect(server!.close()).resolves.toBeUndefined();
+    await waitForSocketClose(slowloris);
+    await expect(server!.close()).resolves.toBeUndefined();
   });
 });

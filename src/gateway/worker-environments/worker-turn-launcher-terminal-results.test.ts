@@ -30,6 +30,7 @@ describe("worker turn launcher terminal results", () => {
 
   it("requests immediate recovery when reconciliation fails after worker finishing", async () => {
     seedActivePlacement();
+    const phases: string[] = [];
     const destroy = vi.fn(async () => attachedEnvironment());
     const tunnelFailure = new NodeWorkerWorkspaceTransferError(
       "workspace-transfer-failed: gateway TLS fingerprint mismatch",
@@ -44,6 +45,9 @@ describe("worker turn launcher terminal results", () => {
       runWorkspaceCommand: vi.fn(),
       launchTurn: vi.fn(async (request): Promise<SpawnResult> => {
         request.onDispatchReady?.();
+        expect(phases).not.toContain("process_spawned");
+        request.onExecutionReady?.();
+        expect(phases.filter((phase) => phase === "process_spawned")).toHaveLength(1);
         const completed = openSessionManager();
         const leafId = completed.appendMessage(
           makeAgentAssistantMessage({
@@ -106,7 +110,10 @@ describe("worker turn launcher terminal results", () => {
           agentId: "main",
           runId: "run-reconcile-tunnel-loss",
         },
-        turn("run-reconcile-tunnel-loss"),
+        {
+          ...turn("run-reconcile-tunnel-loss"),
+          onExecutionPhase: ({ phase }) => phases.push(phase),
+        },
         async () => ({ meta: { durationMs: 1 } }),
       ),
     ).rejects.toMatchObject({
@@ -115,6 +122,7 @@ describe("worker turn launcher terminal results", () => {
     });
 
     expect(reconcileActivePlacement).toHaveBeenCalledWith(ENVIRONMENT_ID);
+    expect(phases.filter((phase) => phase === "process_spawned")).toEqual(["process_spawned"]);
     expect(placements.get(SESSION_ID)).toMatchObject({ state: "failed", turnClaim: null });
     expect(placements.listPendingWorkspaceResults()).toHaveLength(0);
     expect(destroy).not.toHaveBeenCalled();

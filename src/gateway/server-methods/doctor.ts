@@ -25,6 +25,7 @@ import {
   resolveMemoryRemDreamingConfig,
 } from "../../memory-host-sdk/dreaming.js";
 import * as defaultMemoryCoreRuntime from "../../plugin-sdk/memory-core-bundled-runtime.js";
+import { withBrokeredMemoryMaintenance } from "../../plugins/memory-broker-runtime.js";
 import { getActiveMemorySearchManagerCore } from "../../plugins/memory-runtime.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { formatError } from "../server-utils.js";
@@ -850,58 +851,58 @@ export const createDoctorHandlers = (
       return;
     }
     const { cfg, agentId, workspaceDir } = target;
-    const memoryDir = path.join(workspaceDir, "memory");
-    const sourceFiles = await listWorkspaceDailyFiles(memoryDir);
-    if (sourceFiles.length === 0) {
+    const payload = await withBrokeredMemoryMaintenance(async () => {
+      const memoryDir = path.join(workspaceDir, "memory");
+      const sourceFiles = await listWorkspaceDailyFiles(memoryDir);
+      if (sourceFiles.length === 0) {
+        const dreamDiary = await readDreamDiary(workspaceDir);
+        return {
+          agentId,
+          path: dreamDiary.path,
+          action: "backfill" as const,
+          found: dreamDiary.found,
+          scannedFiles: 0,
+          written: 0,
+          replaced: 0,
+        } satisfies DoctorMemoryDreamActionPayload;
+      }
+      const grounded = await memoryCoreRuntime.previewGroundedRemMarkdown({
+        workspaceDir,
+        inputPaths: sourceFiles,
+      });
+      const remConfig = resolveMemoryRemDreamingConfig({
+        pluginConfig: resolveMemoryDreamingPluginConfig(cfg),
+        cfg,
+      });
+      const entries = grounded.files
+        .map((file) => {
+          const isoDay = extractIsoDayFromPath(file.path);
+          if (!isoDay) {
+            return null;
+          }
+          return {
+            isoDay,
+            sourcePath: file.path,
+            bodyLines: groundedMarkdownToDiaryLines(file.renderedMarkdown),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      const written = await memoryCoreRuntime.writeBackfillDiaryEntries({
+        workspaceDir,
+        entries,
+        timezone: remConfig.timezone,
+      });
       const dreamDiary = await readDreamDiary(workspaceDir);
-      const payload: DoctorMemoryDreamActionPayload = {
+      return {
         agentId,
         path: dreamDiary.path,
         action: "backfill",
         found: dreamDiary.found,
-        scannedFiles: 0,
-        written: 0,
-        replaced: 0,
-      };
-      respond(true, payload, undefined);
-      return;
-    }
-    const grounded = await memoryCoreRuntime.previewGroundedRemMarkdown({
-      workspaceDir,
-      inputPaths: sourceFiles,
+        scannedFiles: grounded.scannedFiles,
+        written: written.written,
+        replaced: written.replaced,
+      } satisfies DoctorMemoryDreamActionPayload;
     });
-    const remConfig = resolveMemoryRemDreamingConfig({
-      pluginConfig: resolveMemoryDreamingPluginConfig(cfg),
-      cfg,
-    });
-    const entries = grounded.files
-      .map((file) => {
-        const isoDay = extractIsoDayFromPath(file.path);
-        if (!isoDay) {
-          return null;
-        }
-        return {
-          isoDay,
-          sourcePath: file.path,
-          bodyLines: groundedMarkdownToDiaryLines(file.renderedMarkdown),
-        };
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-    const written = await memoryCoreRuntime.writeBackfillDiaryEntries({
-      workspaceDir,
-      entries,
-      timezone: remConfig.timezone,
-    });
-    const dreamDiary = await readDreamDiary(workspaceDir);
-    const payload: DoctorMemoryDreamActionPayload = {
-      agentId,
-      path: dreamDiary.path,
-      action: "backfill",
-      found: dreamDiary.found,
-      scannedFiles: grounded.scannedFiles,
-      written: written.written,
-      replaced: written.replaced,
-    };
     respond(true, payload, undefined);
   },
   "doctor.memory.resetDreamDiary": async ({ respond, context, params }) => {
@@ -910,15 +911,17 @@ export const createDoctorHandlers = (
       return;
     }
     const { agentId, workspaceDir } = target;
-    const removed = await memoryCoreRuntime.removeBackfillDiaryEntries({ workspaceDir });
-    const dreamDiary = await readDreamDiary(workspaceDir);
-    const payload: DoctorMemoryDreamActionPayload = {
-      agentId,
-      path: dreamDiary.path,
-      action: "reset",
-      found: dreamDiary.found,
-      removedEntries: removed.removed,
-    };
+    const payload = await withBrokeredMemoryMaintenance(async () => {
+      const removed = await memoryCoreRuntime.removeBackfillDiaryEntries({ workspaceDir });
+      const dreamDiary = await readDreamDiary(workspaceDir);
+      return {
+        agentId,
+        path: dreamDiary.path,
+        action: "reset",
+        found: dreamDiary.found,
+        removedEntries: removed.removed,
+      } satisfies DoctorMemoryDreamActionPayload;
+    });
     respond(true, payload, undefined);
   },
   "doctor.memory.resetGroundedShortTerm": async ({ respond, context, params }) => {
@@ -927,12 +930,14 @@ export const createDoctorHandlers = (
       return;
     }
     const { agentId, workspaceDir } = target;
-    const removed = await memoryCoreRuntime.removeGroundedShortTermCandidates({ workspaceDir });
-    const payload: DoctorMemoryDreamActionPayload = {
-      agentId,
-      action: "resetGroundedShortTerm",
-      removedShortTermEntries: removed.removed,
-    };
+    const payload = await withBrokeredMemoryMaintenance(async () => {
+      const removed = await memoryCoreRuntime.removeGroundedShortTermCandidates({ workspaceDir });
+      return {
+        agentId,
+        action: "resetGroundedShortTerm",
+        removedShortTermEntries: removed.removed,
+      } satisfies DoctorMemoryDreamActionPayload;
+    });
     respond(true, payload, undefined);
   },
   "doctor.memory.repairDreamingArtifacts": async ({ respond, context, params }) => {
@@ -941,17 +946,19 @@ export const createDoctorHandlers = (
       return;
     }
     const { agentId, workspaceDir } = target;
-    const repair = await memoryCoreRuntime.repairDreamingArtifacts({ workspaceDir });
-    const payload: DoctorMemoryDreamActionPayload = {
-      agentId,
-      action: "repairDreamingArtifacts",
-      changed: repair.changed,
-      archiveDir: repair.archiveDir,
-      archivedDreamsDiary: repair.archivedDreamsDiary,
-      archivedSessionCorpus: repair.archivedSessionCorpus,
-      archivedSessionIngestion: repair.archivedSessionIngestion,
-      warnings: repair.warnings,
-    };
+    const payload = await withBrokeredMemoryMaintenance(async () => {
+      const repair = await memoryCoreRuntime.repairDreamingArtifacts({ workspaceDir });
+      return {
+        agentId,
+        action: "repairDreamingArtifacts",
+        changed: repair.changed,
+        archiveDir: repair.archiveDir,
+        archivedDreamsDiary: repair.archivedDreamsDiary,
+        archivedSessionCorpus: repair.archivedSessionCorpus,
+        archivedSessionIngestion: repair.archivedSessionIngestion,
+        warnings: repair.warnings,
+      } satisfies DoctorMemoryDreamActionPayload;
+    });
     respond(true, payload, undefined);
   },
   "doctor.memory.dedupeDreamDiary": async ({ respond, context, params }) => {
@@ -960,17 +967,19 @@ export const createDoctorHandlers = (
       return;
     }
     const { agentId, workspaceDir } = target;
-    const dedupe = await memoryCoreRuntime.dedupeDreamDiaryEntries({ workspaceDir });
-    const dreamDiary = await readDreamDiary(workspaceDir);
-    const payload: DoctorMemoryDreamActionPayload = {
-      agentId,
-      action: "dedupeDreamDiary",
-      path: dreamDiary.path,
-      found: dreamDiary.found,
-      removedEntries: dedupe.removed,
-      dedupedEntries: dedupe.removed,
-      keptEntries: dedupe.kept,
-    };
+    const payload = await withBrokeredMemoryMaintenance(async () => {
+      const dedupe = await memoryCoreRuntime.dedupeDreamDiaryEntries({ workspaceDir });
+      const dreamDiary = await readDreamDiary(workspaceDir);
+      return {
+        agentId,
+        action: "dedupeDreamDiary",
+        path: dreamDiary.path,
+        found: dreamDiary.found,
+        removedEntries: dedupe.removed,
+        dedupedEntries: dedupe.removed,
+        keptEntries: dedupe.kept,
+      } satisfies DoctorMemoryDreamActionPayload;
+    });
     respond(true, payload, undefined);
   },
 });

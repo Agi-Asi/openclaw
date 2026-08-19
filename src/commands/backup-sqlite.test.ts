@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -11,6 +11,15 @@ import { OPENCLAW_AGENT_SCHEMA_SQL } from "../state/openclaw-agent-schema.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { OPENCLAW_STATE_SCHEMA_SQL } from "../state/openclaw-state-schema.js";
+
+const withDoctorSqliteMaintenanceLock = vi.hoisted(() =>
+  vi.fn(async (params: { run: () => Promise<unknown> }) => await params.run()),
+);
+
+vi.mock("./doctor-sqlite-maintenance-lock.js", () => ({
+  withDoctorSqliteMaintenanceLock,
+}));
+
 import {
   backupSqliteCreateCommand,
   backupSqliteListCommand,
@@ -118,6 +127,30 @@ function createAgentDatabase(databasePath: string, agentId: string): void {
 }
 
 describe("SQLite backup commands", () => {
+  it("uses the cross-process SQLite ownership lock for an offline snapshot", async () => {
+    const tempDir = tempDirs.make("openclaw-backup-sqlite-lock-");
+    const stateDir = path.join(tempDir, "state");
+    const repositoryPath = path.join(tempDir, "snapshots");
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    const databasePath = resolveOpenClawStateSqlitePath();
+    await fs.mkdir(path.dirname(databasePath), { recursive: true });
+    createGlobalDatabase(databasePath);
+    withDoctorSqliteMaintenanceLock.mockClear();
+
+    await backupSqliteCreateCommand(createRuntimeCapture(), {
+      global: true,
+      repository: repositoryPath,
+    });
+
+    expect(withDoctorSqliteMaintenanceLock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "SQLite snapshot",
+        protectedPaths: [databasePath],
+        run: expect.any(Function),
+      }),
+    );
+  });
+
   it("creates, lists, verifies, and fresh-restores the global database", async () => {
     const tempDir = tempDirs.make("openclaw-backup-sqlite-");
     const stateDir = path.join(tempDir, "state");

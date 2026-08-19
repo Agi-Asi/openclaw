@@ -37,6 +37,7 @@ import {
   classifyGatewayProbePath,
   classifyMcpAppStandalonePath,
   classifyNodeWorkerBundleTransferPath,
+  classifyNodeWorkerProjectionTransferPath,
   classifyNodeWorkspaceTransferPath,
   classifyWorkerGatewayPath,
 } from "./gateway-http-route-contracts.js";
@@ -74,6 +75,10 @@ import {
   handleNodeWorkerBundleTransferHttpRequest,
   type NodeWorkerBundleTransferHttpCallback,
 } from "./worker-environments/node-worker-bundle-transfer-http.js";
+import {
+  handleNodeWorkerProjectionTransferHttpRequest,
+  type NodeWorkerProjectionTransferHttpCallback,
+} from "./worker-environments/node-worker-projection-transfer-http.js";
 import {
   handleNodeWorkspaceTransferHttpRequest,
   type NodeWorkspaceTransferHttpCallback,
@@ -184,6 +189,8 @@ export function createGatewayHttpServer(opts: {
   handleNodeWorkerBundleTransferRequest?: NodeWorkerBundleTransferHttpCallback;
   /** Authenticator/dispatcher for the reserved node workspace transfer namespace. */
   handleNodeWorkspaceTransferRequest?: NodeWorkspaceTransferHttpCallback;
+  /** Authenticator/dispatcher for the reserved node memory-projection transfer namespace. */
+  handleNodeWorkerProjectionTransferRequest?: NodeWorkerProjectionTransferHttpCallback;
   getReadiness?: ReadinessChecker;
   getStartup?: StartupChecker;
   getRuntimeConfig?: () => OpenClawConfig;
@@ -371,6 +378,18 @@ export function createGatewayHttpServer(opts: {
           rateLimiter: joinRateLimiter,
           callback: opts.handleNodeWorkerBundleTransferRequest,
         }),
+      );
+
+      addAdmittedStage(
+        classifyNodeWorkerProjectionTransferPath(scopedRequestPath) !== "outside",
+        () =>
+          handleNodeWorkerProjectionTransferHttpRequest({
+            req,
+            res,
+            clientIp: ingressAttribution.rateLimit.subject.key,
+            rateLimiter: joinRateLimiter,
+            callback: opts.handleNodeWorkerProjectionTransferRequest,
+          }),
       );
 
       addAdmittedStage(classifyNodeWorkspaceTransferPath(scopedRequestPath) !== "outside", () =>

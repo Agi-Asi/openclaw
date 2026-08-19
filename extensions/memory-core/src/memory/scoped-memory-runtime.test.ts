@@ -1,12 +1,17 @@
+import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import type {
   AuthorizedMemoryPlan,
   MemoryAccessContext,
   MemoryContentAccessContext,
 } from "openclaw/plugin-sdk/memory-authorization";
+import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { closeOpenClawAgentDatabasesForTest } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -21,7 +26,7 @@ import {
   consumeAdmittedChannelMemoryIdentityFromContext,
   createChannelMemoryIdentityAdmission,
 } from "../../../../src/channels/message-access/memory-identity-admission.js";
-import { appendSqliteTranscriptMessage } from "../../../../src/config/sessions/session-accessor.sqlite-transcript-write.js";
+import { appendTranscriptMessage } from "../../../../src/config/sessions/session-accessor.sqlite-transcript-write.js";
 import { readAuthorizedTranscriptDerivation } from "../../../../src/config/sessions/session-transcript-memory-policy.js";
 import { withOwnedSessionTranscriptWrites } from "../../../../src/config/sessions/transcript-write-context.js";
 import {
@@ -29,7 +34,12 @@ import {
   resetAgentRunRegistryForTest,
 } from "../../../../src/infra/agent-run-registry.js";
 import { startMemoryBrokerProcess } from "../../../../src/memory-broker/process.js";
+import { requestJsonlSocket } from "../../../../src/infra/jsonl-socket.js";
 import { admitMemoryAuthorizationReadRuntime } from "../../../../src/plugins/memory-authorization-runtime.js";
+import {
+  closeBrokeredMemoryRuntimes,
+  withBrokeredMemoryMaintenance,
+} from "../../../../src/plugins/memory-broker-runtime.js";
 import { resetMemoryIsolationCutoverForTest } from "../../../../src/plugins/memory-cutover.js";
 import {
   persistMemoryRunExposureBeforeContentInDatabase,
@@ -56,6 +66,8 @@ import {
   openOpenClawStateDatabase,
 } from "../../../../src/state/openclaw-state-db.js";
 import { ensureProfileForEmail } from "../../../../src/state/user-profiles.js";
+import { verifyNodeWorkerContainerProjectionIsolation } from "../../../../test/helpers/node-worker-container-projection-isolation.js";
+import memoryCorePlugin from "../../index.js";
 import { MEMORY_CORE_AUTHORIZATION_CAPABILITIES } from "../authorization.js";
 import { createMemoryRuntime } from "../runtime-provider.js";
 import { resolveScopedMemoryArtifactBase, withScopedMemoryDatabase } from "./scoped-memory-db.js";
@@ -63,6 +75,7 @@ import { builtinScopedMemoryConformanceAdapter } from "./scoped-memory-policy.js
 import {
   createBuiltinScopedMemoryResource,
   readBuiltinScopedMemoryRevisionSnapshot,
+  resolveBuiltinScopedMemoryArtifactPath,
   setBuiltinScopedMemoryRevisionLifecycle,
 } from "./scoped-memory-resources.js";
 import {
@@ -86,6 +99,62 @@ vi.mock("../../../../src/auto-reply/reply/dispatch-from-config.js", () => ({
 
 const { dispatchInboundMessage } = await import("../../../../src/auto-reply/dispatch.js");
 
+const dockerAvailable =
+  spawnSync("docker", ["info"], { stdio: "ignore", timeout: 3_000 }).status === 0;
+
+function constrainedSandboxConfig(params: {
+  image: string;
+  prefix: string;
+  workspaceRoot: string;
+}): OpenClawConfig {
+  return {
+    agents: {
+      defaults: {
+        skipBootstrap: true,
+        sandbox: {
+          mode: "all",
+          backend: "docker",
+          scope: "session",
+          workspaceAccess: "none",
+          workspaceRoot: params.workspaceRoot,
+          docker: { image: params.image, containerPrefix: params.prefix },
+          browser: { enabled: false },
+          prune: { idleHours: 0, maxAgeDays: 0 },
+        },
+      },
+    },
+  };
+}
+
+function resolveSelectedMemoryBrokerChildPid(): number {
+  const processList = spawnSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" });
+  if (processList.status !== 0) {
+    throw new Error("fixture failed to inspect the selected memory broker child");
+  }
+  const child = processList.stdout
+    .split("\n")
+    .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/u.exec(line))
+    .find(
+      (match) =>
+        match?.[2] === String(process.pid) &&
+        /(?:^|[\\/])memory-broker[\\/]child\.(?:ts|js)(?:\s|$)/u.test(match[3]),
+    );
+  if (!child?.[1]) {
+    throw new Error("fixture failed to locate the selected memory broker child");
+  }
+  return Number(child[1]);
+}
+
+function resolveNewMemoryBrokerSocketPath(existingDirectories: ReadonlySet<string>): string {
+  const directory = fs
+    .readdirSync(os.tmpdir())
+    .find((name) => name.startsWith("openclaw-memory-broker-") && !existingDirectories.has(name));
+  if (!directory) {
+    throw new Error("fixture failed to locate the selected memory broker socket");
+  }
+  return path.join(os.tmpdir(), directory, "broker.sock");
+}
+
 describe("builtin scoped authorized runtime", () => {
   let stateDir = "";
 
@@ -94,7 +163,8 @@ describe("builtin scoped authorized runtime", () => {
     vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await closeBrokeredMemoryRuntimes();
     dispatchReplyFromConfig.mockReset();
     resetBuiltinScopedMemoryAuthorizedRuntimeForTest();
     resetMemoryIsolationCutoverForTest();
@@ -129,9 +199,43 @@ describe("builtin scoped authorized runtime", () => {
         authorizationConformance: builtinScopedMemoryConformanceAdapter,
         virtualView: builtinScopedMemoryVirtualView,
         runtime: { ...createMemoryRuntime(), ...builtinScopedMemoryAuthorizedRuntime },
+        broker: {
+          version: 1,
+          kind: "local-child",
+          moduleUrl: new URL("./broker-entry.ts", import.meta.url).href,
+        },
       },
     });
     setActivePluginRegistry(registry);
+  }
+
+  function installDefaultMemoryCoreSelectedRuntime() {
+    const registry = createEmptyPluginRegistry();
+    registry.plugins.push({ id: "memory-core", memorySlotSelected: true } as never);
+    const runtime = {
+      llm: { acquireLocalService: async () => undefined },
+      state: {
+        openKeyedStore: () => ({
+          lookup: () => undefined,
+          register: () => undefined,
+          delete: () => undefined,
+          list: () => [],
+        }),
+      },
+    } as unknown as OpenClawPluginApi["runtime"];
+    memoryCorePlugin.register(
+      createTestPluginApi({
+        runtime,
+        registerMemoryCapability(capability) {
+          registry.memoryCapabilities.push({ pluginId: "memory-core", capability });
+        },
+      }),
+    );
+    if (registry.memoryCapabilities.length !== 1) {
+      throw new Error("fixture failed to register the default memory-core capability");
+    }
+    setActivePluginRegistry(registry);
+    return registry.memoryCapabilities[0]!.capability;
   }
 
   function createSession(params: {
@@ -543,18 +647,61 @@ describe("builtin scoped authorized runtime", () => {
 
   it("keeps the selected runtime plan state in a real broker child across IPC", async () => {
     createPrivateResource("alice", "BROKER_CHILD_SERIALIZED_PLAN_ONLY");
+    const startupRecovered = createWriteRecoveryFixture({
+      principalId: "alice",
+      content: "BROKER_STARTUP_RECOVERY_SENTINEL",
+      placement: "stage",
+    });
     const context = createContext("alice");
     const broker = await startMemoryBrokerProcess({
       brokerId: "memory-core-test-broker",
       handlerModuleUrl: new URL("./broker-entry.ts", import.meta.url).href,
+      agentIds: ["main"],
     });
     try {
+      // The child reached ready only after its plugin startup hook recovered the staged revision.
+      // This assertion occurs before the first broker request, so authorize cannot hide deferred
+      // recovery as request-time repair.
+      withScopedMemoryDatabase("main", (database) => {
+        expect(
+          database
+            .prepare(
+              `SELECT revision.lifecycle_state, intent.state
+                 FROM memory_resource_revisions AS revision
+                 JOIN memory_write_intents AS intent ON intent.pending_revision_id = revision.revision_id
+                WHERE revision.revision_id = ?`,
+            )
+            .get(startupRecovered.revisionId),
+        ).toEqual({ lifecycle_state: "active", state: "active" });
+        expect(
+          database
+            .prepare("SELECT text FROM memory_scoped_chunks WHERE revision_id = ?")
+            .all(startupRecovered.revisionId),
+        ).toEqual([{ text: "BROKER_STARTUP_RECOVERY_SENTINEL" }]);
+      });
+      expect(fs.existsSync(path.join(startupRecovered.directory, startupRecovered.stageLocator))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(startupRecovered.directory, startupRecovered.finalLocator))).toBe(
+        true,
+      );
       const authorizationBinding = {
         agentId: context.agentId,
         sessionId: context.sessionId,
         runId: context.runId,
         contextFingerprint: context.contextFingerprint,
         subjectRevision: context.subjectRevision,
+        actor:
+          context.actor.kind === "principal"
+            ? {
+                kind: "principal" as const,
+                actorKind: context.actor.actorKind,
+                principalId: context.actor.principalId,
+              }
+            : {
+                kind: "unattributed" as const,
+                transportAuditRef: context.actor.transportAuditRef,
+              },
         actorRevision: context.actor.evidenceRevision,
         capabilitySnapshotId: context.delegation?.capabilitySnapshotId ?? context.hostFactsRevision,
         policyRevision: context.hostFactsRevision,
@@ -583,6 +730,65 @@ describe("builtin scoped authorized runtime", () => {
               ...context,
               actor: { ...context.actor, evidenceRevision: "revoked-actor-evidence" },
             },
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: plan.memoryPolicyRevision },
+          method: "memory.search",
+          payload: {
+            context: { ...context, sessionId: "replayed-session" },
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: plan.memoryPolicyRevision },
+          method: "memory.search",
+          payload: {
+            context: { ...context, agentId: "replayed-agent" },
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: plan.memoryPolicyRevision },
+          method: "memory.search",
+          payload: {
+            context: {
+              ...context,
+              actor: { ...context.actor, principalId: "mallory" },
+            },
+            plan,
+            query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
+            limit: 10,
+          },
+          expiresAtMs: Date.parse(plan.expiresAt),
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        broker.client.request({
+          binding: { ...authorizationBinding, policyRevision: plan.memoryPolicyRevision },
+          method: "memory.search",
+          payload: {
+            context: { ...context, hostFactsRevision: "revoked-capability-snapshot" },
             plan,
             query: "BROKER_CHILD_SERIALIZED_PLAN_ONLY",
             limit: 10,
@@ -1230,7 +1436,7 @@ describe("builtin scoped authorized runtime", () => {
         withTranscriptWrite: async (run) => await run(),
       },
       async () => {
-        await appendSqliteTranscriptMessage(
+        await appendTranscriptMessage(
           {
             agentId: context.agentId,
             sessionId: context.sessionId,
@@ -1359,6 +1565,484 @@ describe("builtin scoped authorized runtime", () => {
       error: "memory unavailable",
     });
   });
+
+  it("returns intentional unavailability while maintenance quiesces the real selected broker", async () => {
+    const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
+    const alicePrincipalId = createVerifiedDirectSession({ name: "alice", ...session });
+    createPrivateResource(alicePrincipalId, "MAINTENANCE_REAL_SELECTED_BROKER_SENTINEL");
+    markCutOver();
+    installBuiltinSelectedRuntime();
+
+    const host = createAuthorizedMemoryReadHost({
+      agentId: "main",
+      ...session,
+      deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+    });
+    if (!host) {
+      throw new Error("fixture failed to build an authorized memory host");
+    }
+
+    await expect(
+      host.search({ query: "MAINTENANCE_REAL_SELECTED_BROKER_SENTINEL", limit: 1 }),
+    ).resolves.toMatchObject({
+      results: [{ snippet: "MAINTENANCE_REAL_SELECTED_BROKER_SENTINEL" }],
+    });
+
+    let enterMaintenance: (() => void) | undefined;
+    let releaseMaintenance: (() => void) | undefined;
+    const maintenanceEntered = new Promise<void>((resolve) => {
+      enterMaintenance = resolve;
+    });
+    const maintenanceRelease = new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    });
+    const maintenance = withBrokeredMemoryMaintenance(async () => {
+      enterMaintenance?.();
+      await maintenanceRelease;
+    });
+    await maintenanceEntered;
+
+    await expect(
+      host.search({ query: "MAINTENANCE_REAL_SELECTED_BROKER_SENTINEL", limit: 1 }),
+    ).resolves.toEqual({
+      disabled: true,
+      unavailable: true,
+      error: "memory unavailable",
+    });
+
+    releaseMaintenance?.();
+    await maintenance;
+    await expect(
+      host.search({ query: "MAINTENANCE_REAL_SELECTED_BROKER_SENTINEL", limit: 1 }),
+    ).resolves.toMatchObject({
+      results: [{ snippet: "MAINTENANCE_REAL_SELECTED_BROKER_SENTINEL" }],
+    });
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "restarts the default selected broker only after Gateway reauthorizes and rejects a pre-crash envelope",
+    async () => {
+      const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
+      const alicePrincipalId = createVerifiedDirectSession({ name: "alice", ...session });
+      createPrivateResource(alicePrincipalId, "SELECTED_BROKER_CRASH_RESTART_SENTINEL");
+      markCutOver();
+      installDefaultMemoryCoreSelectedRuntime();
+
+      const brokerDirectoriesBefore = new Set(
+        fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("openclaw-memory-broker-")),
+      );
+      const createHost = () => {
+        const host = createAuthorizedMemoryReadHost({
+          agentId: "main",
+          ...session,
+          deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+        });
+        if (!host) {
+          throw new Error("fixture failed to build an authorized memory host");
+        }
+        return host;
+      };
+      const host = createHost();
+
+      const writes = vi.spyOn(net.Socket.prototype, "write");
+      let staleRequestLine: string | undefined;
+      try {
+        await expect(
+          host.search({ query: "SELECTED_BROKER_CRASH_RESTART_SENTINEL", limit: 1 }),
+        ).resolves.toMatchObject({
+          results: [{ snippet: "SELECTED_BROKER_CRASH_RESTART_SENTINEL" }],
+        });
+        staleRequestLine = writes.mock.calls
+          .map(([chunk]) => (typeof chunk === "string" ? chunk.trim() : undefined))
+          .find((line) => {
+            if (!line) {
+              return false;
+            }
+            try {
+              const frame = JSON.parse(line) as {
+                envelope?: unknown;
+                request?: { method?: unknown };
+              };
+              return frame.envelope !== undefined && frame.request?.method === "memory.authorize";
+            } catch {
+              return false;
+            }
+          });
+      } finally {
+        writes.mockRestore();
+      }
+      if (!staleRequestLine) {
+        throw new Error("fixture failed to capture a signed selected-broker authorization frame");
+      }
+
+      const firstSocketPath = resolveNewMemoryBrokerSocketPath(brokerDirectoriesBefore);
+      expect(fs.existsSync(firstSocketPath)).toBe(true);
+      process.kill(resolveSelectedMemoryBrokerChildPid(), "SIGKILL");
+      await vi.waitFor(() => expect(fs.existsSync(firstSocketPath)).toBe(false), {
+        timeout: 2_000,
+        interval: 20,
+      });
+
+      await vi.waitFor(
+        async () => {
+          await expect(
+            createHost().search({ query: "SELECTED_BROKER_CRASH_RESTART_SENTINEL", limit: 1 }),
+          ).resolves.toMatchObject({
+            results: [{ snippet: "SELECTED_BROKER_CRASH_RESTART_SENTINEL" }],
+          });
+        },
+        { timeout: 2_000, interval: 20 },
+      );
+
+      const replacementSocketPath = resolveNewMemoryBrokerSocketPath(
+        new Set([...brokerDirectoriesBefore, path.basename(path.dirname(firstSocketPath))]),
+      );
+      expect(replacementSocketPath).not.toBe(firstSocketPath);
+      await expect(
+        requestJsonlSocket({
+          socketPath: replacementSocketPath,
+          requestLine: staleRequestLine,
+          timeoutMs: 1_000,
+          keepWriteOpen: true,
+          accept: (response) =>
+            response && typeof response === "object" && !Array.isArray(response)
+              ? (response as { ok: boolean; error?: string })
+              : undefined,
+        }),
+      ).resolves.toEqual({ ok: false, error: "unauthorized" });
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "rotates the selected broker epoch across controlled Gateway shutdown before reauthorization",
+    async () => {
+      const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
+      const alicePrincipalId = createVerifiedDirectSession({ name: "alice", ...session });
+      createPrivateResource(alicePrincipalId, "SELECTED_BROKER_CONTROLLED_RESTART_SENTINEL");
+      markCutOver();
+      installDefaultMemoryCoreSelectedRuntime();
+
+      const brokerDirectoriesBefore = new Set(
+        fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("openclaw-memory-broker-")),
+      );
+      const createHost = () => {
+        const host = createAuthorizedMemoryReadHost({
+          agentId: "main",
+          ...session,
+          deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+        });
+        if (!host) {
+          throw new Error("fixture failed to build an authorized memory host");
+        }
+        return host;
+      };
+
+      const writes = vi.spyOn(net.Socket.prototype, "write");
+      let preShutdownRequestLine: string | undefined;
+      try {
+        await expect(
+          createHost().search({ query: "SELECTED_BROKER_CONTROLLED_RESTART_SENTINEL", limit: 1 }),
+        ).resolves.toMatchObject({
+          results: [{ snippet: "SELECTED_BROKER_CONTROLLED_RESTART_SENTINEL" }],
+        });
+        preShutdownRequestLine = writes.mock.calls
+          .map(([chunk]) => (typeof chunk === "string" ? chunk.trim() : undefined))
+          .find((line) => {
+            if (!line) {
+              return false;
+            }
+            try {
+              const frame = JSON.parse(line) as {
+                envelope?: unknown;
+                request?: { method?: unknown };
+              };
+              return frame.envelope !== undefined && frame.request?.method === "memory.authorize";
+            } catch {
+              return false;
+            }
+          });
+      } finally {
+        writes.mockRestore();
+      }
+      if (!preShutdownRequestLine) {
+        throw new Error("fixture failed to capture a signed pre-shutdown authorization frame");
+      }
+
+      const firstSocketPath = resolveNewMemoryBrokerSocketPath(brokerDirectoriesBefore);
+      await closeBrokeredMemoryRuntimes();
+      await vi.waitFor(() => expect(fs.existsSync(firstSocketPath)).toBe(false), {
+        timeout: 2_000,
+        interval: 20,
+      });
+
+      await expect(
+        createHost().search({ query: "SELECTED_BROKER_CONTROLLED_RESTART_SENTINEL", limit: 1 }),
+      ).resolves.toMatchObject({
+        results: [{ snippet: "SELECTED_BROKER_CONTROLLED_RESTART_SENTINEL" }],
+      });
+      const replacementSocketPath = resolveNewMemoryBrokerSocketPath(
+        new Set([...brokerDirectoriesBefore, path.basename(path.dirname(firstSocketPath))]),
+      );
+      await expect(
+        requestJsonlSocket({
+          socketPath: replacementSocketPath,
+          requestLine: preShutdownRequestLine,
+          timeoutMs: 1_000,
+          keepWriteOpen: true,
+          accept: (response) =>
+            response && typeof response === "object" && !Array.isArray(response)
+              ? (response as { ok: boolean; error?: string })
+              : undefined,
+        }),
+      ).resolves.toEqual({ ok: false, error: "unauthorized" });
+    },
+  );
+
+  it.runIf(dockerAvailable && process.env.OPENCLAW_PROCESS_ISOLATION_E2E === "1")(
+    "keeps real memory-core artifacts behind its broker when a malicious model-facing tool runs in a constrained process",
+    async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-memory-core-container-e2e-"));
+      const workspaceDir = path.join(root, "workspace");
+      const image = process.env.OPENCLAW_SANDBOX_TEST_IMAGE ?? "openclaw-sandbox:bookworm-slim";
+      const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
+      const bobSession = { sessionKey: "agent:main:direct:bob", sessionId: "bob-session" };
+      const disposeProjections: Array<() => Promise<void>> = [];
+      const runtimeIds: string[] = [];
+      try {
+        fs.mkdirSync(workspaceDir, { recursive: true });
+        vi.stubEnv("OPENCLAW_MEMORY_BROKER_TEST_SECRET", "gateway-only-test-secret");
+        const alicePrincipalId = createVerifiedDirectSession({ name: "alice", ...session });
+        const aliceResource = createPrivateResource(
+          alicePrincipalId,
+          "ALICE_REAL_BROKER_ARTIFACT_SENTINEL",
+        );
+        const bobPrincipalId = createVerifiedDirectSession({
+          name: "bob",
+          ...bobSession,
+        });
+        const bobResource = createPrivateResource(
+          bobPrincipalId,
+          "BOB_REAL_BROKER_ARTIFACT_SENTINEL",
+        );
+        markCutOver();
+        const capability = installDefaultMemoryCoreSelectedRuntime();
+        expect(capability.broker).toMatchObject({ version: 1, kind: "local-child" });
+
+        const brokerDirectoriesBefore = new Set(
+          fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("openclaw-memory-broker-")),
+        );
+        const host = createAuthorizedMemoryReadHost({
+          agentId: "main",
+          ...session,
+          deliveryContext: { channel: "telegram", accountId: "default", to: "alice" },
+        });
+        if (!host) {
+          throw new Error("fixture failed to construct the selected memory-core host");
+        }
+        const indexed = await host.search({ query: "REAL_BROKER_ARTIFACT_SENTINEL", limit: 10 });
+        expect(indexed).toMatchObject({
+          results: [{ path: "memory/MEMORY.md", snippet: "ALICE_REAL_BROKER_ARTIFACT_SENTINEL" }],
+        });
+        expect(JSON.stringify(indexed)).not.toContain("BOB_REAL_BROKER_ARTIFACT_SENTINEL");
+        const broker = await resolveAuthorizedMemoryVirtualFileBroker(host);
+        const virtualFile = broker?.view.files[0];
+        if (!broker || !virtualFile) {
+          throw new Error("fixture failed to materialize a broker-backed virtual view");
+        }
+        await expect(broker.readFile(virtualFile.virtualPath)).resolves.toBe(
+          "ALICE_REAL_BROKER_ARTIFACT_SENTINEL",
+        );
+
+        const brokerDirectory = fs
+          .readdirSync(os.tmpdir())
+          .find(
+            (name) =>
+              name.startsWith("openclaw-memory-broker-") && !brokerDirectoriesBefore.has(name),
+          );
+        if (!brokerDirectory) {
+          throw new Error("fixture failed to locate the selected memory-core broker socket");
+        }
+        const brokerSocketPath = path.join(os.tmpdir(), brokerDirectory, "broker.sock");
+        expect(fs.existsSync(brokerSocketPath)).toBe(true);
+
+        const artifactPathFor = (revision: { revisionId: string; artifactLocator: string }) => {
+          let artifactPath: string | undefined;
+          withScopedMemoryDatabase("main", (database, databasePath) => {
+            const row = database
+              .prepare(
+                `SELECT root.path_key
+                   FROM memory_resource_revisions AS revision
+                   JOIN memory_resources AS resource ON resource.resource_id = revision.resource_id
+                   JOIN memory_stores AS store ON store.store_id = resource.store_id
+                   JOIN memory_storage_roots AS root ON root.storage_root_id = store.storage_root_id
+                  WHERE revision.revision_id = ?`,
+              )
+              .get(revision.revisionId) as { path_key?: string } | undefined;
+            if (row?.path_key) {
+              artifactPath = resolveBuiltinScopedMemoryArtifactPath({
+                databasePath,
+                pathKey: row.path_key,
+                artifactLocator: revision.artifactLocator,
+              });
+            }
+          });
+          if (!artifactPath) {
+            throw new Error("fixture failed to locate a scoped memory artifact");
+          }
+          return artifactPath;
+        };
+        const aliceArtifactPath = artifactPathFor(aliceResource);
+        const bobArtifactPath = artifactPathFor(bobResource);
+        const agentDatabasePath = path.join(
+          stateDir,
+          "agents",
+          "main",
+          "agent",
+          "openclaw-agent.sqlite",
+        );
+        expect(fs.existsSync(aliceArtifactPath)).toBe(true);
+        expect(fs.existsSync(bobArtifactPath)).toBe(true);
+        expect(fs.existsSync(agentDatabasePath)).toBe(true);
+
+        const [{ resolveSandboxContext }, { stageAuthorizedVirtualProjectionMountPlan }] =
+          await Promise.all([
+            import("../../../../src/agents/sandbox/context.js"),
+            import("../../../../src/agents/sandbox/authorized-virtual-projection-staging.js"),
+          ]);
+        const sandbox = await resolveSandboxContext({
+          agentId: "main",
+          config: constrainedSandboxConfig({
+            image,
+            prefix: `oc-qa-memory-core-${process.pid}-`,
+            workspaceRoot: path.join(root, "sandboxes"),
+          }),
+          sessionKey: session.sessionKey,
+          workspaceDir,
+          prepareAuthorizedVirtualProjectionMountPlan: async ({ agentWorkspaceDir }) => {
+            const staged = await stageAuthorizedVirtualProjectionMountPlan({
+              agentWorkspaceDir,
+              broker,
+            });
+            return staged;
+          },
+        });
+        if (!sandbox?.backend) {
+          throw new Error("fixture failed to start the constrained model-tool process");
+        }
+        runtimeIds.push(sandbox.runtimeId);
+        if (sandbox.disposeAuthorizedVirtualProjectionMountPlan) {
+          disposeProjections.push(sandbox.disposeAuthorizedVirtualProjectionMountPlan);
+        }
+
+        const result = await sandbox.backend.runShellCommand({
+          script: [
+            'test "$(cat "$1")" = "$2"',
+            'test "$(find /memory -type f -print | sort)" = "$1"',
+            'test ! -e "$3"',
+            'test ! -e "$4"',
+            'test ! -e "$5"',
+            'test ! -e "$6"',
+            'test ! -e "$7"',
+            'test -z "${OPENCLAW_MEMORY_BROKER_TEST_SECRET:-}"',
+            '! find /proc -path "*/fd/*" -lname "$3" -print -quit 2>/dev/null | grep -q .',
+            '! find /proc -path "*/fd/*" -lname "$5" -print -quit 2>/dev/null | grep -q .',
+            '! printf denied > "$1"',
+          ].join(" && "),
+          args: [
+            `/memory/${virtualFile.virtualPath}`,
+            "ALICE_REAL_BROKER_ARTIFACT_SENTINEL",
+            aliceArtifactPath,
+            bobArtifactPath,
+            agentDatabasePath,
+            stateDir,
+            brokerSocketPath,
+          ],
+        });
+        expect(result.code, result.stderr.toString()).toBe(0);
+
+        await verifyNodeWorkerContainerProjectionIsolation({
+          root: path.join(root, "node-worker-projection"),
+          broker,
+          outsideArtifactPath: aliceArtifactPath,
+          outsideArtifactContents: "ALICE_REAL_BROKER_ARTIFACT_SENTINEL",
+          issuedVirtualPath: virtualFile.virtualPath,
+          issuedContents: "ALICE_REAL_BROKER_ARTIFACT_SENTINEL",
+          forbiddenEnvironmentVariable: "OPENCLAW_MEMORY_BROKER_TEST_SECRET",
+        });
+
+        const bobHost = createAuthorizedMemoryReadHost({
+          agentId: "main",
+          ...bobSession,
+          deliveryContext: { channel: "telegram", accountId: "default", to: "bob" },
+        });
+        const bobBroker = await resolveAuthorizedMemoryVirtualFileBroker(bobHost);
+        const bobVirtualFile = bobBroker?.view.files[0];
+        if (!bobHost || !bobBroker || !bobVirtualFile) {
+          throw new Error("fixture failed to materialize Bob's selected memory-core virtual view");
+        }
+        await expect(
+          bobHost.search({ query: "REAL_BROKER_ARTIFACT_SENTINEL", limit: 10 }),
+        ).resolves.toMatchObject({
+          results: [{ path: "memory/MEMORY.md", snippet: "BOB_REAL_BROKER_ARTIFACT_SENTINEL" }],
+        });
+        await expect(bobBroker.readFile(bobVirtualFile.virtualPath)).resolves.toBe(
+          "BOB_REAL_BROKER_ARTIFACT_SENTINEL",
+        );
+        const bobSandbox = await resolveSandboxContext({
+          agentId: "main",
+          config: constrainedSandboxConfig({
+            image,
+            prefix: `oc-qa-memory-core-${process.pid}-`,
+            workspaceRoot: path.join(root, "sandboxes"),
+          }),
+          sessionKey: bobSession.sessionKey,
+          workspaceDir,
+          prepareAuthorizedVirtualProjectionMountPlan: async ({ agentWorkspaceDir }) => {
+            return await stageAuthorizedVirtualProjectionMountPlan({
+              agentWorkspaceDir,
+              broker: bobBroker,
+            });
+          },
+        });
+        if (!bobSandbox?.backend) {
+          throw new Error("fixture failed to start Bob's constrained model-tool process");
+        }
+        runtimeIds.push(bobSandbox.runtimeId);
+        if (bobSandbox.disposeAuthorizedVirtualProjectionMountPlan) {
+          disposeProjections.push(bobSandbox.disposeAuthorizedVirtualProjectionMountPlan);
+        }
+        expect(bobSandbox.runtimeId).not.toBe(sandbox.runtimeId);
+        const bobResult = await bobSandbox.backend.runShellCommand({
+          script: [
+            'test "$(cat "$1")" = "$2"',
+            'test "$(find /memory -type f -print | sort)" = "$1"',
+            '! grep -R -F "$3" /memory',
+            '! printf denied > "$1"',
+          ].join(" && "),
+          args: [
+            `/memory/${bobVirtualFile.virtualPath}`,
+            "BOB_REAL_BROKER_ARTIFACT_SENTINEL",
+            "ALICE_REAL_BROKER_ARTIFACT_SENTINEL",
+          ],
+        });
+        expect(bobResult.code, bobResult.stderr.toString()).toBe(0);
+      } finally {
+        if (runtimeIds.length > 0) {
+          const [{ execDocker }, { removeSandboxContainer }] = await Promise.all([
+            import("../../../../src/agents/sandbox/docker.js"),
+            import("../../../../src/agents/sandbox/manage.js"),
+          ]);
+          for (const runtimeId of runtimeIds) {
+            await removeSandboxContainer(runtimeId);
+            await execDocker(["rm", "-f", runtimeId], { allowFailure: true });
+          }
+        }
+        await Promise.all(disposeProjections.map((disposeProjection) => disposeProjection()));
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
 
   it("invalidates materialized virtual views after binding revocation and plan expiry", async () => {
     const session = { sessionKey: "agent:main:direct:alice", sessionId: "alice-session" };
@@ -2014,6 +2698,131 @@ describe("builtin scoped authorized runtime", () => {
           .prepare("SELECT * FROM memory_scoped_chunks WHERE revision_id = ?")
           .all(handle.resourceRevision),
       ).toEqual([]);
+    });
+  });
+
+  it("quarantines cancelled writes before activation so recovery cannot publish them", async () => {
+    const principalId = "cancelled-writer";
+    const store = createBuiltinScopedMemoryStore({
+      agentId: "main",
+      scopeKind: "user",
+      audienceKind: "user",
+      audienceId: principalId,
+      authorityKind: "user",
+      authorityOwnerId: principalId,
+      defaultCapabilities: ["append"],
+      actor: { kind: "human", id: principalId },
+      reason: "cancellation fixture",
+    });
+    const context = {
+      ...createContext(principalId),
+      operation: "append" as const,
+    } satisfies MemoryAccessContext;
+    const plan = await builtinScopedMemoryAuthorizedRuntime.authorize(context);
+    const preAborted = new AbortController();
+    preAborted.abort();
+
+    await expect(
+      builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+        context,
+        plan,
+        mutation: {
+          version: 1,
+          kind: "remember",
+          mutationId: "cancelled-before-stage",
+          idempotencyKey: "cancelled-before-stage-request",
+          content: "CANCELLED_BEFORE_STAGE_SENTINEL",
+          contentType: "markdown",
+        },
+        signal: preAborted.signal,
+      }),
+    ).rejects.toThrow();
+
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare("SELECT count(*) AS count FROM memory_resources WHERE store_id = ?")
+          .get(store.storeId),
+      ).toEqual({ count: 0 });
+      expect(
+        database
+          .prepare("SELECT count(*) AS count FROM memory_write_intents WHERE store_id = ?")
+          .get(store.storeId),
+      ).toEqual({ count: 0 });
+    });
+
+    // This test-only signal becomes aborted at the exact synchronous fence after final rename.
+    // It proves a late pre-activation disconnect leaves durable intent/artifact state quarantined.
+    let abortedReads = 0;
+    const abortAfterFinalRename = {
+      get aborted() {
+        abortedReads += 1;
+        return abortedReads > 2;
+      },
+      throwIfAborted() {
+        if (abortedReads > 2) {
+          throw new Error("authorized write cancelled after final rename");
+        }
+      },
+    } as AbortSignal;
+    await expect(
+      builtinScopedMemoryAuthorizedRuntime.writeAuthorized({
+        context,
+        plan,
+        mutation: {
+          version: 1,
+          kind: "remember",
+          mutationId: "cancelled-after-rename",
+          idempotencyKey: "cancelled-after-rename-request",
+          content: "CANCELLED_AFTER_RENAME_SENTINEL",
+          contentType: "markdown",
+        },
+        signal: abortAfterFinalRename,
+      }),
+    ).rejects.toThrow("cancelled after final rename");
+
+    let revisionId = "";
+    let directory = "";
+    withScopedMemoryDatabase("main", (database, databasePath) => {
+      const intent = database
+        .prepare(
+          `SELECT intent.pending_revision_id, revision.lifecycle_state, intent.state, root.path_key
+             FROM memory_write_intents AS intent
+             JOIN memory_resource_revisions AS revision ON revision.revision_id = intent.pending_revision_id
+             JOIN memory_stores AS store ON store.store_id = intent.store_id
+             JOIN memory_storage_roots AS root ON root.storage_root_id = store.storage_root_id
+            WHERE intent.idempotency_key = ?`,
+        )
+        .get("cancelled-after-rename-request") as {
+        pending_revision_id: string;
+        lifecycle_state: string;
+        path_key: string;
+        state: string;
+      };
+      revisionId = intent.pending_revision_id;
+      directory = path.join(resolveScopedMemoryArtifactBase(databasePath), intent.path_key);
+      expect(intent).toMatchObject({ lifecycle_state: "quarantined", state: "quarantined" });
+      expect(
+        database
+          .prepare("SELECT * FROM memory_scoped_chunks WHERE revision_id = ?")
+          .all(revisionId),
+      ).toEqual([]);
+    });
+    expect(fs.readdirSync(path.join(path.dirname(directory), ".quarantine"))).not.toEqual([]);
+
+    // A later authorization runs recovery. It must retain the tombstone rather than promote it.
+    await builtinScopedMemoryAuthorizedRuntime.authorize(context);
+    withScopedMemoryDatabase("main", (database) => {
+      expect(
+        database
+          .prepare(
+            `SELECT revision.lifecycle_state, intent.state
+               FROM memory_resource_revisions AS revision
+               JOIN memory_write_intents AS intent ON intent.pending_revision_id = revision.revision_id
+              WHERE revision.revision_id = ?`,
+          )
+          .get(revisionId),
+      ).toEqual({ lifecycle_state: "quarantined", state: "quarantined" });
     });
   });
 

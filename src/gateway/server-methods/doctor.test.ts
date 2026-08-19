@@ -29,6 +29,9 @@ const removeBackfillDiaryEntries = vi.hoisted(() => vi.fn());
 const removeGroundedShortTermCandidates = vi.hoisted(() => vi.fn());
 const repairDreamingArtifacts = vi.hoisted(() => vi.fn());
 const loadShortTermPromotionDreamingStats = vi.hoisted(() => vi.fn());
+const withBrokeredMemoryMaintenance = vi.hoisted(() =>
+  vi.fn(async (run: () => Promise<unknown>) => await run()),
+);
 
 vi.mock("../../config/config.js", () => ({
   getRuntimeConfig,
@@ -56,6 +59,10 @@ vi.mock("../../agents/memory-search.js", () => ({
 
 vi.mock("../../plugins/memory-runtime.js", () => ({
   getActiveMemorySearchManagerCore: getMemorySearchManager,
+}));
+
+vi.mock("../../plugins/memory-broker-runtime.js", () => ({
+  withBrokeredMemoryMaintenance,
 }));
 
 import { createDoctorHandlers } from "./doctor.js";
@@ -1166,6 +1173,44 @@ describe("doctor.memory.status", () => {
 });
 
 describe("doctor.memory dream actions", () => {
+  it("serializes every mutating Doctor path through broker maintenance", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "doctor-memory-maintenance-"));
+    getRuntimeConfig.mockReset().mockReturnValue({});
+    resolveDefaultAgentId.mockReset().mockReturnValue("main");
+    resolveAgentWorkspaceDir.mockReset().mockReturnValue(workspaceDir);
+    previewGroundedRemMarkdown.mockReset().mockResolvedValue({ scannedFiles: 0, files: [] });
+    writeBackfillDiaryEntries.mockReset();
+    removeBackfillDiaryEntries.mockReset().mockResolvedValue({ removed: 0 });
+    removeGroundedShortTermCandidates.mockReset().mockResolvedValue({ removed: 0 });
+    repairDreamingArtifacts.mockReset().mockResolvedValue({
+      changed: false,
+      archivedDreamsDiary: false,
+      archivedSessionCorpus: false,
+      archivedSessionIngestion: false,
+      warnings: [],
+    });
+    dedupeDreamDiaryEntries.mockReset().mockResolvedValue({ removed: 0, kept: 0 });
+    withBrokeredMemoryMaintenance.mockClear();
+    withBrokeredMemoryMaintenance.mockImplementation(async (run: () => Promise<unknown>) =>
+      await run(),
+    );
+
+    try {
+      for (const method of [
+        "doctor.memory.backfillDreamDiary",
+        "doctor.memory.resetDreamDiary",
+        "doctor.memory.resetGroundedShortTerm",
+        "doctor.memory.repairDreamingArtifacts",
+        "doctor.memory.dedupeDreamDiary",
+      ] as const) {
+        await invokeDoctorMemory(method, vi.fn());
+      }
+      expect(withBrokeredMemoryMaintenance).toHaveBeenCalledTimes(5);
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("clears grounded-only staged short-term entries without touching the diary", async () => {
     resolveAgentWorkspaceDir.mockReturnValue("/tmp/openclaw");
     removeGroundedShortTermCandidates.mockResolvedValue({
