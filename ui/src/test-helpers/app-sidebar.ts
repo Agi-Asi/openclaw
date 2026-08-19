@@ -357,7 +357,7 @@ export function createSessionsHarness(agentId: string, keys: string[]) {
     deleteMany,
     list,
     listSnapshot(scope: Parameters<SessionCapability["listSnapshot"]>[0]) {
-      if (!scope.archivedFilter || scope.archivedFilter === "active") {
+      if ((!scope.archivedFilter || scope.archivedFilter === "active") && !scope.category) {
         return {
           result: state.result,
           agentId: state.agentId,
@@ -374,7 +374,7 @@ export function createSessionsHarness(agentId: string, keys: string[]) {
       return scopedSessions!.subscribeList(scope, listener);
     },
     refreshList(options: Parameters<SessionCapability["refreshList"]>[0]) {
-      if (!options?.archivedFilter || options.archivedFilter === "active") {
+      if ((!options?.archivedFilter || options.archivedFilter === "active") && !options?.category) {
         return refresh(options);
       }
       return scopedSessions!.refreshList(options);
@@ -418,12 +418,12 @@ export function createSessionsHarness(agentId: string, keys: string[]) {
           const { archived, ...options } = (params ?? {}) as SessionListOptions & {
             archived?: true | "all";
           };
-          if (!archived) {
+          if (!archived && !options.category) {
             return state.result as T;
           }
           return (await list({
             ...options,
-            archivedFilter: archived === true ? "archived" : "all",
+            archivedFilter: archived === true ? "archived" : archived === "all" ? "all" : "active",
           })) as T;
         },
       } as GatewayBrowserClient;

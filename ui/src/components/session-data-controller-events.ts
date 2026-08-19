@@ -80,7 +80,10 @@ export function refreshSidebarSessionList(
   archivedFilter: SidebarSessionStatusFilter,
   append = false,
 ): Promise<void> {
-  const result = owner.sessionsResult;
+  const result = agentId
+    ? owner.context?.sessions.listSnapshot(filteredSidebarSessionQuery(agentId, archivedFilter))
+        .result
+    : null;
   // An omitted cursor falls back to accumulated rows; an explicit null is terminal.
   const offset = result?.nextOffset === undefined ? result?.sessions.length : result.nextOffset;
   if (

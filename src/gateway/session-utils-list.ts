@@ -186,6 +186,7 @@ function filterSessionEntries(params: {
   const includeUnknown = opts.includeUnknown === true;
   const spawnedBy = typeof opts.spawnedBy === "string" ? opts.spawnedBy : "";
   const label = normalizeOptionalString(opts.label) ?? "";
+  const category = normalizeOptionalString(opts.category);
   const boardFace = opts.boardFace;
   const agentId = typeof opts.agentId === "string" ? normalizeAgentId(opts.agentId) : "";
   const search = normalizeLowercaseStringOrEmpty(opts.search);
@@ -271,7 +272,11 @@ function filterSessionEntries(params: {
     ) {
       continue;
     }
-    if ((label && entry.label !== label) || (boardFace && entry.boardFace !== boardFace)) {
+    if (
+      (label && entry.label !== label) ||
+      (category && normalizeOptionalString(entry.category) !== category) ||
+      (boardFace && entry.boardFace !== boardFace)
+    ) {
       continue;
     }
     if (search) {

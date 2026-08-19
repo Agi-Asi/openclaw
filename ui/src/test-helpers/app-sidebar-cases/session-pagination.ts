@@ -335,6 +335,84 @@ describe("AppSidebar gateway session pagination", () => {
     expect(sidebar.querySelector('button[aria-label="Show more"]')).toBeNull();
   });
 
+  it("loads a named group's first page when the group expands beyond the global page", async () => {
+    const jesseKeys = Array.from({ length: 11 }, (_, index) => `agent:main:jesse-${index}`);
+    const otherKeys = Array.from({ length: 59 }, (_, index) => `agent:main:other-${index}`);
+    const harness = createSessionsHarness("main", [jesseKeys[0]!, ...otherKeys]);
+    const firstPage = harness.sessions.state.result;
+    const groupPage = createSessionState("main", jesseKeys).result;
+    if (!firstPage || !groupPage) {
+      throw new Error("expected grouped session results");
+    }
+    firstPage.sessions[0]!.category = "Jesse";
+    for (const row of firstPage.sessions.slice(1)) {
+      row.category = "Other";
+    }
+    for (const row of groupPage.sessions) {
+      row.category = "Jesse";
+    }
+    Object.assign(firstPage, {
+      count: 60,
+      totalCount: 70,
+      limitApplied: 60,
+      nextOffset: 60,
+      hasMore: true,
+    });
+    harness.list.mockImplementation(async (options) => {
+      if ((options as { category?: string } | undefined)?.category !== "Jesse") {
+        return firstPage;
+      }
+      const limit = options?.limit ?? 10;
+      const sessions = groupPage.sessions.slice(0, limit);
+      return {
+        ...groupPage,
+        count: sessions.length,
+        totalCount: groupPage.sessions.length,
+        nextOffset: sessions.length < groupPage.sessions.length ? sessions.length : null,
+        hasMore: sessions.length < groupPage.sessions.length,
+        sessions,
+      };
+    });
+
+    const { sidebar } = await mountSidebar(
+      createGateway({} as GatewayBrowserClient),
+      harness.sessions,
+    );
+    sidebar.sessionOrganizer.saveCollapsedSessionSections(new Set(["category:Jesse"]));
+    harness.publish({ groups: ["Jesse", "Other"] });
+    harness.publishList({ result: firstPage, agentId: "main" });
+    await sidebar.updateComplete;
+
+    const jesseGroup = sidebar.querySelector('[data-session-section="category:Jesse"]');
+    const toggle = jesseGroup?.querySelector<HTMLButtonElement>(".sidebar-session-group-toggle");
+    expect(toggle).not.toBeNull();
+    toggle?.click();
+    await waitForFast(() => expect(harness.list).toHaveBeenCalled());
+
+    await waitForFast(() => {
+      expect(
+        sidebar.querySelectorAll('[data-session-section="category:Jesse"] [data-session-key]'),
+      ).toHaveLength(10);
+    });
+    expect(harness.list).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "main", archivedFilter: "active", category: "Jesse" }),
+    );
+
+    const showMore = sidebar
+      .querySelector('[data-session-section="category:Jesse"]')
+      ?.querySelector<HTMLButtonElement>('button[aria-label="Show more"]');
+    expect(showMore).not.toBeNull();
+    showMore?.click();
+    await waitForFast(() => {
+      expect(
+        sidebar.querySelectorAll('[data-session-section="category:Jesse"] [data-session-key]'),
+      ).toHaveLength(11);
+    });
+    expect(harness.list).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "Jesse", limit: 20 }),
+    );
+  });
+
   it("derives the active page offset when the Gateway omits its optional cursor", async () => {
     const keys = Array.from({ length: 51 }, (_, index) => `agent:main:session-${index}`);
     const harness = createSessionsHarness("main", keys.slice(0, 50));

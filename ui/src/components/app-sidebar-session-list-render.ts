@@ -32,7 +32,7 @@ type RenderableSessionSection = SidebarSessionSection<SidebarRecentSession> & {
 };
 
 type SidebarSessionListHost = SessionListHost & {
-  loadMoreSidebarSessions(): Promise<void>;
+  loadMoreSidebarSessions(category?: string, limit?: number): Promise<void>;
 };
 
 type SessionCatalogRenderSnapshot = {
@@ -226,7 +226,7 @@ function renderSessionPagination(params: {
   nativeSessionsHaveMore: boolean;
 }) {
   const { host, section } = params;
-  const canLoadMore = section.id === "ungrouped" && params.nativeSessionsHaveMore;
+  const canLoadMore = params.nativeSessionsHaveMore;
   const canShowMore = section.visibleRowCount < section.totalRowCount || canLoadMore;
   const canShowLess =
     section.visibleRowCount > SIDEBAR_SESSION_SEE_LESS_THRESHOLD &&
@@ -245,7 +245,7 @@ function renderSessionPagination(params: {
               const nextLimit = section.visibleLimit + SIDEBAR_SESSION_PAGE_SIZE;
               host.setVisibleSessionLimit(section.id, nextLimit);
               if (canLoadMore && nextLimit > section.totalRowCount) {
-                void host.loadMoreSidebarSessions();
+                void host.loadMoreSidebarSessions(section.category, nextLimit);
               }
             }}
           >
@@ -334,6 +334,7 @@ function renderSessionListBody(params: {
   host: SidebarSessionListHost;
   sections: RenderableSessionSection[];
   nativeSessionsHaveMore: boolean;
+  categorySessionsHaveMore: (category: string) => boolean;
   catalogs: SessionCatalogRenderSnapshot;
   catalogRenderer: SessionCatalogGroupsRenderer | null;
 }) {
@@ -387,7 +388,9 @@ function renderSessionListBody(params: {
       return renderSessionSection({
         host,
         section,
-        nativeSessionsHaveMore: params.nativeSessionsHaveMore,
+        nativeSessionsHaveMore: section.category
+          ? params.categorySessionsHaveMore(section.category)
+          : params.nativeSessionsHaveMore,
       });
     })}
     ${firstCatalogSectionIndex < 0 ? catalogStatus : nothing}
@@ -435,6 +438,7 @@ export function renderSessionList(params: {
   empty: boolean;
   sections: RenderableSessionSection[];
   nativeSessionsHaveMore: boolean;
+  categorySessionsHaveMore: (category: string) => boolean;
   catalogs: SessionCatalogRenderSnapshot;
   catalogRenderer: SessionCatalogGroupsRenderer | null;
 }) {
@@ -475,6 +479,7 @@ export function renderSessionList(params: {
           host,
           sections: params.sections,
           nativeSessionsHaveMore: params.nativeSessionsHaveMore,
+          categorySessionsHaveMore: params.categorySessionsHaveMore,
           catalogs: params.catalogs,
           catalogRenderer: params.catalogRenderer,
         })}

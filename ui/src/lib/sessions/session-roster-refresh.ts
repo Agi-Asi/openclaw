@@ -78,6 +78,7 @@ function isPrimarySessionListQuery(options: SessionListScope): boolean {
     !query.boardFace &&
     !query.activeMinutes &&
     !query.search &&
+    !query.category &&
     !query.ownerId &&
     query.involvingMe !== true &&
     query.includeGlobal === true &&

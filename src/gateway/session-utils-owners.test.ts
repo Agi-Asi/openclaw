@@ -198,11 +198,13 @@ it("projects only durable profiles and configured agents as effective owners", (
 it("filters immutable creator and effective owner separately while preserving projections", () => {
   const store: Record<string, SessionEntry> = {
     "agent:main:default-owner": {
+      category: "Jesse",
       createdActor: { type: "human", id: "profile-ada" },
       sessionId: "session-default-owner",
       updatedAt: 2,
     },
     "agent:main:assigned-owner": {
+      category: "Jesse",
       createdActor: { type: "human", id: "profile-ada" },
       owner: {
         actor: { type: "human", id: "profile-bob" },
@@ -213,6 +215,7 @@ it("filters immutable creator and effective owner separately while preserving pr
       updatedAt: 1,
     },
     "agent:main:other-creator": {
+      category: "Other",
       createdActor: { type: "human", id: "profile-bob" },
       owner: { actor: { type: "human", id: "profile-ada" } },
       sessionId: "session-other-creator",
@@ -274,6 +277,15 @@ it("filters immutable creator and effective owner separately while preserving pr
     createdActor: { id: "profile-ada", label: "Ada" },
     owner: { actor: { id: "profile-bob", label: "Bob" } },
   });
+  const categoryFiltered = listSessionsFromStore({
+    cfg: {} as OpenClawConfig,
+    storePath: "/tmp/openclaw-session-owners",
+    store,
+    opts: { archived: "all", category: "Jesse", limit: 1 },
+  });
+  expect(categoryFiltered.sessions.map((row) => row.key)).toEqual(["agent:main:default-owner"]);
+  expect(categoryFiltered.totalCount).toBe(2);
+  expect(categoryFiltered.hasMore).toBe(true);
 });
 
 it("projects participant identities and filters sessions involving the viewer", () => {

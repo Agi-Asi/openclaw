@@ -64,6 +64,7 @@ export type SessionListOptions = {
   boardFace?: "chat" | "dashboard";
   activeMinutes?: number;
   search?: string;
+  category?: string;
   ownerId?: string;
   involvingMe?: boolean;
   offset?: number;

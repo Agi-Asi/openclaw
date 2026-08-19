@@ -98,6 +98,7 @@ export function buildSessionListParams(options: SessionListOptions = {}): Record
   const agentId = options.agentId?.trim();
   const spawnedBy = options.spawnedBy?.trim();
   const search = options.search?.trim();
+  const category = options.category?.trim();
   const ownerId = options.ownerId?.trim();
   if (options.involvingMe === true) {
     params.involvingMe = true;
@@ -113,6 +114,9 @@ export function buildSessionListParams(options: SessionListOptions = {}): Record
   }
   if (search) {
     params.search = search;
+  }
+  if (category) {
+    params.category = category;
   }
   if (ownerId) {
     params.ownerId = ownerId;
