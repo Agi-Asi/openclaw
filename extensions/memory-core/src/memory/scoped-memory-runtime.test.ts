@@ -33,8 +33,8 @@ import {
   registerAgentRunContext,
   resetAgentRunRegistryForTest,
 } from "../../../../src/infra/agent-run-registry.js";
-import { startMemoryBrokerProcess } from "../../../../src/memory-broker/process.js";
 import { requestJsonlSocket } from "../../../../src/infra/jsonl-socket.js";
+import { startMemoryBrokerProcess } from "../../../../src/memory-broker/process.js";
 import { admitMemoryAuthorizationReadRuntime } from "../../../../src/plugins/memory-authorization-runtime.js";
 import {
   closeBrokeredMemoryRuntimes,
@@ -101,6 +101,9 @@ const { dispatchInboundMessage } = await import("../../../../src/auto-reply/disp
 
 const dockerAvailable =
   spawnSync("docker", ["info"], { stdio: "ignore", timeout: 3_000 }).status === 0;
+// A source-checkout child must compile and load the selected entry before it can bind its socket.
+// Keep crash recovery bounded by the process startup contract, not a machine-specific sub-second budget.
+const SELECTED_BROKER_CRASH_RECOVERY_TIMEOUT_MS = 10_000;
 
 function constrainedSandboxConfig(params: {
   image: string;
@@ -679,12 +682,12 @@ describe("builtin scoped authorized runtime", () => {
             .all(startupRecovered.revisionId),
         ).toEqual([{ text: "BROKER_STARTUP_RECOVERY_SENTINEL" }]);
       });
-      expect(fs.existsSync(path.join(startupRecovered.directory, startupRecovered.stageLocator))).toBe(
-        false,
-      );
-      expect(fs.existsSync(path.join(startupRecovered.directory, startupRecovered.finalLocator))).toBe(
-        true,
-      );
+      expect(
+        fs.existsSync(path.join(startupRecovered.directory, startupRecovered.stageLocator)),
+      ).toBe(false);
+      expect(
+        fs.existsSync(path.join(startupRecovered.directory, startupRecovered.finalLocator)),
+      ).toBe(true);
       const authorizationBinding = {
         agentId: context.agentId,
         sessionId: context.sessionId,
@@ -1691,7 +1694,7 @@ describe("builtin scoped authorized runtime", () => {
             results: [{ snippet: "SELECTED_BROKER_CRASH_RESTART_SENTINEL" }],
           });
         },
-        { timeout: 2_000, interval: 20 },
+        { timeout: SELECTED_BROKER_CRASH_RECOVERY_TIMEOUT_MS, interval: 20 },
       );
 
       const replacementSocketPath = resolveNewMemoryBrokerSocketPath(
