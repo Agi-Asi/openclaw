@@ -268,6 +268,7 @@ async function handleInternalSourceReplySendAction(
     ...(sourceReply.mediaUrls?.length ? { mediaUrls: sourceReply.mediaUrls } : {}),
     dryRun,
   };
+  const terminatesTurn = input.sourceReplyFinal === true && !dryRun;
   return withSendNormalization(
     {
       kind: "send",
@@ -276,7 +277,7 @@ async function handleInternalSourceReplySendAction(
       to: "current-run",
       handledBy: "internal-source",
       payload,
-      toolResult: buildInternalSourceReplyToolResult(payload),
+      toolResult: buildInternalSourceReplyToolResult(payload, terminatesTurn),
       dryRun,
     },
     sourceReply.normalization,
@@ -305,6 +306,7 @@ type InternalSourceReplyToolDetails = {
 
 function buildInternalSourceReplyToolResult(
   payload: InternalSourceReplyToolDetails,
+  terminatesTurn: boolean,
 ): AgentToolResult<InternalSourceReplyToolDetails> {
   const action = payload.dryRun ? "Prepared" : "Sent";
   const sink = payload.sourceReplySink ? ` via ${payload.sourceReplySink}` : "";
@@ -316,6 +318,7 @@ function buildInternalSourceReplyToolResult(
       },
     ],
     details: payload,
+    ...(terminatesTurn ? { terminate: true } : {}),
   };
 }
 
