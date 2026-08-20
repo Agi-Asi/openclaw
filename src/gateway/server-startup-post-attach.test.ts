@@ -10,6 +10,7 @@ import type {
   PluginHookGatewayContext,
   PluginHookGatewayStartEvent,
 } from "../plugins/hook-types.js";
+import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
 import {
   getActiveGatewayRootWorkCount,
@@ -2247,6 +2248,41 @@ describe("startGatewayPostAttachRuntime", () => {
         ["fullCatalogConcurrencyLimitCount", 1],
       ],
     });
+  });
+
+  it("scopes prepared model runtime startup to the already-loaded Gateway plugin registry", async () => {
+    const pluginRegistry = createPostAttachParams().pluginRegistry;
+    const pluginMetadataSnapshot = {
+      pluginIds: ["beta", "alpha", "cold", "unrelated-provider"],
+    } as never;
+    let preparedRuntimePluginRegistry: typeof pluginRegistry | undefined;
+    hoisted.refreshPreparedModelRuntimeSnapshots.mockImplementationOnce(async () => {
+      preparedRuntimePluginRegistry = getPluginRuntimeGatewayRequestScope()?.pluginRegistry;
+    });
+
+    await startGatewaySidecars({
+      cfg: { hooks: { internal: { enabled: false } } } as never,
+      pluginMetadataSnapshot,
+      pluginRegistry,
+      defaultWorkspaceDir: "/tmp/openclaw-workspace",
+      deps: {} as never,
+      startChannels: vi.fn(async () => {}),
+      log: { warn: vi.fn() },
+      logHooks: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      logChannels: { info: vi.fn(), error: vi.fn() },
+    });
+
+    expect(preparedRuntimePluginRegistry).toBe(pluginRegistry);
+    expect(
+      preparedRuntimePluginRegistry?.plugins
+        .filter((plugin) => plugin.status === "loaded")
+        .map((plugin) => plugin.id),
+    ).toEqual(["beta", "alpha"]);
+    expect(hoisted.refreshPreparedModelRuntimeSnapshots).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ pluginMetadataSnapshot }),
+    );
+    expect(getPluginRuntimeGatewayRequestScope()).toBeUndefined();
   });
 
   it("marks startup main-session orphans before model runtime and channel startup", async () => {
