@@ -80,11 +80,7 @@ function requiredSha(value: unknown, label: string): string {
 }
 
 function trustedWorkflowPath(path: string, branch: string): boolean {
-  return new Set([
-    WORKFLOW_PATH,
-    `${WORKFLOW_PATH}@${branch}`,
-    `${WORKFLOW_PATH}@refs/tags/${branch}`,
-  ]).has(path);
+  return path === `${WORKFLOW_PATH}@refs/tags/${branch}`;
 }
 
 export function validateOpenClawNpmResumeRun({
@@ -115,20 +111,24 @@ export function validateOpenClawNpmResumeRun({
   }
 
   const tagObjectSha = requiredSha(tagRef?.object?.sha, "tooling tag object SHA");
-  if (tagRef?.object?.type !== "tag") {
-    fail(`OpenClaw npm resume run tooling ref is not a signed annotated tag: ${url}`);
-  }
-
-  const tagCommitSha = requiredSha(tag?.object?.sha, "tooling tag commit SHA");
-  if (
-    tag?.object?.type !== "commit" ||
-    tagCommitSha !== sha ||
-    tag?.verification?.verified !== true ||
-    (compareStatus !== "ahead" && compareStatus !== "identical")
-  ) {
-    fail(
-      `OpenClaw npm resume run is not bound to a real, main-reachable protected tooling tag: ${url}`,
-    );
+  if (tagRef?.object?.type === "commit") {
+    if (tagObjectSha !== sha) {
+      fail(`OpenClaw npm resume run protected tooling tag moved after dispatch: ${url}`);
+    }
+  } else if (tagRef?.object?.type === "tag") {
+    const tagCommitSha = requiredSha(tag?.object?.sha, "tooling tag commit SHA");
+    if (
+      tag?.object?.type !== "commit" ||
+      tagCommitSha !== sha ||
+      tag?.verification?.verified !== true ||
+      (compareStatus !== "ahead" && compareStatus !== "identical")
+    ) {
+      fail(
+        `OpenClaw npm resume run is not bound to a real, main-reachable protected tooling tag: ${url}`,
+      );
+    }
+  } else {
+    fail(`OpenClaw npm resume run tooling ref is not a protected tag: ${url}`);
   }
 
   if (
@@ -197,9 +197,10 @@ export function resolveOpenClawNpmResumeRun({
   const branch = requiredString(run?.head_branch, "head_branch");
   const tagRef = resumeTagRecord(api(`git/ref/tags/${branch}`));
   const tagObjectSha = requiredSha(tagRef?.object?.sha, "tooling tag object SHA");
-  const tag = resumeTagRecord(api(`git/tags/${tagObjectSha}`));
   const sha = requiredSha(run?.head_sha, "head_sha");
-  const comparison = api(`compare/${sha}...main`);
+  const annotatedTag = tagRef?.object?.type === "tag";
+  const tag = annotatedTag ? resumeTagRecord(api(`git/tags/${tagObjectSha}`)) : {};
+  const comparison = annotatedTag ? api(`compare/${sha}...main`) : {};
   const jobs = resumeJobRecords(
     parseJson(
       runGh(["run", "view", runId, "--repo", repo, "--json", "jobs", "--jq", ".jobs"]),

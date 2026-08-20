@@ -232,6 +232,9 @@ export function parseArgs(argv: string[]) {
   if (Object.hasOwn(args.inputs, "expected_sha")) {
     throw new Error("SHA-pinned release validation reserves expected_sha for the resolved --sha");
   }
+  if (Object.hasOwn(args.inputs, "trusted_workflow_json")) {
+    throw new Error("SHA-pinned release validation reserves trusted_workflow_json");
+  }
   if (
     args.targetRef &&
     !RELEASE_CONTEXT_BRANCH_PATTERN.test(args.targetRef) &&
@@ -745,6 +748,14 @@ function main() {
   const dispatchInputs = {
     ref: targetSha,
     expected_sha: targetSha,
+    trusted_workflow_json: JSON.stringify({
+      ref: args.trustedWorkflowRef,
+      fullRef:
+        args.trustedWorkflowRef === "main"
+          ? "refs/heads/main"
+          : `refs/tags/${args.trustedWorkflowRef}`,
+      sha: workflowSha,
+    }),
     ...(targetContextRef !== targetSha ? { target_context_ref: targetContextRef } : {}),
     ...args.inputs,
   };

@@ -423,6 +423,9 @@ describe("full-release-validation-at-sha", () => {
     expect(() => parseArgs(["--", `expected_sha=${"a".repeat(40)}`])).toThrow(
       "reserves expected_sha",
     );
+    expect(() => parseArgs(["-f", "trusted_workflow_json={}"])).toThrow(
+      "reserves trusted_workflow_json",
+    );
   });
 
   it("validates direct and reused runs through the strict evidence verifier", () => {
@@ -665,6 +668,11 @@ describe("full-release-validation-at-sha", () => {
         target_context_ref: fixture.releaseRef,
         allow_unreleased_changelog: "false",
       });
+      expect(JSON.parse(dispatchInputs.trusted_workflow_json ?? "{}")).toEqual({
+        ref: "main",
+        fullRef: "refs/heads/main",
+        sha: fixture.workflowSha,
+      });
       expect(ghCalls).toContainEqual(["api", "repos/openclaw/openclaw/actions/runs/123"]);
       expect(ghCalls.some((args) => args[0] === "graphql")).toBe(false);
       expect(ghCalls.some((args) => args[0] === "run" && args[1] === "watch")).toBe(false);
@@ -710,6 +718,17 @@ describe("full-release-validation-at-sha", () => {
         "origin",
         `refs/tags/${fixture.trustedWorkflowTag}`,
       ]);
+      const dispatch = fixture
+        .readCalls(fixture.ghCallsPath)
+        .find((args) => args[0] === "workflow" && args[1] === "run");
+      const trustedIdentity = dispatch
+        ?.find((arg) => arg.startsWith("trusted_workflow_json="))
+        ?.slice("trusted_workflow_json=".length);
+      expect(JSON.parse(trustedIdentity ?? "{}")).toEqual({
+        ref: fixture.trustedWorkflowTag,
+        fullRef: `refs/tags/${fixture.trustedWorkflowTag}`,
+        sha: fixture.workflowSha,
+      });
     } finally {
       fixture.cleanup();
     }

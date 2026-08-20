@@ -80,6 +80,23 @@ describe("openclaw npm resume run identity", () => {
     });
   });
 
+  it("accepts a successful run bound to the exact lightweight protected tooling tag", () => {
+    expect(
+      validateOpenClawNpmResumeRun(
+        fixture({
+          compareStatus: undefined,
+          tag: {},
+          tagRef: { object: { sha: SHA, type: "commit" } },
+        }),
+      ),
+    ).toEqual({
+      tagObjectSha: SHA,
+      url: URL,
+      workflowRef: `refs/tags/${BRANCH}`,
+      workflowSha: SHA,
+    });
+  });
+
   it.each([
     ["branch", { run: { ...fixture().run, head_branch: "main" } }, "untrusted workflow ref"],
     ["workflow", { run: { ...fixture().run, workflow_id: 999 } }, "untrusted workflow identity"],
@@ -95,9 +112,23 @@ describe("openclaw npm resume run identity", () => {
       "untrusted workflow identity",
     ],
     [
+      "same-name branch path",
+      { run: { ...fixture().run, path: `.github/workflows/openclaw-npm-release.yml@${BRANCH}` } },
+      "untrusted workflow identity",
+    ],
+    [
       "tag kind",
-      { tagRef: { object: { sha: TAG_OBJECT_SHA, type: "commit" } } },
-      "not a signed annotated tag",
+      { tagRef: { object: { sha: TAG_OBJECT_SHA, type: "tree" } } },
+      "not a protected tag",
+    ],
+    [
+      "moved lightweight tag",
+      {
+        compareStatus: undefined,
+        tag: {},
+        tagRef: { object: { sha: "c".repeat(40), type: "commit" } },
+      },
+      "moved after dispatch",
     ],
     [
       "tag target",
@@ -143,5 +174,37 @@ describe("openclaw npm resume run identity", () => {
       resolveOpenClawNpmResumeRun({ repo: "openclaw/openclaw", runGh, runId: "456" }),
     ).toMatchObject({ workflowRef: `refs/tags/${BRANCH}`, workflowSha: SHA });
     expect(runGh).toHaveBeenCalledTimes(6);
+  });
+
+  it("loads a lightweight protected tag without requiring tag metadata or main ancestry", () => {
+    const lightweight = fixture({
+      compareStatus: undefined,
+      tag: {},
+      tagRef: { object: { sha: SHA, type: "commit" } },
+    });
+    const responses = new Map<string, unknown>([
+      [`api repos/openclaw/openclaw/actions/runs/456 --method GET`, lightweight.run],
+      [
+        `api repos/openclaw/openclaw/actions/workflows/openclaw-npm-release.yml --method GET`,
+        { id: 101 },
+      ],
+      [`api repos/openclaw/openclaw/git/ref/tags/${BRANCH} --method GET`, lightweight.tagRef],
+      [`run view 456 --repo openclaw/openclaw --json jobs --jq .jobs`, lightweight.jobs],
+    ]);
+    const runGh = vi.fn((args: string[]) => {
+      const response = responses.get(args.join(" "));
+      if (!response) {
+        throw new Error(`Unexpected gh invocation: ${args.join(" ")}`);
+      }
+      return JSON.stringify(response);
+    });
+
+    expect(
+      resolveOpenClawNpmResumeRun({ repo: "openclaw/openclaw", runGh, runId: "456" }),
+    ).toMatchObject({ workflowRef: `refs/tags/${BRANCH}`, workflowSha: SHA });
+    expect(runGh).toHaveBeenCalledTimes(4);
+    expect(runGh.mock.calls.flatMap(([args]) => args)).not.toContain(
+      `repos/openclaw/openclaw/compare/${SHA}...main`,
+    );
   });
 });
