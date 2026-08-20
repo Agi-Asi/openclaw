@@ -101,6 +101,9 @@ flow:
               - set: nextConfig
                 value:
                   expr: "(() => { const nextConfig = structuredClone(original.config); const gatewayConfig = (nextConfig.gateway ??= {}); const controlUi = (gatewayConfig.controlUi ??= {}); const allowedOrigins = Array.isArray(controlUi.allowedOrigins) ? [...controlUi.allowedOrigins] : []; controlUi.allowedOrigins = [...allowedOrigins, restartOrigin]; return nextConfig; })()"
+              - set: restartRequestedAtMs
+                value:
+                  expr: "Date.now()"
               - call: applyConfig
                 saveAs: applyResult
                 args:
@@ -136,13 +139,13 @@ flow:
                   - expr: liveTurnTimeoutMs(env, config.imageTurnTimeoutMs)
                   - sinceIndex:
                       ref: wakeStartIndex
-              - call: waitForCondition
+              - call: waitForSessionRunAfter
                 args:
-                  - lambda:
-                      async: true
-                      expr: "env.gateway.call('sessions.list', {}, { timeoutMs: 30000 }).then((result) => result.sessions?.find((session) => session.key === sessionKey && session.hasActiveRun === false))"
+                  - ref: env
+                  - ref: sessionKey
+                  - qa
+                  - ref: restartRequestedAtMs
                   - expr: liveTurnTimeoutMs(env, config.imageTurnTimeoutMs)
-                  - 100
               - call: waitForCondition
                 saveAs: afterTools
                 args:
