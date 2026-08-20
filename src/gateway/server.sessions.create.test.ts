@@ -2220,6 +2220,9 @@ test("sessions.create maps an admin-selected worktree cwd and rejects repository
 });
 
 test("sessions.create accepts a node-host cwd without provisioning a Gateway worktree", async () => {
+  const { getRuntimeConfig } = await getGatewayConfigModule();
+  // A running suite server can read config before this test installs its per-case session store.
+  getRuntimeConfig();
   const { storePath } = await createSessionStoreDir();
   const created = await directSessionReq<{
     key: string;

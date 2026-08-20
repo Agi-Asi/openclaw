@@ -404,6 +404,10 @@ function createGatewaySessionsTestHarness(startServer: boolean) {
     await fs.mkdir(dir, { recursive: true });
     const storePath = path.join(dir, "sessions.json");
     testState.sessionStorePath = storePath;
+    // A suite server can warm the runtime snapshot between per-test reset and fixture setup.
+    // Invalidate after changing the store so handlers and fixture assertions use the same database.
+    const { clearRuntimeConfigSnapshot } = await getGatewayConfigModule();
+    clearRuntimeConfigSnapshot();
     return { dir, storePath };
   }
 
