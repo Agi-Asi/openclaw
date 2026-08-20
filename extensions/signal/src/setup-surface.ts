@@ -12,10 +12,8 @@ import {
 import { detectBinary, formatCliCommand } from "openclaw/plugin-sdk/setup-tools";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { listSignalAccountIds, resolveSignalAccount } from "./accounts.js";
-import { signalRpcRequest } from "./client.js";
-import { createSignalDaemonLifecycle, waitForSignalDaemonReady } from "./daemon-lifecycle.js";
-import { spawnSignalDaemon } from "./daemon.js";
 import { installSignalCli } from "./install-signal-cli.js";
+import { createSignalLinkRpcClient, type SignalLinkRpcClient } from "./link-rpc.js";
 import {
   createSignalCliPathTextInput,
   normalizeSignalAccountInput,
@@ -135,38 +133,25 @@ async function prepareManagedSignalLink(params: {
 
   await params.options?.beforePersistentEffect?.();
   signal.throwIfAborted();
-  const lifecycle = createSignalDaemonLifecycle({ abortSignal: signal });
-  const onAbort = () => void lifecycle.stop();
-  signal.addEventListener("abort", onAbort, { once: true });
+  let linkClient: SignalLinkRpcClient | undefined;
   try {
     let accounts: string[];
     let deviceLinkUri: string | undefined;
     try {
-      const daemon = spawnSignalDaemon({
+      linkClient = createSignalLinkRpcClient({
         cliPath: params.cliPath,
         ...(transport.configPath ? { configPath: transport.configPath } : {}),
-        httpHost: transport.httpHost,
-        httpPort: transport.httpPort,
-        receiveMode: "manual",
-      });
-      lifecycle.attach(daemon);
-      await waitForSignalDaemonReady({
-        baseUrl: transport.baseUrl,
-        abortSignal: lifecycle.abortSignal,
-        timeoutMs: transport.startupTimeoutMs,
-        logAfterMs: transport.startupTimeoutMs,
-        runtime: { ...params.runtime, log: () => {}, error: () => {} },
+        abortSignal: signal,
       });
       accounts = parseSignalAccounts(
-        await signalRpcRequest("listAccounts", undefined, {
-          baseUrl: transport.baseUrl,
+        await linkClient.request("listAccounts", undefined, {
+          timeoutMs: transport.startupTimeoutMs,
           maxResponseBytes: SIGNAL_LINK_RPC_MAX_BYTES,
         }),
       );
       if (accounts.length === 0) {
         deviceLinkUri = parseSignalLinkUri(
-          await signalRpcRequest("startLink", undefined, {
-            baseUrl: transport.baseUrl,
+          await linkClient.request("startLink", undefined, {
             timeoutMs: 35_000,
             maxResponseBytes: SIGNAL_LINK_RPC_MAX_BYTES,
           }),
@@ -195,15 +180,16 @@ async function prepareManagedSignalLink(params: {
 
     signal.throwIfAborted();
     try {
-      const settled = signalRpcRequest(
-        "finishLink",
-        { deviceLinkUri, deviceName: "OpenClaw" },
-        {
-          baseUrl: transport.baseUrl,
-          timeoutMs: SIGNAL_LINK_EXPIRES_IN_MS + 5_000,
-          maxResponseBytes: SIGNAL_LINK_RPC_MAX_BYTES,
-        },
-      ).then(parseLinkedSignalNumber);
+      const settled = linkClient
+        .request(
+          "finishLink",
+          { deviceLinkUri, deviceName: "OpenClaw" },
+          {
+            timeoutMs: SIGNAL_LINK_EXPIRES_IN_MS + 5_000,
+            maxResponseBytes: SIGNAL_LINK_RPC_MAX_BYTES,
+          },
+        )
+        .then(parseLinkedSignalNumber);
       return await params.prompter.qrCode({
         title: "Link Signal",
         message: "In Signal, open Settings → Linked devices and scan this QR code.",
@@ -219,8 +205,7 @@ async function prepareManagedSignalLink(params: {
       return undefined;
     }
   } finally {
-    signal.removeEventListener("abort", onAbort);
-    await lifecycle.stop();
+    await linkClient?.stop();
   }
 }
 
