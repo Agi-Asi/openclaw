@@ -124,6 +124,7 @@ describe("SystemAgentChatResultSchema", () => {
         message: "Scan to continue.",
         qrDataUrl: "data:image/png;base64,aGVsbG8=",
         expiresInMs: 60_000,
+        canCancel: true,
         executor: "gateway",
       },
     },

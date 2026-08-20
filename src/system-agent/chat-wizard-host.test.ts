@@ -167,7 +167,11 @@ describe("SystemAgentChatEngine wizard", () => {
     });
 
     const presented = await engine.handle("connect signal");
-    expect(presented.step).toMatchObject({ type: "qr", executor: "gateway" });
+    expect(presented.step).toMatchObject({
+      type: "qr",
+      executor: "gateway",
+      canCancel: true,
+    });
     expect(presented.wizardInputPending).toBeUndefined();
     expect(JSON.stringify(presented)).not.toContain("credential=secret");
 

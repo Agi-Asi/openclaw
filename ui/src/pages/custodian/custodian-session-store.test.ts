@@ -96,6 +96,7 @@ describe("CustodianSessionStore", () => {
         title: "Link Signal",
         qrDataUrl,
         expiresInMs: 60_000,
+        canCancel: true,
         executor: "gateway",
       });
       const request = vi

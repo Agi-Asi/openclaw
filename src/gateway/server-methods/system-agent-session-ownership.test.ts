@@ -452,6 +452,7 @@ describe("openclaw.chat session responses", () => {
         type: "qr",
         title: "Link Signal",
         qrDataUrl: "data:image/png;base64,c2VjcmV0",
+        canCancel: true,
         executor: "gateway",
       },
     });
@@ -490,6 +491,7 @@ describe("openclaw.chat session responses", () => {
         type: "qr",
         title: "Link Signal",
         qrDataUrl: "data:image/png;base64,c2VjcmV0",
+        canCancel: true,
         executor: "gateway",
       },
     });

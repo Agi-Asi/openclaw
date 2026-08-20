@@ -51,6 +51,7 @@ describe("Custodian rich wizard answers", () => {
           id: "qr-step",
           type: "qr",
           qrDataUrl: "data:image/png;base64,aGVsbG8=",
+          canCancel: true,
           executor: "gateway",
         },
         undefined,

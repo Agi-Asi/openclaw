@@ -364,7 +364,10 @@ export class ChatWizardHost {
         return await this.pump();
       }
       return {
-        text: "Scan the QR code to continue, or say `cancel` to stop setup.",
+        text:
+          step.canCancel !== false
+            ? "Scan the QR code to continue, or say `cancel` to stop setup."
+            : "Scan the QR code to continue. Setup will finish or time out.",
         configWritten: false,
       };
     }

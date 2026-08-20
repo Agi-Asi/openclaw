@@ -67,6 +67,7 @@ const WizardQrStepSchema = closedObject({
   message: Type.Optional(Type.String()),
   qrDataUrl: QrPngDataUrlSchema,
   expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  canCancel: Type.Optional(Type.Boolean()),
   executor: Type.Literal("gateway"),
 });
 
@@ -96,21 +97,31 @@ const WizardStepObjectSchema = Type.Object(
     deviceCode: Type.Optional(WizardDeviceCodeSchema),
     qrDataUrl: Type.Optional(QrPngDataUrlSchema),
     expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    canCancel: Type.Optional(Type.Boolean()),
   },
   {
     additionalProperties: false,
     if: Type.Object({ type: Type.Literal("qr") }),
     // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword.
     then: WizardQrStepSchema,
-    else: { not: { anyOf: [{ required: ["qrDataUrl"] }, { required: ["expiresInMs"] }] } },
+    else: {
+      not: {
+        anyOf: [
+          { required: ["qrDataUrl"] },
+          { required: ["expiresInMs"] },
+          { required: ["canCancel"] },
+        ],
+      },
+    },
   },
 );
 
 type WizardStepWire = Static<typeof WizardStepObjectSchema>;
-type WizardNonQrStep = Omit<WizardStepWire, "type" | "qrDataUrl" | "expiresInMs"> & {
+type WizardNonQrStep = Omit<WizardStepWire, "type" | "qrDataUrl" | "expiresInMs" | "canCancel"> & {
   type: Exclude<WizardStepWire["type"], "qr">;
   qrDataUrl?: never;
   expiresInMs?: never;
+  canCancel?: never;
 };
 type WizardQrStepWire = Static<typeof WizardQrStepSchema>;
 type WizardQrStep = WizardQrStepWire & {
