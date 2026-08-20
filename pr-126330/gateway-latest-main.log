@@ -1,5 +1,5 @@
 
- RUN  v4.1.10 /Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation
+ RUN  v4.1.10 [REDACTED WORKTREE]
 
 
  Test Files  3 passed (3)
@@ -8,7 +8,7 @@
    Duration  3.54s (transform 2.59s, setup 1.52s, import 1.65s, tests 56ms, environment 0ms)
 
 
- RUN  v4.1.10 /Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation
+ RUN  v4.1.10 [REDACTED WORKTREE]
 
 
  Test Files  1 passed (1)

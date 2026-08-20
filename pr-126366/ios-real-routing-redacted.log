@@ -1,0 +1,23 @@
+OpenClaw PR #126366 — real iOS routing proof (redacted)
+Captured: 2026-08-20 America/Indianapolis
+App/Gateway stack SHA: 30ba703c33b691473b3f4be5fdc02453a7287c9e
+Client: real OpenClaw iOS app in dedicated iOS 27 simulator
+
+2026-08-20T05:49:19.381-04:00 [ws] connect client=openclaw-ios mode=ui platform=iOS 27.0.0 conn=[REDACTED]
+2026-08-20T05:49:19.581-04:00 [ws] agents.list success duration=2ms id=[REDACTED]
+2026-08-20T05:49:57.752-04:00 [ws] chat.send success duration=8ms runId=[REDACTED] conn=[REDACTED] id=[REDACTED]
+2026-08-20T05:49:57.753-04:00 [diagnostic] message received sessionKey=agent:research:main source=dispatchInboundMessage
+2026-08-20T05:49:57.760-04:00 [diagnostic] session state sessionId=[REDACTED] sessionKey=agent:research:main prev=idle new=processing reason=message_start
+2026-08-20T05:50:01.046-04:00 [diagnostic] message dispatch completed sessionKey=agent:research:main outcome=completed duration=3276ms
+2026-08-20T05:50:01.046-04:00 [diagnostic] message processed sessionId=[REDACTED] sessionKey=agent:research:main outcome=completed duration=3292ms
+
+UI assertion:
+- first unowned send did not enter the transcript and emitted no chat.send request;
+- after explicit Research selection, the message entered the transcript and the Gateway processed agent:research:main.
+
+XCUI result:
+Executed 1 test, with 0 failures (0 unexpected).
+** TEST SUCCEEDED **
+
+Redactions: request, run, connection, device, message, and session identifiers; absolute local paths.
+Sources: real app XCUI run and live isolated Gateway log from the same interaction shown in ios-real-routing-proof.mp4.

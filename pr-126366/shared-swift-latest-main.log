@@ -14,7 +14,7 @@ Building for debugging...
 [26 / 32] OpenClawProtocol
 [37 / 44] OpenClawKit
 [48 / 55] OpenClawChatUI
-/Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation/apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatViewModel+Outbox.swift:893:26: warning: result of call to 'markCommandQueued(id:attemptVersion:retryCount:lastError:)' is unused [#NoUsage]
+[REDACTED WORKTREE]/apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatViewModel+Outbox.swift:893:26: warning: result of call to 'markCommandQueued(id:attemptVersion:retryCount:lastError:)' is unused [#NoUsage]
  891 |             // The transport proved this payload never reached its request
  892 |             // channel, so it is safe to retry automatically.
  893 |             await outbox.markCommandQueued(
@@ -26,7 +26,7 @@ Building for debugging...
 [50 / 56] OpenClawChatUI
 [53 / 57] OpenClawKitTests-product
 [64 / 68] OpenClawKitTests-product
-/Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation/apps/shared/OpenClawKit/Tests/OpenClawKitTests/ChatViewModelSessionActionTests.swift:872:28: warning: expression of type 'Bool' is unused [#NoUsage]
+[REDACTED WORKTREE]/apps/shared/OpenClawKit/Tests/OpenClawKitTests/ChatViewModelSessionActionTests.swift:872:28: warning: expression of type 'Bool' is unused [#NoUsage]
  870 |         #expect(viewModel.sessionBranches == newBranches)
  871 |         firstGate.release()
  872 |         await firstRefresh.value

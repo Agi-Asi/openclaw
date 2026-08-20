@@ -1,6 +1,6 @@
 $ node --import tsx scripts/protocol-gen-swift.ts --check
 
- RUN  v4.1.10 /Users/solvely/.openclaw/dev/openclaw/.worktrees/pr-126366-validation
+ RUN  v4.1.10 [REDACTED WORKTREE]
 
 
  Test Files  1 passed (1)

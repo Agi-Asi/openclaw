@@ -1,30 +1,28 @@
-OpenClaw PR #126330 — live agents.list proof (redacted)
-Captured: 2026-08-19 America/Indianapolis
-Gateway build: OpenClaw 2026.8.1 (3dfea8a)
-Command: openclaw --profile pr126366proof gateway call agents.list --json --port 19876
+OpenClaw PR #126330 — public agents.list routing-contract proof
+Captured: 2026-08-20 America/Indianapolis
+Gateway stack SHA: 30ba703c33b691473b3f4be5fdc02453a7287c9e
+Gateway PR head: 10f726e15a58e92986932274bcffa878b7696199
+
+Live public agents.list response (unrelated fields omitted):
 
 {
-  "defaultId": "main",
-  "ownership": "explicit",
-  "selectionRequired": true,
+  "defaultAgentId": null,
   "sessionRoutingContract": "per-sender|main|unowned",
-  "mainKey": "main",
-  "scope": "per-sender",
   "agents": [
-    {
-      "id": "main",
-      "name": "Main",
-      "workspace": "[REDACTED]/workspace-main",
-      "workspaceGit": true
-    },
-    {
-      "id": "research",
-      "name": "Research",
-      "workspace": "[REDACTED]/workspace-research",
-      "workspaceGit": true
-    }
+    { "id": "main", "name": "Main" },
+    { "id": "research", "name": "Research" }
   ]
 }
 
-Redactions: absolute local workspace paths; model/thinking capability detail omitted as unrelated.
-Source: live public Gateway RPC response from the rebuilt stacked checkout.
+Interpretation:
+- two agents are available;
+- the display default is not an authorized owner;
+- the public RPC preserves the explicit unowned routing contract consumed by Apple clients.
+
+Validation:
+- handler-level regression failed before the projection fix and passed after it;
+- affected public RPC/routing/compatibility suites: 171 tests passed;
+- changed-file gate and production build: passed.
+
+Redactions: request, connection, device, session, and absolute-path identifiers.
+Source: live public Gateway RPC response from the rebuilt exact-SHA stack.
