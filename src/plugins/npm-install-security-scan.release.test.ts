@@ -53,6 +53,13 @@ const REVIEWED_CODEX_SOURCE_LAYOUTS: ReadonlyArray<ReadonlyMap<string, number>> 
 const REVIEWED_CODEX_SOURCE_CRITICAL_FINDING_COUNTS = new Map<string, number>(
   REVIEWED_CODEX_SOURCE_LAYOUTS.flatMap((layout) => [...layout]),
 );
+// Frozen prerelease candidates can predate the shared process-runtime migration.
+// These reviewed sites are optional, but their occurrence counts remain bounded so
+// a second execution site or a new path still fails the trusted-main inventory.
+const OPTIONAL_REVIEWED_PUBLISHABLE_SOURCE_CRITICAL_FINDING_COUNTS = new Map<string, number>([
+  ["@openclaw/codex:dangerous-exec:src/node-cli-sessions.ts", 1],
+  ["@openclaw/opencode-provider:dangerous-exec:session-catalog.ts", 1],
+]);
 
 // Generated chunks can contain multiple reviewed execution sites. Counts are
 // part of the contract so an added or missing site fails the release scan.
@@ -164,10 +171,29 @@ function requiredReviewedFindingsForPackage(
   return [...commonFindings, ...sourceLayout];
 }
 
+function observedOptionalReviewedSourceFindingsForPackage(
+  packageName: string,
+  reviewedCriticalFindings: readonly string[],
+): string[] {
+  return [...OPTIONAL_REVIEWED_PUBLISHABLE_SOURCE_CRITICAL_FINDING_COUNTS].flatMap(
+    ([key, maximumCount]) => {
+      if (!key.startsWith(`${packageName}:`)) {
+        return [];
+      }
+      const observed = reviewedCriticalFindings.filter((finding) => finding === key);
+      if (observed.length > maximumCount) {
+        throw new Error(`${key}: expected at most ${String(maximumCount)} reviewed finding(s).`);
+      }
+      return observed;
+    },
+  );
+}
+
 function isReviewedPublishableCriticalFinding(key: string): boolean {
   return (
     REQUIRED_REVIEWED_PUBLISHABLE_CRITICAL_FINDING_COUNTS.has(key) ||
     REVIEWED_CODEX_SOURCE_CRITICAL_FINDING_COUNTS.has(key) ||
+    OPTIONAL_REVIEWED_PUBLISHABLE_SOURCE_CRITICAL_FINDING_COUNTS.has(key) ||
     OPTIONAL_REVIEWED_PUBLISHABLE_DIST_CRITICAL_FINDING_COUNTS.has(key)
   );
 }
@@ -471,6 +497,27 @@ describe("publishable plugin npm package install security scan", () => {
     expect(resolveReviewedCodexSourceLayout([relocatedFinding])).toBeUndefined();
   });
 
+  it("bounds reviewed execution sites retained by frozen prerelease candidates", () => {
+    const codexFinding = "@openclaw/codex:dangerous-exec:src/node-cli-sessions.ts";
+    const openCodeFinding = "@openclaw/opencode-provider:dangerous-exec:session-catalog.ts";
+
+    expect(observedOptionalReviewedSourceFindingsForPackage("@openclaw/codex", [])).toEqual([]);
+    expect(
+      observedOptionalReviewedSourceFindingsForPackage("@openclaw/codex", [codexFinding]),
+    ).toEqual([codexFinding]);
+    expect(() =>
+      observedOptionalReviewedSourceFindingsForPackage("@openclaw/codex", [
+        codexFinding,
+        codexFinding,
+      ]),
+    ).toThrow("expected at most 1 reviewed finding");
+    expect(
+      observedOptionalReviewedSourceFindingsForPackage("@openclaw/opencode-provider", [
+        openCodeFinding,
+      ]),
+    ).toEqual([openCodeFinding]);
+  });
+
   test.concurrent.each(publishablePluginPackages)(
     "keeps $packageName files clear of unexpected critical hits",
     async (plugin) => {
@@ -481,6 +528,10 @@ describe("publishable plugin npm package install security scan", () => {
       expect(result.unexpectedCriticalFindings.toSorted()).toStrictEqual([]);
       const expectedReviewedCriticalFindings = [
         ...requiredReviewedFindingsForPackage(plugin.packageName, result.reviewedCriticalFindings),
+        ...observedOptionalReviewedSourceFindingsForPackage(
+          plugin.packageName,
+          result.reviewedCriticalFindings,
+        ),
         ...result.expectedReviewedCriticalFindings,
       ];
 
