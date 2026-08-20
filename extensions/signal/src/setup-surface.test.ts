@@ -8,22 +8,17 @@ import { signalSetupWizard } from "./setup-surface.js";
 const mocks = vi.hoisted(() => ({
   detectBinary: vi.fn(),
   installSignalCli: vi.fn(),
+  createLinkClient: vi.fn(),
+  linkStop: vi.fn(async () => {}),
   rpc: vi.fn(),
-  spawnDaemon: vi.fn(),
-  waitReady: vi.fn(),
 }));
 
 vi.mock("openclaw/plugin-sdk/setup-tools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("openclaw/plugin-sdk/setup-tools")>()),
   detectBinary: mocks.detectBinary,
 }));
-vi.mock("./client.js", () => ({ signalRpcRequest: mocks.rpc }));
-vi.mock("./daemon.js", () => ({ spawnSignalDaemon: mocks.spawnDaemon }));
-vi.mock("./daemon-lifecycle.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./daemon-lifecycle.js")>()),
-  waitForSignalDaemonReady: mocks.waitReady,
-}));
 vi.mock("./install-signal-cli.js", () => ({ installSignalCli: mocks.installSignalCli }));
+vi.mock("./link-rpc.js", () => ({ createSignalLinkRpcClient: mocks.createLinkClient }));
 
 type PrepareParams = Parameters<NonNullable<typeof signalSetupWizard.prepare>>[0];
 
@@ -49,14 +44,6 @@ function createPrompter(
       qrCode,
       select,
     } as unknown as WizardPrompter,
-  };
-}
-
-function createDaemonHandle() {
-  return {
-    exited: new Promise<never>(() => {}),
-    isExited: () => false,
-    stop: vi.fn(async () => {}),
   };
 }
 
@@ -94,8 +81,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.detectBinary.mockResolvedValue(true);
   mocks.installSignalCli.mockResolvedValue({ ok: true, cliPath: "/tools/signal-cli" });
-  mocks.spawnDaemon.mockImplementation(() => createDaemonHandle());
-  mocks.waitReady.mockResolvedValue(undefined);
+  mocks.createLinkClient.mockImplementation(() => ({
+    request: mocks.rpc,
+    stop: mocks.linkStop,
+  }));
 });
 
 describe("Signal hosted setup linking", () => {
@@ -126,13 +115,10 @@ describe("Signal hosted setup linking", () => {
       prompter: prompt.prompter,
     });
 
-    expect(mocks.spawnDaemon).toHaveBeenCalledWith({
+    expect(mocks.createLinkClient).toHaveBeenCalledWith({
       cliPath: "signal-cli",
-      httpHost: "127.0.0.1",
-      httpPort: 8080,
-      receiveMode: "manual",
+      abortSignal: expect.any(AbortSignal),
     });
-    expect(mocks.spawnDaemon.mock.calls[0]?.[0]).not.toHaveProperty("account");
     expect(events).toEqual(["listAccounts", "startLink", "finishLink", "qrCode"]);
     expect(prompt.qrCode).toHaveBeenCalledWith({
       title: "Link Signal",
@@ -145,7 +131,7 @@ describe("Signal hosted setup linking", () => {
       signalNumber: "+15555550123",
       [SIGNAL_LINK_COMPLETED_CREDENTIAL]: "true",
     });
-    expect(mocks.spawnDaemon.mock.results[0]?.value.stop).toHaveBeenCalledOnce();
+    expect(mocks.linkStop).toHaveBeenCalledOnce();
 
     const numberInput = signalSetupWizard.textInputs?.find(
       (input) => input.inputKey === "signalNumber",
@@ -201,7 +187,7 @@ describe("Signal hosted setup linking", () => {
     ).rejects.toBe(guardError);
 
     expect(beforePersistentEffect).toHaveBeenCalledOnce();
-    expect(mocks.spawnDaemon).not.toHaveBeenCalled();
+    expect(mocks.createLinkClient).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(prompt.qrCode).not.toHaveBeenCalled();
   });
@@ -239,7 +225,7 @@ describe("Signal hosted setup linking", () => {
       includeSignal,
     });
 
-    expect(mocks.spawnDaemon).not.toHaveBeenCalled();
+    expect(mocks.createLinkClient).not.toHaveBeenCalled();
     expect(result?.credentialValues?.signalNumber).toBeUndefined();
     expect(
       await signalSetupWizard.completionNote?.shouldShow?.({
@@ -276,7 +262,7 @@ describe("Signal hosted setup linking", () => {
     expect(notes).toContain("Automatic Signal linking could not complete");
     expect(notes).not.toContain("private-token");
     expect(notes).not.toContain("private-number");
-    expect(mocks.spawnDaemon.mock.results[0]?.value.stop).toHaveBeenCalledOnce();
+    expect(mocks.linkStop).toHaveBeenCalledOnce();
   });
 
   it("aborts linking and reaps its daemon without showing a dependency failure", async () => {
@@ -301,6 +287,6 @@ describe("Signal hosted setup linking", () => {
     ).rejects.toBeInstanceOf(WizardCancelledError);
 
     expect(prompt.note).not.toHaveBeenCalled();
-    expect(mocks.spawnDaemon.mock.results[0]?.value.stop).toHaveBeenCalledOnce();
+    expect(mocks.linkStop).toHaveBeenCalledOnce();
   });
 });
