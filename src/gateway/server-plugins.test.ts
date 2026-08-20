@@ -1349,6 +1349,7 @@ describe("loadGatewayPlugins", () => {
       } as GatewayRequestOptions["client"],
       isWebchatConnect: () => false,
     } satisfies PluginRuntimeGatewayRequestScope;
+    serverPluginsModule.setFallbackGatewayContext(scope.context);
     const runtime = createRuntimeFromLastGatewayLoad();
 
     await gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
@@ -1425,6 +1426,7 @@ describe("loadGatewayPlugins", () => {
       } as GatewayRequestOptions["client"],
       isWebchatConnect: () => false,
     } satisfies PluginRuntimeGatewayRequestScope;
+    serverPluginsModule.setFallbackGatewayContext(scope.context);
     const runtime = createRuntimeFromLastGatewayLoad();
 
     await gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
@@ -1954,6 +1956,7 @@ describe("loadGatewayPlugins", () => {
       } as GatewayRequestOptions["client"],
       isWebchatConnect: () => false,
     } satisfies PluginRuntimeGatewayRequestScope;
+    serverPlugins.setFallbackGatewayContext(scope.context);
 
     await gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
       runtime.run({
@@ -2157,6 +2160,7 @@ describe("loadGatewayPlugins", () => {
       pluginId: "workboard",
       pluginOrigin: "bundled" as const,
     } satisfies PluginRuntimeGatewayRequestScope;
+    serverPluginsModule.setFallbackGatewayContext(scope.context);
 
     await gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
       runtime.run({
@@ -2512,6 +2516,7 @@ describe("loadGatewayPlugins", () => {
       } as GatewayRequestOptions["client"],
       isWebchatConnect: () => false,
     } satisfies PluginRuntimeGatewayRequestScope;
+    serverPlugins.setFallbackGatewayContext(scope.context);
 
     await expect(
       gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
@@ -2537,6 +2542,7 @@ describe("loadGatewayPlugins", () => {
       } as GatewayRequestOptions["client"],
       isWebchatConnect: () => false,
     } satisfies PluginRuntimeGatewayRequestScope;
+    serverPlugins.setFallbackGatewayContext(scope.context);
 
     await expect(
       gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>

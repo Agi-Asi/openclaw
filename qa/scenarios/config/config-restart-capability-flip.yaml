@@ -53,6 +53,9 @@ flow:
         - set: originalImageGenerationModelPrimary
           value:
             expr: "original.config.agents?.defaults?.mediaModels?.image?.primary ?? null"
+        - set: originalGatewayTerminalEnabled
+          value:
+            expr: "original.config.gateway?.terminal?.enabled"
         - set: denied
           value:
             expr: "Array.isArray(originalToolsDeny) ? originalToolsDeny.map((entry) => String(entry)) : []"
@@ -100,6 +103,10 @@ flow:
                   - env:
                       ref: env
                     patch:
+                      gateway:
+                        terminal:
+                          enabled:
+                            expr: "originalGatewayTerminalEnabled === false"
                       tools:
                         deny:
                           expr: "originalToolsDeny === undefined ? null : originalToolsDeny"
@@ -233,6 +240,10 @@ flow:
                   - env:
                       ref: env
                     patch:
+                      gateway:
+                        terminal:
+                          enabled:
+                            expr: "originalGatewayTerminalEnabled === undefined ? null : originalGatewayTerminalEnabled"
                       tools:
                         deny:
                           expr: "originalToolsDeny === undefined ? null : originalToolsDeny"
