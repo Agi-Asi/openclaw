@@ -228,16 +228,7 @@ function renderSessionControls(props: ChatPaneHeaderProps) {
   }
   return html`<span class="chat-pane__session-controls">
     <span class="chat-pane__people"
-      >${owner === nothing
-        ? nothing
-        : html`<openclaw-tooltip
-            .content=${t(
-              ownerAttribution === "owned" ? "sessionsView.ownedBy" : "sessionsView.createdBy",
-              { name: ownerActor?.label || ownerActor?.id || "" },
-            )}
-            ><span class="chat-pane__owner-tooltip-anchor">${owner}</span></openclaw-tooltip
-          >`}
-      ${participants} ${presence}
+      >${owner} ${participants} ${presence}
       ${sharingControl === nothing
         ? nothing
         : html`<span class="chat-pane__sharing-anchor">${sharingControl}</span>`}</span

@@ -124,7 +124,7 @@ describe("openclaw-tooltip", () => {
     );
   });
 
-  it("keeps hover-only tooltips closed on focus", async () => {
+  it("keeps hover-only tooltips closed on pointer focus but visible for keyboard focus", async () => {
     const { tooltip, trigger } = createTooltip("Pointer help");
     tooltip.hoverOnly = true;
     document.body.append(tooltip);
@@ -132,6 +132,13 @@ describe("openclaw-tooltip", () => {
 
     focusTrigger(trigger);
     expectOpenCount(0);
+    const matches = trigger.matches.bind(trigger);
+    vi.spyOn(trigger, "matches").mockImplementation(
+      (selector) => selector === ":focus-visible" || matches(selector),
+    );
+    focusTrigger(trigger);
+    expectOpenCount(1);
+    webAwesomeTooltip(tooltip)!.open = false;
     hoverTrigger(trigger);
     vi.runAllTimers();
     expectOpenCount(1);

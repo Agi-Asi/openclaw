@@ -453,7 +453,10 @@ class Tooltip extends OpenClawLitElement {
     this.close();
   };
   private readonly handleFocusIn = () => {
-    if (!this.hoverOnly && this.tooltipProvider?.focusOpensTooltip() !== false) {
+    if (
+      this.tooltipProvider?.focusOpensTooltip() !== false &&
+      (!this.hoverOnly || this.triggerElement?.matches(":focus-visible"))
+    ) {
       this.show();
     }
   };

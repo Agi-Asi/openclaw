@@ -210,6 +210,12 @@ openclaw-chat-pane {
   align-items: center;
 }
 
+.chat-pane__session-menu-anchor,
+.chat-pane__session-menu-anchor > openclaw-chat-header-session-menu {
+  width: 28px;
+  height: 28px;
+}
+
 .chat-header-session-menu[open] .chat-header-session-menu__trigger {
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text);
@@ -229,10 +235,6 @@ openclaw-chat-pane {
 .chat-pane__people {
   display: inline-flex;
   align-items: center;
-}
-
-.chat-pane__owner-tooltip-anchor {
-  display: inline-flex;
 }
 
 .chat-pane__people :is(.session-owner-chip--header, .viewer-avatar--session) {

@@ -792,6 +792,17 @@ suite.define(() => {
 
     await currentPage.goto(`${suite.server?.baseUrl ?? ""}chat`);
     await currentPage.getByText("Ready.", { exact: true }).waitFor();
+    const headerControlBounds = await currentPage
+      .locator(".chat-pane__header")
+      .evaluate((header) => {
+        const menu = header.querySelector<HTMLElement>(".chat-header-session-menu__trigger")!;
+        const controls = header.querySelector<HTMLElement>(".chat-pane__session-controls")!;
+        return {
+          controlsLeft: controls.getBoundingClientRect().left,
+          menuRight: menu.getBoundingClientRect().right,
+        };
+      });
+    expect(headerControlBounds.menuRight).toBeLessThanOrEqual(headerControlBounds.controlsLeft);
     const sharingTrigger = currentPage.locator(".chat-pane__sharing-trigger");
     const sharingTarget = await sharingTrigger.evaluate((button) => ({
       height: button.getBoundingClientRect().height,

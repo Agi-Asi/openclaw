@@ -84,6 +84,40 @@ describe("AppSidebar brand actions", () => {
 });
 
 describe("AppSidebar agent chip", () => {
+  it("reconnects name overflow measurement and infers the agent-name direction", async () => {
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe = observe;
+        disconnect = disconnect;
+      },
+    );
+    const card = document.createElement("openclaw-sidebar-agent-card") as HTMLElement & {
+      agentName: string;
+      updateComplete: Promise<boolean>;
+    };
+    card.agentName = "اسم وكيل طويل";
+    try {
+      document.body.append(card);
+      await card.updateComplete;
+      const name = card.querySelector<HTMLElement>(".sidebar-agent-card__name-text");
+      expect(name?.dir).toBe("auto");
+      expect(observe).toHaveBeenCalledWith(name);
+
+      const observationsBeforeReconnect = observe.mock.calls.length;
+      card.remove();
+      expect(disconnect).toHaveBeenCalled();
+      document.body.append(card);
+      await card.updateComplete;
+      expect(observe.mock.calls.length).toBeGreaterThan(observationsBeforeReconnect);
+    } finally {
+      card.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("qualifies unscoped session rows with the selected agent", async () => {
     const gateway = createGateway({} as GatewayBrowserClient);
     const { sidebar } = await mountSidebar(
