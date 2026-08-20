@@ -121,7 +121,7 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
       this.fail(new Error("signal-cli jsonRpc returned malformed JSON"));
       return;
     }
-    if (!isRecord(parsed) || String(parsed.id ?? "") !== pending.id) {
+    if (!isRecord(parsed) || typeof parsed.id !== "string" || parsed.id !== pending.id) {
       return;
     }
     this.pending = undefined;
