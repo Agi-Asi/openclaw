@@ -36,6 +36,7 @@ import type {
   SessionOrganizerControllerHost,
 } from "./session-organizer-controller.ts";
 import type { SessionOwnerOption } from "./session-owner-chip.ts";
+import type { SidebarSessionHostFilterController } from "./sidebar-session-host-filter.ts";
 
 type SidebarMenuAgent = {
   id: string;
@@ -105,6 +106,7 @@ interface SidebarMenusControllerHost
   sessionInvolvingMeFilterActive: boolean;
   readonly sessionOwnerOptions: readonly SessionOwnerOption[];
   readonly sessionOwnershipVisible: boolean;
+  readonly sessionHostFilter: SidebarSessionHostFilterController;
   readSessionMutationAccess(request: {
     method: string;
     params?: unknown;

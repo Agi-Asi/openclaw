@@ -40,6 +40,7 @@ import {
   resolveSidebarSessionSubtitle,
 } from "./session-row-subtitle.ts";
 import type { SidebarMenusController } from "./sidebar-menus-controller.ts";
+import type { SidebarSessionHostFilterController } from "./sidebar-session-host-filter.ts";
 import "./elapsed-time.ts";
 
 const SIDEBAR_VISIBLE_CHILD_SESSION_LIMIT = 4;
@@ -64,6 +65,7 @@ export interface SessionListHost {
   >;
   readonly fullyShownChildSessionKeys: ReadonlySet<string>;
   readonly sessionsGrouping: SidebarSessionsGrouping;
+  readonly sessionHostFilter: SidebarSessionHostFilterController;
   readonly collapsedSessionSections: ReadonlySet<string>;
   readonly sessionOrganizer: Pick<
     SessionOrganizerController,

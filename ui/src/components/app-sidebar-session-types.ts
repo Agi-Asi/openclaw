@@ -21,6 +21,7 @@ import {
   type SidebarSessionsGrouping,
 } from "../lib/sessions/grouping.ts";
 import type { SessionCapability } from "../lib/sessions/index.ts";
+import type { SessionHost } from "../lib/sessions/session-host.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
 import type { CloudWorkerStopAction } from "./cloud-worker-stop.ts";
 import type { SessionPlacementState } from "./session-row-badges.ts";
@@ -89,6 +90,7 @@ export type SidebarRecentSession = {
   visibility?: SessionVisibility;
   draftOwnedBySelf?: boolean;
   category?: string;
+  sessionHost: SessionHost;
   icon?: string;
   channelAvatarUrl?: string;
   boardFace?: BoardFace;
@@ -235,6 +237,7 @@ const SIDEBAR_SESSION_STATUS_FILTER_STORAGE_KEY = "openclaw:sidebar:sessions:sta
 const SIDEBAR_SESSION_SORT_MODE_STORAGE_KEY = "openclaw:sidebar:sessions:sort-mode";
 const SIDEBAR_SESSION_COLLAPSED_SECTIONS_STORAGE_KEY =
   "openclaw:sidebar:sessions:collapsed-sections";
+const SIDEBAR_HIDDEN_SESSION_HOSTS_STORAGE_KEY = "openclaw:sidebar:sessions:hidden-hosts";
 const SIDEBAR_HIDDEN_SESSION_CATALOGS_STORAGE_KEY = "openclaw:sidebar:sessions:hidden-catalogs";
 export const SIDEBAR_HIDDEN_SESSION_CATALOGS_CHANGED_EVENT =
   "openclaw:sidebar-hidden-catalogs-changed";
@@ -326,8 +329,30 @@ export function loadStoredHiddenSessionCatalogIds(): ReadonlySet<string> {
   }
 }
 
+export function loadStoredHiddenSessionHostIds(): ReadonlySet<string> {
+  try {
+    const parsed: unknown = JSON.parse(
+      getSafeLocalStorage()?.getItem(SIDEBAR_HIDDEN_SESSION_HOSTS_STORAGE_KEY) ?? "[]",
+    );
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.flatMap((value) => (typeof value === "string" && value ? [value] : []))
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 export function storeSidebarSessionsGrouping(grouping: SidebarSessionsGrouping) {
   getSafeLocalStorage()?.setItem(SIDEBAR_SESSION_GROUPING_STORAGE_KEY, grouping);
+}
+
+export function storeHiddenSessionHostIds(hostIds: ReadonlySet<string>) {
+  getSafeLocalStorage()?.setItem(
+    SIDEBAR_HIDDEN_SESSION_HOSTS_STORAGE_KEY,
+    JSON.stringify([...hostIds]),
+  );
 }
 
 export function storeSidebarCatalogGrouping(value: CatalogProjectGrouping) {

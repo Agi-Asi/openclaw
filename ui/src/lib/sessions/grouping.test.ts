@@ -10,6 +10,7 @@ import {
   normalizeSidebarSessionsGrouping,
   UNGROUPED_ID,
 } from "./grouping.ts";
+import type { SessionHostRow } from "./session-host.ts";
 
 describe("groupSidebarSessionRows", () => {
   it("orders pinned, categories, threads, groups, then coding while preserving row order", () => {
@@ -80,6 +81,43 @@ describe("groupSidebarSessionRows", () => {
       "work",
     ]);
     expect(sections[1]?.rows.map((item) => item.key)).toEqual(["tg"]);
+  });
+
+  it("groups unpinned sessions by execution host and keeps pinned rows separate", () => {
+    const sections = groupSidebarSessionRows(
+      [
+        row({
+          key: "cloud-pinned",
+          pinned: true,
+          sessionHost: { id: "cloud", kind: "cloud", label: "Cloud workers" },
+        }),
+        row({
+          key: "cloud",
+          sessionHost: { id: "cloud", kind: "cloud", label: "Cloud workers" },
+        }),
+        row({
+          key: "studio",
+          sessionHost: { id: "node:studio", kind: "node", label: "Studio" },
+        }),
+        row({
+          key: "gateway",
+          sessionHost: { id: "gateway", kind: "gateway", label: "Gateway" },
+        }),
+      ],
+      { grouping: "host", sectionOrder: ["work", "ungrouped"] },
+    );
+
+    expect(sections.map((section) => section.id)).toEqual([
+      "pinned",
+      "host:gateway",
+      "host:node:studio",
+      "host:cloud",
+    ]);
+    expect(sections.slice(1).map((section) => section.host?.label)).toEqual([
+      "Gateway",
+      "Studio",
+      "Cloud workers",
+    ]);
   });
 
   it("always emits threads and coding so the renderer can host fallbacks and catalogs", () => {
@@ -302,15 +340,16 @@ describe("moveSessionSection", () => {
 });
 
 describe("normalizeSidebarSessionsGrouping", () => {
-  it("accepts none and falls back to category grouping", () => {
+  it("accepts none and host and falls back to category grouping", () => {
     expect(normalizeSidebarSessionsGrouping("none")).toBe("none");
+    expect(normalizeSidebarSessionsGrouping("host")).toBe("host");
     expect(normalizeSidebarSessionsGrouping("category")).toBe("category");
     expect(normalizeSidebarSessionsGrouping(null)).toBe("category");
     expect(normalizeSidebarSessionsGrouping("bogus")).toBe("category");
   });
 });
 
-type ZoneRowExtras = {
+type ZoneRowExtras = Partial<SessionHostRow> & {
   workSession?: boolean;
   acpSession?: boolean;
   channelSession?: boolean;

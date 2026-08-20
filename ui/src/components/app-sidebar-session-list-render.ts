@@ -59,6 +59,7 @@ function renderSessionSection(params: {
   const { host, section } = params;
   const totalRowCount = section.totalRowCount;
   const group = section.category;
+  const sessionHost = section.host;
   // Pinned rows render in the nav zone; renderHeader records whether this list
   // section owns collapse UI or sits directly below the global toolbar.
   const collapsed = section.renderHeader && host.collapsedSessionSections.has(section.id);
@@ -66,10 +67,20 @@ function renderSessionSection(params: {
     ? t("chat.sidebar.groups")
     : section.work
       ? t("chat.sidebar.coding")
-      : group
-        ? group
-        : t("chat.sidebar.otherSessions");
-  const zone = section.groups ? "groups" : section.work ? "coding" : group ? "category" : "threads";
+      : sessionHost
+        ? sessionHost.label
+        : group
+          ? group
+          : t("chat.sidebar.otherSessions");
+  const zone = section.groups
+    ? "groups"
+    : section.work
+      ? "coding"
+      : sessionHost
+        ? "host"
+        : group
+          ? "category"
+          : "threads";
   // Collapsed Coding still signals live runs so background work stays visible.
   const collapsedRunningDot =
     collapsed &&
@@ -103,20 +114,22 @@ function renderSessionSection(params: {
     <div
       class=${sectionClass}
       data-session-section=${section.id}
-      @dragover=${groupWriteAccess.allowed
+      @dragover=${groupWriteAccess.allowed && !sessionHost
         ? (event: DragEvent) => host.sectionDragOver(event, section.id, group)
         : nothing}
-      @dragleave=${groupWriteAccess.allowed
+      @dragleave=${groupWriteAccess.allowed && !sessionHost
         ? (event: DragEvent) => host.sectionDragLeave(event, section.id, group)
         : nothing}
-      @drop=${groupWriteAccess.allowed
+      @drop=${groupWriteAccess.allowed && !sessionHost
         ? (event: DragEvent) => host.sectionDrop(event, section.id, group)
         : nothing}
     >
       ${section.renderHeader
         ? renderSidebarSessionSectionHeader({
             sectionId: section.id,
-            disabledReason: groupWriteAccess.allowed ? undefined : groupWriteAccess.reason,
+            draggable: !sessionHost,
+            disabledReason:
+              sessionHost || groupWriteAccess.allowed ? undefined : groupWriteAccess.reason,
             onStartDrag: (sectionId) => host.startSidebarSectionDrag(sectionId),
             onFinishDrag: () => host.finishSidebarSectionDrag(),
             onContextMenu: group
@@ -231,7 +244,8 @@ function renderSessionPagination(params: {
   nativeSessionsHaveMore: boolean;
 }) {
   const { host, section } = params;
-  const canLoadMore = section.id === "ungrouped" && params.nativeSessionsHaveMore;
+  const canLoadMore =
+    (section.id === "ungrouped" || section.host !== undefined) && params.nativeSessionsHaveMore;
   const canShowMore = section.visibleRowCount < section.totalRowCount || canLoadMore;
   const canShowLess =
     section.visibleRowCount > SIDEBAR_SESSION_SEE_LESS_THRESHOLD &&
@@ -350,6 +364,7 @@ function renderSessionListBody(params: {
   const firstCatalogSectionIndex = catalogsVisible
     ? params.sections.findIndex((section) => section.id.startsWith("catalog:"))
     : -1;
+  const lastHostSectionId = params.sections.findLast((section) => section.host)?.id;
   const catalogStatus = catalogsVisible
     ? renderPanelRefreshStatus({
         status: params.catalogs.refreshStatus,
@@ -392,7 +407,9 @@ function renderSessionListBody(params: {
       return renderSessionSection({
         host,
         section,
-        nativeSessionsHaveMore: params.nativeSessionsHaveMore,
+        nativeSessionsHaveMore:
+          params.nativeSessionsHaveMore &&
+          (section.host === undefined || section.id === lastHostSectionId),
       });
     })}
     ${firstCatalogSectionIndex < 0 ? catalogStatus : nothing}
@@ -401,7 +418,10 @@ function renderSessionListBody(params: {
 
 function renderSessionListToolbar(host: SidebarSessionListHost) {
   const newSessionAccess = host.readNewSessionAccess();
-  const filtered = host.sessionOwnerFilterActive || host.sessionsStatusFilter !== "active";
+  const filtered =
+    host.sessionOwnerFilterActive ||
+    host.sessionsStatusFilter !== "active" ||
+    host.sessionHostFilter.active;
   return html`
     <div class="sidebar-session-toolbar">
       <span class="sidebar-recent-sessions__label-text">${t("chat.sidebar.threads")}</span>

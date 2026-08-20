@@ -245,7 +245,7 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
     return this.sessionNavigationState ?? super.getSessionNavigationState();
   }
 
-  protected override selectedAgentSessionRows(
+  override selectedAgentSessionRows(
     navigationState: SidebarSessionNavigationState,
   ): SidebarRecentSession[] {
     return this.projectedSessionRows ?? super.selectedAgentSessionRows(navigationState);

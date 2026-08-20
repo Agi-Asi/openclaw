@@ -21,6 +21,7 @@ function runningRow(key: string): SidebarRecentSession {
     hasActiveRun: true,
     modelSelectionLocked: false,
     pinned: false,
+    sessionHost: { id: "gateway", kind: "gateway", label: "Gateway" },
     cloudWorkerStopAction: null,
     hasAutomation: false,
     unread: false,

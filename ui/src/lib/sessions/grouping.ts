@@ -1,6 +1,7 @@
 // Pure grouping helpers for the sessions table "Group by" modes.
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { moveSessionOrderEntry, normalizeSessionSectionOrderTokens } from "./custom-groups.ts";
+import type { SessionHost, SessionHostRow } from "./session-host.ts";
 import { parseAgentSessionKey, parseSessionKeyParts } from "./session-key.ts";
 
 export const SESSION_GROUP_MODES = [
@@ -25,8 +26,16 @@ export type SessionRowGroup = {
 };
 
 export type SidebarSessionSection<Row> = {
-  id: "pinned" | "ungrouped" | "groups" | "work" | `category:${string}` | `catalog:${string}`;
+  id:
+    | "pinned"
+    | "ungrouped"
+    | "groups"
+    | "work"
+    | `category:${string}`
+    | `catalog:${string}`
+    | `host:${string}`;
   category?: string;
+  host?: SessionHost;
   /** Built-in smart group-conversation section (kind "group" rows). */
   groups?: boolean;
   /** Built-in smart coding section (worktree/exec-node/ACP sessions). */
@@ -170,13 +179,13 @@ export function groupSessionRows(params: {
 }
 
 /** How the sidebar buckets non-pinned rows: category sections or one flat list. */
-export type SidebarSessionsGrouping = "category" | "none";
+export type SidebarSessionsGrouping = "category" | "host" | "none";
 
 export function normalizeSidebarSessionsGrouping(raw: unknown): SidebarSessionsGrouping {
-  return raw === "none" ? "none" : "category";
+  return raw === "none" || raw === "host" ? raw : "category";
 }
 
-type SidebarGroupableRow = {
+type SidebarGroupableRow = Partial<SessionHostRow> & {
   pinned?: boolean;
   category?: string | null;
   /** Session kind from the gateway row; "group" rows form the Groups zone. */
@@ -226,6 +235,10 @@ export function groupSidebarSessionRows<Row extends SidebarGroupableRow>(
   const groups: Row[] = [];
   const coding: Row[] = [];
   const categories = new Map<string, Row[]>();
+  const hosts = new Map<
+    string,
+    { label: string; kind: "gateway" | "node" | "cloud"; rows: Row[] }
+  >();
   if (grouping === "category") {
     for (const name of options.knownGroups ?? []) {
       const trimmed = name.trim();
@@ -237,6 +250,20 @@ export function groupSidebarSessionRows<Row extends SidebarGroupableRow>(
   for (const row of rows) {
     if (row.pinned === true) {
       pinned.push(row);
+      continue;
+    }
+    if (grouping === "host") {
+      const id = row.sessionHost?.id.trim() || "gateway";
+      const existing = hosts.get(id);
+      if (existing) {
+        existing.rows.push(row);
+      } else {
+        hosts.set(id, {
+          label: row.sessionHost?.label.trim() || "Gateway",
+          kind: row.sessionHost?.kind ?? "gateway",
+          rows: [row],
+        });
+      }
       continue;
     }
     const category = grouping === "category" ? row.category?.trim() : undefined;
@@ -278,12 +305,30 @@ export function groupSidebarSessionRows<Row extends SidebarGroupableRow>(
     category,
     rows: categories.get(category) ?? [],
   }));
-  orderedSections.push({ id: "ungrouped", rows: threads });
-  const hasGroupsReturnTarget = rows.some((row) => categoryClearReturnsToGroups(row, grouping));
-  if (groups.length > 0 || hasGroupsReturnTarget) {
-    orderedSections.push({ id: "groups", groups: true, rows: groups });
+  if (grouping === "host") {
+    const kindOrder = { gateway: 0, node: 1, cloud: 2 } as const;
+    orderedSections.push(
+      ...[...hosts.entries()]
+        .toSorted(
+          ([leftId, left], [rightId, right]) =>
+            kindOrder[left.kind] - kindOrder[right.kind] ||
+            left.label.localeCompare(right.label) ||
+            leftId.localeCompare(rightId),
+        )
+        .map(([id, host]) => ({
+          id: `host:${id}` as const,
+          host: { id, label: host.label, kind: host.kind },
+          rows: host.rows,
+        })),
+    );
+  } else {
+    orderedSections.push({ id: "ungrouped", rows: threads });
+    const hasGroupsReturnTarget = rows.some((row) => categoryClearReturnsToGroups(row, grouping));
+    if (groups.length > 0 || hasGroupsReturnTarget) {
+      orderedSections.push({ id: "groups", groups: true, rows: groups });
+    }
+    orderedSections.push({ id: "work", work: true, rows: coding });
   }
-  orderedSections.push({ id: "work", work: true, rows: coding });
   const catalogIds = [
     ...new Set((options.catalogIds ?? []).map((catalogId) => catalogId.trim()).filter(Boolean)),
   ];
@@ -292,7 +337,7 @@ export function groupSidebarSessionRows<Row extends SidebarGroupableRow>(
       (catalogId): SidebarSessionSection<Row> => ({ id: `catalog:${catalogId}`, rows: [] }),
     ),
   );
-  if (options.sectionOrder) {
+  if (options.sectionOrder && grouping !== "host") {
     const sectionsById = new Map(orderedSections.map((section) => [section.id, section]));
     for (const sectionId of normalizeSessionSectionOrder(
       options.sectionOrder,

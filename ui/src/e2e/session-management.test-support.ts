@@ -3,6 +3,7 @@ import path from "node:path";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import type { Locator, Page } from "playwright";
 import { expect } from "vitest";
+import type { GatewaySessionRow } from "../api/types.ts";
 import {
   controlUiSessionPath,
   controlUiSessionUrl,
@@ -52,6 +53,7 @@ export function sessionRow(
     endedAt?: number;
     childSessions?: string[];
     execNode?: string;
+    placement?: GatewaySessionRow["placement"];
     forkSource?: { sessionKey: string; sessionId: string; entryId?: string };
     worktree?: { id?: string; branch?: string; repoRoot?: string };
   } = {},

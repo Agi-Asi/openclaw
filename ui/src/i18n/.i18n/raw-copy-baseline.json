@@ -220,6 +220,20 @@
     },
     {
       "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/lib/sessions/session-host.ts",
+      "text": "Cloud workers"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/lib/sessions/session-host.ts",
+      "text": "Gateway"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/pages/about/view.ts",

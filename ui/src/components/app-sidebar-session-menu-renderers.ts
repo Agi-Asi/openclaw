@@ -4,6 +4,7 @@ import { ref } from "lit/directives/ref.js";
 import { t } from "../i18n/index.ts";
 import type { CatalogProjectGrouping } from "../lib/sessions/catalog-project-grouping.ts";
 import type { SidebarSessionsGrouping } from "../lib/sessions/grouping.ts";
+import type { SessionHost } from "../lib/sessions/session-host.ts";
 import {
   SIDEBAR_SESSION_SORT_OPTIONS,
   SIDEBAR_SESSION_STATUS_OPTIONS,
@@ -57,6 +58,22 @@ function renderSidebarMenuRadioItem(params: {
       >
       ${params.owner ? renderSessionOwnerChip(params.owner, "row", "owned") : nothing}
       <span class="session-menu__text">${params.label}</span>
+    </wa-dropdown-item>
+  `;
+}
+
+function renderSidebarMenuCheckboxItem(params: { value: string; checked: boolean; label: string }) {
+  return html`
+    <wa-dropdown-item
+      class="sidebar-session-sort-menu__item"
+      type="checkbox"
+      value=${params.value}
+      .checked=${params.checked}
+    >
+      <span class="session-menu__text">${params.label}</span>
+      <span slot="details" class="session-menu__check" aria-hidden="true"
+        >${params.checked ? icons.check : nothing}</span
+      >
     </wa-dropdown-item>
   `;
 }
@@ -269,6 +286,8 @@ export function renderSidebarSessionSortMenu(params: {
   position: { x: number; y: number } | null;
   trigger: HTMLElement | null;
   grouping: SidebarSessionsGrouping;
+  hosts: Array<SessionHost & { count: number }>;
+  hiddenHostIds: ReadonlySet<string>;
   sortMode: SidebarSessionSortMode;
   peopleSortAvailable: boolean;
   statusFilter: SidebarSessionStatusFilter;
@@ -280,6 +299,8 @@ export function renderSidebarSessionSortMenu(params: {
   involvingMe: boolean;
   selfOwnerId: string | null;
   onGroupingChange: (grouping: SidebarSessionsGrouping) => void;
+  onHostToggle: (hostId: string) => void;
+  onAllHostsToggle: () => void;
   onSortModeChange: (mode: SidebarSessionSortMode) => void;
   onStatusFilterChange: (statusFilter: SidebarSessionStatusFilter) => void;
   onOwnerFilterChange: (ownerId: string | null, involvingMe?: boolean) => void;
@@ -294,6 +315,7 @@ export function renderSidebarSessionSortMenu(params: {
   }
   const groupingOptions = [
     { grouping: "category", label: t("sessionsView.groupByCategory") },
+    { grouping: "host", label: t("sessionsView.groupByHost") },
     { grouping: "none", label: t("sessionsView.groupByNone") },
   ] as const satisfies ReadonlyArray<{ grouping: SidebarSessionsGrouping; label: string }>;
   return keyed(
@@ -311,6 +333,10 @@ export function renderSidebarSessionSortMenu(params: {
             const value = event.detail.item.value;
             if (value?.startsWith("grouping:")) {
               params.onGroupingChange(value.slice("grouping:".length) as SidebarSessionsGrouping);
+            } else if (value === "all-hosts") {
+              params.onAllHostsToggle();
+            } else if (value?.startsWith("host:")) {
+              params.onHostToggle(value.slice("host:".length));
             } else if (value?.startsWith("sort:")) {
               params.onSortModeChange(value.slice("sort:".length) as SidebarSessionSortMode);
             } else if (value?.startsWith("status:")) {
@@ -343,6 +369,24 @@ export function renderSidebarSessionSortMenu(params: {
               label: option.label,
             }),
           )}
+          ${params.grouping === "host"
+            ? html`
+                <div class="session-menu__separator" role="separator"></div>
+                <div class="sidebar-session-sort-menu__title">${t("sessionsView.filterHosts")}</div>
+                ${renderSidebarMenuCheckboxItem({
+                  value: "all-hosts",
+                  checked: params.hosts.every((host) => !params.hiddenHostIds.has(host.id)),
+                  label: t("sessionsView.allHosts"),
+                })}
+                ${params.hosts.map((host) =>
+                  renderSidebarMenuCheckboxItem({
+                    value: `host:${host.id}`,
+                    checked: !params.hiddenHostIds.has(host.id),
+                    label: `${host.label} (${host.count})`,
+                  }),
+                )}
+              `
+            : nothing}
           <div class="session-menu__separator" role="separator"></div>
           <div class="sidebar-session-sort-menu__title">${t("chat.sidebar.sortBy")}</div>
           ${SIDEBAR_SESSION_SORT_OPTIONS.filter(

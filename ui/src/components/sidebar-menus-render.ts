@@ -381,6 +381,8 @@ export function renderSidebarSessionSortMenuForController(controller: SidebarMen
     position,
     trigger: controller.sessionSortMenuTrigger,
     grouping: host.sessionsGrouping,
+    hosts: host.sessionHostFilter.options,
+    hiddenHostIds: host.sessionHostFilter.hiddenHostIds,
     sortMode: host.effectiveSessionSortMode(),
     peopleSortAvailable: host.sessionPeopleSortAvailable(),
     statusFilter: host.sessionsStatusFilter,
@@ -393,8 +395,12 @@ export function renderSidebarSessionSortMenuForController(controller: SidebarMen
     selfOwnerId: host.sessionDataContext?.gateway.snapshot.selfUser?.id ?? null,
     onGroupingChange: (grouping) => {
       host.sessionOrganizer.setSessionsGrouping(grouping);
-      controller.closeSessionSortMenu({ restoreFocus: true });
+      if (grouping !== "host") {
+        controller.closeSessionSortMenu({ restoreFocus: true });
+      }
     },
+    onHostToggle: (hostId) => host.sessionHostFilter.toggle(hostId),
+    onAllHostsToggle: () => host.sessionHostFilter.toggleAll(),
     onSortModeChange: (mode) => {
       host.setSessionSortMode(mode);
       controller.closeSessionSortMenu({ restoreFocus: true });

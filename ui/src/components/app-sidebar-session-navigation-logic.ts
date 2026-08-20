@@ -29,6 +29,7 @@ import {
   resolveSessionPreferredFace,
   sessionNavigationTarget,
 } from "../lib/sessions/route-navigation.ts";
+import { resolveSessionHost } from "../lib/sessions/session-host.ts";
 import {
   areUiSessionKeysEquivalent,
   buildAgentMainSessionKey,
@@ -189,7 +190,6 @@ export function buildSidebarSessionNavigationState(input: {
     compareSessions: input.compareSessions,
   });
   const toSidebarSession = (row: SessionRow, isChild = false): SidebarRecentSession => {
-    const channelInfo = resolveChannelSessionInfo(row.key, row.channel);
     let runtimeSampledAt = row.runtimeSampledAt;
     if (row.runtimeMs != null && runtimeSampledAt == null) {
       runtimeSampledAt = input.runtimeSampledAtByRow.get(row);
@@ -235,11 +235,11 @@ export function buildSidebarSessionNavigationState(input: {
       visibility: row.visibility,
       draftOwnedBySelf: isSidebarDraftOwnedBySelf(row, context?.gateway.snapshot.selfUser?.id),
       category: normalizeOptionalString(row.category),
+      sessionHost: resolveSessionHost(row),
       icon: normalizeOptionalString(row.icon),
       channelAvatarUrl: normalizeOptionalString(row.channelAvatarUrl),
       boardFace: row.boardFace,
-      channel: channelInfo.channel,
-      channelSession: channelInfo.channelSession,
+      ...resolveChannelSessionInfo(row.key, row.channel),
       workSession:
         Boolean(row.worktree || row.execNode) ||
         context?.sessions.isPreparedWorkSession(row.key) === true,

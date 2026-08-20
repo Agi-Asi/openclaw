@@ -73,6 +73,7 @@ import { SessionDataController } from "./session-data-controller.ts";
 import type { SessionOrganizerController } from "./session-organizer-controller.ts";
 import type { SessionOwnerOption } from "./session-owner-chip.ts";
 import type { SidebarMenusController } from "./sidebar-menus-controller.ts";
+import { SidebarSessionHostFilterController } from "./sidebar-session-host-filter.ts";
 
 /** Session-row projection, selection, sorting, and agent scope navigation. */
 export class AppSidebarSessionNavigationElement extends AppSidebarBase {
@@ -145,6 +146,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
   @state() sessionsStatusFilter: SidebarSessionStatusFilter =
     loadStoredSidebarSessionStatusFilter();
   @state() hiddenSessionCatalogIds = loadStoredHiddenSessionCatalogIds();
+  readonly sessionHostFilter = new SidebarSessionHostFilterController(this);
 
   visibleSessionCatalogs = () =>
     visibleSessionCatalogProjection(
@@ -332,7 +334,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
   /** Collapsed zones keep full rows for true header counts and status dots. */
   protected zonedVisibleSections(rows: SidebarRecentSession[]): SidebarVisibleSections {
     return partitionSidebarVisibleSections({
-      rows,
+      rows: this.sessionHostFilter.filter(rows),
       grouping: this.sessionsGrouping,
       knownGroups: this.sessionsGrouping === "category" ? this.knownSessionGroups() : [],
       // Normalize gateway order without dropping catalog-lagging categories.
@@ -350,7 +352,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
 
   reconciledSidebarZone() {
     const navigationState = this.getSessionNavigationState();
-    const rows = this.selectedAgentSessionRows(navigationState);
+    const rows = this.sessionHostFilter.filter(this.selectedAgentSessionRows(navigationState));
     return buildReconciledSidebarZone({
       sidebarEntries: this.sidebarEntries,
       rows,
@@ -380,7 +382,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
     const navigationState = this.getSessionNavigationState();
     const rows = this.selectedAgentSessionRows(navigationState);
     const { visibleRows } = this.zonedVisibleSections(rows);
-    const pinnedByKey = new Map(rows.filter((row) => row.pinned).map((row) => [row.key, row]));
+    const pinnedByKey = this.sessionHostFilter.pinnedByKey(rows);
     const pinnedRows = this.reconciledSidebarZone().entries.flatMap((entry) =>
       entry.type === "session"
         ? pinnedByKey.get(entry.key)
@@ -583,9 +585,7 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
   }
 
   /** The list follows the chip-selected agent without flashing stale rows mid-switch. */
-  protected selectedAgentSessionRows(
-    navigationState: SidebarSessionNavigationState,
-  ): SidebarRecentSession[] {
+  selectedAgentSessionRows(navigationState: SidebarSessionNavigationState): SidebarRecentSession[] {
     const adopted = adoptedCatalogSessionKeys(this.visibleSessionCatalogs());
     const selected = this.expandedAgentId();
     const loadedAgentId = normalizeAgentId(this.sessionData.sessionsAgentId ?? "");
