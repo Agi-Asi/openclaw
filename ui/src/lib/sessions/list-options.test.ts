@@ -96,6 +96,61 @@ describe("session list replacement options", () => {
     sessions.dispose();
   });
 
+  it("retains the confirmed owner through an older in-flight list response", async () => {
+    const key = "agent:main:owned";
+    const ada = { type: "human" as const, id: "profile-ada", label: "Ada" };
+    const bob = { type: "human" as const, id: "profile-bob", label: "Bob" };
+    const oldOwner = { actor: bob, assignedBy: ada, assignedAt: 10 };
+    const assignedOwner = { actor: ada, assignedBy: ada, assignedAt: 20 };
+    const staleResponse = deferred<SessionsListResult>();
+    const replacement = deferred<SessionsListResult>();
+    let listCalls = 0;
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.assignOwner") {
+        return { ok: true, key, owner: assignedOwner };
+      }
+      if (method !== "sessions.list") {
+        throw new Error(`Unexpected request: ${method}`);
+      }
+      listCalls += 1;
+      if (listCalls === 2) {
+        return await staleResponse.promise;
+      }
+      if (listCalls === 3) {
+        return await replacement.promise;
+      }
+      return {
+        ...sessionsResult([{ key, kind: "direct", updatedAt: 10, owner: oldOwner }], 10),
+        owners: [ada, bob],
+      };
+    });
+    const sessions = createSessions({ request } as unknown as GatewayBrowserClient, key);
+
+    await sessions.refresh({ agentId: "main", force: true });
+    const staleRefresh = sessions.refresh({ agentId: "main", force: true });
+    await vi.waitFor(() => expect(listCalls).toBe(2));
+    await expect(sessions.assignOwner(key, ada, { agentId: "main" })).resolves.toEqual(
+      assignedOwner,
+    );
+
+    staleResponse.resolve({
+      ...sessionsResult([{ key, kind: "direct", updatedAt: 10, owner: oldOwner }], 10),
+      owners: [ada, bob],
+    });
+    await vi.waitFor(() => expect(listCalls).toBe(3));
+    expect(sessions.state.result?.sessions[0]?.owner).toEqual(assignedOwner);
+    expect(sessions.state.result?.owners).toBeUndefined();
+
+    replacement.resolve({
+      ...sessionsResult([{ key, kind: "direct", updatedAt: 20, owner: assignedOwner }], 20),
+      owners: [ada],
+    });
+    await staleRefresh;
+    expect(sessions.state.result?.sessions[0]?.owner).toEqual(assignedOwner);
+    expect(sessions.state.result?.owners).toEqual([ada]);
+    sessions.dispose();
+  });
+
   it("preserves sidebar metadata hydration when refreshing after session patches", async () => {
     const key = "agent:main:untitled";
     const request = vi.fn(async (method: string, _params?: unknown) => {

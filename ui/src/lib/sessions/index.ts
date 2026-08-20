@@ -127,9 +127,11 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
 
   // Canonical Gateway rows are the source of truth for everything except the
   // UI-owned facts the capability keeps beside them, so every published result
-  // passes through the same overlay: swarm notes, then in-flight pin intents.
+  // passes through the same overlay: swarm notes, then confirmed mutations.
   const decorateRows = (result: SessionsListResult | null): SessionsListResult | null =>
-    mutations.applyConfirmedArchives(mutations.applyPendingPins(swarmActivity.decorate(result)));
+    mutations.applyConfirmedOwners(
+      mutations.applyConfirmedArchives(mutations.applyPendingPins(swarmActivity.decorate(result))),
+    );
 
   const roster = createSessionRosterRefresh({
     connection,
@@ -139,6 +141,7 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     observerError: () => sessionEventSubscriptionError,
     decorate: decorateRows,
     onCanonicalList(result) {
+      mutations.observeCanonicalOwners(result);
       mutations.settlePrepared(result);
       canonicalListRevision += 1;
     },

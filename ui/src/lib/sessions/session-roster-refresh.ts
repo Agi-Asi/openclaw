@@ -301,8 +301,8 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
           }
         }
       }
-      nextResult = host.decorate(nextResult);
       host.onCanonicalList(nextResult);
+      nextResult = host.decorate(nextResult);
       const state = host.readState();
       const error = host.observerError();
       host.publish(
