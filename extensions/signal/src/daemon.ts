@@ -27,7 +27,7 @@ export type SignalDaemonHandle = {
 
 const SIGNAL_DAEMON_STOP_KILL_TIMEOUT_MS = 1_500;
 
-export type SignalDaemonExitEvent = {
+type SignalDaemonExitEvent = {
   source: "process" | "spawn-error";
   code: number | null;
   signal: NodeJS.Signals | null;

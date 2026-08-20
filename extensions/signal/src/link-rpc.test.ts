@@ -2,7 +2,7 @@
 import { once } from "node:events";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SignalDaemonExitEvent, SignalJsonRpcProcess } from "./daemon.js";
+import type { SignalJsonRpcProcess } from "./daemon.js";
 import { createSignalLinkRpcClient } from "./link-rpc.js";
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
@@ -15,8 +15,9 @@ vi.mock("./daemon.js", async (importOriginal) => ({
 function createProcess() {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
-  let resolveExit!: (exit: SignalDaemonExitEvent) => void;
-  const exited = new Promise<SignalDaemonExitEvent>((resolve) => {
+  type ExitEvent = Awaited<SignalJsonRpcProcess["exited"]>;
+  let resolveExit!: (exit: ExitEvent) => void;
+  const exited = new Promise<ExitEvent>((resolve) => {
     resolveExit = resolve;
   });
   const process: SignalJsonRpcProcess = {

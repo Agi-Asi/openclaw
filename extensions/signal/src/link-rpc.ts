@@ -18,11 +18,11 @@ type PendingRequest = {
 };
 
 export type SignalLinkRpcClient = {
-  request: <T = unknown>(
+  request: (
     method: string,
     params?: Record<string, unknown>,
     options?: Pick<SignalRpcOptions, "timeoutMs" | "maxResponseBytes">,
-  ) => Promise<T>;
+  ) => Promise<unknown>;
   stop: () => Promise<void>;
 };
 
@@ -46,11 +46,11 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
     abortSignal?.addEventListener("abort", this.onAbort, { once: true });
   }
 
-  async request<T = unknown>(
+  async request(
     method: string,
     params?: Record<string, unknown>,
     options?: Pick<SignalRpcOptions, "timeoutMs" | "maxResponseBytes">,
-  ): Promise<T> {
+  ): Promise<unknown> {
     if (this.terminalError) {
       throw this.terminalError;
     }
@@ -64,7 +64,7 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
       options?.maxResponseBytes,
       DEFAULT_MAX_RESPONSE_BYTES,
     );
-    const response = new Promise<T>((resolve, reject) => {
+    const response = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending = undefined;
         reject(new Error(`signal-cli jsonRpc timeout (${method})`));
@@ -73,7 +73,7 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
       this.pending = {
         id,
         maxResponseBytes,
-        resolve: (value) => resolve(value as T),
+        resolve,
         reject,
         timer,
       };
