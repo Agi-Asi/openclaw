@@ -56,7 +56,11 @@ describe("WizardSession", () => {
     );
 
     const presented = await session.next({ supportsQrCode: true });
-    expect(presented.step).toMatchObject({ type: "qr", executor: "gateway" });
+    expect(presented.step).toMatchObject({
+      type: "qr",
+      executor: "gateway",
+      canCancel: true,
+    });
     if (!presented.step) {
       throw new Error("expected QR step");
     }
@@ -109,6 +113,34 @@ describe("WizardSession", () => {
 
     expect(presented.step?.qrDataUrl).toBeUndefined();
     await expect(session.next()).resolves.toMatchObject({ done: true, status: "cancelled" });
+  });
+
+  test("marks a QR as non-cancellable after the durable commit point", async () => {
+    let finish!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const session = new WizardSession(
+      async (prompter, _signal, owner) => {
+        owner.lockCancellation();
+        await prompter.qrCode?.({
+          title: "Link device",
+          text: "sgnl://linkdevice?uuid=test",
+          settled,
+        });
+      },
+      { supportsQrCode: true },
+    );
+
+    const presented = await session.next({ supportsQrCode: true });
+    expect(presented.step).toMatchObject({ type: "qr", canCancel: false });
+    expect(session.cancel()).toBe(false);
+
+    finish();
+    await expect(session.next({ supportsQrCode: true })).resolves.toMatchObject({
+      done: true,
+      status: "done",
+    });
   });
 
   test("steps progress in order", async () => {

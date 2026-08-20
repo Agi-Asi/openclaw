@@ -12173,6 +12173,7 @@ public struct WizardStep: Codable, Sendable {
     public let devicecode: [String: AnyCodable]?
     public let qrdataurl: String?
     public let expiresinms: Int?
+    public let cancancel: Bool?
 
     public init(
         id: String,
@@ -12188,7 +12189,8 @@ public struct WizardStep: Codable, Sendable {
         externalurl: String? = nil,
         devicecode: [String: AnyCodable]? = nil,
         qrdataurl: String? = nil,
-        expiresinms: Int? = nil)
+        expiresinms: Int? = nil,
+        cancancel: Bool? = nil)
     {
         self.id = id
         self.type = type
@@ -12204,6 +12206,7 @@ public struct WizardStep: Codable, Sendable {
         self.devicecode = devicecode
         self.qrdataurl = qrdataurl
         self.expiresinms = expiresinms
+        self.cancancel = cancancel
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -12221,6 +12224,7 @@ public struct WizardStep: Codable, Sendable {
         case devicecode = "deviceCode"
         case qrdataurl = "qrDataUrl"
         case expiresinms = "expiresInMs"
+        case cancancel = "canCancel"
     }
 }
 

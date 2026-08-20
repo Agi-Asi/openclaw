@@ -19,6 +19,7 @@ type WizardQrStep = Omit<ProtocolWizardQrStep, "qrDataUrl" | "expiresInMs"> & {
   qrDataUrl?: string;
   qrExpiresAtMs?: number;
 };
+type WizardQrStepInput = Omit<WizardQrStep, "canCancel">;
 export type WizardStep = ProtocolWizardNonQrStep | WizardQrStep;
 type WizardNonQrStepInput = Omit<ProtocolWizardNonQrStep, "id">;
 
@@ -513,11 +514,11 @@ export class WizardSession {
   }
 
   /** @internal Present a QR until its producer settles; clients cannot answer it. */
-  async presentQr<T>(step: WizardQrStep, settled: Promise<T>): Promise<T> {
+  async presentQr<T>(step: WizardQrStepInput, settled: Promise<T>): Promise<T> {
     if (this.status !== "running") {
       throw new Error("wizard: session not running");
     }
-    this.pushStep(step);
+    this.pushStep({ ...step, canCancel: !this.cancellationLocked });
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
     let rejectCancelled!: (error: Error) => void;
     const cancelled = new Promise<never>((_resolve, reject) => {

@@ -28,6 +28,7 @@ describe("WizardStepSchema", () => {
     title: "Link device",
     qrDataUrl: "data:image/png;base64,aGVsbG8=",
     expiresInMs: 60_000,
+    canCancel: true,
     executor: "gateway",
   };
 
@@ -35,10 +36,12 @@ describe("WizardStepSchema", () => {
     expect(validate.Check(qr)).toBe(true);
     expect(validate.Check({ ...qr, executor: "client" })).toBe(false);
     expect(validate.Check({ ...qr, qrDataUrl: undefined })).toBe(false);
+    expect(validate.Check({ ...qr, canCancel: false })).toBe(true);
     expect(validate.Check({ ...qr, sensitive: true })).toBe(false);
   });
 
   it("keeps QR-only fields off interactive steps", () => {
     expect(validate.Check({ id: "text-1", type: "text", qrDataUrl: qr.qrDataUrl })).toBe(false);
+    expect(validate.Check({ id: "text-1", type: "text", canCancel: true })).toBe(false);
   });
 });

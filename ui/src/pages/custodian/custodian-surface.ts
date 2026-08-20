@@ -13,6 +13,7 @@ import {
   handleMarkdownTableInteraction,
   releaseMarkdownTables,
 } from "../../components/markdown-tables.ts";
+import { canCancelWizardStep } from "../../components/wizard-step-controls.ts";
 import "../../components/openclaw-mascot.ts";
 import { t } from "../../i18n/index.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
@@ -221,7 +222,9 @@ class CustodianSurface extends OpenClawLightDomElement {
               wizardSecretVisible: store.wizardSecretVisible,
               onWizardValueChange: (value) => store.setWizardValue(value),
               onWizardAnswer: (value) => store.answerWizardStep(message, value),
-              showWizardCancel: store.wizardCancelAvailable,
+              showWizardCancel:
+                store.wizardCancelAvailable &&
+                (message.step === null || canCancelWizardStep(message.step)),
               onWizardCancel: () => store.cancelWizardStep(message),
               onToggleWizardSecretVisibility: () => store.toggleWizardSecretVisibility(),
             });

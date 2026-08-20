@@ -30,6 +30,11 @@ type WizardStepControlsProps = {
   onToggleSensitiveVisibility?: () => void;
 };
 
+/** Whether the current wizard step exposes a truthful cancellation action. */
+export function canCancelWizardStep(step: WizardStep): boolean {
+  return step.type !== "qr" || step.canCancel !== false;
+}
+
 function stepClass(props: WizardStepControlsProps, name: string): string {
   return `${props.presentation === "channels" ? "channels-wizard" : "wizard-step"}__${name}`;
 }
