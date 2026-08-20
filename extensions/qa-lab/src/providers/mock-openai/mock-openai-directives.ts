@@ -348,7 +348,9 @@ export function isHeartbeatPrompt(text: string) {
   if (!trimmed || /remember this fact/i.test(trimmed)) {
     return false;
   }
-  return /(?:^|\n)Read HEARTBEAT\.md if it exists\b/i.test(trimmed);
+  return /(?:^|\n)(?:Read HEARTBEAT\.md if it exists|Follow the heartbeat monitor scratch context when provided)\b/i.test(
+    trimmed,
+  );
 }
 
 export function readFirstMediaPath(value: unknown): string {

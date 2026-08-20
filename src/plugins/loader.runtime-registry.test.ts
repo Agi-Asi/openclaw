@@ -1,5 +1,6 @@
 // Verifies plugin loader runtime registry behavior.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { disposeRegisteredAgentHarnesses } from "../agents/harness/registry.js";
 import { createPluginMetadataSnapshot } from "../config/plugin-auto-enable.test-helpers.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../config/types.plugins.js";
@@ -12,6 +13,7 @@ import {
   loadInstalledPluginIndexInstallRecordsSync,
   writePersistedInstalledPluginIndexInstallRecordsSync,
 } from "./installed-plugin-index-records.js";
+import { getReusableCachedPluginRegistry, setCachedPluginRegistry } from "./loader-cache.js";
 import { resolvePluginLoadCacheContext } from "./loader-load-context.js";
 import { createLazyPluginRuntime } from "./loader-module-runtime.js";
 import {
@@ -27,8 +29,13 @@ import {
 } from "./loader.test-fixtures.js";
 import { buildMemoryPromptSection, registerMemoryCapability } from "./memory-state.js";
 import { clearPluginMetadataLifecycleCaches } from "./plugin-metadata-lifecycle.js";
+import { isPluginRegistryRetired } from "./registry-lifecycle.js";
 import { createEmptyPluginRegistry } from "./registry.js";
-import { getActivePluginRegistry, setActivePluginRegistry } from "./runtime.js";
+import {
+  clearActivePluginRegistry,
+  getActivePluginRegistry,
+  setActivePluginRegistry,
+} from "./runtime.js";
 import type { PluginRuntime } from "./runtime/types.js";
 
 afterEach(() => {
@@ -59,6 +66,46 @@ it("keeps injected instance runtime surfaces independent of the broad runtime mo
   expect(runtime.nodes).toBe(nodes);
   expect(runtime.subagent).toBe(subagent);
   expect(loadPluginModule).not.toHaveBeenCalled();
+});
+
+it("invalidates root and gateway-bound snapshot registries after their lifecycle closes", async () => {
+  const rootCacheKey = "restart-root";
+  const snapshotCacheKey = "restart-gateway-bound-snapshot";
+  const firstRoot = createEmptyPluginRegistry();
+  const firstSnapshot = createEmptyPluginRegistry();
+  setCachedPluginRegistry(rootCacheKey, firstRoot);
+  setCachedPluginRegistry(snapshotCacheKey, firstSnapshot);
+  setActivePluginRegistry(firstRoot, rootCacheKey, "gateway-bindable");
+  let disposed = false;
+  const firstHarness = {
+    id: "restart-harness",
+    label: "Restart harness",
+    supports: () => ({ supported: !disposed }),
+    runAttempt: async () => ({ ok: false as const, error: "unused" }),
+    dispose: async () => {
+      disposed = true;
+    },
+  };
+  firstRoot.agentHarnesses.push({
+    pluginId: "restart-harness",
+    source: "runtime",
+    harness: firstHarness,
+  });
+
+  expect(getReusableCachedPluginRegistry(rootCacheKey)).toBe(firstRoot);
+  expect(getReusableCachedPluginRegistry(snapshotCacheKey)).toBe(firstSnapshot);
+  expect(firstHarness.supports()).toEqual({ supported: true });
+
+  await disposeRegisteredAgentHarnesses();
+  await clearActivePluginRegistry();
+
+  expect(isPluginRegistryRetired(firstRoot)).toBe(true);
+  expect(firstHarness.supports()).toEqual({ supported: false });
+
+  expect(getReusableCachedPluginRegistry(rootCacheKey)).toBeUndefined();
+  expect(getReusableCachedPluginRegistry(snapshotCacheKey)).toBeUndefined();
+  expect(isPluginRegistryRetired(firstRoot)).toBe(true);
+  expect(getActivePluginRegistry()).toBeNull();
 });
 
 function requireMemoryEmbeddingProvider(providerId: string) {
