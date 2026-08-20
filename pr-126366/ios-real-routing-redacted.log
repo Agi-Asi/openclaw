@@ -1,23 +1,60 @@
-OpenClaw PR #126366 — real iOS routing proof (redacted)
-Captured: 2026-08-20 America/Indianapolis
-App/Gateway stack SHA: 30ba703c33b691473b3f4be5fdc02453a7287c9e
-Client: real OpenClaw iOS app in dedicated iOS 27 simulator
+OpenClaw explicit-owner Apple routing validation
+Date: 2026-08-20 (America/Indiana/Indianapolis)
+Repository: openclaw/openclaw
 
-2026-08-20T05:49:19.381-04:00 [ws] connect client=openclaw-ios mode=ui platform=iOS 27.0.0 conn=[REDACTED]
-2026-08-20T05:49:19.581-04:00 [ws] agents.list success duration=2ms id=[REDACTED]
-2026-08-20T05:49:57.752-04:00 [ws] chat.send success duration=8ms runId=[REDACTED] conn=[REDACTED] id=[REDACTED]
-2026-08-20T05:49:57.753-04:00 [diagnostic] message received sessionKey=agent:research:main source=dispatchInboundMessage
-2026-08-20T05:49:57.760-04:00 [diagnostic] session state sessionId=[REDACTED] sessionKey=agent:research:main prev=idle new=processing reason=message_start
-2026-08-20T05:50:01.046-04:00 [diagnostic] message dispatch completed sessionKey=agent:research:main outcome=completed duration=3276ms
-2026-08-20T05:50:01.046-04:00 [diagnostic] message processed sessionId=[REDACTED] sessionKey=agent:research:main outcome=completed duration=3292ms
+Frozen stack (no later main rebase):
+- PR #126316: 36e854253cbbebdc195ec22069bf8deb93b81bf3
+- PR #126330: 3ca64f861a6d90fd2c4c0034c60cc9077d954096
+- PR #126366: d847504f4bb31a17458c6909cdf0f152d344c871
 
-UI assertion:
-- first unowned send did not enter the transcript and emitted no chat.send request;
-- after explicit Research selection, the message entered the transcript and the Gateway processed agent:research:main.
+GitHub checks at final evidence capture:
+- PR #126316: 128 success, 33 skipped, 1 neutral; no failed checks
+- PR #126330: 184 success, 39 skipped, 1 neutral; no failed checks
+- PR #126366: 125 success, 16 skipped; no failed checks
 
-XCUI result:
-Executed 1 test, with 0 failures (0 unexpected).
-** TEST SUCCEEDED **
+Local validation already completed before exact-SHA proof capture:
+- full changed-file repository gate: PASS
+- production build: PASS
+- native i18n verification: PASS
+- iOS NodeAppModel tests: 238/238 PASS
+- macOS Quick Chat tests: 44/44 PASS
+- shared legacy import tests: 10/10 PASS
+- focused WebChat owner-race regression: PASS
+- final Codex review: CLEAN
 
-Redactions: request, run, connection, device, message, and session identifiers; absolute local paths.
-Sources: real app XCUI run and live isolated Gateway log from the same interaction shown in ios-real-routing-proof.mp4.
+Real macOS app proof:
+- artifact: macos-final-sha-real-routing.mov
+- compiled app connected to the isolated exact-stack Gateway
+- initial owner state required an explicit agent
+- visible selection changed to Research
+- real routed response reported the frozen top SHA
+
+Real iOS app proof:
+- device: iOS 27 simulator, UDID redacted
+- artifact: ios-final-sha-real-routing.mov
+- dimensions: 1170x2532; H.264; approximately 105 seconds
+- initial unowned send visibly refused: "Select an agent before sending this message."
+- user opened the real sidebar, expanded More Agents, and selected Research
+- a new message was sent after explicit selection
+- real Research response: "ROUTE d847504f4bb31a17458c6909cdf0f152d344c871"
+
+Maestro semantic run (real app UI):
+- Select an agent visible: PASS
+- unowned send refusal visible: PASS
+- More Agents visible: PASS
+- Research visible and selected: PASS
+- routed send: PASS
+- exact-SHA response visible: PASS
+
+Redacted live session excerpt:
+2026-08-20T14:17:35Z sender=[REDACTED_IOS_DEVICE] agent=research
+request="Reply with ROUTE plus the exact final SHA d847504f4bb31a17458c6909cdf0f152d344c871."
+2026-08-20T14:17:38Z response="ROUTE d847504f4bb31a17458c6909cdf0f152d344c871"
+duration_ms=4785
+
+Proof environment disclosure:
+- Physical Apple devices were offline; iOS proof used the iOS 27 simulator.
+- A local-only DEBUG launch harness bypassed an iOS 27 beta onboarding glassEffect crash and connected the genuine compiled app to the isolated Gateway.
+- The harness did not replace, mock, or reconstruct any product screen, routing decision, send boundary, Gateway response, or transcript.
+- Harness source changes were reverted after capture; the PR worktree was clean at d847504f4bb31a17458c6909cdf0f152d344c871.
+- Authentication values, device identifiers, session identifiers, local paths, and tokens are redacted or omitted.
