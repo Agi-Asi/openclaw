@@ -2,14 +2,17 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import {
   foreignSessionIngestionSource,
   scanSessionIngestionSource,
   sessionIngestionSourceFromCorpus,
 } from "./session-ingestion.js";
 
-const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
 
 describe("session ingestion", () => {
   it("preserves file-backed scope identity when a session id ends in .jsonl", () => {
@@ -25,7 +28,8 @@ describe("session ingestion", () => {
   });
 
   it("verifies backfill content despite an unchanged size and mtime", async () => {
-    const dir = tempDirs.make("openclaw-session-ingestion-");
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-session-ingestion-"));
+    tempDirs.push(dir);
     const archiveFile = path.join(dir, "archive.jsonl");
     const record = (content: string) =>
       `${JSON.stringify({
@@ -71,7 +75,8 @@ describe("session ingestion", () => {
   });
 
   it("resumes after a validated transcript append", async () => {
-    const dir = tempDirs.make("openclaw-session-ingestion-");
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-session-ingestion-"));
+    tempDirs.push(dir);
     const archiveFile = path.join(dir, "archive.jsonl");
     const record = (id: string, content: string) =>
       `${JSON.stringify({
