@@ -1403,6 +1403,18 @@ ${actionRun}`;
 }
 
 describe("ci workflow guards", () => {
+  it("retains pending same-SHA QA calls in the shared concurrency group", () => {
+    const workflowPath = ".github/workflows/qa-live-transports-convex.yml";
+    const workflowSource = readFileSync(workflowPath, "utf8");
+    const workflow = parse(workflowSource);
+
+    expect(workflow.concurrency).toEqual({
+      group: "qa-lab-all-lanes-${{ github.event_name != 'schedule' && inputs.ref || github.sha }}",
+      "cancel-in-progress": false,
+      queue: "max",
+    });
+  });
+
   it("extracts module heredocs only at exact closing marker lines", () => {
     const run = runWorkflowShellScript(
       `node --input-type=module <<'NODE'
@@ -8503,7 +8515,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       (step: WorkflowStep) => step.name === "Dispatch and await trusted Telegram QA",
     );
     const identityStep = telegramWorkflow.jobs.trusted_identity.steps.find(
-      (step: WorkflowStep) => step.name === "Verify dispatched-main identity",
+      (step: WorkflowStep) => step.name === "Verify dispatched workflow identity",
     );
     const provenanceSteps = [
       telegramWorkflow.jobs.build_candidate.steps.find(
