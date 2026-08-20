@@ -26,7 +26,8 @@ async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
 function mockConfig(
   home: string,
   storePath: string,
-  agentsList?: Array<{ id: string; default?: boolean }>,
+  agentsList?: Array<{ id: string }>,
+  systemAgentId?: string,
 ): OpenClawConfig {
   return {
     agents: {
@@ -34,8 +35,14 @@ function mockConfig(
         model: { primary: "anthropic/claude-opus-4-6" },
         models: { "anthropic/claude-opus-4-6": {} },
         workspace: path.join(home, "openclaw"),
+        ...(systemAgentId ? { systemAgent: { agentId: systemAgentId } } : {}),
       },
-      list: agentsList,
+      ...(agentsList
+        ? {
+            ownership: "explicit",
+            entries: Object.fromEntries(agentsList.map(({ id, ...entry }) => [id, entry])),
+          }
+        : {}),
     },
     session: { store: storePath, mainKey: "main" },
   } as OpenClawConfig;
@@ -67,7 +74,7 @@ async function withCrossAgentResumeFixture(
         systemSent: true,
       },
     });
-    const cfg = mockConfig(home, storePattern, [{ id: "dev" }, { id: "exec", default: true }]);
+    const cfg = mockConfig(home, storePattern, [{ id: "dev" }, { id: "exec" }], "exec");
     await run({ sessionId, sessionKey, cfg });
   });
 }
@@ -155,10 +162,7 @@ describe("agent session resolution", () => {
           updatedAt: Date.now(),
         },
       });
-      const cfg = mockConfig(home, storePattern, [
-        { id: "other" },
-        { id: "retired", default: true },
-      ]);
+      const cfg = mockConfig(home, storePattern, [{ id: "other" }, { id: "retired" }], "retired");
 
       const resolution = resolveSession({ cfg, sessionId: "run-dup" });
 

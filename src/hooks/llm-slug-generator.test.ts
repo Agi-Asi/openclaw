@@ -5,7 +5,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 const runEmbeddedAgentMock = vi.fn();
 
 vi.mock("../agents/agent-scope.js", () => ({
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
   resolveAgentWorkspaceDir: vi.fn(() => "/tmp/openclaw-agent"),
   resolveAgentDir: vi.fn(() => "/tmp/openclaw-agent/.openclaw-agent"),
 }));

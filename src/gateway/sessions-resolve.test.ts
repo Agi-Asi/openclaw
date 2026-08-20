@@ -211,7 +211,13 @@ describe("resolveSessionKeyFromResolveParams", () => {
     hoisted.listAgentIdsMock.mockReturnValue(["ops"]);
 
     const result = await resolveSessionKeyFromResolveParams({
-      cfg: { agents: { list: [{ id: "ops", default: true }] } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
+      },
       p: { key: staleMainKey },
     });
 
@@ -394,7 +400,13 @@ describe("resolveSessionKeyFromResolveParams", () => {
 
     await expect(
       resolveSessionKeyFromResolveParams({
-        cfg: { agents: { list: [{ id: "main", default: true }, { id: "work" }] } },
+        cfg: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, work: {} },
+          },
+        },
         p: { shortId: "feedface", agentId: "main" },
       }),
     ).resolves.toEqual({ ok: true, key: mainKey, agentId: "main" });

@@ -29,7 +29,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
   tryResolveConfiguredAgentWorkspaceDir: vi.fn<
     typeof import("../../agents/agent-scope.js").tryResolveConfiguredAgentWorkspaceDir
   >(() => "/resolved-workspace"),
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
 }));
 
 vi.mock("../control-plane-workspace.js", () => ({

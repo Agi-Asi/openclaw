@@ -93,7 +93,7 @@ describe("memory-wiki agent-scoped cli", () => {
 
   function createAgentSelectionProgram(params: {
     config: ResolvedMemoryWikiConfig;
-    appConfig: { agents: { entries: Record<string, { default?: boolean }> } };
+    appConfig: { agents: { ownership?: "explicit"; entries: Record<string, object> } };
     commandPath: readonly string[];
   }) {
     const resolveConfig = vi.fn((agentId?: string) =>
@@ -122,7 +122,7 @@ describe("memory-wiki agent-scoped cli", () => {
         config: { vault: { scope: "agent" } },
       });
       const appConfig = {
-        agents: { entries: { support: { default: true }, marketing: {} } },
+        agents: { ownership: "explicit" as const, entries: { support: {}, marketing: {} } },
       };
       const { command, program, resolveConfig } = createAgentSelectionProgram({
         config,
@@ -139,13 +139,13 @@ describe("memory-wiki agent-scoped cli", () => {
   );
 
   it.each(AGENT_SCOPED_WIKI_COMMANDS)(
-    "uses the configured default agent for wiki $label",
+    "uses the sole configured agent for wiki $label",
     async ({ path: commandPath, args }) => {
       const { rootDir, config } = await createCliVault({
         config: { vault: { scope: "agent" } },
       });
       const appConfig = {
-        agents: { entries: { support: { default: true }, marketing: {} } },
+        agents: { entries: { support: {} } },
       };
       const { program, resolveConfig } = createAgentSelectionProgram({
         config,
@@ -163,10 +163,10 @@ describe("memory-wiki agent-scoped cli", () => {
   it.each([
     { commandPath: ["search"], args: ["search", "query"] },
     { commandPath: ["get"], args: ["get", "entity.alpha"] },
-  ])("keeps global-vault $commandPath scoped to the configured default agent", async (testCase) => {
+  ])("keeps global-vault $commandPath scoped to the sole configured agent", async (testCase) => {
     const { config } = await createCliVault();
     const appConfig = {
-      agents: { entries: { support: { default: true }, marketing: {} } },
+      agents: { entries: { support: {} } },
     };
     const { program, resolveConfig } = createAgentSelectionProgram({
       config,
@@ -199,14 +199,18 @@ describe("memory-wiki agent-scoped cli", () => {
     },
   );
 
-  it("runs wiki doctor against explicit and default agent-scoped vaults", async () => {
+  it("runs wiki doctor against explicitly selected and sole agent-scoped vaults", async () => {
     const { rootDir, config } = await createCliVault({
       config: { vault: { scope: "agent" } },
     });
-    const appConfig = {
-      agents: { entries: { support: { default: true }, marketing: {} } },
+    const multiAgentConfig = {
+      agents: { ownership: "explicit" as const, entries: { support: {}, marketing: {} } },
     };
-    const run = async (args: string[]) => {
+    const soleAgentConfig = { agents: { entries: { support: {} } } };
+    const run = async (
+      args: string[],
+      appConfig: typeof multiAgentConfig | typeof soleAgentConfig,
+    ) => {
       stdoutWriteMock.mockClear();
       const program = new Command();
       program.name("test").enablePositionalOptions();
@@ -215,17 +219,17 @@ describe("memory-wiki agent-scoped cli", () => {
       return stdoutWriteMock.mock.calls.map(([chunk]) => String(chunk)).join("");
     };
 
-    await run(["init", "--agent", "marketing"]);
-    const explicitOutput = await run(["doctor", "--agent", "marketing"]);
-    await run(["init"]);
-    const defaultOutput = await run(["doctor"]);
+    await run(["init", "--agent", "marketing"], multiAgentConfig);
+    const explicitOutput = await run(["doctor", "--agent", "marketing"], multiAgentConfig);
+    await run(["init"], soleAgentConfig);
+    const soleAgentOutput = await run(["doctor"], soleAgentConfig);
 
     expect(explicitOutput).toContain("Wiki doctor: healthy");
     expect(explicitOutput).toContain("Vault scope: agent (marketing)");
     expect(explicitOutput).toContain(path.join(rootDir, "marketing"));
-    expect(defaultOutput).toContain("Wiki doctor: healthy");
-    expect(defaultOutput).toContain("Vault scope: agent (support)");
-    expect(defaultOutput).toContain(path.join(rootDir, "support"));
+    expect(soleAgentOutput).toContain("Wiki doctor: healthy");
+    expect(soleAgentOutput).toContain("Vault scope: agent (support)");
+    expect(soleAgentOutput).toContain(path.join(rootDir, "support"));
   });
 
   it("does not require an agent to probe Obsidian CLI availability", async () => {

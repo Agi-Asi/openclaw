@@ -1,59 +1,19 @@
 import { describe, expect, it } from "vitest";
-import {
-  AgentSelectionRequiredError,
-  listAgentEntries,
-  resolveDefaultAgentId,
-  resolveAmbientOwnerAgentId,
-} from "../../../agents/agent-scope-config.js";
+import { listAgentEntries } from "../../../agents/agent-scope-config.js";
 import { materializeLegacyDefaultAgentRoles } from "../../../config/legacy.default-agent-roles.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { resolveCronJobEffectiveAgentId } from "../../../cron/agent-id.js";
 import { resolveHeartbeatAgents } from "../../../infra/heartbeat-runner.js";
 import { resolveAgentRoute } from "../../../routing/resolve-route.js";
-import { resolveTalkSessionAgentId, resolveTalkTargetAgentId } from "../../../talk/agent-target.js";
+import { resolveTalkSessionAgentId } from "../../../talk/agent-target.js";
 
 function materializeDefaultAgentRoles(cfg: OpenClawConfig) {
-  if (listAgentEntries(cfg).length < 2) {
+  const entries = listAgentEntries(cfg);
+  const legacyDefaultAgentId = entries.find((entry) => entry.default)?.id;
+  if (entries.length < 2 || !legacyDefaultAgentId) {
     return { config: cfg, changes: [] };
   }
-  const result = materializeLegacyDefaultAgentRoles(cfg, resolveDefaultAgentId(cfg));
+  const result = materializeLegacyDefaultAgentRoles(cfg, legacyDefaultAgentId);
   return { config: result.config, changes: result.insertedPaths.map((path) => path.join(".")) };
-}
-
-type SurfaceSnapshot = {
-  channel: { agentId: string; sessionKey: string };
-  heartbeat: string[];
-  consult: string | null;
-  voice: string;
-  cron: string;
-  cli: string;
-};
-
-function snapshotSurfaces(cfg: OpenClawConfig): SurfaceSnapshot {
-  const channel = resolveAgentRoute({
-    cfg,
-    channel: "telegram",
-    accountId: "work",
-    peer: { kind: "direct", id: "user-1" },
-  });
-  const defaultAgentId = resolveDefaultAgentId(cfg);
-  return {
-    channel: { agentId: channel.agentId, sessionKey: channel.sessionKey },
-    heartbeat: resolveHeartbeatAgents(cfg).map((entry) => entry.agentId),
-    consult: (() => {
-      try {
-        return resolveAmbientOwnerAgentId(cfg);
-      } catch (error) {
-        if (error instanceof AgentSelectionRequiredError) {
-          return null;
-        }
-        throw error;
-      }
-    })(),
-    voice: resolveTalkTargetAgentId(cfg),
-    cron: resolveCronJobEffectiveAgentId({}, defaultAgentId),
-    cli: defaultAgentId,
-  };
 }
 
 const fixtures: Array<{ name: string; config: OpenClawConfig; materializes: boolean }> = [
@@ -95,21 +55,13 @@ const fixtures: Array<{ name: string; config: OpenClawConfig; materializes: bool
 ];
 
 describe("default agent role materialization", () => {
-  it.each(fixtures)("preserves all ambient surface routing for $name", ({ config }) => {
-    const before = snapshotSurfaces(config);
+  it.each(fixtures)("materializes only the expected $name fixture", ({ config, materializes }) => {
     const result = materializeDefaultAgentRoles(config);
-    expect(snapshotSurfaces(result.config)).toEqual(
-      before.consult === null ? { ...before, consult: resolveDefaultAgentId(config) } : before,
-    );
+    expect(result.changes.length > 0).toBe(materializes);
 
     const second = materializeDefaultAgentRoles(result.config);
     expect(second.changes).toEqual([]);
     expect(second.config).toBe(result.config);
-  });
-
-  it.each(fixtures)("materializes only the expected $name fixture", ({ config, materializes }) => {
-    const result = materializeDefaultAgentRoles(config);
-    expect(result.changes.length > 0).toBe(materializes);
   });
 
   it("adds only uncovered channel-wide bindings and preserves narrower routes", () => {

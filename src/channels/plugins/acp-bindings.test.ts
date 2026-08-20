@@ -5,14 +5,14 @@ import { ensureConfiguredBindingBuiltinsRegistered } from "./configured-binding-
 import * as bindingRegistry from "./configured-binding-registry.js";
 
 const resolveAgentConfigMock = vi.hoisted(() => vi.fn());
-const resolveDefaultAgentIdMock = vi.hoisted(() => vi.fn());
+const resolveSoleAgentIdMock = vi.hoisted(() => vi.fn());
 const resolveAgentWorkspaceDirMock = vi.hoisted(() => vi.fn());
 const getLoadedChannelPluginMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   resolveAgentConfig: resolveAgentConfigMock,
-  resolveDefaultAgentId: resolveDefaultAgentIdMock,
+  resolveSoleAgentId: resolveSoleAgentIdMock,
   resolveAgentWorkspaceDir: resolveAgentWorkspaceDirMock,
 }));
 
@@ -87,7 +87,7 @@ function createDiscordAcpPlugin(overrides?: {
 describe("configured binding registry", () => {
   beforeEach(() => {
     resolveAgentConfigMock.mockReset().mockReturnValue(undefined);
-    resolveDefaultAgentIdMock.mockReset().mockReturnValue("main");
+    resolveSoleAgentIdMock.mockReset().mockReturnValue("main");
     resolveAgentWorkspaceDirMock.mockReset().mockReturnValue("/tmp/workspace");
     getLoadedChannelPluginMock.mockReset();
     ensureConfiguredBindingBuiltinsRegistered();

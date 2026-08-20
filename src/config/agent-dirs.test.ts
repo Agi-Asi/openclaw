@@ -11,8 +11,10 @@ describe("resolveEffectiveAgentDir via findDuplicateAgentDirs", () => {
   it("finds duplicate explicit dirs in keyed agent entries", () => {
     const cfg: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "alpha" } },
         entries: {
-          alpha: { default: true, agentDir: "/srv/shared-agent" },
+          alpha: { agentDir: "/srv/shared-agent" },
           beta: { agentDir: "/srv/shared-agent" },
         },
       },

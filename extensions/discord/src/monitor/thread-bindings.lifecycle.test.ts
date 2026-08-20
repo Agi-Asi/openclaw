@@ -1199,7 +1199,11 @@ describe("thread binding lifecycle", () => {
     createTestThreadBindingManager({
       accountId: "default",
       cfg: {
-        agents: { list: [{ id: "codex", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "codex" } },
+          entries: { codex: {} },
+        },
       },
       persist: false,
       enableSweeper: false,

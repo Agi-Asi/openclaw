@@ -1,5 +1,5 @@
 // Emits reset hooks and cleanup work around session reset commands.
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveSoleAgentId } from "../../agents/agent-scope.js";
 import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
 import { loadTranscriptEvents } from "../../config/sessions/session-accessor.js";
 import { resolveSessionStorePathForScope } from "../../config/sessions/session-store-path.js";
@@ -87,7 +87,7 @@ export async function emitResetCommandHooks(params: {
   const hookAgentId =
     parseAgentSessionKey(params.sessionKey)?.agentId ??
     params.agentId ??
-    resolveDefaultAgentId(params.cfg);
+    resolveSoleAgentId(params.cfg);
   const hookStorePath =
     hookAgentId && params.storePath
       ? resolveSessionStorePathForScope({

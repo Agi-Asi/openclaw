@@ -18,8 +18,9 @@ function makeConfig(workspaceDir: string): OpenClawConfig {
   // Bootstrap context resolves files through the configured default agent workspace.
   return {
     agents: {
-      defaults: { workspace: workspaceDir },
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+      entries: { main: {} },
     },
   } as OpenClawConfig;
 }

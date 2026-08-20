@@ -26,14 +26,14 @@ function ownerConfig(agentId = "main", extra: OpenClawConfig = {}): OpenClawConf
     ...extra,
     agents: {
       ...extra.agents,
-      list: [
-        {
-          id: agentId,
-          default: true,
+      ownership: "explicit",
+      defaults: { ...extra.agents?.defaults, systemAgent: { agentId } },
+      entries: {
+        [agentId]: {
           agentDir: "/tmp/gateway-agent",
           workspace: "/tmp/gateway-workspace",
         },
-      ],
+      },
     },
   };
 }
@@ -305,19 +305,18 @@ describe("gateway prepared model catalog", () => {
   it("rejects an ambiguous owner without an authoritative agent identity", async () => {
     const config = {
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             agentDir: "/tmp/gateway-agent",
             workspace: "/tmp/main-workspace",
           },
-          {
-            id: "worker",
+          worker: {
             agentDir: "/tmp/gateway-agent",
             workspace: "/tmp/worker-workspace",
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const loadPublishedPreparedModelCatalogOwnerSnapshot = vi.fn(async () => ownerSnapshot(config));

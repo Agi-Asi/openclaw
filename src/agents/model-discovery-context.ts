@@ -9,7 +9,7 @@ import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import { resolvePluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "./agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "./agent-scope.js";
 import type { PluginModelCatalogMetadataSnapshot } from "./plugin-model-catalog.js";
 
 function providerConfigDeclaresModel(
@@ -53,7 +53,7 @@ export function resolveModelWorkspaceDir(
   }
   // The caller may already own an authorized agent; reuse it instead of
   // re-resolving a default, which throws on multi-agent configs.
-  return resolveAgentWorkspaceDir(cfg, agentId ?? resolveDefaultAgentId(cfg));
+  return resolveAgentWorkspaceDir(cfg, agentId ?? resolveSoleAgentId(cfg));
 }
 
 /**

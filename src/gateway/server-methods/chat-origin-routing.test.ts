@@ -32,7 +32,11 @@ describe("chat session owner resolution", () => {
 
   it("preserves an inferred ACP runtime owner through chat session validation", () => {
     const cfg: OpenClawConfig = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     };
     const requestedSessionKey = "agent:codex:acp:11111111-1111-4111-8111-111111111111";
 
@@ -52,7 +56,11 @@ describe("chat session owner resolution", () => {
 
   it("still rejects an explicitly selected unconfigured ACP runtime owner", () => {
     const cfg: OpenClawConfig = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     };
 
     expect(
@@ -79,7 +87,11 @@ describe("chat session owner resolution", () => {
     ["configured ACP binding owner", "agent:main:acp:binding:slack:default:thread"],
   ])("preserves %s across chat session validation", (_name, requestedSessionKey) => {
     const cfg: OpenClawConfig = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     };
     const requestedAgent = resolveRequestedChatAgentId({
       cfg,

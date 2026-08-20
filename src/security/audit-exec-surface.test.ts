@@ -156,8 +156,10 @@ describe("security audit exec surface findings", () => {
         "warn",
         await collectSecurityAuditFindings({
           agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
             entries: {
-              ops: { default: true },
+              ops: {},
             },
           },
           tools: {
@@ -186,8 +188,10 @@ describe("security audit exec surface findings", () => {
         "warn",
         await collectSecurityAuditFindings({
           agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
             entries: {
-              ops: { default: true, tools: { exec: { strictInlineEval: false } } },
+              ops: { tools: { exec: { strictInlineEval: false } } },
             },
           },
           tools: {
@@ -256,9 +260,10 @@ describe("security audit exec surface findings", () => {
   it("reports canonical agent paths for filesystem policy drift", async () => {
     const findings = await collectSecurityAuditFindings({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
         entries: {
           ops: {
-            default: true,
             tools: {
               allow: ["read", "exec", "process"],
               deny: ["write", "edit", "apply_patch"],

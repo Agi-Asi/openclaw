@@ -13,7 +13,7 @@ vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => {
     throw new Error("plugin drift evidence must not inspect agent workspaces");
   },
-  tryResolveDefaultAgentId: () => undefined,
+  tryResolveSoleAgentId: () => undefined,
 }));
 
 vi.mock("../plugins/status.js", () => ({

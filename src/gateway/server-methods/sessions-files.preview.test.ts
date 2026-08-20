@@ -17,14 +17,14 @@ const mocks = vi.hoisted(() => ({
   execOpenPath: vi.fn(),
   loadSessionEntry: vi.fn(),
   resolveAgentWorkspaceDir: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
+  resolveSoleAgentId: vi.fn(),
   readSessionTranscriptVisibleMessageDeltaCore: vi.fn(),
 }));
 
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+  resolveSoleAgentId: mocks.resolveSoleAgentId,
 }));
 vi.mock("../session-utils.js", async () => {
   const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");

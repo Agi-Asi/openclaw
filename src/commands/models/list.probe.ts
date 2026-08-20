@@ -14,7 +14,7 @@ import {
 import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../../agents/agent-scope.js";
 import {
   type AuthProfileCredential as ProfileEntry,
@@ -921,7 +921,7 @@ async function runTargetsWithConcurrency(params: {
   const { cfg, targets, timeoutMs, maxTokens, onProgress } = params;
   const concurrency = Math.max(1, Math.min(targets.length || 1, params.concurrency));
 
-  const agentId = params.agentId ?? resolveDefaultAgentId(cfg);
+  const agentId = params.agentId ?? resolveSoleAgentId(cfg);
   const agentDir = params.agentDir ?? resolveAgentDir(cfg, agentId);
   const workspaceDir =
     params.workspaceDir ??

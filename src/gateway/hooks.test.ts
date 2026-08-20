@@ -58,7 +58,9 @@ describe("gateway hooks helpers", () => {
         allowedAgentIds,
       },
       agents: {
-        list: [{ id: "main", default: true }, { id: "hooks" }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, hooks: {} },
       },
     }) as OpenClawConfig;
 
@@ -372,7 +374,9 @@ describe("gateway hooks helpers", () => {
     const cfg = {
       hooks: { enabled: true, token: "secret" },
       agents: {
-        list: [{ id: "main", default: true }, { id: "hooks" }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, hooks: {} },
       },
     } as OpenClawConfig;
     const resolved = resolveHooksConfigOrThrow(cfg);

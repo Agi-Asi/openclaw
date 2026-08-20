@@ -26,7 +26,11 @@ describe("DiscordThreadDeleteListener session-store integration", () => {
         const sharedStorePath = path.join(canonicalTempRoot, "shared", "sessions.json");
         const cfg = {
           session: { store: sharedStorePath },
-          agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, work: {} },
+          },
         } satisfies OpenClawConfig;
         const mainStorePath = resolveStorePath(cfg.session.store, { agentId: "main" });
         const workStorePath = resolveStorePath(cfg.session.store, { agentId: "work" });

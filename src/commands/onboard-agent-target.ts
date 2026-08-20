@@ -6,8 +6,8 @@ import {
   resolveMutableAgentEntry,
   resolveSoleAgentId,
   toAgentEntriesRecord,
+  tryResolveAmbientOwnerAgentId,
 } from "../agents/agent-scope-config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import {
   normalizeAgentModelMapForConfig,
   normalizeAgentModelRefForConfig,
@@ -34,7 +34,7 @@ export function resolveOnboardingAgentTarget(
   explicitAgentId?: string,
 ): OnboardingAgentTarget {
   const agentId = normalizeAgentId(
-    explicitAgentId ?? tryResolveLegacyCompatibilityAgentId(config) ?? resolveSoleAgentId(config),
+    explicitAgentId ?? tryResolveAmbientOwnerAgentId(config) ?? resolveSoleAgentId(config),
   );
   return {
     agentId,

@@ -1,4 +1,4 @@
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../config/sessions/session-store-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type {
@@ -19,7 +19,7 @@ export function createSessionObserverAudience(params: {
     const compatibilityAgentId =
       persistedOwner.kind === "configured"
         ? persistedOwner.agentId
-        : tryResolveLegacyCompatibilityAgentId(config);
+        : tryResolveAmbientOwnerAgentId(config);
     return resolveSessionSubscriptionKeys(sessionKey, agentId, compatibilityAgentId);
   };
 

@@ -3,7 +3,6 @@ import path from "node:path";
 import { withTempHome } from "openclaw/plugin-sdk/test-env";
 import { describe, expect, it } from "vitest";
 import { AgentSelectionRequiredError } from "../../agents/agent-scope-config.js";
-import { retainLegacyDefaultAgentId } from "../legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { loadTranscriptEvents, replaceSessionEntry } from "./session-accessor.js";
 import { persistSessionTranscriptTurn } from "./session-accessor.transcript-turn.js";
@@ -34,16 +33,17 @@ describe("transcript turn logical ownership", () => {
     });
   });
 
-  it("attributes a bare-key write to the retained compatibility owner", async () => {
+  it("attributes a bare-key write to the configured ambient owner", async () => {
     await withTempHome(async (home) => {
       const storePath = path.join(home, "sessions.json");
-      const cfg = retainLegacyDefaultAgentId(
-        {
-          agents: { ownership: "explicit", entries: { ops: {}, research: {} } },
-          session: { store: storePath },
+      const cfg = {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, research: {} },
         },
-        "ops",
-      );
+        session: { store: storePath },
+      } satisfies OpenClawConfig;
       const scope = {
         sessionId: "retained-owner-transcript-session",
         sessionKey: "main",

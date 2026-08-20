@@ -1,54 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { tryResolveAmbientHeartbeatAgentId } from "./heartbeat-agent-resolution.js";
 import { isHeartbeatOwnerUnresolved, resolveHeartbeatAgents } from "./heartbeat-runner-config.js";
 import { isHeartbeatEnabledForAgent } from "./heartbeat-summary.js";
-
-describe("tryResolveAmbientHeartbeatAgentId", () => {
-  it.each([
-    {
-      name: "explicit heartbeat owner",
-      cfg: {
-        agents: {
-          ownership: "explicit",
-          entries: { main: {}, ops: {} },
-          defaults: {
-            heartbeat: { agentId: "ops" },
-            systemAgent: { agentId: "main" },
-          },
-        },
-      } as OpenClawConfig,
-      expected: "ops",
-    },
-    {
-      name: "system owner",
-      cfg: {
-        agents: {
-          ownership: "explicit",
-          entries: { main: {}, ops: {} },
-          defaults: { systemAgent: { agentId: "ops" } },
-        },
-      } as OpenClawConfig,
-      expected: "ops",
-    },
-    {
-      name: "sole agent",
-      cfg: {
-        agents: { ownership: "explicit", entries: { solo: {} } },
-      } as OpenClawConfig,
-      expected: "solo",
-    },
-    {
-      name: "ownerless explicit multi-agent roster",
-      cfg: {
-        agents: { ownership: "explicit", entries: { main: {}, ops: {} } },
-      } as OpenClawConfig,
-      expected: undefined,
-    },
-  ])("resolves the $name", ({ cfg, expected }) => {
-    expect(tryResolveAmbientHeartbeatAgentId(cfg)).toBe(expected);
-  });
-});
 
 describe("resolveHeartbeatAgents", () => {
   const systemOwnedConfig = {
@@ -88,12 +41,6 @@ describe("resolveHeartbeatAgents", () => {
           entries: { main: {}, ops: {} },
           defaults: { heartbeat: { agentId: "ops" } },
         },
-      } as OpenClawConfig,
-    },
-    {
-      name: "legacy default marker",
-      cfg: {
-        agents: { entries: { main: { default: true }, ops: {} } },
       } as OpenClawConfig,
     },
     {

@@ -220,9 +220,10 @@ export type {
   MemoryPluginPublicArtifact,
   MemoryPromptSectionBuilder,
 } from "../plugins/memory-state.js";
-export { resolveDefaultAgentId } from "../agents/agent-scope-config.js";
+export { resolveSoleAgentId } from "../agents/agent-scope-config.js";
 export { resolveSessionAgentId } from "../agents/agent-scope.js";
 export { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
+export { resolveDefaultAgentId } from "./agent-scope-runtime.js";
 
 async function listMarkdownFilesRecursive(rootDir: string): Promise<string[]> {
   const entries = await fs.readdir(rootDir, { withFileTypes: true }).catch(() => []);

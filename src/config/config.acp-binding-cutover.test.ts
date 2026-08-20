@@ -6,8 +6,10 @@ describe("ACP binding cutover schema", () => {
   it("accepts top-level typed ACP bindings with per-agent runtime defaults", () => {
     const parsed = OpenClawSchema.safeParse({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
         entries: {
-          main: { default: true, runtime: { type: "embedded" } },
+          main: { runtime: { type: "embedded" } },
           coding: {
             runtime: {
               type: "acp",

@@ -13,8 +13,13 @@ const SAFE_WORKBOARD_TOOLS = ["exec", "process", "read", "write", "edit", "apply
 function configWithSandbox(sandbox: AgentSandboxConfig): OpenClawConfig {
   return {
     agents: {
-      defaults: { workspace: "/workspace", sandbox: { scope: "session", ...sandbox } },
-      list: [{ id: "main", default: true, workspace: "/workspace" }],
+      ownership: "explicit",
+      defaults: {
+        workspace: "/workspace",
+        sandbox: { scope: "session", ...sandbox },
+        systemAgent: { agentId: "main" },
+      },
+      entries: { main: { workspace: "/workspace" } },
     },
     tools: {
       sandbox: { tools: { allow: SAFE_WORKBOARD_TOOLS } },

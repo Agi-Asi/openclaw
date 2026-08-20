@@ -274,17 +274,17 @@ describe("runSystemAgentTurn", () => {
     const agentDir = path.join(stateDir, "ops-agent");
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
           model: { primary: "openai/gpt-global" },
+          systemAgent: { agentId: "ops" },
         },
-        list: [
-          {
-            id: "ops",
-            default: true,
+        entries: {
+          ops: {
             agentDir,
             model: { primary: "claude-cli/claude-opus-4-8@claude-cli:ops" },
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const runCliAgent = vi.fn(async (_params: RunCliAgentParams) => ({
@@ -457,18 +457,17 @@ describe("runSystemAgentTurn", () => {
     const agentDir = path.join(stateDir, "ops-agent");
     const config = {
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             agentDir,
             model: { primary: "anthropic/claude-opus-4-8@anthropic:claude-cli" },
             models: {
               "anthropic/claude-opus-4-8": { agentRuntime: { id: "claude-cli" } },
             },
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const runCliAgent = vi.fn(async (_params: RunCliAgentParams) => ({
@@ -509,15 +508,14 @@ describe("runSystemAgentTurn", () => {
     const agentDir = path.join(stateDir, "ops-agent");
     const config = {
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             agentDir,
             model: "claude-cli/claude-opus-4-8@claude-cli:ops",
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const binding = {
@@ -623,18 +621,18 @@ describe("runSystemAgentTurn", () => {
       ({
         tools: { exec: { mode } },
         agents: {
+          ownership: "explicit",
           defaults: {
             model: "claude-cli/claude-opus-4-8@claude-cli:ops",
+            systemAgent: { agentId: "ops" },
           },
-          list: [
-            {
-              id: "ops",
-              default: true,
+          entries: {
+            ops: {
               // Keep the model owner's policy stable. OpenClaw executes with
               // its own identity and therefore follows the changing global policy.
               tools: { exec: { mode: "ask" } },
             },
-          ],
+          },
         },
       }) as OpenClawConfig;
     const binding = {
@@ -680,28 +678,27 @@ describe("runSystemAgentTurn", () => {
     const agentDir = path.join(stateDir, "ops-agent");
     const cliConfig = {
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             agentDir,
             model: "claude-cli/claude-opus-4-8@claude-cli:ops",
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const embeddedConfig = {
       agents: {
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             agentDir,
             model: "openai/gpt-5.4@openai:ops",
             models: { "openai/gpt-5.4": { agentRuntime: { id: "codex" } } },
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const binding = { sessionId: "native-claude-session", authEpochVersion: 1 };
@@ -751,6 +748,7 @@ describe("runSystemAgentTurn", () => {
     const agentDir = path.join(stateDir, "ops-agent");
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
           model: { primary: "anthropic/claude-global" },
           systemAgent: { agentId: "ops" },
@@ -758,10 +756,8 @@ describe("runSystemAgentTurn", () => {
             "openai/gpt-5.4": { agentRuntime: { id: "openclaw" } },
           },
         },
-        list: [
-          {
-            id: "ops",
-            default: true,
+        entries: {
+          ops: {
             agentDir,
             model: { primary: "openai/gpt-5.4@openai:ops" },
             params: { temperature: 0.2 },
@@ -770,12 +766,11 @@ describe("runSystemAgentTurn", () => {
               "openai/gpt-5.4": { agentRuntime: { id: "codex" } },
             },
           },
-          {
-            id: "openclaw",
+          openclaw: {
             params: { temperature: 1.7 },
             tools: { allow: ["exec"] },
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const runCliAgent = vi.fn(async (_params: RunCliAgentParams) => ({ payloads: [] }));

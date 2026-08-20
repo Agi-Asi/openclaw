@@ -26,6 +26,7 @@ export async function ensureCliCommandBootstrap(params: {
   pluginRegistry?: CliPluginRegistryPolicy;
   skipPristineCoreStateMigrations?: boolean;
   skipPristineStartupStateMigrations?: boolean;
+  stateMigrationAgentId?: string;
 }) {
   if (!params.skipConfigGuard) {
     await measureCliCommandStartup("config-ready", async () => {
@@ -40,6 +41,9 @@ export async function ensureCliCommandBootstrap(params: {
           ? { beforeStateMigrations: params.beforeStateMigrations }
           : {}),
         ...(params.suppressDoctorStdout ? { suppressDoctorStdout: true } : {}),
+        ...(params.stateMigrationAgentId
+          ? { stateMigrationAgentId: params.stateMigrationAgentId }
+          : {}),
         ...(params.skipPristineStartupStateMigrations
           ? { skipPristineStartupStateMigrations: true }
           : {}),

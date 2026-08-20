@@ -26,6 +26,16 @@ async function createFixtureRoot(prefix: string): Promise<string> {
   return await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
 }
 
+function createMemoryHostAgentConfig(workspace: string) {
+  return {
+    agents: {
+      ownership: "explicit" as const,
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: { workspace } },
+    },
+  };
+}
+
 describe("memory-host-core helpers", () => {
   afterEach(() => {
     clearMemoryPluginState();
@@ -86,11 +96,7 @@ describe("memory-host-core helpers", () => {
 
     await expect(
       listMemoryHostPublicArtifacts({
-        cfg: {
-          agents: {
-            list: [{ id: "main", default: true, workspace: "/protected/workspace" }],
-          },
-        },
+        cfg: createMemoryHostAgentConfig("/protected/workspace"),
       }),
     ).rejects.toMatchObject({ code: "EACCES" });
   });
@@ -113,11 +119,7 @@ describe("memory-host-core helpers", () => {
 
       await expect(
         listMemoryHostPublicArtifacts({
-          cfg: {
-            agents: {
-              list: [{ id: "main", default: true, workspace: workspaceDir }],
-            },
-          },
+          cfg: createMemoryHostAgentConfig(workspaceDir),
         }),
       ).resolves.toMatchObject([
         {
@@ -149,11 +151,7 @@ describe("memory-host-core helpers", () => {
           results: [],
         });
         const firstListing = await listMemoryHostPublicArtifacts({
-          cfg: {
-            agents: {
-              list: [{ id: "main", default: true, workspace: workspaceDir }],
-            },
-          },
+          cfg: createMemoryHostAgentConfig(workspaceDir),
         });
         eventExportPath = firstListing.find(
           (artifact) => artifact.kind === "event-log",
@@ -165,11 +163,7 @@ describe("memory-host-core helpers", () => {
 
         await expect(
           listMemoryHostPublicArtifacts({
-            cfg: {
-              agents: {
-                list: [{ id: "main", default: true, workspace: workspaceDir }],
-              },
-            },
+            cfg: createMemoryHostAgentConfig(workspaceDir),
           }),
         ).rejects.toThrow();
       } finally {
@@ -213,11 +207,7 @@ describe("memory-host-core helpers", () => {
 
         await expect(
           listMemoryHostPublicArtifacts({
-            cfg: {
-              agents: {
-                list: [{ id: "main", default: true, workspace: workspaceDir }],
-              },
-            },
+            cfg: createMemoryHostAgentConfig(workspaceDir),
           }),
         ).resolves.toEqual([]);
         await expect(fs.readFile(externalExport, "utf8")).resolves.toBe('{"type":"external"}\n');
@@ -256,7 +246,7 @@ describe("memory-host-core helpers", () => {
       await fs.writeFile(exportPath, '{"owner":"user"}\n', "utf8");
 
       const listed = await listMemoryHostPublicArtifacts({
-        cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        cfg: createMemoryHostAgentConfig(workspaceDir),
       });
       expect(listed.some((artifact) => artifact.kind === "event-log")).toBe(false);
       await expect(fs.readFile(exportPath, "utf8")).resolves.toBe('{"owner":"user"}\n');
@@ -267,7 +257,7 @@ describe("memory-host-core helpers", () => {
         env: { ...process.env, OPENCLAW_STATE_DIR: fixtureRoot },
       }).clear();
       await listMemoryHostPublicArtifacts({
-        cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        cfg: createMemoryHostAgentConfig(workspaceDir),
       });
       await expect(fs.readFile(exportPath, "utf8")).resolves.toBe('{"owner":"user"}\n');
     } finally {
@@ -322,7 +312,7 @@ describe("memory-host-core helpers", () => {
       await fs.writeFile(exportPath, '{"owner":"user after crash"}\n', "utf8");
 
       const listed = await listMemoryHostPublicArtifacts({
-        cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        cfg: createMemoryHostAgentConfig(workspaceDir),
       });
 
       expect(listed.some((artifact) => artifact.kind === "event-log")).toBe(false);
@@ -335,9 +325,7 @@ describe("memory-host-core helpers", () => {
   it("does not claim a same-content inode that replaces an exclusive export", async () => {
     const fixtureRoot = await createFixtureRoot("memory-host-create-replace-");
     const workspaceDir = path.join(fixtureRoot, "workspace");
-    const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-    };
+    const cfg = createMemoryHostAgentConfig(workspaceDir);
     const event = {
       type: "memory.recall.recorded" as const,
       timestamp: "2026-05-18T12:00:00.000Z",
@@ -441,7 +429,7 @@ describe("memory-host-core helpers", () => {
       });
 
       const listed = await listMemoryHostPublicArtifacts({
-        cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        cfg: createMemoryHostAgentConfig(workspaceDir),
       });
 
       expect(listed.some((artifact) => artifact.kind === "event-log")).toBe(false);
@@ -483,7 +471,7 @@ describe("memory-host-core helpers", () => {
 
       await expect(
         listMemoryHostPublicArtifacts({
-          cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+          cfg: createMemoryHostAgentConfig(workspaceDir),
         }),
       ).resolves.toEqual([
         expect.objectContaining({ kind: "memory-root", relativePath: "MEMORY.md" }),
@@ -524,11 +512,7 @@ describe("memory-host-core helpers", () => {
       });
 
       const artifacts = await listMemoryHostPublicArtifacts({
-        cfg: {
-          agents: {
-            list: [{ id: "main", default: true, workspace: workspaceDir }],
-          },
-        },
+        cfg: createMemoryHostAgentConfig(workspaceDir),
       });
       const eventArtifact = artifacts.find((artifact) => artifact.kind === "event-log");
       if (!eventArtifact) {
@@ -606,11 +590,7 @@ describe("memory-host-core helpers", () => {
         env: { ...process.env, OPENCLAW_STATE_DIR: fixtureRoot },
       }).clear();
       const afterRetention = await listMemoryHostPublicArtifacts({
-        cfg: {
-          agents: {
-            list: [{ id: "main", default: true, workspace: workspaceDir }],
-          },
-        },
+        cfg: createMemoryHostAgentConfig(workspaceDir),
       });
       expect(afterRetention.some((artifact) => artifact.kind === "event-log")).toBe(false);
       await expect(fs.readFile(eventExportPath, "utf8")).resolves.toBe("");
@@ -625,12 +605,8 @@ describe("memory-host-core helpers", () => {
       const fixtureRoot = await createFixtureRoot("memory-host-export-race-");
       const workspaceDir = path.join(fixtureRoot, "workspace");
       const workspaceAlias = path.join(fixtureRoot, "workspace-alias");
-      const cfg = {
-        agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-      };
-      const aliasCfg = {
-        agents: { list: [{ id: "main", default: true, workspace: workspaceAlias }] },
-      };
+      const cfg = createMemoryHostAgentConfig(workspaceDir);
+      const aliasCfg = createMemoryHostAgentConfig(workspaceAlias);
       const originalOpen = fs.open.bind(fs);
       let releaseFirstRead: (() => void) | undefined;
       let signalFirstRead: (() => void) | undefined;
@@ -714,9 +690,7 @@ describe("memory-host-core helpers", () => {
   ])("preserves a replacement installed during event export $name", async ({ clearEvents }) => {
     const fixtureRoot = await createFixtureRoot("memory-host-export-replace-");
     const workspaceDir = path.join(fixtureRoot, "workspace");
-    const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-    };
+    const cfg = createMemoryHostAgentConfig(workspaceDir);
     const replacement = '{"owner":"workspace"}\n';
     const originalOpen = fs.open.bind(fs);
     let exportOpenCount = 0;
@@ -780,9 +754,7 @@ describe("memory-host-core helpers", () => {
   ])("keeps ownership through same-inode event export $name", async ({ clearEvents }) => {
     const fixtureRoot = await createFixtureRoot("memory-host-export-inode-");
     const workspaceDir = path.join(fixtureRoot, "workspace");
-    const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-    };
+    const cfg = createMemoryHostAgentConfig(workspaceDir);
     const originalOpen = fs.open.bind(fs);
     let exportOpenCount = 0;
     try {
@@ -852,9 +824,7 @@ describe("memory-host-core helpers", () => {
   it("retries an owned event export after a same-inode post-write race", async () => {
     const fixtureRoot = await createFixtureRoot("memory-host-export-retry-");
     const workspaceDir = path.join(fixtureRoot, "workspace");
-    const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-    };
+    const cfg = createMemoryHostAgentConfig(workspaceDir);
     const originalOpen = fs.open.bind(fs);
     let exportOpenCount = 0;
     try {
@@ -915,9 +885,7 @@ describe("memory-host-core helpers", () => {
   it("repairs an oversized owned event export by inode", async () => {
     const fixtureRoot = await createFixtureRoot("memory-host-export-oversized-");
     const workspaceDir = path.join(fixtureRoot, "workspace");
-    const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-    };
+    const cfg = createMemoryHostAgentConfig(workspaceDir);
     try {
       vi.stubEnv("OPENCLAW_STATE_DIR", fixtureRoot);
       await fs.mkdir(workspaceDir, { recursive: true });
@@ -957,9 +925,7 @@ describe("memory-host-core helpers", () => {
   it("keeps public event exports isolated across state directories", async () => {
     const fixtureRoot = await createFixtureRoot("memory-host-export-owner-");
     const workspaceDir = path.join(fixtureRoot, "workspace");
-    const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-    };
+    const cfg = createMemoryHostAgentConfig(workspaceDir);
     try {
       await fs.mkdir(workspaceDir, { recursive: true });
 

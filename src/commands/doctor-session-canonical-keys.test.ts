@@ -21,6 +21,20 @@ import {
 import { repairCanonicalSessionKeys } from "./doctor-session-canonical-keys.js";
 import { insertLegacySession } from "./doctor-session-canonical-keys.test-support.js";
 
+function canonicalSessionConfig(
+  session: NonNullable<OpenClawConfig["session"]>,
+  ...additionalAgentIds: string[]
+): OpenClawConfig {
+  return {
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: Object.fromEntries(["main", ...additionalAgentIds].map((agentId) => [agentId, {}])),
+    },
+    session,
+  };
+}
+
 afterEach(() => closeOpenClawAgentDatabasesForTest());
 
 describe("doctor canonical session-key repair", () => {
@@ -44,10 +58,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate });
       const legacyKey = fixture.canonicalKey.toLowerCase();
       insertLegacySession({
         agentId: "main",
@@ -123,10 +134,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate });
       for (let index = 0; index < 65; index += 1) {
         const target = `!BatchRoom${index}:example.org`;
         const canonicalKey = `agent:main:matrix:channel:${target}`;
@@ -165,10 +173,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate });
       replaceSessionEntrySync(
         { agentId: "main", env, sessionKey: "agent:main:main", storePath },
         { sessionId: "fresh", updatedAt: 10 },
@@ -229,10 +234,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "historian2", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }, { id: "historian2" }] },
-        session: { scope: "global", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ scope: "global", store: storeTemplate }, "historian2");
       insertLegacySession({
         agentId: "historian2",
         entry: {
@@ -278,10 +280,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate });
       insertLegacySession({
         agentId: "main",
         entry: {
@@ -337,10 +336,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate });
       insertLegacySession({
         agentId: "main",
         entry: { sessionId: "empty-key-session", updatedAt: 10 },
@@ -409,10 +405,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { mainKey: "work", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ mainKey: "work", store: storeTemplate });
       replaceSessionEntrySync(
         { agentId: "main", env, sessionKey: "agent:main:work", storePath },
         { previousSessionId: "older", sessionId: "newer", updatedAt: 20 },
@@ -459,10 +452,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { mainKey: "work", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ mainKey: "work", store: storeTemplate });
       replaceSessionEntrySync(
         { agentId: "main", env, sessionKey: "agent:main:work", storePath },
         { sessionId: "shared-session", updatedAt: 10 },
@@ -518,10 +508,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { mainKey: "work", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ mainKey: "work", store: storeTemplate });
       replaceSessionEntrySync(
         { agentId: "main", env, sessionKey: "agent:main:work", storePath },
         { sessionId: "winner", updatedAt: 20 },
@@ -563,10 +550,7 @@ describe("doctor canonical session-key repair", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const mainStore = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
       const opsStore = resolveSessionStorePathCore(storeTemplate, { agentId: "ops", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate }, "ops");
       replaceSessionEntrySync(
         { agentId: "main", env, sessionKey: "global", storePath: mainStore },
         { sessionId: "main-global", updatedAt: 10 },
@@ -615,10 +599,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ store: storeTemplate });
       insertLegacySession({
         agentId: "main",
         env,
@@ -718,10 +699,7 @@ describe("doctor canonical session-key repair", () => {
       const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
-        session: { mainKey: "work", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ mainKey: "work", store: storeTemplate });
       insertLegacySession({
         agentId: "main",
         entry: { sessionId: "legacy", updatedAt: 10 },
@@ -870,10 +848,7 @@ describe("doctor canonical session-key repair", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const mainStore = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
       const opsStore = resolveSessionStorePathCore(storeTemplate, { agentId: "ops", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
-        session: { mainKey: "work", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ mainKey: "work", store: storeTemplate }, "ops");
       insertLegacySession({
         agentId: "ops",
         entry: {
@@ -941,10 +916,7 @@ describe("doctor canonical session-key repair", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const mainStore = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
       const opsStore = resolveSessionStorePathCore(storeTemplate, { agentId: "ops", env });
-      const cfg = {
-        agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
-        session: { mainKey: "shared", store: storeTemplate },
-      } as OpenClawConfig;
+      const cfg = canonicalSessionConfig({ mainKey: "shared", store: storeTemplate }, "ops");
       insertLegacySession({
         agentId: "main",
         entry: { sessionId: "canonical", updatedAt: 10 },

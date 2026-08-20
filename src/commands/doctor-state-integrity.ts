@@ -11,7 +11,7 @@ import { isSharedAuthStoreOwner } from "../agents/agent-delete-safety.js";
 import {
   listAgentEntries,
   resolveDefaultAgentDir,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import {
   resolveSharedAuthStoreOwnership,
@@ -201,7 +201,7 @@ function listOrphanAgentDirs(cfg: OpenClawConfig, stateDir: string): OrphanAgent
   const configuredIds = new Set<string>();
   const sharedAuthOwnership = resolveSharedAuthStoreOwnership();
   const sharedAuthDbPath = resolveSharedAuthStorePath();
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   if (defaultAgentId) {
     configuredIds.add(normalizeAgentId(defaultAgentId));
   }
@@ -804,7 +804,7 @@ export function detectStateIntegrityHealthIssues(
   const homedir = () => resolveRequiredHomeDir(env, params?.homedir ?? os.homedir);
   const stateDir = resolveStateDir(env, homedir);
   const oauthDir = resolveOAuthDir(env, stateDir);
-  const agentId = tryResolveDefaultAgentId(cfg);
+  const agentId = tryResolveSoleAgentId(cfg);
   const sessionsDir = agentId
     ? resolveSessionTranscriptsDirForAgent(agentId, env, homedir)
     : undefined;
@@ -1079,7 +1079,7 @@ export async function noteStateIntegrity(
   const stateDir = resolveStateDir(env, homedir);
   const defaultStateDir = path.join(homedir(), ".openclaw");
   const oauthDir = resolveOAuthDir(env, stateDir);
-  const agentId = tryResolveDefaultAgentId(cfg);
+  const agentId = tryResolveSoleAgentId(cfg);
   const sessionsDir = agentId
     ? resolveSessionTranscriptsDirForAgent(agentId, env, homedir)
     : undefined;

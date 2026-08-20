@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmbeddedCallGateway } from "./embedded-gateway-stub.js";
 
 const runtime = vi.hoisted(() => ({
-  getRuntimeConfig: vi.fn(() => ({ agents: { list: [{ id: "main", default: true }] } })),
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  getRuntimeConfig: vi.fn(() => canonicalConfig),
+  resolveSoleAgentId: vi.fn(() => "main"),
   resolveSessionStoreKey: vi.fn(({ sessionKey }: { sessionKey: string }) =>
     sessionKey === "main" ? "agent:main:main" : sessionKey,
   ),
@@ -56,6 +56,14 @@ const runtime = vi.hoisted(() => ({
   listSessionsFromStoreAsync: vi.fn(async () => ({ sessions: [] })),
 }));
 
+const canonicalConfig = {
+  agents: {
+    ownership: "explicit" as const,
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  },
+};
+
 vi.mock("./embedded-gateway-stub.runtime.js", () => runtime);
 
 describe("embedded gateway stub", () => {
@@ -85,12 +93,12 @@ describe("embedded gateway stub", () => {
       params: { agentId: "work", includeGlobal: true, search: "global" },
     });
 
-    expect(runtime.loadCombinedSessionStoreForGatewayCore).toHaveBeenCalledWith(
-      { agents: { list: [{ id: "main", default: true }] } },
-      { agentId: "work", projection: "list" },
-    );
+    expect(runtime.loadCombinedSessionStoreForGatewayCore).toHaveBeenCalledWith(canonicalConfig, {
+      agentId: "work",
+      projection: "list",
+    });
     expect(runtime.listSessionsFromStoreAsync).toHaveBeenCalledWith({
-      cfg: { agents: { list: [{ id: "main", default: true }] } },
+      cfg: canonicalConfig,
       storePath: "/tmp/openclaw-sessions.json",
       store: {},
       opts: { agentId: "work", includeGlobal: true, search: "global" },
@@ -111,7 +119,7 @@ describe("embedded gateway stub", () => {
 
     expect(result).toEqual({ ok: true, key: "agent:main:main" });
     expect(runtime.resolveSessionKeyFromResolveParams).toHaveBeenCalledWith({
-      cfg: { agents: { list: [{ id: "main", default: true }] } },
+      cfg: canonicalConfig,
       client: null,
       p: { sessionId: "sess-main", includeGlobal: true },
     });
@@ -163,12 +171,12 @@ describe("embedded gateway stub", () => {
     });
 
     expect(runtime.resolveStoredSessionKeyForAgentStore).toHaveBeenNthCalledWith(1, {
-      cfg: { agents: { list: [{ id: "main", default: true }] } },
+      cfg: canonicalConfig,
       agentId: "main",
       sessionKey: "main",
     });
     expect(runtime.resolveStoredSessionKeyForAgentStore).toHaveBeenNthCalledWith(2, {
-      cfg: { agents: { list: [{ id: "main", default: true }] } },
+      cfg: canonicalConfig,
       agentId: "main",
       sessionKey: "agent:main:other",
     });
@@ -215,7 +223,7 @@ describe("embedded gateway stub", () => {
     ).rejects.toThrow('belongs to "ops", not "research"');
     expect(runtime.resolveSessionAgentId).toHaveBeenCalledWith({
       sessionKey: "global",
-      config: { agents: { list: [{ id: "main", default: true }] } },
+      config: canonicalConfig,
       agentId: "research",
     });
     expect(runtime.searchSessionTranscripts).not.toHaveBeenCalled();

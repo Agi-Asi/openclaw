@@ -3,8 +3,8 @@
 import path from "node:path";
 import { asPositiveSafeInteger } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { parseSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import {
   listSessionEntriesReadOnly as listAccessorSessionEntriesReadOnly,
@@ -42,7 +42,7 @@ type SessionEventSubscribers = Pick<SessionEventSubscriberRegistry, "getAll">;
 type SessionMessageSubscribers = Pick<SessionMessageSubscriberRegistry, "get">;
 
 function tryResolveCompatibilityDefaultAgentId(): string | undefined {
-  return tryResolveLegacyCompatibilityAgentId(getRuntimeConfig());
+  return tryResolveAmbientOwnerAgentId(getRuntimeConfig());
 }
 
 function readTranscriptUpdateLifecycleOwner(

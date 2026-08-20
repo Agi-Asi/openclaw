@@ -71,6 +71,8 @@ export type DoctorConfigPreflightResult = {
   cronCodexRuntimePolicyTargets?: CronCodexRuntimePolicyTarget[];
 };
 
+type StateMigrationNote = { changes: string[]; warnings: string[]; notices?: string[] };
+
 /** Returns true during updater-managed config rewrites where plugin validation may be stale. */
 export function shouldSkipPluginValidationForDoctorConfigPreflight(
   env: NodeJS.ProcessEnv = process.env,
@@ -78,11 +80,7 @@ export function shouldSkipPluginValidationForDoctorConfigPreflight(
   return isTruthyEnvValue(env.OPENCLAW_UPDATE_IN_PROGRESS);
 }
 
-function noteStateMigrationResult(result: {
-  changes: string[];
-  warnings: string[];
-  notices?: string[];
-}): void {
+function noteStateMigrationResult(result: StateMigrationNote): void {
   if (result.changes.length > 0) {
     note(result.changes.map((entry) => `- ${entry}`).join("\n"), "Doctor changes");
   }
@@ -120,6 +118,8 @@ export async function runDoctorConfigPreflight(
     skipPristineCoreStateMigrations?: boolean;
     /** Prepared before Gateway bootstrap can create files under an otherwise pristine state root. */
     skipPristineStartupStateMigrations?: boolean;
+    /** Parsed CLI owner for this invocation's agent and session state migration. */
+    stateMigrationAgentId?: string;
     /** Enable migrations that may retire security-sensitive stores only during explicit repair. */
     doctorOnlyStateMigrations?: boolean;
   } = {},
@@ -221,11 +221,7 @@ export async function runDoctorConfigPreflight(
     }, 60_000);
     startupMigrationHeartbeat.unref?.();
   };
-  const noteStartupStateMigrationResult = (result: {
-    changes: string[];
-    warnings: string[];
-    notices?: string[];
-  }) => {
+  const noteStartupStateMigrationResult = (result: StateMigrationNote) => {
     startupMigrationWarnings.push(...result.warnings);
     noteStateMigrationResult(result);
   };
@@ -438,7 +434,11 @@ export async function runDoctorConfigPreflight(
     }
 
     const baseConfig = snapshot.sourceConfig ?? snapshot.config ?? {};
-    const stateMigrationInput = resolveStateMigrationConfigInput({ snapshot, baseConfig });
+    const stateMigrationInput = resolveStateMigrationConfigInput({
+      snapshot,
+      baseConfig,
+      stateMigrationAgentId: options.stateMigrationAgentId,
+    });
     if (migrationCheckpoint) {
       migrationCheckpointIdentity = resolveMigrationCheckpointIdentity({
         snapshot,

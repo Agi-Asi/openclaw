@@ -213,17 +213,17 @@ describe("Hermes migration model planning", () => {
     );
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           workspace: workspaceDir,
           model: "openai/gpt-5.4",
         },
-        list: [
-          {
-            id: "main",
-            default: true,
+        entries: {
+          main: {
             model: "anthropic/claude-sonnet-4.6",
           },
-        ],
+        },
       },
     } as OpenClawConfig;
 

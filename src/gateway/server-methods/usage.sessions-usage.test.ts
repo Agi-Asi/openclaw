@@ -12,7 +12,9 @@ vi.mock("../../config/config.js", () => {
   return {
     getRuntimeConfig: vi.fn(() => ({
       agents: {
-        list: [{ id: "main", default: true }, { id: "opus" }],
+        ownership: "explicit",
+        entries: { main: {}, opus: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
       session: {},
     })),
@@ -114,9 +116,11 @@ import {
 } from "../session-utils.js";
 import { testApi, usageHandlers } from "./usage.js";
 
-const TEST_RUNTIME_CONFIG = {
+const TEST_RUNTIME_CONFIG: OpenClawConfig = {
   agents: {
-    list: [{ id: "main", default: true }, { id: "opus" }],
+    ownership: "explicit",
+    entries: { main: {}, opus: {} },
+    defaults: { systemAgent: { agentId: "main" } },
   },
   session: {},
 };
@@ -586,7 +590,9 @@ describe("sessions.usage", () => {
   it("keeps global session entries in requested-agent usage lookups", async () => {
     const config: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true }, { id: "opus" }],
+        ownership: "explicit",
+        entries: { main: {}, opus: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
       session: { scope: "global" },
     };

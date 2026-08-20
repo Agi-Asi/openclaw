@@ -383,17 +383,16 @@ function configureCrossAgentWorkspaceSpawn(fixture: CrossAgentWorkspaceFixture):
       allowedAgents: ["codex", "claude-code"],
     },
     agents: {
-      list: [
-        {
-          id: "main",
-          default: true,
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: {
+        main: {
           workspace: fixture.mainWorkspace,
         },
-        {
-          id: "claude-code",
+        "claude-code": {
           workspace: fixture.targetWorkspace,
         },
-      ],
+      },
     },
   });
 }
@@ -1991,15 +1990,18 @@ describe("spawnAcpDirect", () => {
       },
       agents: {
         ...hoisted.state.cfg.agents,
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: {
+          ...hoisted.state.cfg.agents?.defaults,
+          systemAgent: { agentId: "main" },
+        },
+        entries: {
+          main: {
             subagents: {
               allowAgents: ["*"],
             },
           },
-        ],
+        },
       },
     });
 
@@ -2025,15 +2027,18 @@ describe("spawnAcpDirect", () => {
       },
       agents: {
         ...hoisted.state.cfg.agents,
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: {
+          ...hoisted.state.cfg.agents?.defaults,
+          systemAgent: { agentId: "main" },
+        },
+        entries: {
+          main: {
             subagents: {
               allowAgents: ["*"],
             },
           },
-        ],
+        },
       },
     });
 
@@ -2063,18 +2068,19 @@ describe("spawnAcpDirect", () => {
       },
       agents: {
         ...hoisted.state.cfg.agents,
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: {
+          ...hoisted.state.cfg.agents?.defaults,
+          systemAgent: { agentId: "main" },
+        },
+        entries: {
+          main: {
             subagents: {
               allowAgents: ["codex"],
             },
           },
-          {
-            id: "writer",
-          },
-        ],
+          writer: {},
+        },
       },
     });
 

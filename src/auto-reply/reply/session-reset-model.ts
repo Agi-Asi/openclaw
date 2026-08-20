@@ -1,7 +1,7 @@
 /** Applies model override tokens embedded in reset/new command text. */
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { resolveAgentDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
 import {
   buildAllowedModelSetWithFallbacks,
@@ -307,7 +307,7 @@ export async function applyResetModelOverride(params: {
     cfg: params.cfg,
     agentDir:
       params.agentDir ??
-      resolveAgentDir(params.cfg, params.agentId ?? resolveDefaultAgentId(params.cfg)),
+      resolveAgentDir(params.cfg, params.agentId ?? resolveSoleAgentId(params.cfg)),
     defaultProvider: params.defaultProvider,
     selection,
     sessionEntry: params.sessionEntry,

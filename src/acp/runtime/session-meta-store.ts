@@ -1,8 +1,11 @@
 /** Store binding for ACP session metadata: resolves which session-store row owns a key. */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import { AgentSelectionRequiredError, listAgentIds } from "../../agents/agent-scope-config.js";
+import {
+  AgentSelectionRequiredError,
+  listAgentIds,
+  tryResolveAmbientOwnerAgentId,
+} from "../../agents/agent-scope-config.js";
 import { getRuntimeConfig } from "../../config/config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import {
   listSessionEntryKeysReadOnly,
@@ -98,7 +101,7 @@ export function resolveSessionStorePathForAcp(params: {
   const resolvedAgentId =
     agentId ??
     (persistedStoreOwner.kind === "configured" ? persistedStoreOwner.agentId : undefined) ??
-    tryResolveLegacyCompatibilityAgentId(cfg);
+    tryResolveAmbientOwnerAgentId(cfg);
   if (!resolvedAgentId) {
     throw new AgentSelectionRequiredError(listAgentIds(cfg), {
       surface: `ACP session key "${params.sessionKey}"`,

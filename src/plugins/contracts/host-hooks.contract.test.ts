@@ -148,7 +148,11 @@ async function withHostHookState(
   prefix: string,
   run: (fixture: HostHookStateFixture) => Promise<void>,
   createTempConfig: (storePath: string) => HostHookStateFixture["tempConfig"] = (storePath) => ({
-    agents: { entries: { main: { default: true } } },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
     session: { store: storePath },
   }),
 ): Promise<void> {

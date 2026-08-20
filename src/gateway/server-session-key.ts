@@ -4,7 +4,7 @@ import {
   asDateTimestampMs,
   resolveExpiresAtMsFromDurationMs,
 } from "@openclaw/normalization-core/number-coercion";
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveSoleAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.js";
@@ -97,7 +97,7 @@ export function resolveSessionKeyForRun(runId: string, opts: { agentId?: string 
   if (!explicitAgentId && cached) {
     return cached;
   }
-  const requestedAgentId = explicitAgentId ?? normalizeAgentId(resolveDefaultAgentId(cfg));
+  const requestedAgentId = explicitAgentId ?? normalizeAgentId(resolveSoleAgentId(cfg));
   const cacheAgentId = requestedAgentId;
   if (cached && sessionKeyMatchesAgent(cached, requestedAgentId, cfg)) {
     const sessionKey = resolveRunSessionKeyForCaller(cached);

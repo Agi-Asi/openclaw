@@ -9,8 +9,18 @@ export function asOpenClawConfig(config: Partial<OpenClawConfig>): OpenClawConfi
   return isolateMemoryManagerTestConfig(config as OpenClawConfig);
 }
 
+export function createDefaultMemoryToolAgents(
+  agentId = "main",
+): NonNullable<OpenClawConfig["agents"]> {
+  return {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId } },
+    entries: { [agentId]: {} },
+  };
+}
+
 export function createDefaultMemoryToolConfig(): OpenClawConfig {
-  return asOpenClawConfig({ agents: { list: [{ id: "main", default: true }] } });
+  return asOpenClawConfig({ agents: createDefaultMemoryToolAgents() });
 }
 
 export function createMemorySearchToolOrThrow(params?: {
@@ -49,7 +59,7 @@ export function createAutoCitationsMemorySearchTool(agentSessionKey: string) {
   return createMemorySearchToolOrThrow({
     config: asOpenClawConfig({
       memory: { citations: "auto" },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: createDefaultMemoryToolAgents(),
     }),
     agentSessionKey,
   });

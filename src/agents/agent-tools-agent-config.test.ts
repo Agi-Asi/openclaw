@@ -176,15 +176,15 @@ describe("Agent-specific tool filtering", () => {
   it("uses the configured default agent for lean local-model filtering on legacy session keys", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: "local",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "local" } },
+        entries: {
+          local: {
             experimental: {
               localModelLean: true,
             },
           },
-        ],
+        },
       },
     };
 

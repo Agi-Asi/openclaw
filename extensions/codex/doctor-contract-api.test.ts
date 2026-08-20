@@ -362,7 +362,7 @@ describe("codex doctor contract", () => {
 
   it.each([
     ["without a system agent", undefined],
-    ["with a missing system agent", { systemAgent: { agentId: "missing" } }],
+    ["with a missing system agent", { systemAgent: {} }],
   ] as const)("preserves ambiguous shared-root bindings %s", async (_label, defaults) => {
     const fixture = await createBindingMigrationFixture({
       legacySharedRoot: true,

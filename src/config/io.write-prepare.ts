@@ -1618,10 +1618,14 @@ export function resolvePersistCandidateForWrite(params: {
     : persisted;
   const preserveAuthoredRoster =
     canCanonicalizeAgentRoster(params.nextConfig) || params.preserveLegacyAgentRoster === true;
+  // Restoring an authored default marker must also discard the runtime-only ownership stamp.
+  const authoredRosterSource = params.preserveLegacyAgentRoster
+    ? deletePathValue(withPreservedIncludes, ["agents", "ownership"])
+    : withPreservedIncludes;
   const withAuthoredRoster =
     persistCanonicalRoster || !preserveAuthoredRoster
       ? withPreservedIncludes
-      : restoreAuthoredAgentRoster(withPreservedIncludes, rootAuthoredConfig);
+      : restoreAuthoredAgentRoster(authoredRosterSource, rootAuthoredConfig);
   if (persistCanonicalRoster) {
     // A roster rewrite must never drop entries the mutation did not explicitly delete.
     // A 2026-07-25 production incident lost agents.entries.main twice through silent rewrites.

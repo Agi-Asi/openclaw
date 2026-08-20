@@ -38,7 +38,6 @@ import type {
 } from "./io.types.js";
 import { formatConfigIssueSummary } from "./issue-format.js";
 import { migrateLegacyContextBudgetConfig } from "./legacy.context-budget.js";
-import { inheritLegacyDefaultAgentId } from "./legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "./legacy.roster.js";
 import { materializeRuntimeConfig } from "./materialize.js";
 import { copyConfigResolutionFacts } from "./resolution-facts.js";
@@ -110,9 +109,8 @@ export function createConfigIoContext(options: ConfigIoFactoryOptions = {}): Con
         state: { pendingByPath: autoOwnerDisplaySecretByPath },
       }),
     );
-    const inherited = inheritLegacyDefaultAgentId(cfg, finalized);
-    copyConfigResolutionFacts(cfg, inherited);
-    return inherited;
+    copyConfigResolutionFacts(cfg, finalized);
+    return finalized;
   }
 
   function createValidationPluginMetadataSnapshotLoader(params: {

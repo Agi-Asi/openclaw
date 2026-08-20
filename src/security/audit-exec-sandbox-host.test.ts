@@ -14,7 +14,11 @@ function hasFinding(
 }
 
 describe("security audit exec sandbox host findings", () => {
-  it.each([
+  const cases: Array<{
+    name: string;
+    cfg: OpenClawConfig;
+    checkId: Parameters<typeof hasFinding>[0];
+  }> = [
     {
       name: "defaults host is sandbox",
       cfg: {
@@ -24,8 +28,10 @@ describe("security audit exec sandbox host findings", () => {
           },
         },
         agents: {
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          entries: { main: {} },
           defaults: {
+            systemAgent: { agentId: "main" },
             sandbox: {
               mode: "off",
             },
@@ -43,27 +49,29 @@ describe("security audit exec sandbox host findings", () => {
           },
         },
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "ops" },
             sandbox: {
               mode: "off",
             },
           },
-          list: [
-            {
-              id: "ops",
-              default: true,
+          entries: {
+            ops: {
               tools: {
                 exec: {
                   host: "sandbox",
                 },
               },
             },
-          ],
+          },
         },
       } satisfies OpenClawConfig,
       checkId: "tools.exec.host_sandbox_no_sandbox_agents" as const,
     },
-  ])("$name", async ({ cfg, checkId }) => {
+  ];
+
+  it.each(cases)("$name", async ({ cfg, checkId }) => {
     expect(hasFinding(checkId, await collectSecurityAuditFindings(cfg))).toBe(true);
   });
 });

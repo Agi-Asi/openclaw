@@ -2183,7 +2183,11 @@ describe("createTelegramBot", () => {
     loadConfig.mockReturnValue({
       commands: { native: true, ownerAllowFrom: ["9"] },
       channels: { telegram: { dmPolicy: "pairing" } },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
     });
 
     try {
@@ -2263,8 +2267,10 @@ describe("createTelegramBot", () => {
       agents: {
         defaults: {
           model: "openai/gpt-4.1",
+          systemAgent: { agentId: "agent-a" },
         },
-        list: [{ id: "agent-a", default: true }, { id: "agent-b" }],
+        ownership: "explicit",
+        entries: { "agent-a": {}, "agent-b": {} },
       },
       channels: {
         telegram: { dmPolicy: "open", allowFrom: ["*"] },
@@ -3751,7 +3757,9 @@ describe("createTelegramBot", () => {
         },
       },
       agents: {
-        list: [{ id: "agent-a", default: true }, { id: "agent-b" }],
+        ownership: "explicit" as const,
+        entries: { "agent-a": {}, "agent-b": {} },
+        defaults: { systemAgent: { agentId: "agent-a" } },
       },
       bindings: [
         {
@@ -3825,7 +3833,9 @@ describe("createTelegramBot", () => {
         },
       },
       agents: {
-        list: [{ id: "topic-a", default: true }, { id: "topic-b" }],
+        ownership: "explicit" as const,
+        entries: { "topic-a": {}, "topic-b": {} },
+        defaults: { systemAgent: { agentId: "topic-a" } },
       },
       bindings: [{ agentId: "topic-a", match: { channel: "telegram", accountId: "default" } }],
     });
@@ -5108,7 +5118,9 @@ describe("createTelegramBot", () => {
         },
       },
       agents: {
-        list: [{ id: "agent-a", default: true }, { id: "agent-b" }],
+        ownership: "explicit",
+        entries: { "agent-a": {}, "agent-b": {} },
+        defaults: { systemAgent: { agentId: "agent-a" } },
       },
       bindings: [
         {

@@ -184,8 +184,8 @@ vi.mock("../../config/config.js", () => ({
 vi.mock("../../agents/agent-scope.js", () => ({
   AgentSelectionRequiredError: class AgentSelectionRequiredError extends Error {},
   listAgentIds: vi.fn(() => ["main", "dev"]),
-  resolveDefaultAgentId: vi.fn(() => "main"),
-  tryResolveLegacyCompatibilityAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
+  tryResolveAmbientOwnerAgentId: vi.fn(() => "main"),
 }));
 vi.mock("../../channels/plugins/index.js", () => ({
   getLoadedChannelPlugin: vi.fn((provider: string) => {

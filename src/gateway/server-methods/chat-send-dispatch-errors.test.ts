@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
-import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { onAgentRuntimeEvent } from "../../infra/agent-events.js";
 import { abortChatRunById, registerChatAbortController } from "../chat-abort.js";
 import { createChatRunState } from "../server-chat-state.js";
@@ -291,14 +291,13 @@ describe("createChatSendDispatchErrorLifecycle", () => {
   });
 
   it("keeps a failed non-default global send admitted through lifecycle persistence", async () => {
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        agents: {
-          list: [{ id: "main" }, { id: "ops" }],
-        },
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, ops: {} },
       },
-      "main",
-    );
+    };
     const persistenceEntered = createDeferred();
     const releasePersistence = createDeferred();
     const persistLifecycleEvent = vi

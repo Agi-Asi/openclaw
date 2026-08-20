@@ -1,11 +1,11 @@
 // Covers canonical config writes, roster migration, include ownership, and authored env refs.
 import { describe, expect, it, vi } from "vitest";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { collectChangedPaths } from "./config-change-paths.js";
 import { applyUnsetPathsForWrite } from "./config-path-mutation.js";
 import { restoreEnvRefsFromMap, resolveWriteEnvSnapshotForPath } from "./env-preserve.js";
 import { createConfigValidationFailedError } from "./io.write-errors.js";
 import { resolvePersistCandidateForWrite } from "./io.write-prepare.js";
-import { tryResolveLegacyCompatibilityAgentId } from "./legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "./legacy.roster.js";
 import { createMergePatch } from "./merge-patch.js";
 import { setConfigResolutionFacts } from "./resolution-facts.js";
@@ -724,7 +724,7 @@ describe("config io write prepare", () => {
 
     expect(persisted.agents?.entries?.research?.default).toBe(true);
     const reloaded = migratePersistedImplicitMainRoster(persisted).config as OpenClawConfig;
-    expect(tryResolveLegacyCompatibilityAgentId(reloaded)).toBe("research");
+    expect(tryResolveAmbientOwnerAgentId(reloaded)).toBe("research");
   });
 
   it("rejects duplicate normalized ids before canonicalizing a legacy roster", () => {

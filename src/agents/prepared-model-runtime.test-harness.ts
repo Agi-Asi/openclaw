@@ -187,8 +187,9 @@ vi.mock("./agent-scope.js", () => ({
   tryResolveConfiguredAgentWorkspaceDir: () => "/tmp/unused-workspace",
   tryResolveSystemAgentWorkspaceDir: () => "/tmp/unused-workspace",
   resolveAmbientOwnerAgentId: () => "default",
+  tryResolveAmbientOwnerAgentId: () => "default",
   resolveDefaultAgentDir: () => "/tmp/unused-agent",
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
   resolveAgentConfig: (config: { agents?: { list?: Array<{ id?: string }> } }, agentId: string) =>
     config.agents?.list?.find((entry) => entry.id === agentId),
   resolveAgentEffectiveModelPrimary: () => undefined,

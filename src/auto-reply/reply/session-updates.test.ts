@@ -114,7 +114,9 @@ describe("ensureSkillSnapshot", () => {
       workspaceDir: TEST_WORKSPACE_DIR,
       cfg: {
         agents: {
-          list: [{ id: "writer", default: true }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "writer" } },
+          entries: { writer: {} },
         },
       },
       execOverrides: { host: "node", node: "build-node", security: "allowlist" },
@@ -124,7 +126,9 @@ describe("ensureSkillSnapshot", () => {
       sessionKey: "main",
       config: {
         agents: {
-          list: [{ id: "writer", default: true }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "writer" } },
+          entries: { writer: {} },
         },
       },
     });

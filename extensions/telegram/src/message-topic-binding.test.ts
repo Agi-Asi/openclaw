@@ -19,7 +19,11 @@ import {
 import type { TelegramRuntime } from "./runtime.types.js";
 
 const cfg = {
-  agents: { entries: { main: { default: true } } },
+  agents: {
+    ownership: "explicit",
+    entries: { main: {} },
+    defaults: { systemAgent: { agentId: "main" } },
+  },
   channels: { telegram: { botToken: "tok" } },
   session: { store: "/tmp/openclaw-telegram-topic-binding-test.json" },
 } as OpenClawConfig;

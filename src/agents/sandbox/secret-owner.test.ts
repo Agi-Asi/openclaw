@@ -12,8 +12,10 @@ describe("sandbox SSH secret owner", () => {
   it("classifies an unmaterialized inherited ref as terminal sandbox provisioning", async () => {
     const config: OpenClawConfig = {
       agents: {
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        entries: { main: {} },
         defaults: {
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             backend: "ssh",

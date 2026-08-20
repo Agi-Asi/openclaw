@@ -235,8 +235,12 @@ describe("plugin runtime command execution", () => {
       .mockReturnValue({ sessionId: "session", updatedAt: 1, execHost: "gateway" });
     const config: OpenClawConfig = {
       agents: {
-        defaults: { sandbox: { mode: "all", scope: "session", workspaceAccess: "rw" } },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: {
+          sandbox: { mode: "all", scope: "session", workspaceAccess: "rw" },
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: {} },
       },
       tools: { elevated: { enabled: false } },
     };
@@ -260,8 +264,12 @@ describe("plugin runtime command execution", () => {
     sandboxContextMocks.resolveSandboxContext.mockResolvedValue({ backendId: "docker" });
     const config: OpenClawConfig = {
       agents: {
-        defaults: { sandbox: { mode: "all", scope: "session", workspaceAccess: "rw" } },
-        list: [{ id: "main", default: true, workspace: "/workspace" }],
+        ownership: "explicit",
+        defaults: {
+          sandbox: { mode: "all", scope: "session", workspaceAccess: "rw" },
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: { workspace: "/workspace" } },
       },
       tools: {
         elevated: { enabled: false },

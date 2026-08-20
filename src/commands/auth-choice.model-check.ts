@@ -4,7 +4,7 @@ import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
   resolveDefaultAgentDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { ensureAuthProfileStore } from "../agents/auth-profiles.js";
 import { createModelAuthAvailabilityResolver } from "../agents/model-auth-availability.js";
@@ -171,7 +171,7 @@ export async function warnIfModelConfigLooksOff(
     agentId: options?.agentId,
   });
   const warnings: string[] = [];
-  const validationAgentId = options?.agentId ?? resolveDefaultAgentId(config);
+  const validationAgentId = options?.agentId ?? resolveSoleAgentId(config);
   const snapshot =
     options?.validateCatalog === false
       ? { entries: [], routeVariants: [] }

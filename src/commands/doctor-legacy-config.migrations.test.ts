@@ -1083,9 +1083,10 @@ describe("normalizeCompatibilityConfigValues", () => {
     const result = repairStaleAgentModelRefs(
       {
         agents: {
-          defaults: { model: "agent-local/model" },
+          ownership: "explicit",
+          defaults: { model: "agent-local/model", systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true },
+            main: {},
             worker: { model: "deleted/worker" },
           },
         },

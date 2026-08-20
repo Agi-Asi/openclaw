@@ -603,9 +603,11 @@ describe("gateway e2e", () => {
 
       const cfg = {
         agents: {
+          ownership: "explicit",
           defaults: {
             workspace: workspaceDir,
             model: { primary: mockProvider.modelRef },
+            systemAgent: { agentId: "dev" },
             models: {
               [mockProvider.modelRef]: {
                 params: {
@@ -617,7 +619,7 @@ describe("gateway e2e", () => {
           },
           // The request below runs sessionKey "agent:dev:mock-openai"; the
           // gateway rejects session keys whose agent id is not declared.
-          entries: { dev: { default: true } },
+          entries: { dev: {} },
         },
         models: {
           mode: "replace",
@@ -702,8 +704,9 @@ module.exports = {
       const configPath = await createGatewayConfigPath(tempHome);
       const cfg = {
         agents: {
-          defaults: { workspace: workspaceDir },
-          entries: { main: { default: true, tools: { allow: ["agents_list"] } } },
+          ownership: "explicit",
+          defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+          entries: { main: { tools: { allow: ["agents_list"] } } },
         },
         plugins: {
           allow: ["http-probe"],

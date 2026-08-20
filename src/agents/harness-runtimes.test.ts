@@ -128,14 +128,16 @@ describe("collectConfiguredAgentHarnessRuntimes", () => {
     // agent lists should not hide valid defaults-level runtime requirements.
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           models: {
             "anthropic/claude-opus-4-6": {
               agentRuntime: { id: "claude" },
             },
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
         list: {
           ops: {
             id: "ops",

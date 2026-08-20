@@ -61,9 +61,10 @@ describe("runtime overrides", () => {
   it("preserves the validated agent projection when an override copies agents", () => {
     const validated = validateConfigObject({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "jarvis" } },
         entries: {
           jarvis: {
-            default: true,
             workspace: "/tmp/jarvis-workspace",
           },
           worker: {

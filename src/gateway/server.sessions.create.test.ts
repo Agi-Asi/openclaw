@@ -697,7 +697,11 @@ test("sessions.create keeps incognito rows process-local through list, spawn, re
 
 test("incognito webchat rejects a vanished non-default-agent session before dispatch", async () => {
   const { storePath } = await createSessionStoreDir();
-  testState.agentsConfig = { list: [{ id: "main", default: true }, { id: "work" }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, work: {} },
+  };
   const { ws } = await openClient({
     browserOrigin: "http://127.0.0.1",
     client: {
@@ -1547,10 +1551,9 @@ test("sessions.create runs an existing managed worktree cwd for initial and foll
   const workspace = await initializeGitWorkspace(openClawState.root);
   closeOpenClawStateDatabaseForTest();
   testState.agentsConfig = {
-    list: [
-      { id: "main", default: true },
-      { id: "roboclaw", workspace },
-    ],
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, roboclaw: { workspace } },
   };
   const { storePath } = await createSessionStoreDir();
   const worktree = await managedWorktrees.create({
@@ -3379,7 +3382,9 @@ test("sessions.create rejects a caller-supplied key for a catalog target", async
 test("sessions.create authorizes a catalog target for the requested agent", async () => {
   await createSessionStoreDir();
   testState.agentsConfig = {
-    list: [{ id: "main", default: true }, { id: "research" }],
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, research: {} },
   };
   const resolveCreateSession = vi.fn(({ agentId }: { agentId?: string }) =>
     agentId === "research"
@@ -4037,7 +4042,11 @@ test("sessions.create scopes the main alias to the requested agent", async () =>
 
 test("sessions.create replaces a dead main entry with a fresh session id", async () => {
   const { storePath } = await createSessionStoreDir();
-  testState.agentsConfig = { list: [{ id: "ops", default: true }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "ops" } },
+    entries: { ops: {} },
+  };
   try {
     await writeSessionStore({
       agentId: "ops",
@@ -4923,7 +4932,11 @@ test("sessions.create resolves an agent-qualified fork from the parent store", a
   const workDir = path.dirname(workStorePath);
   testState.sessionStorePath = storeTemplate;
   testState.sessionConfig = { scope: "per-sender" };
-  testState.agentsConfig = { list: [{ id: "main", default: true }, { id: "work" }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, work: {} },
+  };
   try {
     await fs.mkdir(workDir, { recursive: true });
     const parent = await createCheckpointFixture(workDir);
@@ -4996,7 +5009,11 @@ test("sessions.create can start the first agent turn from an initial task", asyn
   await createSessionStoreDir();
   // Register "ops" so the deleted-agent guard added in #65986 does not
   // reject the auto-started chat.send triggered by `task:`.
-  testState.agentsConfig = { list: [{ id: "ops", default: true }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "ops" } },
+    entries: { ops: {} },
+  };
   const { ws } = await openClient();
 
   const created = await rpcReq<{
@@ -5029,7 +5046,11 @@ test("sessions.create can start the first agent turn from an initial task", asyn
 
 test("sessions.create forwards an attachment-only first turn", async () => {
   await createSessionStoreDir();
-  testState.agentsConfig = { list: [{ id: "main", default: true }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  };
   const { chatHandlers } = await import("./server-methods/chat.js");
   const chatSend = vi.spyOn(chatHandlers, "chat.send").mockImplementation(async ({ respond }) => {
     respond(true, { runId: "attachment-run", status: "started" });
@@ -5061,7 +5082,11 @@ test("sessions.create forwards an attachment-only first turn", async () => {
 
 test("sessions.create rejects unusable attachment-only input before creating a session", async () => {
   await createSessionStoreDir();
-  testState.agentsConfig = { list: [{ id: "main", default: true }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  };
 
   const created = await directSessionReq("sessions.create", {
     agentId: "main",
@@ -5076,7 +5101,11 @@ test("sessions.create rejects unusable attachment-only input before creating a s
 
 test("sessions.create rejects replacing its parent key", async () => {
   await createSessionStoreDir();
-  testState.agentsConfig = { list: [{ id: "main", default: true }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  };
   await writeSessionStore({ entries: { main: sessionStoreEntry("sess-parent-task") } });
 
   const created = await directSessionReq("sessions.create", {

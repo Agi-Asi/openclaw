@@ -5,7 +5,7 @@ import { normalizeStringEntriesLower } from "@openclaw/normalization-core/string
 import { note } from "../../packages/terminal-core/src/note.js";
 import {
   resolveAgentModelFallbacksOverride,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { resolveAgentHarnessPolicy } from "../agents/harness/selection.js";
 import {
@@ -58,7 +58,7 @@ function repairExample(repair: DoctorSessionRouteStateRepair): string {
 }
 
 function resolveSessionAgentId(cfg: OpenClawConfig, sessionKey: string): string | undefined {
-  return parseAgentSessionKey(sessionKey)?.agentId ?? tryResolveDefaultAgentId(cfg);
+  return parseAgentSessionKey(sessionKey)?.agentId ?? tryResolveSoleAgentId(cfg);
 }
 
 /** Resolves the currently configured provider/model/runtime route for a session key. */

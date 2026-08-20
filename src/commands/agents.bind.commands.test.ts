@@ -19,14 +19,21 @@ const pluginRegistryMocks = vi.hoisted(() => ({
 vi.mock("../agents/agent-scope.js", () => ({
   listAgentEntries: (
     cfg: {
-      agents?: { list?: Array<{ id: string; default?: boolean }> };
+      agents?: { entries?: Record<string, { workspace?: string }> };
     } | null,
-  ) => cfg?.agents?.list ?? [],
-  resolveDefaultAgentId: (
+  ) =>
+    Object.entries(cfg?.agents?.entries ?? {}).map(([id, entry]) => Object.assign({ id }, entry)),
+  resolveSoleAgentId: (
     cfg: {
-      agents?: { list?: Array<{ id: string; default?: boolean }> };
+      agents?: {
+        defaults?: { systemAgent?: { agentId?: string } };
+        entries?: Record<string, { workspace?: string }>;
+      };
     } | null,
-  ) => cfg?.agents?.list?.find((agent) => agent.default)?.id ?? "main",
+  ) =>
+    cfg?.agents?.defaults?.systemAgent?.agentId ??
+    Object.keys(cfg?.agents?.entries ?? {})[0] ??
+    "main",
 }));
 
 vi.mock("../config/bindings.js", () => ({
@@ -276,7 +283,11 @@ describe("agents bind/unbind commands", () => {
     readConfigFileSnapshotMock.mockResolvedValue({
       ...baseConfigSnapshot,
       config: {
-        agents: { list: [{ id: "ops", workspace: "/tmp/ops" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: { workspace: "/tmp/ops" } },
+        },
         bindings: [
           { agentId: "main", match: { channel: "matrix" } },
           { agentId: "ops", match: { channel: "telegram", accountId: "work" } },
@@ -318,7 +329,11 @@ describe("agents bind/unbind commands", () => {
     readConfigFileSnapshotMock.mockResolvedValue({
       ...baseConfigSnapshot,
       config: {
-        agents: { list: [{ id: "ops", workspace: "/tmp/ops" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: { workspace: "/tmp/ops" } },
+        },
         bindings: [{ agentId: "main", match: { channel: "telegram", accountId: "ops" } }],
       },
     });

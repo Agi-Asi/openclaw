@@ -9,7 +9,7 @@ import {
   normalizeStringifiedOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import { normalizeCsvOrLooseStringList } from "@openclaw/normalization-core/string-normalization";
-import { listAgentIds, resolveAgentDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { listAgentIds, resolveAgentDir, resolveSoleAgentId } from "../agents/agent-scope.js";
 import { AUTH_STORE_VERSION } from "../agents/auth-profiles/constants.js";
 import { loadPersistedAuthProfileStore } from "../agents/auth-profiles/persisted.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
@@ -304,7 +304,7 @@ function resolveSuggestedEnvSecretId(candidate: ConfigureCandidate): string | un
 function resolveConfigureAgentId(config: OpenClawConfig, explicitAgentId?: string): string {
   const knownAgentIds = new Set(listAgentIds(config));
   if (!explicitAgentId) {
-    return resolveDefaultAgentId(config);
+    return resolveSoleAgentId(config);
   }
   const normalized = normalizeAgentId(explicitAgentId);
   if (knownAgentIds.has(normalized)) {

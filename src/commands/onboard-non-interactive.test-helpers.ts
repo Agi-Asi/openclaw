@@ -253,7 +253,8 @@ export function createOnboardGatewayTimeoutCapture() {
 
 export async function mockOnboardingAgent(params: { config: OpenClawConfig; workspace: string }) {
   const roster = listAgentEntries(params.config);
-  const existing = roster.find((entry) => entry.default === true) ?? roster[0];
+  const systemAgentId = params.config.agents?.defaults?.systemAgent?.agentId;
+  const existing = roster.find((entry) => entry.id === systemAgentId) ?? roster[0];
   if (existing) {
     return {
       config: params.config,
@@ -266,7 +267,12 @@ export async function mockOnboardingAgent(params: { config: OpenClawConfig; work
       ...params.config,
       agents: {
         ...params.config.agents,
-        entries: { main: { name: "main", workspace: params.workspace, default: true } },
+        ownership: "explicit",
+        defaults: {
+          ...params.config.agents?.defaults,
+          systemAgent: { ...params.config.agents?.defaults?.systemAgent, agentId: "main" },
+        },
+        entries: { main: { name: "main", workspace: params.workspace } },
       },
     },
     agentId: "main",

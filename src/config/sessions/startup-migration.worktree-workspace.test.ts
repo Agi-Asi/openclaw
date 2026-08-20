@@ -33,7 +33,11 @@ it("backfills a nested requested workspace once instead of using the agent defau
   const storePath = path.join(stateDir, "agents", "main", "sessions", "sessions.json");
   const sessionKey = "agent:main:dashboard:legacy-worktree";
   const cfg: OpenClawConfig = {
-    agents: { list: [{ id: "main", default: true, workspace: agentWorkspace }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: { workspace: agentWorkspace } },
+    },
     session: { store: storePath },
   };
   insertRegistryWorktree(env, {

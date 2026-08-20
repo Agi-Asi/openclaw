@@ -11,7 +11,7 @@ import { theme } from "../../packages/terminal-core/src/theme.js";
 import {
   resolveAgentIdByWorkspacePath,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { resolveGatewayPort } from "../config/paths.js";
@@ -158,7 +158,7 @@ function resolveSkillsWorkspace(options?: ResolveSkillsWorkspaceOptions): {
   const agentId =
     explicitAgentId ??
     inferredAgentId ??
-    resolveDefaultAgentId(config, { surface: "the skills command", hint: "Pass --agent <id>." });
+    resolveSoleAgentId(config, { surface: "the skills command", hint: "Pass --agent <id>." });
   return {
     config,
     agentId,

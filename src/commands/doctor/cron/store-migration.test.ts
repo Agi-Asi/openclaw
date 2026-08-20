@@ -217,7 +217,13 @@ describe("normalizeStoredCronJobs", () => {
     expect(payload.model).toBe("openai/gpt-5.6-sol");
     expect(payload.fallbacks).toEqual(["openai/gpt-5.4-mini"]);
     const runtimeRepair = repairCronCodexRuntimePolicies({
-      cfg: { agents: { entries: { main: { default: true } } } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
+      },
       targets: result.codexRuntimePolicyTargets,
     });
     expect(runtimeRepair.warnings).toStrictEqual([]);
@@ -285,12 +291,13 @@ describe("normalizeStoredCronJobs", () => {
     const policyPlan = repairCronCodexRuntimePolicies({
       cfg: {
         agents: {
+          ownership: "explicit",
           defaults: {
             model: { primary: "openai/gpt-5.6-sol" },
+            systemAgent: { agentId: "main" },
           },
           entries: {
             main: {
-              default: true,
               models: {
                 "openai/gpt-5.6-sol": { agentRuntime: { id: "openclaw" } },
               },
@@ -465,7 +472,13 @@ describe("normalizeStoredCronJobs", () => {
       }),
     ];
     const policyRepair = repairCronCodexRuntimePolicies({
-      cfg: { agents: { entries: { main: { default: true } } } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
+      },
       targets: collectStoredCronCodexRuntimePolicyTargets(jobs),
     });
 
@@ -488,7 +501,13 @@ describe("normalizeStoredCronJobs", () => {
       }),
     ];
     const rewritePlan = planCronCodexRefRewriteAgainstPersistedConfig({
-      cfg: { agents: { entries: { main: { default: true } } } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
+      },
       targets: collectStoredCronCodexRuntimePolicyTargets(jobs),
     });
     const blocked = new Set(rewritePlan.blockedTargets.map(cronCodexRuntimePolicyTargetKey));

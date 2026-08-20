@@ -1,4 +1,4 @@
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveSoleAgentId } from "../../agents/agent-scope.js";
 import {
   resolveAllowedModelRef,
   resolveDefaultModelForAgent,
@@ -22,7 +22,7 @@ type RuntimeSessionCatalogCreateTargetParams = {
 export function resolveAgentCatalogCreateTarget(
   params: RuntimeSessionCatalogCreateTargetParams,
 ): SessionCatalogCreateTarget | undefined {
-  const agentId = params.requestedAgentId ?? resolveDefaultAgentId(params.config);
+  const agentId = params.requestedAgentId ?? resolveSoleAgentId(params.config);
   const defaultModel = resolveDefaultModelForAgent({ cfg: params.config, agentId });
   for (const modelId of params.modelIds) {
     if (

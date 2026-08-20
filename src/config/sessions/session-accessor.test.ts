@@ -1042,7 +1042,11 @@ describe("session accessor seam", () => {
       candidateKeys: ["agent:support:main"],
       cfg: {
         session: { store: storeTemplate },
-        agents: { entries: { support: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "support" } },
+          entries: { support: {} },
+        },
       },
     });
 
@@ -1073,7 +1077,11 @@ describe("session accessor seam", () => {
     const resolved = resolveSessionEntryAccessTarget({
       cfg: {
         session: { store: storeTemplate },
-        agents: { entries: { support: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "support" } },
+          entries: { support: {} },
+        },
       },
       sessionKey: "agent:support:main",
     });

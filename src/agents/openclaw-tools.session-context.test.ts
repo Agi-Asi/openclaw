@@ -70,7 +70,13 @@ describe("openclaw session lookup context", () => {
     const runSessionKey = "agent:research:main";
     setEmbeddedMode(true);
     const tools = createTools(
-      { agents: { list: [{ id: "main", default: true }, { id: "research" }] } },
+      {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, research: {} },
+        },
+      },
       { sandboxed: true },
     );
 
@@ -134,7 +140,11 @@ describe("openclaw session lookup context", () => {
     });
     setEmbeddedMode(true);
     const tools = createTools({
-      agents: { list: [{ id: "main", default: true }, { id: "research" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, research: {} },
+      },
       tools: {
         sessions: { visibility: "all" },
         agentToAgent: { enabled: true, allow: ["*"] },

@@ -447,10 +447,12 @@ describe("prepareCliRunContext", () => {
     setRawCliBackendForPrepareTest({ ...defaultTestCliBackend, normalizeConfig });
     const config = {
       agents: {
-        list: [
-          { id: "main", default: true, workspace: path.join(dir, "workspace-main") },
-          { id: "arthur", workspace: arthurWorkspace },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { workspace: path.join(dir, "workspace-main") },
+          arthur: { workspace: arthurWorkspace },
+        },
       },
     } satisfies OpenClawConfig;
     const context = await fixture.prepare({
@@ -495,10 +497,12 @@ describe("prepareCliRunContext", () => {
       authProfileId: "test-cli:ops",
       config: {
         agents: {
-          list: [
-            { id: "ops", default: true, agentDir: modelOwnerAgentDir },
-            { id: "openclaw", agentDir: systemAgentDir },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: {
+            ops: { agentDir: modelOwnerAgentDir },
+            openclaw: { agentDir: systemAgentDir },
+          },
         },
       },
     });
@@ -2234,7 +2238,9 @@ describe("prepareCliRunContext", () => {
     const runtimeAgentDir = path.join(dir, "runtime-agent");
     const runtimeConfig = {
       agents: {
-        list: [{ id: "main", default: true, agentDir: runtimeAgentDir }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir: runtimeAgentDir } },
       },
       plugins: { slots: { contextEngine: engineId } },
     } satisfies OpenClawConfig;

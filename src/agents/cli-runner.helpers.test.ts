@@ -123,8 +123,10 @@ describe("prepareCliPromptImagePayload prompt references", () => {
     setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
     const config = {
       agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "arthur" } },
         entries: {
-          arthur: { default: true, workspace: workspaceDir },
+          arthur: { workspace: workspaceDir },
           merlin: { workspace: siblingWorkspaceDir },
         },
       },

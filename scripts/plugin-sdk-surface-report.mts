@@ -307,7 +307,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: named bounded structured-input surface for native harness protocol adapters.
       // +1: OpenAI-compatible video execution in the existing media-understanding owner.
       // -2: retire the uncalled secret-plan target resolver and its result type.
-      4335,
+      // +7: canonical sole/ambient agent-owner replacements beside shipped deprecated aliases.
+      4342,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -396,7 +397,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // -1: remove the test-only channel activity reset export.
       // +1: OpenAI-compatible video execution in the existing media-understanding owner.
       // -1: retire the uncalled secret-plan target resolver.
-      2577,
+      // +7: canonical sole/ambient agent-owner replacements beside shipped deprecated aliases.
+      2584,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(

@@ -372,6 +372,7 @@ describe("createVoiceCallRuntime lifecycle", () => {
 
   it("builds realtime instructions for the agent frozen on each call", async () => {
     const config = createBaseConfig();
+    config.agentId = "operator";
     config.realtime.enabled = true;
     config.realtime.agentContext = {
       enabled: true,
@@ -381,7 +382,11 @@ describe("createVoiceCallRuntime lifecycle", () => {
       files: ["SOUL.md"],
     };
     const fullConfig = {
-      agents: { list: [{ id: "operator", default: true }, { id: "support" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "operator" } },
+        entries: { operator: {}, support: {} },
+      },
     } as OpenClawConfig;
     const resolveAgentIdentity = vi.fn((_cfg: OpenClawConfig, agentId: string) => ({
       name: agentId === "support" ? "Support Voice" : "Main Voice",
@@ -443,7 +448,11 @@ describe("createVoiceCallRuntime lifecycle", () => {
     config.realtime.enabled = true;
     config.numbers["+15550009999"] = { agentId: "support" };
     const fullConfig = {
-      agents: { list: [{ id: "main", default: true }, { id: "support" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, support: {} },
+      },
     } as OpenClawConfig;
     mocks.resolveConfiguredRealtimeVoiceProvider.mockImplementation(
       ({ agentId }: { agentId?: string }) => {

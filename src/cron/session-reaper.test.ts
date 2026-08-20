@@ -232,7 +232,11 @@ describe("sweepCronRunSessions", () => {
     const exactStorePath = path.join(tmpDir, "shared.sqlite");
     const cfg: OpenClawConfig = {
       session: { store: exactStorePath },
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
     };
     const mainKey = "agent:main:cron:main-job:run:keep";
     const opsKey = "agent:ops:cron:ops-job:run:expired";

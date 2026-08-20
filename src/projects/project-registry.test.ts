@@ -116,10 +116,12 @@ describe("project registry", () => {
 
     const cfg = {
       agents: {
-        list: [
-          { id: "main", default: true, workspace: "/workspace/zeta" },
-          { id: "work", workspace: "/workspace/alpha" },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { workspace: "/workspace/zeta" },
+          work: { workspace: "/workspace/alpha" },
+        },
       },
     } as OpenClawConfig;
     expect(listProjectRegistry(cfg, options).map((project) => project.displayName)).toEqual([
@@ -129,10 +131,12 @@ describe("project registry", () => {
     ]);
     const sharedWorkspaceCfg = {
       agents: {
-        list: [
-          { id: "main", default: true, workspace: repo },
-          { id: "work", workspace: repo },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { workspace: repo },
+          work: { workspace: repo },
+        },
       },
     } as OpenClawConfig;
     expect(listProjectRegistry(sharedWorkspaceCfg, options).map((project) => project.id)).toEqual([

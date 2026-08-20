@@ -148,7 +148,13 @@ describe("memory host event export recovery", () => {
       );
 
       const listed = await listMemoryHostPublicArtifacts({
-        cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        cfg: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: workspaceDir } },
+          },
+        },
       });
 
       expect(listed.some((artifact) => artifact.kind === "event-log")).toBe(true);
@@ -212,7 +218,13 @@ describe("memory host event export recovery", () => {
       );
 
       const listed = await listMemoryHostPublicArtifacts({
-        cfg: { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        cfg: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: workspaceDir } },
+          },
+        },
       });
 
       expect(listed.some((artifact) => artifact.kind === "event-log")).toBe(false);

@@ -59,8 +59,9 @@ describe("agent defaults schema", () => {
     for (const entry of ["", "///", "provider//model", "nogarbageprovider"]) {
       const result = validateConfigObject({
         agents: {
-          defaults: { modelPolicy: { allow: [entry] } },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: { modelPolicy: { allow: [entry] }, systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
       });
 
@@ -77,8 +78,10 @@ describe("agent defaults schema", () => {
   it("accepts exact refs, nested wildcards, configured aliases, and compat selectors", () => {
     const result = validateConfigObject({
       agents: {
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        entries: { main: {} },
         defaults: {
+          systemAgent: { agentId: "main" },
           models: {
             "anthropic/claude-sonnet-4-6": { alias: "sonnet" },
             "openrouter/openai/gpt-oss-120b:free": {},
@@ -103,8 +106,10 @@ describe("agent defaults schema", () => {
   it("reports keyed per-agent policy paths", () => {
     const result = validateConfigObject({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
         entries: {
-          main: { default: true },
+          main: {},
           runner: { modelPolicy: { allow: ["not-a-model-ref"] } },
         },
       },

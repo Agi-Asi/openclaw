@@ -1,6 +1,6 @@
 // Doctor-only runtime policy repair for migrated cron Codex model refs.
 import { asOptionalRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
-import { tryResolveDefaultAgentId } from "../../../agents/agent-scope-config.js";
+import { tryResolveSoleAgentId } from "../../../agents/agent-scope-config.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { normalizeAgentId } from "../../../routing/session-key.js";
 import {
@@ -31,7 +31,7 @@ function resolvePolicyOwner(params: {
   const requestedAgentId = params.target.agentId
     ? normalizeAgentId(params.target.agentId)
     : undefined;
-  const defaultAgentId = tryResolveDefaultAgentId(params.cfg);
+  const defaultAgentId = tryResolveSoleAgentId(params.cfg);
   const effectiveAgentId = requestedAgentId ?? defaultAgentId;
   if (!effectiveAgentId) {
     return undefined;

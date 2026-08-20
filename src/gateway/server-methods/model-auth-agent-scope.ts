@@ -5,7 +5,7 @@ import {
   errorShape,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { AgentSelectionRequiredError } from "../../agents/agent-scope-config.js";
-import { listAgentIds, resolveAgentDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { listAgentIds, resolveAgentDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { normalizeAgentIdStrict } from "../../routing/session-key.js";
 
@@ -21,7 +21,7 @@ export function resolveModelAuthAgentScope(
   if (requestedAgentId === undefined || requestedAgentId === "") {
     let defaultAgentId: string;
     try {
-      defaultAgentId = resolveDefaultAgentId(cfg, {
+      defaultAgentId = resolveSoleAgentId(cfg, {
         surface: "model auth",
         hint: "Pass agentId to select a configured agent.",
       });

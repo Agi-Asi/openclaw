@@ -6,7 +6,7 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { createProjectsHandlers } from "./projects.js";
-import type { GatewayClient, GatewayRequestContext, RespondFn } from "./types.js";
+import type { GatewayClient, RespondFn } from "./types.js";
 
 type ProjectWorktreeService = Parameters<typeof createProjectsHandlers>[0];
 
@@ -75,8 +75,14 @@ async function listObservedProjects(params: {
     params: { includeObserved: true },
     respond: (...response: Parameters<RespondFn>) => responses.push(response),
     context: {
-      getRuntimeConfig: () => ({ agents: { list: [{ id: "main", default: true }] } }),
-    } as GatewayRequestContext,
+      getRuntimeConfig: () => ({
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
+      }),
+    },
     client: params.client ?? authenticatedClient("operator@example.com"),
   } as never);
   expect(responses).toHaveLength(1);

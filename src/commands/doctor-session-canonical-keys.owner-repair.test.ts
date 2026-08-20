@@ -48,7 +48,11 @@ describe("doctor transcript owner repair", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
       const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
         session: { store: storeTemplate },
       } as OpenClawConfig;
       const canonicalKey = "agent:main:main";
@@ -124,7 +128,11 @@ describe("doctor transcript owner repair", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
       const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
         session: { mainKey: "work", store: storeTemplate },
       } as OpenClawConfig;
       const staleKey = "agent:main:telegram:default:direct:fixture-peer";

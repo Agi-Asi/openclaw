@@ -443,7 +443,7 @@ export async function prepareCliRunContext(
         ...runConfig,
         agents: {
           ...runConfig.agents,
-          entries: { [sessionOwner]: { default: true } },
+          entries: { [sessionOwner]: {} },
         },
       } satisfies OpenClawConfig);
   const started = Date.now();

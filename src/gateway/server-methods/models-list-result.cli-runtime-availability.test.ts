@@ -12,16 +12,18 @@ const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 const config = {
   agents: {
-    defaults: { model: { primary: "anthropic/claude-opus-5" } },
-    list: [
-      {
-        id: "main",
-        default: true,
+    ownership: "explicit",
+    defaults: {
+      model: { primary: "anthropic/claude-opus-5" },
+      systemAgent: { agentId: "main" },
+    },
+    entries: {
+      main: {
         models: {
           "anthropic/claude-opus-5": { agentRuntime: { id: "claude-cli" } },
         },
       },
-    ],
+    },
   },
 } satisfies OpenClawConfig;
 

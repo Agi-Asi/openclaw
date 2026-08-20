@@ -5,10 +5,21 @@ import { detectSkillWorkshopToolPolicyDiagnostic } from "./tool-policy-diagnosti
 function detect(config: OpenClawConfig, workshopEnabled = true) {
   const agents = config.agents;
   const hasRoster = Boolean(agents && ("entries" in agents || "list" in agents));
+  const ownerId = agents?.defaults?.systemAgent?.agentId ?? "main";
   return detectSkillWorkshopToolPolicyDiagnostic({
     config: {
       ...config,
-      agents: hasRoster ? agents : { ...agents, entries: { main: { default: true } } },
+      agents: hasRoster
+        ? agents
+        : {
+            ...agents,
+            ownership: "explicit",
+            defaults: {
+              ...agents?.defaults,
+              systemAgent: { ...agents?.defaults?.systemAgent, agentId: ownerId },
+            },
+            entries: { [ownerId]: {} },
+          },
     },
     workshopEnabled,
   });
@@ -43,7 +54,11 @@ describe("detectSkillWorkshopToolPolicyDiagnostic", () => {
   it("names agent-scoped profile and allowlist sources", () => {
     expect(
       detect({
-        agents: { list: [{ id: "main", default: true, tools: { profile: "messaging" } }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { tools: { profile: "messaging" } } },
+        },
       }),
     ).toMatchObject({
       source: "agents.entries.main.tools.profile",
@@ -52,7 +67,11 @@ describe("detectSkillWorkshopToolPolicyDiagnostic", () => {
 
     expect(
       detect({
-        agents: { entries: { main: { default: true, tools: { allow: ["read"] } } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { tools: { allow: ["read"] } } },
+        },
       }),
     ).toMatchObject({
       source: "agents.entries.main.tools.allow",
@@ -64,7 +83,11 @@ describe("detectSkillWorkshopToolPolicyDiagnostic", () => {
     expect(
       detect({
         tools: { profile: "messaging" },
-        agents: { entries: { main: { default: true, tools: { alsoAllow: ["read"] } } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { tools: { alsoAllow: ["read"] } } },
+        },
       }),
     ).toMatchObject({
       source: "tools.profile",
@@ -88,10 +111,13 @@ describe("detectSkillWorkshopToolPolicyDiagnostic", () => {
     expect(
       detect({
         agents: {
-          defaults: { model: { primary: "openai/gpt-5.5" } },
+          ownership: "explicit",
+          defaults: {
+            model: { primary: "openai/gpt-5.5" },
+            systemAgent: { agentId: "main" },
+          },
           entries: {
             main: {
-              default: true,
               tools: { byProvider: { openai: { alsoAllow: ["read"] } } },
             },
           },
@@ -108,10 +134,13 @@ describe("detectSkillWorkshopToolPolicyDiagnostic", () => {
     expect(
       detect({
         agents: {
-          defaults: { model: { primary: "openai/gpt-5.5" } },
+          ownership: "explicit",
+          defaults: {
+            model: { primary: "openai/gpt-5.5" },
+            systemAgent: { agentId: "main" },
+          },
           entries: {
             main: {
-              default: true,
               tools: { byProvider: { openai: { allow: ["read"] } } },
             },
           },

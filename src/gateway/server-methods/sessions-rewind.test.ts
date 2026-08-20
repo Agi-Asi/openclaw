@@ -145,7 +145,13 @@ function context(active = false): GatewayRequestContext {
     chatAbortControllers: new Map(
       active ? [["active-run", { sessionId: sourceSessionId, sessionKey }]] : undefined,
     ),
-    getRuntimeConfig: () => ({ agents: { list: [{ id: "main", default: true }] } }),
+    getRuntimeConfig: () => ({
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    }),
     getSessionEventSubscriberConnIds: () => new Set(),
   } as unknown as GatewayRequestContext;
 }

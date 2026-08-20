@@ -37,7 +37,9 @@ describe("prepareEmbeddedAttemptSetup", () => {
     const setup = await prepareEmbeddedAttemptSetup({
       config: {
         agents: {
-          list: [{ id: "main", default: true }, { id: "marketing" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, marketing: {} },
         },
       },
       modelId: "gpt-5.4",

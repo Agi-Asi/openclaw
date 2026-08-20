@@ -98,7 +98,11 @@ describe("offerLiveModelVerification", () => {
 
   it("reports when a repair candidate persisted its verified config", async () => {
     const repairedConfig: OpenClawConfig = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       models: {
         providers: {
           openai: { apiKey: "test-key", baseUrl: "https://api.openai.com/v1", models: [] },
@@ -128,7 +132,13 @@ describe("offerLiveModelVerification", () => {
 
     await expect(
       offerLiveModelVerification({
-        config: { agents: { entries: { main: { default: true } } } },
+        config: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
+        },
         opts: {},
         prompter,
         runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() } as never,

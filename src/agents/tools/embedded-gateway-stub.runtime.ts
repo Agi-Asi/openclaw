@@ -4,7 +4,7 @@
  * Tests mock this module to exercise local sessions.list/sessions.resolve/sessions.search/chat.history
  * behavior without importing the full Gateway server graph.
  */
-export { resolveDefaultAgentId, resolveSessionAgentId } from "../../agents/agent-scope.js";
+export { resolveSessionAgentId, resolveSoleAgentId } from "../../agents/agent-scope.js";
 export { getRuntimeConfig } from "../../config/config.js";
 export { searchSessionTranscripts } from "../../config/sessions/session-transcript-search.js";
 export {

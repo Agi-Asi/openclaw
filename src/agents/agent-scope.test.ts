@@ -364,27 +364,27 @@ describe("resolveAgentConfig", () => {
   it("updates the effective model primary at the winning config layer", () => {
     const cfg: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "linus" },
           model: {
             primary: "openai/gpt-5.4",
             fallbacks: ["anthropic/claude-sonnet-4-6"],
           },
         },
-        list: [
-          {
-            id: "linus",
-            default: true,
+        entries: {
+          linus: {
             model: {
               primary: "anthropic/claude-sonnet-4-6",
               fallbacks: ["openrouter/anthropic/claude-opus-4.6"],
             },
           },
-        ],
+        },
       },
     };
 
     expect(setAgentEffectiveModelPrimary(cfg, "linus", "google/gemini-3-pro")).toBe("agent");
-    expect(cfg.agents?.list?.[0]?.model).toEqual({
+    expect(cfg.agents?.entries?.linus?.model).toEqual({
       primary: "google/gemini-3-pro",
       fallbacks: ["openrouter/anthropic/claude-opus-4.6"],
     });
@@ -395,13 +395,15 @@ describe("resolveAgentConfig", () => {
 
     const inheritedCfg: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           model: {
             primary: "openai/gpt-5.4",
             fallbacks: ["anthropic/claude-sonnet-4-6"],
           },
         },
-        list: [{ id: "main", default: true }],
+        entries: { main: {} },
       },
     };
 
@@ -1046,7 +1048,13 @@ describe("resolveAgentConfig", () => {
     const home = path.join(path.sep, "srv", "openclaw-home");
     withEnv({ OPENCLAW_HOME: home }, () => {
       const workspace = resolveAgentWorkspaceDir(
-        { agents: { entries: { main: { default: true } } } },
+        {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
+        },
         "main",
       );
       expect(workspace).toBe(path.join(path.resolve(home), ".openclaw", "workspace"));
@@ -1062,7 +1070,13 @@ describe("resolveAgentConfig", () => {
       },
       () => {
         const workspace = resolveAgentWorkspaceDir(
-          { agents: { entries: { main: { default: true } } } },
+          {
+            agents: {
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "main" } },
+              entries: { main: {} },
+            },
+          },
           "main",
         );
         expect(workspace).toBe(path.resolve(workspaceDir));
@@ -1082,7 +1096,9 @@ describe("resolveAgentConfig", () => {
     const stateDir = path.join(path.sep, "tmp", "test-state");
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main" }, { id: "ops", default: true }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { main: {}, ops: {} },
       },
     };
 
@@ -1094,8 +1110,9 @@ describe("resolveAgentConfig", () => {
   it("non-default agent uses agents.defaults.workspace as base (#59789)", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        defaults: { workspace: "/shared-ws" },
-        list: [{ id: "main" }, { id: "work", default: true, workspace: "/work-ws" }],
+        ownership: "explicit",
+        defaults: { workspace: "/shared-ws", systemAgent: { agentId: "work" } },
+        entries: { main: {}, work: { workspace: "/work-ws" } },
       },
     };
     const workspace = resolveAgentWorkspaceDir(cfg, "main");
@@ -1105,8 +1122,9 @@ describe("resolveAgentConfig", () => {
   it("default agent without per-agent workspace uses agents.defaults.workspace directly", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        defaults: { workspace: "/shared-ws" },
-        list: [{ id: "main" }, { id: "work", default: true }],
+        ownership: "explicit",
+        defaults: { workspace: "/shared-ws", systemAgent: { agentId: "work" } },
+        entries: { main: {}, work: {} },
       },
     };
     const workspace = resolveAgentWorkspaceDir(cfg, "work");
@@ -1117,7 +1135,9 @@ describe("resolveAgentConfig", () => {
     const stateDir = path.join(path.sep, "tmp", "test-state");
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main" }, { id: "work", default: true, workspace: "/work-ws" }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "work" } },
+        entries: { main: {}, work: { workspace: "/work-ws" } },
       },
     };
     const workspace = withEnv({ OPENCLAW_STATE_DIR: stateDir }, () =>

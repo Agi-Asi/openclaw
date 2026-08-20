@@ -1,6 +1,6 @@
 import {
   resolveAgentConfig,
-  resolveDefaultAgentId as resolveConfiguredDefaultAgentId,
+  resolveSoleAgentId as resolveConfiguredSoleAgentId,
 } from "openclaw/plugin-sdk/agent-runtime";
 import {
   optionalFiniteNumberSchema,
@@ -149,7 +149,7 @@ export default definePluginEntry({
       if (typeof rawAgentId === "string" && rawAgentId.trim()) {
         return normalizeAgentId(rawAgentId);
       }
-      return resolveConfiguredDefaultAgentId(resolveRuntimeConfig());
+      return resolveConfiguredSoleAgentId(resolveRuntimeConfig());
     };
     const resolveCurrentHookConfig = () => {
       const runtimePluginConfig = resolveLivePluginConfigObject(

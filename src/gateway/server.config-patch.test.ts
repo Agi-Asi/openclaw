@@ -415,8 +415,13 @@ describe("gateway config methods", () => {
     const agents = requireConfigObject(rosterConfig.agents ?? {}, "agents config");
     rosterConfig.agents = {
       ...agents,
+      ownership: "explicit",
+      defaults: {
+        ...requireConfigObject(agents.defaults ?? {}, "agent defaults"),
+        systemAgent: { agentId: "main" },
+      },
       entries: {
-        main: { default: true },
+        main: {},
         worker: { workspace: "/srv/worker" },
       },
     };
@@ -1378,7 +1383,9 @@ describe("gateway server sessions", () => {
       store: path.join(dir, "{agentId}", "sessions.json"),
     };
     testState.agentsConfig = {
-      list: [{ id: "home", default: true }, { id: "work" }],
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "home" } },
+      entries: { home: {}, work: {} },
     };
     const homeDir = path.join(dir, "home");
     const workDir = path.join(dir, "work");
@@ -1437,7 +1444,11 @@ describe("gateway server sessions", () => {
     const dir = await resetTempDir("main-alias");
     const storePath = path.join(dir, "sessions.json");
     testState.sessionStorePath = storePath;
-    testState.agentsConfig = { list: [{ id: "ops", default: true }] };
+    testState.agentsConfig = {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "ops" } },
+      entries: { ops: {} },
+    };
     testState.sessionConfig = { mainKey: "work" };
 
     await writeSessionStore({

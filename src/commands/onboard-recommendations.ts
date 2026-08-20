@@ -1,4 +1,4 @@
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import {
@@ -29,7 +29,7 @@ type BootstrapRecommendation = {
 
 function createDefaultOnboardingRecommendationsStore(): OnboardingRecommendationsStore {
   const cfg = getRuntimeConfig();
-  const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveSoleAgentId(cfg));
   return createOnboardingRecommendationsStore({ workspaceDir });
 }
 

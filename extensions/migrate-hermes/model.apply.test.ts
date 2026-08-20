@@ -100,23 +100,23 @@ describe("Hermes migration model apply", () => {
     );
     const existingConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           workspace: workspaceDir,
           model: {
             primary: "google/gemini-3-pro",
             fallbacks: ["openai/gpt-5.4"],
           },
         },
-        list: [
-          {
-            id: "main",
-            default: true,
+        entries: {
+          main: {
             model: {
               primary: "anthropic/claude-sonnet-4.6",
               fallbacks: ["openrouter/anthropic/claude-opus-4.6"],
             },
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     let writtenConfig: OpenClawConfig | undefined;
@@ -138,7 +138,7 @@ describe("Hermes migration model apply", () => {
     );
 
     expect(result.items).toEqual([defaultModelItem("migrated")]);
-    expect(writtenConfig?.agents?.list?.[0]?.model).toEqual({
+    expect(writtenConfig?.agents?.entries?.main?.model).toEqual({
       primary: "openai/gpt-5.4",
       fallbacks: ["openrouter/anthropic/claude-opus-4.6"],
     });

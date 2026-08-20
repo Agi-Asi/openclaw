@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { tryResolveAmbientOwnerAgentId } from "../../../agents/agent-scope-config.js";
 import { createConfigIO, resetConfigRuntimeState } from "../../../config/io.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { makeCronJob } from "../../../cron/delivery.test-helpers.js";
 import { cronStoreKey } from "../../../cron/store/key.js";
@@ -598,7 +598,7 @@ describe("default role materialization authored writes", () => {
       logger: { warn: () => {}, error: () => {} },
     });
     const snapshot = await io.readConfigFileSnapshot();
-    expect(tryResolveLegacyCompatibilityAgentId(snapshot.config)).toBe("research");
+    expect(tryResolveAmbientOwnerAgentId(snapshot.config)).toBe("research");
 
     await io.writeConfigFile(
       { ...snapshot.config, gateway: { ...snapshot.config.gateway, port: 19001 } },
@@ -609,6 +609,6 @@ describe("default role materialization authored writes", () => {
     expect(persisted.agents?.ownership).toBeUndefined();
     expect(persisted.agents?.entries?.research?.default).toBe(true);
     const reread = await io.readConfigFileSnapshot();
-    expect(tryResolveLegacyCompatibilityAgentId(reread.config)).toBe("research");
+    expect(tryResolveAmbientOwnerAgentId(reread.config)).toBe("research");
   });
 });

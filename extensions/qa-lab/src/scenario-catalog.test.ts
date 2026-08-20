@@ -309,7 +309,13 @@ describe("qa scenario catalog", () => {
     (scenarioId, expectedPatch, retiredPaths) => {
       const gatewayConfigPatch = readQaScenarioById(scenarioId).gatewayConfigPatch;
       const gatewayConfig = applyQaMergePatch(
-        { agents: { entries: { qa: { default: true } } } },
+        {
+          agents: {
+            ownership: "explicit",
+            entries: { qa: {} },
+            defaults: { systemAgent: { agentId: "qa" } },
+          },
+        },
         gatewayConfigPatch,
       );
 

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveDefaultAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
+import { resolveSoleAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { normalizeAgentId } from "openclaw/plugin-sdk/routing";
 import type { PluginDoctorStateMigration } from "openclaw/plugin-sdk/runtime-doctor-migrations";
@@ -31,7 +31,7 @@ function resolveLegacyMemoryOwner(config: OpenClawConfig): {
       : undefined;
   return explicitSystemAgentId
     ? { agentId: normalizeAgentId(explicitSystemAgentId), label: "system" }
-    : { agentId: resolveDefaultAgentId(config), label: "default" };
+    : { agentId: resolveSoleAgentId(config), label: "default" };
 }
 
 // Doctor deletes rows containing a complete known legacy sentinel line, a legacy

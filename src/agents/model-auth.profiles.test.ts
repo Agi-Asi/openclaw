@@ -586,13 +586,13 @@ describe("getApiKeyForModelCore", () => {
 
         const cfg: OpenClawConfig = {
           agents: {
-            list: [
-              {
-                id: "configured",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "configured" } },
+            entries: {
+              configured: {
                 agentDir: state.agentDir("configured"),
               },
-            ],
+            },
           },
         };
 
@@ -629,13 +629,13 @@ describe("getApiKeyForModelCore", () => {
         const cfg: OpenClawConfig = {
           ...buildDemoLocalProviderCfg("DEMO_LOCAL_API_KEY"),
           agents: {
-            list: [
-              {
-                id: "configured",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "configured" } },
+            entries: {
+              configured: {
                 agentDir: state.agentDir("configured"),
               },
-            ],
+            },
           },
         };
 
@@ -662,13 +662,13 @@ describe("getApiKeyForModelCore", () => {
         const configuredAgentDir = state.agentDir("configured");
         const cfg: OpenClawConfig = {
           agents: {
-            list: [
-              {
-                id: "configured",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "configured" } },
+            entries: {
+              configured: {
                 agentDir: configuredAgentDir,
               },
-            ],
+            },
           },
         };
 

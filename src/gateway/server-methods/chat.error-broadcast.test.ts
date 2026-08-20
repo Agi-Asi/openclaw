@@ -21,7 +21,13 @@ function createMockContext() {
     chatRunState: createChatRunState(),
     agentRunSeq,
     dedupe,
-    getRuntimeConfig: () => ({ agents: { list: [{ id: "main", default: true }] } }),
+    getRuntimeConfig: () => ({
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    }),
     logGateway: { warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
     addChatRun: vi.fn(),
     removeChatRun: vi.fn(),

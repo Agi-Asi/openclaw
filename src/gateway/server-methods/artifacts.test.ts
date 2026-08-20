@@ -82,15 +82,21 @@ function createResponder() {
 type ArtifactMethod = "artifacts.list" | "artifacts.get" | "artifacts.download";
 type ArtifactResponderCalls = ReturnType<typeof createResponder>["calls"];
 
+function agentRoster(agentIds: string[], systemAgentId?: string) {
+  return {
+    ownership: "explicit" as const,
+    entries: Object.fromEntries(agentIds.map((agentId) => [agentId, {}])),
+    ...(systemAgentId ? { defaults: { systemAgent: { agentId: systemAgentId } } } : {}),
+  };
+}
+
 async function invokeArtifactHandler(
   method: ArtifactMethod,
   params: Record<string, unknown>,
   options: { id?: string; context?: unknown } = {},
 ) {
   const responder = createResponder();
-  const defaultContext = {
-    getRuntimeConfig: () => ({ agents: { entries: { main: { default: true } } } }),
-  };
+  const defaultContext = runtimeContext({ agents: agentRoster(["main"], "main") });
   await artifactsHandlers[method]?.({
     req: { type: "req", id: options.id ?? method, method, params: {} },
     params,
@@ -213,7 +219,7 @@ describe("artifacts RPC handlers", () => {
         id: "session-alias-main-key",
         context: runtimeContext({
           session: { mainKey: "primary" },
-          agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+          agents: agentRoster(["main", "work"], "main"),
         }),
       },
     );
@@ -252,7 +258,7 @@ describe("artifacts RPC handlers", () => {
         id: "global-run-agent-scope",
         context: runtimeContext({
           session: { scope: "global" },
-          agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+          agents: agentRoster(["main", "work"], "main"),
         }),
       },
     );
@@ -271,12 +277,7 @@ describe("artifacts RPC handlers", () => {
     const { calls } = await listArtifacts(
       { runId: "run-owned" },
       {
-        context: runtimeContext({
-          agents: {
-            ownership: "explicit",
-            list: [{ id: "ops" }, { id: "research" }],
-          },
-        }),
+        context: runtimeContext({ agents: agentRoster(["ops", "research"]) }),
       },
     );
 
@@ -296,12 +297,7 @@ describe("artifacts RPC handlers", () => {
     const { calls } = await listArtifacts(
       { runId: "run-ambiguous" },
       {
-        context: runtimeContext({
-          agents: {
-            ownership: "explicit",
-            list: [{ id: "ops" }, { id: "research" }],
-          },
-        }),
+        context: runtimeContext({ agents: agentRoster(["ops", "research"]) }),
       },
     );
 
@@ -325,7 +321,7 @@ describe("artifacts RPC handlers", () => {
         id: "global-task-agent-scope",
         context: runtimeContext({
           session: { scope: "global" },
-          agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+          agents: agentRoster(["main", "work"], "main"),
         }),
       },
     );
@@ -345,10 +341,7 @@ describe("artifacts RPC handlers", () => {
       {
         context: runtimeContext({
           session: { scope: "global" },
-          agents: {
-            ownership: "explicit",
-            list: [{ id: "ops" }, { id: "work" }],
-          },
+          agents: agentRoster(["ops", "work"]),
         }),
       },
     );
@@ -366,12 +359,7 @@ describe("artifacts RPC handlers", () => {
     const { calls } = await listArtifacts(
       { taskId: "task-keyless" },
       {
-        context: runtimeContext({
-          agents: {
-            ownership: "explicit",
-            list: [{ id: "ops" }, { id: "research" }],
-          },
-        }),
+        context: runtimeContext({ agents: agentRoster(["ops", "research"]) }),
       },
     );
 
@@ -806,7 +794,7 @@ describe("artifacts RPC handlers", () => {
         id: "task-cross-agent-global-requester",
         context: runtimeContext({
           session: { scope: "global" },
-          agents: { list: [{ id: "main", default: true }, { id: "worker" }] },
+          agents: agentRoster(["main", "worker"], "main"),
         }),
       },
     );
@@ -857,9 +845,7 @@ describe("artifacts RPC handlers", () => {
       { taskId: "task-1", agentId: "work" },
       {
         id: "task-legacy-default-agent",
-        context: runtimeContext({
-          agents: { list: [{ id: "work", default: true }] },
-        }),
+        context: runtimeContext({ agents: agentRoster(["work"], "work") }),
       },
     );
 

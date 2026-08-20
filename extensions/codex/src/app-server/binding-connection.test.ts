@@ -133,7 +133,11 @@ describe("Codex binding app-server connection", () => {
   it("preserves an explicit supervised WebSocket endpoint while selecting native auth", () => {
     const agentDir = path.join(os.tmpdir(), "openclaw-websocket-agent");
     const config = {
-      agents: { list: [{ id: "main", agentDir, default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
+      },
     } as OpenClawConfig;
     const pluginConfig = {
       supervision: { enabled: true },

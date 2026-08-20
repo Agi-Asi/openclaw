@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   resolveAgentConfig,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "openclaw/plugin-sdk/agent-runtime";
 import type { MigrationProviderContext } from "openclaw/plugin-sdk/plugin-entry";
 import { resolveHomePath } from "./helpers.js";
@@ -15,7 +15,7 @@ type CodexMigrationTargets = {
 
 export function resolveCodexMigrationTargets(ctx: MigrationProviderContext): CodexMigrationTargets {
   const cfg = ctx.config;
-  const agentId = ctx.targetAgentId ?? resolveDefaultAgentId(cfg);
+  const agentId = ctx.targetAgentId ?? resolveSoleAgentId(cfg);
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
   const configuredAgentDir = resolveAgentConfig(cfg, agentId)?.agentDir?.trim();
   const agentDir =

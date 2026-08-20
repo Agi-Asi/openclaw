@@ -1741,8 +1741,9 @@ describe("runReplyAgent pending final delivery capture", () => {
   it("delivers an authenticated channel reply through the configured default agent", async () => {
     const config = {
       agents: {
-        list: [{ id: "ops", default: true }, { id: "worker" }],
-        defaults: { compaction: { memoryFlush: {} } },
+        ownership: "explicit" as const,
+        entries: { ops: {}, worker: {} },
+        defaults: { compaction: { memoryFlush: {} }, systemAgent: { agentId: "ops" } },
       },
     };
     const sessionEntry = makeSessionEntry();

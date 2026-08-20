@@ -211,11 +211,13 @@ describe("memory dreaming host helpers", () => {
   it("dedupes shared workspaces across all configured agents", () => {
     const cfg = {
       agents: {
-        list: [
-          { id: "alpha", default: true, workspace: "/workspace/shared" },
-          { id: "beta", workspace: "/workspace/beta" },
-          { id: "gamma", workspace: "/workspace/shared" },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "alpha" } },
+        entries: {
+          alpha: { workspace: "/workspace/shared" },
+          beta: { workspace: "/workspace/beta" },
+          gamma: { workspace: "/workspace/shared" },
+        },
       },
     } as OpenClawConfig;
 
@@ -257,10 +259,12 @@ describe("memory dreaming host helpers", () => {
   it("includes the runtime primary workspace alongside configured subagent workspaces", () => {
     const cfg = {
       agents: {
-        list: [
-          { id: "agi-ceo", default: true, workspace: "/workspace/agi-ceo" },
-          { id: "agi-cdo", workspace: "/workspace/agi-cdo" },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "agi-ceo" } },
+        entries: {
+          "agi-ceo": { workspace: "/workspace/agi-ceo" },
+          "agi-cdo": { workspace: "/workspace/agi-cdo" },
+        },
       },
     } as OpenClawConfig;
 
@@ -288,10 +292,12 @@ describe("memory dreaming host helpers", () => {
   it("uses default agent fallback and timezone-aware day helpers", () => {
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: "/workspace",
+          systemAgent: { agentId: "main" },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } as OpenClawConfig;
 

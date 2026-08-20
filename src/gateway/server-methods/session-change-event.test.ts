@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
@@ -134,13 +133,14 @@ describe("sessions.changed coalescing", () => {
     expect(mocks.loadRow).toHaveBeenCalledTimes(2);
   });
 
-  it("does not adopt the compatibility owner's ownerless run for another agent", () => {
-    const config = retainLegacyDefaultAgentId(
-      {
-        agents: { ownership: "explicit", entries: { ops: {}, research: {} } },
+  it("does not adopt the ambient owner's ownerless run for another agent", () => {
+    const config: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        entries: { ops: {}, research: {} },
+        defaults: { systemAgent: { agentId: "ops" } },
       },
-      "ops",
-    );
+    };
     const sessionId = "agent:research:shared-session-id";
     const context = createContext(
       new Set(["conn-1"]),

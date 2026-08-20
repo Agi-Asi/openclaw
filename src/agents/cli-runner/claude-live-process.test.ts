@@ -98,9 +98,11 @@ describe("Claude live configured exec policy", () => {
       config: {
         tools: { exec: { security: "full", ask: "off" } },
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
           entries: {
             main: {},
-            ops: { default: true, tools: { exec: { security: "deny", ask: "always" } } },
+            ops: { tools: { exec: { security: "deny", ask: "always" } } },
           },
         },
       } as unknown as PreparedCliRunContext["params"]["config"],

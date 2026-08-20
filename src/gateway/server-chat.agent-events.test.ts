@@ -4,7 +4,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveDefaultAgentId } from "../agents/agent-scope-config.js";
+import { resolveSoleAgentId } from "../agents/agent-scope-config.js";
 import {
   INTERNAL_RUNTIME_CONTEXT_BEGIN,
   INTERNAL_RUNTIME_CONTEXT_END,
@@ -3702,7 +3702,11 @@ describe("agent event handler", () => {
 
   it("keeps selected-agent global chat events scoped to the linked agent", () => {
     vi.mocked(getRuntimeConfig).mockReturnValue({
-      agents: { list: [{ id: "main" }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
     });
     const { broadcast, nodeSendToSession, chatRunState, handler } = createHarness();
     registerChatRun(chatRunState, "run-global-work", "global", "client-global-work", {
@@ -3797,7 +3801,11 @@ describe("agent event handler", () => {
 
   it("routes hidden bare global chat events to the configured default agent subscriber", () => {
     vi.mocked(getRuntimeConfig).mockReturnValue({
-      agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { main: {}, ops: {} },
+      },
     });
     const { broadcastToConnIds, chatRunState, handler, sessionMessageSubscribers } =
       createHarness();
@@ -4262,13 +4270,17 @@ describe("agent event handler", () => {
     async (stream, data) => {
       const hidden = stream !== "lifecycle";
       const config = {
-        agents: { ownership: "explicit" as const, list: [{ id: "main" }, { id: "work" }] },
+        agents: {
+          ownership: "explicit" as const,
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
       };
       vi.mocked(getRuntimeConfig).mockReturnValue(config);
       const runId = `run-owned-${stream}`;
       const resolveSessionKeyForRun = vi.fn(
         (_runId: string, options?: { agentId?: string }) =>
-          `agent:${options?.agentId ?? resolveDefaultAgentId(config)}:shared`,
+          `agent:${options?.agentId ?? resolveSoleAgentId(config)}:shared`,
       );
       const {
         agentRunSeq,

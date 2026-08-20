@@ -8,7 +8,6 @@ import { formatCliCommand } from "../cli/command-format.js";
 import { formatPortRangeHint } from "../cli/error-format.js";
 import { parsePort } from "../cli/shared/parse-port.js";
 import { readConfigFileSnapshotForWrite, resolveGatewayPort } from "../config/config.js";
-import { inheritLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { logConfigUpdated } from "../config/logging.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createChannelSetupTransaction } from "../flows/channel-setup.js";
@@ -617,7 +616,7 @@ export async function runConfigureWizard(
     const resolveSetupTarget = () =>
       nextConfig.agents?.ownership === "explicit"
         ? resolveSystemAgentOnboardingTarget(nextConfig)
-        : resolveOnboardingAgentTarget(inheritLegacyDefaultAgentId(baseConfig, nextConfig));
+        : resolveOnboardingAgentTarget(nextConfig);
     let workspaceDir = resolveSetupTarget().workspaceDir;
     let gatewayPort = resolveGatewayPort(baseConfig);
     let didPersistConfig = false;

@@ -328,7 +328,13 @@ describe("realtime voice agent consult runtime", () => {
     const { runtime, runEmbeddedAgent, sessionStore } = createAgentRuntime();
 
     const result = await consultRealtimeVoiceAgent({
-      cfg: { agents: { list: [{ id: "operator", default: true }] } } as never,
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "operator" } },
+          entries: { operator: {} },
+        },
+      } as never,
       agentRuntime: runtime as never,
       logger: { warn: vi.fn() },
       sessionKey: "voice:15550001234",
@@ -541,7 +547,13 @@ describe("realtime voice agent consult runtime", () => {
     const { runtime, runEmbeddedAgent } = createAgentRuntime();
 
     await consultRealtimeVoiceAgent({
-      cfg: { agents: { list: [{ id: "operator", default: true }] } } as never,
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "operator" } },
+          entries: { operator: {} },
+        },
+      } as never,
       agentRuntime: runtime as never,
       logger: { warn: vi.fn() },
       agentId: "voice",

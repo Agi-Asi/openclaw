@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import { GATEWAY_HEALTH_RATE_LIMITED_MESSAGE } from "../commands/gateway-health-auth-diagnostic.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { setPluginToolMeta } from "../plugins/tools.js";
 
 const mocks = vi.hoisted(() => ({
@@ -357,10 +358,12 @@ describe("doctor runtime tool schema checks", () => {
     await expect(
       collectRuntimeToolSchemaFindings({
         agents: {
-          list: [
-            { id: "main", default: true, workspace: "/tmp/shared-workspace" },
-            { id: "worker", workspace: "/tmp/shared-workspace" },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { workspace: "/tmp/shared-workspace" },
+            worker: { workspace: "/tmp/shared-workspace" },
+          },
         },
       }),
     ).resolves.toContainEqual({
@@ -419,14 +422,15 @@ describe("doctor runtime tool schema checks", () => {
     await expect(
       collectRuntimeToolSchemaFindings({
         agents: {
-          list: [
-            { id: "main", default: true, workspace: "/tmp/main-workspace" },
-            {
-              id: "acp-worker",
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { workspace: "/tmp/main-workspace" },
+            "acp-worker": {
               workspace: "/tmp/acp-workspace",
               runtime: { type: "acp" },
             },
-          ],
+          },
         },
       }),
     ).resolves.toEqual([]);
@@ -459,10 +463,12 @@ describe("doctor runtime tool schema checks", () => {
     await expect(
       collectRuntimeToolSchemaFindings({
         agents: {
-          list: [
-            { id: "main", default: true, workspace: "/tmp/main-workspace" },
-            { id: "worker", workspace: "/tmp/worker-workspace" },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { workspace: "/tmp/main-workspace" },
+            worker: { workspace: "/tmp/worker-workspace" },
+          },
         },
       }),
     ).resolves.toContainEqual({
@@ -723,7 +729,13 @@ describe("doctor provider catalog projection checks", () => {
   });
 
   it("loads full provider registrations without selecting a default workspace", async () => {
-    const cfg = { agents: { list: [{ id: "alpha", default: true }, { id: "beta" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "alpha" } },
+        entries: { alpha: {}, beta: {} },
+      },
+    } satisfies OpenClawConfig;
     await collectProviderCatalogProjectionFindings(cfg);
 
     expect(mocks.resolvePluginProvidersCore).toHaveBeenCalledWith(

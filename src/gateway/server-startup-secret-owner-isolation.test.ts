@@ -147,8 +147,9 @@ describe("Gateway startup SecretRef owner isolation", () => {
       await writeConfig({
         ...baseConfig(),
         agents: {
+          ownership: "explicit",
           defaults: { systemAgent: { agentId: "ops" } },
-          entries: { main: { default: true }, ops: {} },
+          entries: { main: {}, ops: {} },
         },
         session: { scope: "global" },
         secrets: { providers: { default: { source: "env" } } },
@@ -244,7 +245,9 @@ describe("Gateway startup SecretRef owner isolation", () => {
             },
           },
           agents: {
+            ownership: "explicit",
             defaults: {
+              systemAgent: { agentId: "main" },
               sandbox: {
                 mode: "all",
                 backend: "ssh",
@@ -260,7 +263,6 @@ describe("Gateway startup SecretRef owner isolation", () => {
             },
             entries: {
               main: {
-                default: true,
                 sandbox: {
                   ssh: {
                     identityData: {

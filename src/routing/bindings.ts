@@ -1,6 +1,6 @@
 import { expectDefined } from "@openclaw/normalization-core";
 // Routing binding helpers resolve configured channel and agent route bindings.
-import { tryResolveLegacyCompatibilityAgentId } from "../agents/agent-scope.js";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope.js";
 import { listRouteBindings } from "../config/bindings.js";
 import type { AgentRouteBinding } from "../config/types.agents.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -40,7 +40,7 @@ export function resolveDefaultAgentBoundAccountId(
   if (!normalizedChannel) {
     return null;
   }
-  const soleAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const soleAgentId = tryResolveAmbientOwnerAgentId(cfg);
   if (!soleAgentId) {
     return null;
   }

@@ -29,7 +29,7 @@ import {
   resolveAgentDir,
   resolveAgentEffectiveModelPrimary,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "./agent-scope.js";
 import { ensureAuthProfileStore } from "./auth-profiles/store.js";
 import { DEFAULT_PROVIDER } from "./defaults.js";
@@ -473,7 +473,7 @@ async function withPreparedSimpleCompletionRuntime<T>(
   run: (context: PreparedSimpleCompletionResolverContext) => Promise<T>,
 ): Promise<T> {
   const config = params.cfg ?? {};
-  const agentId = params.agentId ?? resolveDefaultAgentId(config);
+  const agentId = params.agentId ?? resolveSoleAgentId(config);
   const agentDir = params.agentDir?.trim() || resolveAgentDir(config, agentId);
   const requestedWorkspaceDir =
     params.workspaceDir ??

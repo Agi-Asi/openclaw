@@ -7,10 +7,10 @@ import {
   resolveExpiresAtMsFromDurationMs,
 } from "@openclaw/normalization-core/number-coercion";
 import type { OperationalRunInstanceRef } from "../agents/admitted-run-context.js";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope.js";
 import { createAgentRunRestartAbortError } from "../agents/run-termination.js";
 import { readToolValidationErrorSummary } from "../agents/tool-error-summary.js";
 import { isAbortRequestText } from "../auto-reply/reply/abort-primitives.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   emitAgentEvent,
@@ -735,7 +735,7 @@ export function abortChatRunsForProvider(
   if (!providerId) {
     return { runIds: [] };
   }
-  const compatibilityOwnerAgentId = agentId && tryResolveLegacyCompatibilityAgentId(params.cfg);
+  const compatibilityOwnerAgentId = agentId && tryResolveAmbientOwnerAgentId(params.cfg);
   const matches = [...ops.chatAbortControllers.entries()].filter(([, entry]) => {
     if (
       normalizeProviderIdForActiveRun(entry.authProviderId) !== providerId &&

@@ -109,8 +109,10 @@ async function writeLiveGatewayConfig(params: {
     commands: { ownerAllowFrom: ["*"] },
     plugins: { allow: ["codex"] },
     agents: {
-      entries: { dev: { default: true, tools: { exec: { host: "node" } } } },
+      ownership: "explicit",
+      entries: { dev: { tools: { exec: { host: "node" } } } },
       defaults: {
+        systemAgent: { agentId: "dev" },
         workspace: params.workspace,
         skipBootstrap: true,
         model: { primary: params.modelKey },

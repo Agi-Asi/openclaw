@@ -309,7 +309,7 @@ vi.mock("./command-secret-targets.js", () => ({
 }));
 
 vi.mock("../agents/agent-scope.js", () => ({
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
   resolveAgentDir: mocks.resolveAgentDir,
   resolveAgentConfig: () => ({}),
   resolveAgentEffectiveModelPrimary: (

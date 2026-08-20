@@ -649,7 +649,9 @@ describe("sessions_send agent targeting", () => {
           },
         },
         agents: {
-          list: [{ id: "main", default: true }, { id: "orion" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, orion: {} },
         },
       };
 
@@ -785,11 +787,13 @@ describe("sessions_send direct-message requester routing", () => {
           agentToAgent: { enabled: true },
         },
         agents: {
-          list: [
-            { id: "main", default: true },
-            { id: targetAgentId },
-            ...(bindingAgentId ? [{ id: bindingAgentId }] : []),
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: {},
+            [targetAgentId]: {},
+            ...(bindingAgentId ? { [bindingAgentId]: {} } : {}),
+          },
         },
       };
 

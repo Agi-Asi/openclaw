@@ -3,10 +3,9 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { listAgentEntries } from "../agents/agent-scope-config.js";
-import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, tryResolveAmbientOwnerAgentId } from "../agents/agent-scope.js";
 import { resolveAgentIdentity } from "../agents/identity.js";
 import { loadAgentIdentity } from "../commands/agents.config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import {
@@ -107,7 +106,7 @@ export function resolveAssistantIdentity(params: {
   agentId?: string | null;
   workspaceDir?: string | null;
 }): ResolvedAssistantIdentity {
-  const compatibilityAgentId = tryResolveLegacyCompatibilityAgentId(params.cfg);
+  const compatibilityAgentId = tryResolveAmbientOwnerAgentId(params.cfg);
   const presentationAgentId =
     params.agentId ?? compatibilityAgentId ?? listAgentEntries(params.cfg)[0]?.id ?? "main";
   const agentId = normalizeAgentId(presentationAgentId);

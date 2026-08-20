@@ -66,21 +66,22 @@ const WORKSPACE = `${WORKSPACE_BASE}/runtime-agent`;
 
 const config = {
   agents: {
+    ownership: "explicit",
     defaults: {
+      systemAgent: { agentId: "main" },
       model: { primary: `${PROVIDER}/${MODEL}` },
       models: { [`${PROVIDER}/${MODEL}`]: {} },
       workspace: WORKSPACE_BASE,
     },
-    list: [
-      { id: "main", default: true },
-      {
-        id: "runtime-agent",
+    entries: {
+      main: {},
+      "runtime-agent": {
         models: {
           [`${PROVIDER}/${MODEL}`]: { alias: ALIAS, agentRuntime: { id: "openclaw" } },
         },
         params: { temperature: 0.1 },
       },
-    ],
+    },
   },
 } satisfies OpenClawConfig;
 const sessionEntry: SessionEntry = {

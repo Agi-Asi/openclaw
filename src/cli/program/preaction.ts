@@ -195,32 +195,13 @@ export function registerPreActionHooks(program: Command, programVersion: string)
         });
     }
     const stateMigrationAgentId = getStateMigrationAgentId(actionCommand);
-    if (stateMigrationAgentId) {
-      const existingGuard = beforeStateMigrations;
-      beforeStateMigrations = async (snapshot) => {
-        if (snapshot) {
-          const { isValidAgentId, normalizeAgentId } =
-            await import("@openclaw/normalization-core/agent-id");
-          if (isValidAgentId(stateMigrationAgentId)) {
-            const [{ listAgentIds }, { retainLegacyDefaultAgentId }] = await Promise.all([
-              import("../../agents/agent-scope-config.js"),
-              import("../../config/legacy.default-agent-owner.js"),
-            ]);
-            const agentId = normalizeAgentId(stateMigrationAgentId);
-            if (listAgentIds(snapshot.sourceConfig).includes(agentId)) {
-              retainLegacyDefaultAgentId(snapshot.sourceConfig, agentId);
-            }
-          }
-        }
-        return (await existingGuard?.(snapshot)) ?? true;
-      };
-    }
     await ensureCliExecutionBootstrap({
       runtime: defaultRuntime,
       commandPath,
       startupPolicy,
       allowInvalid,
       ...(beforeStateMigrations ? { beforeStateMigrations } : {}),
+      ...(stateMigrationAgentId ? { stateMigrationAgentId } : {}),
       ...(skipPristineStartupStateMigrations ? { skipPristineStartupStateMigrations: true } : {}),
       ...(skipPristineCoreStateMigrations ? { skipPristineCoreStateMigrations: true } : {}),
     });

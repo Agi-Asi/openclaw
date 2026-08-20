@@ -197,7 +197,11 @@ describe("plugin host cleanup session stores", () => {
     const result = await runPluginHostCleanup({
       cfg: {
         session: { store: sharedStorePath },
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
       },
       registry: createEmptyPluginRegistry(),
       pluginId: "cleanup",

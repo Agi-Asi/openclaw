@@ -28,7 +28,11 @@ function evaluate(cfg: Record<string, unknown>, rules: PolicyRoutingRules = base
 describe("routing policy findings", () => {
   it("accepts a configured peer binding and emits redacted evidence", () => {
     const result = evaluate({
-      agents: { list: [{ id: "main", default: true }, { id: "private" }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {}, private: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       channels: { imessage: { enabled: false } },
       bindings: [
         {
@@ -51,7 +55,11 @@ describe("routing policy findings", () => {
 
   it("detects empty bindings and default-agent fallthrough", () => {
     const result = evaluate({
-      agents: { list: [{ id: "main", default: true }, { id: "private" }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {}, private: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       channels: { imessage: {} },
       bindings: [],
     });
@@ -65,7 +73,11 @@ describe("routing policy findings", () => {
 
   it("detects a retired binding channel even when another channel is configured", () => {
     const result = evaluate({
-      agents: { list: [{ id: "main", default: true }, { id: "private" }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {}, private: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       channels: { imessage: {} },
       bindings: [{ agentId: "private", match: { channel: "bluebubbles" } }],
     });
@@ -78,7 +90,11 @@ describe("routing policy findings", () => {
 
   it("does not count ACP bindings as channel route bindings", () => {
     const result = evaluate({
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       channels: { imessage: {} },
       bindings: [{ type: "acp", agentId: "main", match: { channel: "imessage" } }],
     });

@@ -9,7 +9,7 @@ import {
   parseHealthFindingSeverity,
   readConfigFileSnapshot,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   type HealthCheckContext,
   type HealthFinding,
 } from "openclaw/plugin-sdk/health";
@@ -295,7 +295,7 @@ function resolvePolicyCommandAgentId(
     }
     return agentId;
   }
-  return resolveDefaultAgentId(cfg, {
+  return resolveSoleAgentId(cfg, {
     surface,
     hint: "Pass --agent <id>.",
   });

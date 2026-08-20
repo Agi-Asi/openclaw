@@ -2302,12 +2302,9 @@ describe("legacy OpenAI auth profiles through the canonical migration owner", ()
     const state = await makeTestState();
     const cfg: OpenClawConfig = {
       agents: {
-        list: [
-          { id: "main", default: true },
-          { id: "failed" },
-          { id: "inherited" },
-          { id: "dedup" },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, failed: {}, inherited: {}, dedup: {} },
       },
     };
     const sharedCredential = {

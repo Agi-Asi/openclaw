@@ -377,7 +377,11 @@ describe("gateway agent handler", () => {
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {
         session: { mainKey: "work" },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
       },
       storePath: "/tmp/sessions.json",
       entry: {
@@ -679,7 +683,11 @@ describe("gateway agent handler", () => {
   it("resets the selected global agent session for bare /new without startup context", async () => {
     mocks.listAgentIds.mockReturnValue(["main", "work"]);
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mocks.performGatewaySessionReset.mockClear();
@@ -754,7 +762,11 @@ describe("gateway agent handler", () => {
     setupNewYorkTimeConfig("2026-01-29T01:30:00.000Z");
     mocks.listAgentIds.mockReturnValue(["main", "work"]);
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mocks.performGatewaySessionReset.mockClear();

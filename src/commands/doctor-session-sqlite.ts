@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { tryResolveDefaultAgentId } from "../agents/agent-scope.js";
+import { tryResolveAmbientOwnerAgentId, tryResolveSoleAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolveStateDir } from "../config/paths.js";
 import { parseSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import { resolveSessionFilePathCore } from "../config/sessions/paths.js";
@@ -227,9 +226,7 @@ function resolveDoctorSessionSqliteConfig(options: DoctorSessionSqliteOptions): 
     return options.cfg;
   }
   const requestedAgentId = normalizeAgentId(options.agent ?? LEGACY_IMPLICIT_AGENT_ID);
-  return options.store
-    ? { agents: { entries: { [requestedAgentId]: { default: true } } } }
-    : getRuntimeConfig();
+  return options.store ? { agents: { entries: { [requestedAgentId]: {} } } } : getRuntimeConfig();
 }
 
 function resolveDoctorSessionSqliteTargets(params: {
@@ -531,7 +528,7 @@ function isLegacySessionRecordOwnedByTarget(
     const ownerAgentId =
       parsed?.agentId ??
       cfg.agents?.defaults?.sessionStore?.agentId?.trim() ??
-      tryResolveLegacyCompatibilityAgentId(cfg);
+      tryResolveAmbientOwnerAgentId(cfg);
     return ownerAgentId
       ? normalizeAgentId(ownerAgentId) === normalizeAgentId(target.agentId)
       : false;
@@ -543,7 +540,7 @@ function isLegacySessionRecordOwnedByTarget(
   });
   return ownerAgentId
     ? ownerAgentId === target.agentId
-    : target.agentId === tryResolveDefaultAgentId(cfg);
+    : target.agentId === tryResolveSoleAgentId(cfg);
 }
 
 function shouldFilterLegacySessionRecordsByTarget(target: SessionStoreTarget): boolean {

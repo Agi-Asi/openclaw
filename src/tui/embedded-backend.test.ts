@@ -146,9 +146,7 @@ vi.mock("../config/sessions/session-accessor.js", () => ({
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentDir: (_cfg: unknown, agentId: string) => `/tmp/openclaw-agent-${agentId}/agent`,
   resolveAgentWorkspaceDir: (_cfg: unknown, agentId: string) => `/tmp/openclaw-agent-${agentId}`,
-  resolveDefaultAgentId: (cfg?: {
-    agents?: { list?: Array<{ id?: string; default?: boolean }> };
-  }) =>
+  resolveSoleAgentId: (cfg?: { agents?: { list?: Array<{ id?: string; default?: boolean }> } }) =>
     cfg?.agents?.list?.find((agent) => agent.default)?.id ?? cfg?.agents?.list?.[0]?.id ?? "main",
   resolveSessionAgentId: (params: { sessionKey?: string; agentId?: string }) =>
     params.agentId ?? /^agent:([^:]+):/.exec(params.sessionKey ?? "")?.[1] ?? "main",
@@ -3086,7 +3084,11 @@ describe("EmbeddedTuiBackend", () => {
   it("does not abort selected-global run ids across default-agent boundaries", async () => {
     const { EmbeddedTuiBackend } = await import("./embedded-backend.js");
     getRuntimeConfigMock.mockReturnValue({
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
     });
     const defaultRun = deferred<{
       payloads: Array<{ text: string }>;

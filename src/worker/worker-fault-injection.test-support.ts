@@ -209,7 +209,11 @@ export class ComposedGatewayHarness {
     const stateDir = path.join(root, "state");
     this.socketPath = path.join(root, "gateway.sock");
     this.cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: {
         mainKey: "main",
         store: path.join(root, "agents", "{agentId}", "sessions", "sessions.json"),

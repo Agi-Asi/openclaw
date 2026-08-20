@@ -97,14 +97,9 @@ async function withSingleRowCacheStore(
   await withStateDirEnv(statePrefix, async () => {
     const cfg: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: MAIN_AGENT_ID,
-            default: true,
-            workspace,
-          },
-        ],
-        defaults: { model: { primary: TEST_MODEL } },
+        ownership: "explicit",
+        entries: { [MAIN_AGENT_ID]: { workspace } },
+        defaults: { model: { primary: TEST_MODEL }, systemAgent: { agentId: MAIN_AGENT_ID } },
       },
     } as OpenClawConfig;
     setRuntimeConfigSnapshot(cfg, cfg);
@@ -310,14 +305,9 @@ describe("single gateway session row child-session cache", () => {
         };
         const cfg: OpenClawConfig = {
           agents: {
-            list: [
-              {
-                id: MAIN_AGENT_ID,
-                default: true,
-                workspace: "/tmp/openclaw-single-row-list-context",
-              },
-            ],
-            defaults: { model: { primary: TEST_MODEL } },
+            ownership: "explicit",
+            entries: { [MAIN_AGENT_ID]: { workspace: "/tmp/openclaw-single-row-list-context" } },
+            defaults: { model: { primary: TEST_MODEL }, systemAgent: { agentId: MAIN_AGENT_ID } },
           },
         } as OpenClawConfig;
 

@@ -162,8 +162,9 @@ describe("local onboarding state", () => {
       const database = { env: state.env };
       await state.writeConfig({
         agents: {
-          defaults: { workspace: state.workspaceDir },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: { workspace: state.workspaceDir, systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
         wizard: { securityAcknowledgedAt: SECURITY_ACKNOWLEDGED_AT },
       });
@@ -199,8 +200,9 @@ describe("local onboarding state", () => {
       const database = { env: state.env };
       await state.writeConfig({
         agents: {
-          defaults: { workspace: state.workspaceDir },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: { workspace: state.workspaceDir, systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
         wizard: { securityAcknowledgedAt: SECURITY_ACKNOWLEDGED_AT },
       });
@@ -257,8 +259,9 @@ describe("local onboarding state", () => {
       const database = { env: state.env };
       await state.writeConfig({
         agents: {
-          defaults: { workspace: state.workspaceDir },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: { workspace: state.workspaceDir, systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
         wizard: { securityAcknowledgedAt: SECURITY_ACKNOWLEDGED_AT },
       });

@@ -35,10 +35,10 @@ describe("ensureDevGatewayConfig integration", () => {
     );
 
     const config = JSON.parse(await readFile(configPath, "utf8")) as {
-      agents?: { entries?: Record<string, { default?: boolean; workspace?: string }> };
+      agents?: { entries?: Record<string, { workspace?: string }> };
     };
     expect(config.agents?.entries).toEqual({
-      dev: { default: true, workspace: `${workspace}-dev`, identity: expect.any(Object) },
+      dev: { workspace: `${workspace}-dev`, identity: expect.any(Object) },
     });
   });
 });

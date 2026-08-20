@@ -225,7 +225,11 @@ describe("memory-wiki cli", () => {
       config: { vault: { scope: "agent" } },
     });
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     };
     const program = new Command();
     program.name("test");
@@ -248,7 +252,11 @@ describe("memory-wiki cli", () => {
       },
     });
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     };
     const status = createGatewayStatus(config);
     const report: MemoryWikiDoctorReport = {

@@ -44,19 +44,20 @@ describe("resolveCodexCatalogCreateSession", () => {
   it("uses the requested agent's model allowlist", () => {
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           model: { primary: "openai/gpt-5.6-sol" },
           models: { "openai/gpt-5.6-sol": {} },
         },
-        list: [
-          { id: "main", default: true },
-          {
-            id: "research",
+        entries: {
+          main: {},
+          research: {
             model: { primary: "openai/gpt-5.6-terra" },
             models: { "openai/gpt-5.6-terra": {} },
             modelPolicy: { allow: ["openai/gpt-5.6-terra"] },
           },
-        ],
+        },
       },
     } satisfies OpenClawConfig;
 

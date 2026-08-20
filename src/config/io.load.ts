@@ -114,6 +114,7 @@ export function loadConfigFromContext(
       env: deps.env,
       pluginValidation: context.options.pluginValidation,
       loadPluginMetadataSnapshot: pluginMetadata.load,
+      retainedLegacyDefaultAgentId: rosterMigration.retainedLegacyDefaultAgentId,
       sourceRaw: snapshotParsed,
       preservedLegacyRootKeys: context.options.preservedLegacyRootKeys,
     });

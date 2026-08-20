@@ -4,7 +4,7 @@ import {
   resolveAgentConfig,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   resolveSessionAgentId,
   resolveAgentModelFallbacksOverride,
 } from "../agents/agent-scope.js";
@@ -337,7 +337,7 @@ export async function buildStatusReplyParts(
   } = params;
   const statusAgentId = sessionKey
     ? resolveSessionAgentId({ sessionKey, config: cfg })
-    : resolveDefaultAgentId(cfg);
+    : resolveSoleAgentId(cfg);
   const statusAgentDir = resolveAgentDir(cfg, statusAgentId);
   const statusWorkspaceDir =
     params.workspaceDir ??

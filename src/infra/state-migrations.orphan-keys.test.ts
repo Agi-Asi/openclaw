@@ -50,9 +50,20 @@ async function withStateFixture(
   });
 }
 
+function explicitAgentRoster(
+  systemAgentId: string,
+  agentIds: readonly string[] = [systemAgentId],
+): NonNullable<OpenClawConfig["agents"]> {
+  return {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: systemAgentId } },
+    entries: Object.fromEntries(agentIds.map((agentId) => [agentId, {}])),
+  };
+}
+
 const OPS_WORK_CONFIG = {
   session: { mainKey: "work" },
-  agents: { list: [{ id: "ops", default: true }] },
+  agents: explicitAgentRoster("ops"),
 } as OpenClawConfig;
 
 function opsSessionStorePath(stateDir: string): string {
@@ -62,7 +73,7 @@ function opsSessionStorePath(stateDir: string): string {
 function sharedMainOpsConfig(sharedStorePath: string): OpenClawConfig {
   return {
     session: { mainKey: "work", store: sharedStorePath },
-    agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+    agents: explicitAgentRoster("ops", ["main", "ops"]),
   } as OpenClawConfig;
 }
 
@@ -128,7 +139,7 @@ describe("migrateOrphanedSessionKeys", () => {
 
       const result = await migrateFixtureState(stateDir, {
         session: { store: "" },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
       } as OpenClawConfig);
 
       const store = readStore(storePath);
@@ -150,7 +161,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { store: storeTemplate },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
         plugins: {
           entries: {
             "voice-call": { config: { agentId: "voice" } },
@@ -188,7 +199,7 @@ describe("migrateOrphanedSessionKeys", () => {
       writeStore(targetStorePath, {});
       const cfg = {
         session: { store: configuredStorePath },
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: explicitAgentRoster("ops"),
       } as OpenClawConfig;
       const realStatSync = fs.statSync.bind(fs);
       const largeInodes = new Map([
@@ -258,7 +269,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { store: storeTemplate },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
         plugins: {
           entries: {
             "voice-call": { config: { agentId: "voice" } },
@@ -299,7 +310,7 @@ describe("migrateOrphanedSessionKeys", () => {
         });
         const cfg = {
           session: { store: storeTemplate, scope },
-          agents: { list: [{ id: "main", default: true }] },
+          agents: explicitAgentRoster("main"),
           plugins: {
             entries: {
               "voice-call": { config: { agentId: "voice" } },
@@ -331,7 +342,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { store: sharedStorePath, scope: "global" },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
         plugins: {
           entries: {
             "voice-call": { config: { agentId: "voice" } },
@@ -357,7 +368,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { mainKey: "work", store: sharedStorePath },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
         plugins: {
           entries: {
             "voice-call": { config: { agentId: "voice" } },
@@ -391,7 +402,7 @@ describe("migrateOrphanedSessionKeys", () => {
       fs.linkSync(standardStorePath, configuredStorePath);
       const cfg = {
         session: { store: configuredStorePath },
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: explicitAgentRoster("ops"),
         plugins: {
           entries: {
             "voice-call": { config: { agentId: "voice" } },
@@ -433,7 +444,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { store: configuredStorePath },
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: explicitAgentRoster("ops"),
       } as OpenClawConfig;
       const realStatSync = fs.statSync.bind(fs);
       const statSpy = vi.spyOn(fs, "statSync").mockImplementation((candidate) => {
@@ -479,7 +490,7 @@ describe("migrateOrphanedSessionKeys", () => {
       fs.symlinkSync(standardStorePath, configuredStorePath);
       const cfg = {
         session: { store: configuredStorePath },
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: explicitAgentRoster("ops"),
         plugins: {
           entries: {
             "voice-call": { config: { agentId: "voice" } },
@@ -560,7 +571,7 @@ describe("migrateOrphanedSessionKeys", () => {
       fs.linkSync(standardStorePath, configuredStorePath);
       const cfg = {
         session: { scope: "global", store: configuredStorePath },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
       } as OpenClawConfig;
 
       const result = await migrateFixtureState(stateDir, cfg);
@@ -586,7 +597,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { mainKey: "work", store: storePath },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
       } as OpenClawConfig;
 
       const result = await migrateFixtureState(stateDir, cfg);
@@ -783,7 +794,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { scope: "global", mainKey: "work", store: sharedStorePath },
-        agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+        agents: explicitAgentRoster("ops", ["main", "ops"]),
       } as OpenClawConfig;
 
       const result = await migrateFixtureState(stateDir, cfg);
@@ -806,7 +817,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { mainKey: "work", store: sharedStorePath },
-        agents: { list: [{ id: "ops", default: true }, { id: "research" }] },
+        agents: explicitAgentRoster("ops", ["ops", "research"]),
       } as OpenClawConfig;
 
       const result = await migrateFixtureState(stateDir, cfg);
@@ -829,7 +840,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { mainKey: "work", store: sharedStorePath },
-        agents: { list: [{ id: "ops", default: true }, { id: "research" }] },
+        agents: explicitAgentRoster("ops", ["ops", "research"]),
       } as OpenClawConfig;
 
       const result = await migrateFixtureState(stateDir, cfg);
@@ -852,7 +863,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { mainKey: "work", store: sharedStorePath },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
       } as OpenClawConfig;
 
       const result = await migrateFixtureState(stateDir, cfg);
@@ -979,7 +990,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { store: sharedStorePath },
-        agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
+        agents: explicitAgentRoster("main", ["main", "ops"]),
       } as OpenClawConfig;
 
       const first = await migrateFixtureState(stateDir, cfg);
@@ -1006,7 +1017,7 @@ describe("migrateOrphanedSessionKeys", () => {
       });
       const cfg = {
         session: { store: fixedStorePath },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: explicitAgentRoster("main"),
       } as OpenClawConfig;
 
       const first = await migrateFixtureState(stateDir, cfg);

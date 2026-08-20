@@ -2706,7 +2706,7 @@ src/config/io.write.ts	13
 src/config/issue-location.ts	2
 src/config/legacy-private-network-migration.ts	1
 src/config/legacy.default-agent-roles.ts	1
-src/config/legacy.roster.ts	15
+src/config/legacy.roster.ts	14
 src/config/legacy.ts	3
 src/config/markdown-tables.ts	3
 src/config/materialize.ts	2
@@ -2792,10 +2792,10 @@ src/config/sessions/types.ts	1
 src/config/state-dir-dotenv.ts	1
 src/config/talk.ts	1
 src/config/validation-channel-rules.ts	1
-src/config/validation-core.ts	3
+src/config/validation-core.ts	1
 src/config/validation-issues.ts	1
 src/config/validation-plugin-config.ts	2
-src/config/validation.ts	3
+src/config/validation.ts	2
 src/config/zod-schema.channel-messaging-common.ts	12
 src/config/zod-schema.channels-config.ts	3
 src/config/zod-schema.core.ts	1

@@ -7,7 +7,7 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   resolveSessionAgentIds,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "openclaw/plugin-sdk/agent-scope-runtime";
 import { getSessionBindingService } from "openclaw/plugin-sdk/conversation-binding-runtime";
 import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
@@ -1465,7 +1465,7 @@ function isDefaultAgentSessionKeyForAgent(params: {
   config: ResolvedCodexConversationConfig;
   agentId: string;
 }): boolean {
-  return normalizeAgentId(params.agentId) === tryResolveDefaultAgentId(params.config);
+  return normalizeAgentId(params.agentId) === tryResolveSoleAgentId(params.config);
 }
 
 function normalizeAgentIdOrDefault(value?: string | null): string | undefined {

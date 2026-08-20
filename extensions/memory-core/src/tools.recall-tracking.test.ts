@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../api.js";
 import { resetMemoryToolMockState, setMemorySearchImpl } from "./memory-tool-manager.test-mocks.js";
 import { createMemorySearchTool } from "./tools.js";
-import { asOpenClawConfig } from "./tools.test-helpers.js";
+import { asOpenClawConfig, createDefaultMemoryToolAgents } from "./tools.test-helpers.js";
 
 type RecordShortTermRecallsFn = (params: {
   workspaceDir?: string;
@@ -48,7 +48,7 @@ describe("memory_search recall tracking", () => {
 
     const tool = createSearchTool(
       asOpenClawConfig({
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         plugins: {
           entries: {
             "memory-core": {
@@ -111,10 +111,11 @@ describe("memory_search recall tracking", () => {
     const tool = createSearchTool(
       asOpenClawConfig({
         agents: {
+          ...createDefaultMemoryToolAgents(),
           defaults: {
+            systemAgent: { agentId: "main" },
             userTimezone: "America/Los_Angeles",
           },
-          list: [{ id: "main", default: true }],
         },
         plugins: {
           entries: {
@@ -152,7 +153,7 @@ describe("memory_search recall tracking", () => {
 
     const tool = createSearchTool(
       asOpenClawConfig({
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         plugins: {
           entries: {
             "memory-core": {

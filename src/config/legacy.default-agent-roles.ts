@@ -104,6 +104,10 @@ export function materializeLegacyDefaultAgentRoles(
   const defaults = isRecord(rawDefaults) ? rawDefaults : undefined;
   if (rawDefaults === undefined || defaults) {
     const soleFallback = normalizeAgentId(tryResolveSoleAgentId(cfg) ?? "main");
+    const systemAgent = isRecord(defaults?.systemAgent)
+      ? normalizeOptionalString(defaults.systemAgent.agentId)
+      : undefined;
+    const inheritedAuthFallback = systemAgent ? normalizeAgentId(systemAgent) : soleFallback;
     const unset = (key: string) =>
       defaults?.[key] === undefined ||
       (isRecord(defaults[key]) && !Object.hasOwn(defaults[key], "agentId"));
@@ -127,7 +131,7 @@ export function materializeLegacyDefaultAgentRoles(
     materialize("systemAgent", unset("systemAgent"));
     // Auth transitions are pinned or refused by the roster write guard; fixed-store rows need
     // their owner recorded immediately because a later restart loses the migration sidecar.
-    materialize("authInheritance", agentId !== soleFallback && unset("authInheritance"));
+    materialize("authInheritance", agentId !== inheritedAuthFallback && unset("authInheritance"));
     materialize(
       "sessionStore",
       options.materializeSessionStore !== false &&

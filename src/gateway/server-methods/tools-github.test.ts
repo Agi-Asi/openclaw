@@ -35,7 +35,7 @@ vi.mock("../../secrets/store/secret-store.js", () => ({
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   listAgentIds: vi.fn(() => ["main", "reviewer"]),
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
 }));
 
 const status = {

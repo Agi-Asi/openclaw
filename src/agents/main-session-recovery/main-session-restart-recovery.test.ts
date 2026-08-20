@@ -532,7 +532,11 @@ describe("main-session-restart-recovery", () => {
     });
 
     const cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const storePaths = await resolveRestartRecoveryStorePaths({ cfg, stateDir: tmpDir });
 
@@ -546,7 +550,11 @@ describe("main-session-restart-recovery", () => {
     await writeMainSession({ sessionsDir, sessionKey: "agent:old:main" });
 
     const cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { store: storePath },
     } as OpenClawConfig;
 
@@ -2998,7 +3006,11 @@ describe("main-session-restart-recovery", () => {
     const lateSessionsDir = path.join(tmpDir, "agents", "late", "sessions");
     const lateStorePath = path.join(lateSessionsDir, "sessions.json");
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "late" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, late: {} },
+      },
     } as OpenClawConfig;
     const discoverySpy = vi.spyOn(configSessions, "resolveAllAgentSessionStoreTargetsSync");
     const originalApply = sessionAccessor.applySessionEntryReplacements;
@@ -3160,7 +3172,11 @@ describe("main-session-restart-recovery", () => {
       { role: "toolResult", content: "done" },
     ]);
     let currentConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
 
     const recovery = scheduleRestartAbortedMainSessionRecovery({
@@ -3171,7 +3187,11 @@ describe("main-session-restart-recovery", () => {
     });
     await Promise.resolve();
     currentConfig = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
     } as OpenClawConfig;
     releaseStartup.resolve();
 
@@ -3810,7 +3830,13 @@ describe("main-session-restart-recovery", () => {
       .mockResolvedValueOnce({ runId: "run-resumed" });
 
     scheduleRestartAbortedMainSessionRecovery({
-      getConfig: () => ({ agents: { entries: { main: { default: true } } } }),
+      getConfig: () => ({
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      }),
       delayMs: 0,
       maxRetries: 1,
       stateDir: tmpDir,

@@ -236,12 +236,19 @@ function getWizardNoteCalls(note: WizardPrompter["note"]) {
   return (note as unknown as { mock: { calls: unknown[][] } }).mock.calls;
 }
 
+function mainAgentRoster(
+  defaults: NonNullable<OpenClawConfig["agents"]>["defaults"] = {},
+): NonNullable<OpenClawConfig["agents"]> {
+  return {
+    ownership: "explicit",
+    defaults: { ...defaults, systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  };
+}
+
 function modelConfigWithApiKey(apiKey: string): OpenClawConfig {
   return {
-    agents: {
-      defaults: { model: { primary: "openai/gpt-5.5" } },
-      entries: { main: { default: true } },
-    },
+    agents: mainAgentRoster({ model: { primary: "openai/gpt-5.5" } }),
     auth: {
       profiles: { "openai:default": { provider: "openai", mode: "api_key" } },
       order: { openai: ["openai:default"] },
@@ -657,7 +664,7 @@ describe("runSetupWizard", () => {
     readConfigFileSnapshot.mockImplementation(async () =>
       authoredConfig
         ? configSnapshot(authoredConfig)
-        : configSnapshot({}, false, { agents: { entries: { main: { default: true } } } }),
+        : configSnapshot({}, false, { agents: mainAgentRoster() }),
     );
     replaceConfigFile.mockReset();
     replaceConfigFile.mockImplementation(async (params) => {
@@ -789,7 +796,7 @@ describe("runSetupWizard", () => {
       resolved: {},
       sourceConfigBeforeMigrations: {},
       valid: true,
-      config: { agents: { entries: { main: { default: true } } } },
+      config: { agents: mainAgentRoster() },
       issues: [],
       warnings: [],
       legacyIssues: [],
@@ -1410,7 +1417,7 @@ describe("runSetupWizard", () => {
       valid: true,
       config: {
         wizard: { securityAcknowledgedAt: "2026-06-30T00:00:00.000Z" },
-        agents: { entries: { main: { default: true } } },
+        agents: mainAgentRoster(),
       },
       issues: [],
       warnings: [],
@@ -1728,15 +1735,10 @@ describe("runSetupWizard", () => {
       modelRef: "openai/gpt-5.6-sol",
     });
     const importedConfig = {
-      agents: {
-        defaults: { model: { primary: "openai/gpt-5.6-sol" } },
-        entries: { main: { default: true } },
-      },
+      agents: mainAgentRoster({ model: { primary: "openai/gpt-5.6-sol" } }),
     };
     readConfigFileSnapshot
-      .mockResolvedValueOnce(
-        configSnapshot({}, false, { agents: { entries: { main: { default: true } } } }),
-      )
+      .mockResolvedValueOnce(configSnapshot({}, false, { agents: mainAgentRoster() }))
       .mockResolvedValue(configSnapshot(importedConfig));
     const confirm = vi.fn(async () => true) as unknown as WizardPrompter["confirm"];
     const prompter = buildWizardPrompter({ confirm });
@@ -1773,15 +1775,10 @@ describe("runSetupWizard", () => {
       modelRef: "openai/gpt-5.6-sol",
     });
     const importedConfig = {
-      agents: {
-        defaults: { model: { primary: "anthropic/claude-sonnet-4-6" } },
-        entries: { main: { default: true } },
-      },
+      agents: mainAgentRoster({ model: { primary: "anthropic/claude-sonnet-4-6" } }),
     };
     readConfigFileSnapshot
-      .mockResolvedValueOnce(
-        configSnapshot({}, false, { agents: { entries: { main: { default: true } } } }),
-      )
+      .mockResolvedValueOnce(configSnapshot({}, false, { agents: mainAgentRoster() }))
       .mockResolvedValue(configSnapshot(importedConfig));
 
     await runSetupWizard(
@@ -1808,7 +1805,7 @@ describe("runSetupWizard", () => {
   it("keeps verification optional when provider setup supplies the post-import model", async () => {
     const workspaceDir = await makeCaseDir("provider-after-import-");
     readConfigFileSnapshot.mockResolvedValueOnce(
-      configSnapshot({}, false, { agents: { entries: { main: { default: true } } } }),
+      configSnapshot({}, false, { agents: mainAgentRoster() }),
     );
     applyAuthChoice.mockImplementation(async (args) => ({
       config: {
@@ -1858,14 +1855,12 @@ describe("runSetupWizard", () => {
     const requestedWorkspace = await makeCaseDir("imported-fleet-requested-");
     const importedConfig: OpenClawConfig = {
       agents: {
-        defaults: { workspace: currentWorkspace },
-        entries: { main: { default: true }, ops: {} },
+        ...mainAgentRoster({ workspace: currentWorkspace }),
+        entries: { main: {}, ops: {} },
       },
     };
     readConfigFileSnapshot
-      .mockResolvedValueOnce(
-        configSnapshot({}, false, { agents: { entries: { main: { default: true } } } }),
-      )
+      .mockResolvedValueOnce(configSnapshot({}, false, { agents: mainAgentRoster() }))
       .mockResolvedValue(configSnapshot(importedConfig));
     const confirm = vi.fn(async () => false) as unknown as WizardPrompter["confirm"];
 
@@ -1937,7 +1932,7 @@ describe("runSetupWizard", () => {
       sourceConfigBeforeMigrations: {},
       valid: true,
       config: {
-        agents: { entries: { main: { default: true } } },
+        agents: mainAgentRoster(),
         plugins: {
           installs: {
             demo: { source: "npm", spec: "@openclaw/demo-plugin" },
@@ -2088,14 +2083,7 @@ describe("runSetupWizard", () => {
       valid: true,
       config: {
         wizard: { securityAcknowledgedAt: "2026-06-30T00:00:00.000Z" },
-        agents: {
-          defaults: {
-            model: {
-              primary: "openai/gpt-5.5",
-            },
-          },
-          entries: { main: { default: true } },
-        },
+        agents: mainAgentRoster({ model: { primary: "openai/gpt-5.5" } }),
       },
       issues: [],
       warnings: [],
@@ -2164,8 +2152,8 @@ describe("runSetupWizard", () => {
       config: {
         wizard: { securityAcknowledgedAt: "2026-06-30T00:00:00.000Z" },
         agents: {
-          defaults: { workspace: currentWorkspace },
-          list: [{ id: "main", default: true }, { id: "ops" }],
+          ...mainAgentRoster({ workspace: currentWorkspace }),
+          entries: { main: {}, ops: {} },
         },
       },
       issues: [],
@@ -2598,10 +2586,11 @@ describe("runSetupWizard", () => {
       "demo-provider-plugin": { enabled: true },
     });
     const retryAgents = requireRecord(retryConfig.agents, "retry agents");
-    expect(retryAgents.entries).toEqual({ main: { default: true } });
-    expect(requireRecord(retryAgents.defaults, "retry defaults").workspace).toBe(
-      "/tmp/openclaw-workspace",
-    );
+    const retryDefaults = requireRecord(retryAgents.defaults, "retry defaults");
+    expect(retryAgents.ownership).toBe("explicit");
+    expect(retryAgents.entries).toEqual({ main: {} });
+    expect(retryDefaults.systemAgent).toEqual({ agentId: "main" });
+    expect(retryDefaults.workspace).toBe("/tmp/openclaw-workspace");
   });
 
   it("forwards provider-specific auth flags to applyAuthChoice opts", async () => {
@@ -2712,7 +2701,7 @@ describe("runSetupWizard", () => {
       sourceConfigBeforeMigrations: {},
       valid: true,
       config: {
-        agents: { entries: { main: { default: true } } },
+        agents: mainAgentRoster(),
         gateway: {},
       },
       issues: [],
@@ -2768,7 +2757,7 @@ describe("runSetupWizard", () => {
       sourceConfigBeforeMigrations: {},
       valid: true,
       config: {
-        agents: { entries: { main: { default: true } } },
+        agents: mainAgentRoster(),
         gateway: {
           auth: {
             mode: "password",
@@ -2932,7 +2921,7 @@ describe("runSetupWizard", () => {
     const runtime = createRuntime();
     readConfigFileSnapshot.mockResolvedValueOnce(
       configSnapshot({
-        agents: { entries: { main: { default: true } } },
+        agents: mainAgentRoster(),
         gateway: {
           port: 19111,
           bind: "loopback",

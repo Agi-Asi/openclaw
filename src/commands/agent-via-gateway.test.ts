@@ -12,7 +12,6 @@ import {
 } from "../audit/execution-identity-admission.js";
 import { recordAgentRunTerminalOutcome } from "../channels/turn/agent-run-terminal-outcome.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { acquireGatewayLock, type GatewayLockOptions } from "../infra/gateway-lock.js";
 import { loggingState } from "../logging/state.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -75,6 +74,7 @@ function mockConfig(storePath: string, overrides?: Partial<OpenClawConfig>) {
         ...overrides?.agents?.defaults,
       },
       ...(overrides?.agents?.ownership ? { ownership: overrides.agents.ownership } : {}),
+      ...(overrides?.agents?.entries ? { entries: overrides.agents.entries } : {}),
       ...(overrides?.agents?.list ? { list: overrides.agents.list } : {}),
     },
     session: {
@@ -579,7 +579,7 @@ describe("agentCliCommand", () => {
     }, remoteGatewayConfig);
   });
 
-  it("dispatches a bare retained-owner turn to the scoped main session", async () => {
+  it("dispatches a bare configured-owner turn to the scoped main session", async () => {
     await withTempStore(
       async () => {
         mockGatewaySuccessReply();
@@ -593,13 +593,17 @@ describe("agentCliCommand", () => {
         });
       },
       {
-        agents: { list: [{ id: "ops", default: true }, { id: "research" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, research: {} },
+        },
         session: { mainKey: "work", scope: "per-sender" },
       },
     );
   });
 
-  it("dispatches a bare retained-owner turn to the local gateway global session", async () => {
+  it("dispatches a bare configured-owner turn to the local gateway global session", async () => {
     await withTempStore(
       async () => {
         mockGatewaySuccessReply();
@@ -613,7 +617,11 @@ describe("agentCliCommand", () => {
         });
       },
       {
-        agents: { list: [{ id: "ops", default: true }, { id: "research" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, research: {} },
+        },
         session: { scope: "global" },
       },
     );
@@ -643,20 +651,20 @@ describe("agentCliCommand", () => {
     );
   });
 
-  it("dispatches a retained-owner global session through --local", async () => {
+  it("dispatches a configured-owner global session through --local", async () => {
     await withTempStore(
       async () => {
-        const cfg = retainLegacyDefaultAgentId(
-          {
-            ...loadRuntimeConfig(),
-            agents: {
-              ...loadRuntimeConfig().agents,
-              ownership: "explicit",
-              list: [{ id: "ops" }, { id: "research" }],
+        const cfg = {
+          ...loadRuntimeConfig(),
+          agents: {
+            ownership: "explicit" as const,
+            defaults: {
+              ...loadRuntimeConfig().agents?.defaults,
+              systemAgent: { agentId: "ops" },
             },
+            entries: { ops: {}, research: {} },
           },
-          "ops",
-        );
+        };
         loadRuntimeConfig.mockReturnValue(cfg);
         mockLocalAgentReply();
 
@@ -679,18 +687,18 @@ describe("agentCliCommand", () => {
     await withTempStore(
       async () => {
         vi.stubEnv("OPENCLAW_GATEWAY_URL", "wss://gateway.example.test");
-        const cfg = retainLegacyDefaultAgentId(
-          {
-            ...loadRuntimeConfig(),
-            gateway: { mode: "remote" },
-            agents: {
-              ...loadRuntimeConfig().agents,
-              ownership: "explicit",
-              list: [{ id: "ops" }, { id: "research" }],
+        const cfg = {
+          ...loadRuntimeConfig(),
+          gateway: { mode: "remote" as const },
+          agents: {
+            ownership: "explicit" as const,
+            defaults: {
+              ...loadRuntimeConfig().agents?.defaults,
+              systemAgent: { agentId: "ops" },
             },
+            entries: { ops: {}, research: {} },
           },
-          "ops",
-        );
+        };
         loadRuntimeConfig.mockReturnValue(cfg);
         mockLocalAgentReply();
 
@@ -1218,7 +1226,13 @@ describe("agentCliCommand", () => {
         expect(params.agentId).toBeUndefined();
         expect(params.sessionKey).toBe("agent:ops:incident-42");
       },
-      { agents: { list: [{ id: "ops", default: true }, { id: "main" }] } },
+      {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, main: {} },
+        },
+      },
     );
   });
 
@@ -1291,7 +1305,13 @@ describe("agentCliCommand", () => {
         expect(params.agentId).toBeUndefined();
         expect(params.sessionKey).toBe("global");
       },
-      { agents: { list: [{ id: "ops", default: true }, { id: "main" }] } },
+      {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, main: {} },
+        },
+      },
     );
   });
 
@@ -1335,7 +1355,13 @@ describe("agentCliCommand", () => {
         expect(params.agentId).toBeUndefined();
         expect(params.sessionKey).toBe("unknown");
       },
-      { agents: { list: [{ id: "ops", default: true }, { id: "main" }] } },
+      {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, main: {} },
+        },
+      },
     );
   });
 

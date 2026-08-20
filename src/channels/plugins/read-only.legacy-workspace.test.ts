@@ -1,6 +1,5 @@
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
 import type { PluginManifestRecord } from "../../plugins/manifest-registry.js";
 import { clearPluginMetadataLifecycleCaches } from "../../plugins/plugin-metadata-lifecycle.js";
 import { resetPluginRuntimeStateForTest } from "../../plugins/runtime.js";
@@ -24,34 +23,7 @@ afterEach(() => {
   resetPluginRuntimeStateForTest();
 });
 
-describe("read-only channel plugin legacy workspace discovery", () => {
-  it("scans the retained compatibility owner's explicit workspace", () => {
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        agents: {
-          ownership: "explicit",
-          entries: {
-            research: {},
-            ops: { workspace: "/srv/ops" },
-          },
-        },
-      },
-      "ops",
-    );
-
-    resolveReadOnlyChannelPluginsForConfig(cfg, {
-      env: { ...process.env },
-      includePersistedAuthState: false,
-    });
-
-    expect(mocks.resolvePluginMetadataSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        config: cfg,
-        workspaceDir: path.resolve("/srv/ops"),
-      }),
-    );
-  });
-
+describe("read-only channel plugin workspace discovery", () => {
   it("discovers plugins from every explicit agent workspace", () => {
     const researchPlugin = {
       id: "research-chat-plugin",

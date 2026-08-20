@@ -110,7 +110,9 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -203,7 +205,9 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -245,7 +249,9 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -326,10 +332,12 @@ describe("syncMemoryWikiBridgeSources", () => {
     const marketingConfig = { ...unresolvedMarketingConfig, agentId: "marketing" };
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [
-          { id: "support", default: true, workspace: supportWorkspace },
-          { id: "marketing", workspace: marketingWorkspace },
-        ],
+        ownership: "explicit",
+        entries: {
+          support: { workspace: supportWorkspace },
+          marketing: { workspace: marketingWorkspace },
+        },
+        defaults: { systemAgent: { agentId: "support" } },
       },
     };
 
@@ -404,7 +412,9 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -462,7 +472,9 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -514,7 +526,9 @@ describe("syncMemoryWikiBridgeSources", () => {
     ]);
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -578,7 +592,9 @@ describe("syncMemoryWikiBridgeSources", () => {
     ]);
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
     const first = await syncMemoryWikiBridgeSources({ config, appConfig });
@@ -627,7 +643,9 @@ describe("syncMemoryWikiBridgeSources", () => {
     ]);
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
     const first = await syncMemoryWikiBridgeSources({ config, appConfig });
@@ -697,7 +715,9 @@ describe("syncMemoryWikiBridgeSources", () => {
     ]);
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
     const first = await syncMemoryWikiBridgeSources({ config, appConfig });
@@ -747,7 +767,9 @@ describe("syncMemoryWikiBridgeSources", () => {
 
     const appConfig: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        entries: { main: { workspace: workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 

@@ -18,7 +18,11 @@ describe("doctor state integrity ordering", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions.json");
       const storePath = storeTemplate.replace("{agentId}", "main");
       const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
         session: { store: storeTemplate },
       } as OpenClawConfig;
       for (const suffix of ["zeta", "alpha", "middle", "beta"]) {

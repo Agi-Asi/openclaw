@@ -523,7 +523,9 @@ describe("config model validation", () => {
     const resolveModelRef = vi.fn(async (_params: ResolverInput) => undefined);
     const config: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           model: {
             primary: "provider-b/main",
             fallbacks: ["backup", "provider-a/qualified-backup"],
@@ -579,7 +581,7 @@ describe("config model validation", () => {
           },
           models: { "gpt-5": { alias: "legacy/" } },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     };
 
@@ -596,7 +598,7 @@ describe("config model validation", () => {
               fallbacks: ["legacy/"],
             },
           },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
       },
       touchedPaths: [["agents", "defaults", "model", "primary"]],
@@ -614,13 +616,15 @@ describe("config model validation", () => {
     const resolveModelRef = vi.fn(async (_params: ResolverInput) => undefined);
     const config: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "ops" },
           model: {
             primary: "provider-a/next",
             fallbacks: ["backup"],
           },
         },
-        entries: { ops: { default: true, model: { fallbacks: ["agent-backup"] } } },
+        entries: { ops: { model: { fallbacks: ["agent-backup"] } } },
       },
     };
 
@@ -719,14 +723,16 @@ describe("config model validation", () => {
     const resolveModelRef = vi.fn(async (_params: ResolverInput) => undefined);
     const config: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           model: {
             primary: "openai/gpt-5.4-mini",
             fallbacks: ["anthropic/claude-sonnet-4-6"],
           },
         },
         entries: {
-          main: { default: true },
+          main: {},
           ops: { model: { primary: "google/gemini-3.1-pro-preview" } },
         },
       },
@@ -807,11 +813,13 @@ describe("config model validation", () => {
     const resolveModelRef = vi.fn(async (_params: ResolverInput) => undefined);
     const config: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
           model: { primary: "openai/gpt-5.4-mini" },
+          systemAgent: { agentId: "main" },
           workspace: "/tmp/next-workspace",
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     };
 
@@ -819,8 +827,12 @@ describe("config model validation", () => {
       config,
       previousConfig: {
         agents: {
-          defaults: { model: { primary: "openai/gpt-5.4-mini" } },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: {
+            model: { primary: "openai/gpt-5.4-mini" },
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: {} },
         },
       },
       touchedPaths: [["agents", "defaults"]],
@@ -837,16 +849,20 @@ describe("config model validation", () => {
     const result = await checkTouchedTextModelRefs({
       config: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "beta" } },
           entries: {
-            beta: { default: true, model: "provider-a/model" },
+            beta: { model: "provider-a/model" },
             alpha: { model: "provider-b/model" },
           },
         },
       },
       previousConfig: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "alpha" } },
           entries: {
-            alpha: { default: true, model: "provider-a/model" },
+            alpha: { model: "provider-a/model" },
             beta: { model: "provider-b/model" },
           },
         },
@@ -864,12 +880,18 @@ describe("config model validation", () => {
 
     const result = await checkTouchedTextModelRefs({
       config: {
-        agents: { entries: { beta: { default: true, model: "provider-b/model" } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "beta" } },
+          entries: { beta: { model: "provider-b/model" } },
+        },
       },
       previousConfig: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "alpha" } },
           entries: {
-            alpha: { default: true, model: "provider-a/model" },
+            alpha: { model: "provider-a/model" },
             beta: { model: "provider-b/model" },
           },
         },
@@ -887,10 +909,18 @@ describe("config model validation", () => {
 
     const result = await checkTouchedTextModelRefs({
       config: {
-        agents: { entries: { next: { default: true, model: "provider-a/model" } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "next" } },
+          entries: { next: { model: "provider-a/model" } },
+        },
       },
       previousConfig: {
-        agents: { entries: { current: { default: true, model: "provider-a/model" } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "current" } },
+          entries: { current: { model: "provider-a/model" } },
+        },
       },
       touchedPaths: [["agents", "entries"]],
       resolveModelRef,
@@ -915,24 +945,28 @@ describe("config model validation", () => {
     const result = await checkTouchedTextModelRefs({
       config: {
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "ops" },
             model: {
               primary: "provider-a/default",
               fallbacks: ["provider-a/backup"],
             },
           },
-          entries: { ops: { default: true } },
+          entries: { ops: {} },
         },
       },
       previousConfig: {
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "ops" },
             model: {
               primary: "provider-a/default",
               fallbacks: ["provider-a/backup"],
             },
           },
-          entries: { ops: { default: true, model: "provider-b/override" } },
+          entries: { ops: { model: "provider-b/override" } },
         },
       },
       touchedPaths: [["agents", "entries", "ops", "model"]],
@@ -964,24 +998,28 @@ describe("config model validation", () => {
     const result = await checkTouchedTextModelRefs({
       config: {
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "ops" },
             model: {
               primary: "provider-a/default",
               fallbacks: ["provider-a/backup"],
             },
           },
-          entries: { ops: { default: true, workspace: "/tmp/ops" } },
+          entries: { ops: { workspace: "/tmp/ops" } },
         },
       },
       previousConfig: {
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             model: {
               primary: "provider-a/default",
               fallbacks: ["provider-a/backup"],
             },
           },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
       },
       touchedPaths: [["agents", "entries", "ops", "workspace"]],
@@ -998,14 +1036,22 @@ describe("config model validation", () => {
     const result = await checkTouchedTextModelRefs({
       config: {
         agents: {
-          defaults: { model: { primary: "provider-a/default" } },
-          entries: { ops: { default: true, model: { fallbacks: ["provider-b/next"] } } },
+          ownership: "explicit",
+          defaults: {
+            model: { primary: "provider-a/default" },
+            systemAgent: { agentId: "ops" },
+          },
+          entries: { ops: { model: { fallbacks: ["provider-b/next"] } } },
         },
       },
       previousConfig: {
         agents: {
-          defaults: { model: { primary: "provider-a/default" } },
-          entries: { ops: { default: true, model: { fallbacks: ["provider-b/current"] } } },
+          ownership: "explicit",
+          defaults: {
+            model: { primary: "provider-a/default" },
+            systemAgent: { agentId: "ops" },
+          },
+          entries: { ops: { model: { fallbacks: ["provider-b/current"] } } },
         },
       },
       touchedPaths: [["agents", "entries", "ops", "model", "fallbacks"]],

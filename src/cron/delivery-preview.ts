@@ -1,5 +1,5 @@
 /** Builds dry-run cron delivery labels for CLI/UI list surfaces. */
-import { resolveDefaultAgentId } from "../agents/agent-scope-config.js";
+import { resolveSoleAgentId } from "../agents/agent-scope-config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { hasExplicitCronDeliveryTarget, resolveCronDeliveryPlan } from "./delivery-plan.js";
 import { resolveDeliveryTarget } from "./isolated-agent/delivery-target.js";
@@ -53,7 +53,7 @@ async function resolveCronDeliveryPreview(params: {
 
   const requestedChannel = plan.channel ?? "last";
   const agentId =
-    params.job.agentId?.trim() || params.defaultAgentId || resolveDefaultAgentId(params.cfg);
+    params.job.agentId?.trim() || params.defaultAgentId || resolveSoleAgentId(params.cfg);
   const deliverySessionKey = resolveCronDeliverySessionKey(params.job);
   const resolved = await resolveDeliveryTarget(
     params.cfg,

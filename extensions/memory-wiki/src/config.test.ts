@@ -78,7 +78,9 @@ describe("resolveMemoryWikiConfig", () => {
     );
     const appConfig = {
       agents: {
-        list: [{ id: "Support Team", default: true }, { id: "Marketing" }],
+        ownership: "explicit",
+        entries: { "support-team": {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support-team" } },
       },
     } as OpenClawConfig;
 
@@ -113,7 +115,13 @@ describe("resolveMemoryWikiConfig", () => {
 
     const resolved = resolveMemoryWikiAgentConfig({
       config: base,
-      appConfig: { agents: { list: [{ id: "support", default: true }] } },
+      appConfig: {
+        agents: {
+          ownership: "explicit",
+          entries: { support: {} },
+          defaults: { systemAgent: { agentId: "support" } },
+        },
+      },
     });
 
     const expectedRoot = path.join("/Users/tester", ".openclaw", "wiki");
@@ -124,7 +132,11 @@ describe("resolveMemoryWikiConfig", () => {
   it("fails closed when a multi-agent scoped vault has no agent context", () => {
     const config = resolveMemoryWikiConfig({ vault: { scope: "agent" } });
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit",
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     } as OpenClawConfig;
 
     expect(() => resolveMemoryWikiAgentConfig({ config, appConfig })).toThrow(
@@ -135,7 +147,11 @@ describe("resolveMemoryWikiConfig", () => {
   it("fails closed for unknown scoped agents", () => {
     const config = resolveMemoryWikiConfig({ vault: { scope: "agent" } });
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit",
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     } as OpenClawConfig;
 
     expect(() => resolveMemoryWikiAgentConfig({ config, appConfig, agentId: "finance" })).toThrow(

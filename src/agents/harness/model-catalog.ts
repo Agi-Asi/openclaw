@@ -4,7 +4,7 @@ import { getActivePluginRegistry } from "../../plugins/runtime.js";
 import {
   resolveAgentEffectiveModelPrimary,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agent-scope.js";
 import { DEFAULT_PROVIDER } from "../defaults.js";
 import type { ModelCatalogEntry, ModelCatalogSnapshot } from "../model-catalog.types.js";
@@ -183,7 +183,7 @@ export function augmentPreparedModelCatalogWithAgentHarness(params: {
   snapshot: ModelCatalogSnapshot;
   pluginRegistry?: PluginRegistry;
 }): Promise<ModelCatalogSnapshot> {
-  const agentId = params.input.agentId ?? resolveDefaultAgentId(params.input.config);
+  const agentId = params.input.agentId ?? resolveSoleAgentId(params.input.config);
   return augmentModelCatalogWithAgentHarness({
     cfg: params.input.config,
     agentId,

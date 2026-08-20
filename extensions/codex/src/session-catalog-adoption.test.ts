@@ -321,7 +321,7 @@ describe("Codex supervision catalog", () => {
 });
 
 describe("Codex supervision actions", () => {
-  it("lists and adopts a local session under the retained compatibility owner", async () => {
+  it("lists and adopts a local session under the configured system-agent owner", async () => {
     const runtimeConfig = compatibilityOwnerConfig();
     const { runtime, createSessionEntry } = createRuntime();
     const { api } = createGatewayApi(runtime);
@@ -565,12 +565,8 @@ describe("Codex supervision actions", () => {
   });
 
   it("keeps adopted sessions discoverable when the configured default agent changes", async () => {
-    const originalConfig = {
-      agents: { list: [{ id: "alpha", default: true }, { id: "beta" }] },
-    } as OpenClawConfig;
-    const changedConfig = {
-      agents: { list: [{ id: "alpha" }, { id: "beta", default: true }] },
-    } as OpenClawConfig;
+    const originalConfig = compatibilityOwnerConfig("alpha");
+    const changedConfig = compatibilityOwnerConfig("beta");
     const { runtime, createSessionEntry } = createRuntime();
     const { api } = createGatewayApi(runtime);
     const bindingStore = createCodexTestBindingStore();
@@ -584,6 +580,7 @@ describe("Codex supervision actions", () => {
       threadId: "thread-1",
     });
     const reopened = await continueLocalCodexSession({
+      agentId: "alpha",
       api,
       bindingStore,
       config: changedConfig,
@@ -591,12 +588,15 @@ describe("Codex supervision actions", () => {
       threadId: "thread-1",
     });
     const catalog = await listCodexSessionCatalog({
+      agentId: "alpha",
       bindingStore,
       config: changedConfig,
       runtime,
       control,
     });
 
+    expect(originalConfig.agents?.defaults?.systemAgent?.agentId).toBe("alpha");
+    expect(changedConfig.agents?.defaults?.systemAgent?.agentId).toBe("beta");
     expect(created.sessionKey).toMatch(/^agent:alpha:harness:codex:supervision:/);
     expect(reopened).toEqual({ sessionKey: created.sessionKey, disposition: "existing" });
     expect(createSessionEntry).toHaveBeenCalledOnce();

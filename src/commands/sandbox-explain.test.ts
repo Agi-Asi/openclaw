@@ -208,7 +208,9 @@ describe("sandbox explain command", () => {
   it("uses the canonical derived workspace for non-default agents", async () => {
     mockCfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           workspace: "/tmp/openclaw-agent-workspaces",
           sandbox: {
             mode: "all",
@@ -217,7 +219,7 @@ describe("sandbox explain command", () => {
             workspaceRoot: "/tmp/openclaw-sandboxes",
           },
         },
-        list: [{ id: "main", default: true }, { id: "builder" }],
+        entries: { main: {}, builder: {} },
       },
       session: { store: "/tmp/openclaw-test-sessions-{agentId}.json" },
     };
@@ -427,16 +429,16 @@ describe("sandbox explain command", () => {
   it("uses the configured default agent for global sessions", async () => {
     mockCfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           sandbox: { mode: "non-main" },
+          systemAgent: { agentId: "ops" },
         },
-        list: [
-          {
-            id: "ops",
-            default: true,
+        entries: {
+          ops: {
             workspace: "/tmp/openclaw-ops-workspace",
           },
-        ],
+        },
       },
       session: { scope: "global" },
     };

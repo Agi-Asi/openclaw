@@ -581,7 +581,11 @@ describe("session sharing handlers", () => {
       });
       const memberClient = identifiedClient("outsider@example.com");
       const cfg = {
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
       } as ReturnType<GatewayRequestContext["getRuntimeConfig"]>;
       const requestContext = context(vi.fn(), cfg);
 

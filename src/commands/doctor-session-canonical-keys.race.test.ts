@@ -73,7 +73,11 @@ describe("doctor canonical session decision races", () => {
       ).toEqual({ entry_json: JSON.stringify(changedEntry) });
 
       const cfg = {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
         session: { store: storeTemplate },
       } as OpenClawConfig;
       expect(await repairCanonicalSessionKeys({ apply: true, cfg, env })).toMatchObject({

@@ -3,7 +3,7 @@ import {
   listAgentIds,
   resolveAgentConfig,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveAmbientOwnerAgentId,
 } from "openclaw/plugin-sdk/agent-runtime";
 // Workboard workspace access follows the caller's canonical filesystem boundary.
 import {
@@ -70,7 +70,8 @@ export const WORKBOARD_REQUIRED_WORKER_TOOLS = [
 ] as const;
 
 export function resolveWorkboardAgentWorkspace(config: WorkboardConfig, agentId?: string): string {
-  return resolveAgentWorkspaceDir(config, agentId ?? resolveDefaultAgentId(config));
+  // Unscoped workboard access uses the configured ambient owner; explicit agents always win.
+  return resolveAgentWorkspaceDir(config, agentId ?? resolveAmbientOwnerAgentId(config));
 }
 
 export function resolveConfiguredWorkboardWorkspaceAccess(params: {
@@ -104,7 +105,7 @@ export async function resolveAgentWorkboardWorkspaceRuntime(params: {
   modelId?: string;
   prepareSandboxWorkspaceAuthority: PrepareSandboxWorkspaceAuthority;
 }): Promise<WorkboardTargetWorkspaceRuntime> {
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.config);
+  const agentId = params.agentId ?? resolveAmbientOwnerAgentId(params.config);
   const sandboxRuntime = await params.prepareSandboxWorkspaceAuthority({
     config: params.config,
     agentId,
@@ -143,7 +144,7 @@ export function resolveCommandWorkboardWorkspaceAccess(params: {
       unrestricted: params.gatewayClientScopes.includes("operator.admin"),
     });
   }
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.config);
+  const agentId = params.agentId ?? resolveAmbientOwnerAgentId(params.config);
   const sandboxRuntime =
     params.sessionKey && params.resolveSandboxWorkspaceAuthority
       ? params.resolveSandboxWorkspaceAuthority({

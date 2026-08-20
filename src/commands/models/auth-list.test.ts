@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentDir: (_cfg: OpenClawConfig, agentId: string) => `/tmp/openclaw/agents/${agentId}`,
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
 }));
 
 vi.mock("../../agents/auth-profiles.js", () => ({

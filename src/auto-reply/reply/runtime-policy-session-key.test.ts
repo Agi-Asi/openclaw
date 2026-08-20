@@ -9,10 +9,12 @@ import { resolveRuntimePolicySessionKey } from "./runtime-policy-session-key.js"
 describe("resolveRuntimePolicySessionKey", () => {
   const cfg: OpenClawConfig = {
     agents: {
+      ownership: "explicit",
       defaults: {
         sandbox: { mode: "non-main", scope: "agent" },
+        systemAgent: { agentId: "main" },
       },
-      list: [{ id: "main", default: true }],
+      entries: { main: {} },
     },
   };
 

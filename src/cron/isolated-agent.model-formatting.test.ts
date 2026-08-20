@@ -370,17 +370,20 @@ describe("cron model formatting and precedence edge cases", () => {
     it("uses one published replacement owner for cron model selection", async () => {
       const callerConfig = {
         agents: {
-          defaults: { model: "anthropic/caller-model" },
-          list: [{ id: "worker", default: true }],
+          ownership: "explicit",
+          defaults: { model: "anthropic/caller-model", systemAgent: { agentId: "worker" } },
+          entries: { worker: {} },
         },
       };
       const ownerConfig = {
         agents: {
+          ownership: "explicit",
           defaults: {
             model: "openai/owner-default",
             modelPolicy: { allow: ["openai/*"] },
+            systemAgent: { agentId: "main" },
           },
-          list: [{ id: "main", default: true }],
+          entries: { main: {} },
         },
       };
       const ownerCatalog = [{ id: "owner-model", name: "Owner Model", provider: "openai" }];

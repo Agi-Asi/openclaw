@@ -4,7 +4,7 @@ import {
   resolveAgentConfig,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import type { HookContext } from "../agents/agent-tools.before-tool-call.js";
 import {
@@ -108,7 +108,7 @@ type TriggerRuntimeCacheEntry = {
 };
 
 function resolveTriggerAgentId(config: OpenClawConfig, agentId?: string): string {
-  return agentId?.trim() ? normalizeAgentId(agentId) : resolveDefaultAgentId(config);
+  return agentId?.trim() ? normalizeAgentId(agentId) : resolveSoleAgentId(config);
 }
 
 async function prepareTriggerRuntime(params: {

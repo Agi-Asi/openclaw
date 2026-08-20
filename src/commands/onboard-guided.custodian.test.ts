@@ -127,7 +127,15 @@ vi.mock("./onboard-agent.js", () => ({
   ensureOnboardingAgent: async ({ config }: { config: OpenClawConfig }) => ({
     config: {
       ...config,
-      agents: { ...config.agents, list: [{ id: "main", default: true }] },
+      agents: {
+        ...config.agents,
+        ownership: "explicit",
+        defaults: {
+          ...config.agents?.defaults,
+          systemAgent: { ...config.agents?.defaults?.systemAgent, agentId: "main" },
+        },
+        entries: { main: {} },
+      },
     },
     agentId: "main",
     bootstrapPending: true,
@@ -678,8 +686,12 @@ describe("runGuidedOnboarding custodian flow", () => {
     });
     localOnboarding.persisted.config = {
       agents: {
-        defaults: { workspace: "/tmp/existing-workspace" },
-        entries: { main: { default: true, workspace: "/tmp/existing-workspace" } },
+        ownership: "explicit",
+        defaults: {
+          workspace: "/tmp/existing-workspace",
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: { workspace: "/tmp/existing-workspace" } },
       },
       wizard: { securityAcknowledgedAt: pending.securityAcknowledgedAt },
     };

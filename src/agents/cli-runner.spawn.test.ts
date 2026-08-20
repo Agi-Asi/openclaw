@@ -165,7 +165,11 @@ describe("runCliAgent spawn path", () => {
       agentId: "arthur",
       workspaceDir,
       config: {
-        agents: { entries: { arthur: { default: true, workspace: workspaceDir } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "arthur" } },
+          entries: { arthur: { workspace: workspaceDir } },
+        },
       },
       backend: { imageArg: "--image" },
     });

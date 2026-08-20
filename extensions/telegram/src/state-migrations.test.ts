@@ -119,7 +119,7 @@ describe("telegram state migrations", () => {
     }
   });
 
-  it("retains raw legacy default-marker ownership during rollback compatibility", async () => {
+  it("retains the configured ambient owner for legacy state during rollback compatibility", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "openclaw-telegram-state-migration-"));
     const env = { ...process.env, OPENCLAW_STATE_DIR: dir };
     const legacyStorePath = path.join(dir, "sessions", "sessions.json");
@@ -130,7 +130,11 @@ describe("telegram state migrations", () => {
       await writeFile(sentMessagePath, JSON.stringify({ 7: { 52: Date.now() } }));
 
       const cfg = {
-        agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+        agents: {
+          ownership: "explicit",
+          entries: { main: {}, ops: {} },
+          defaults: { systemAgent: { agentId: "ops" } },
+        },
       } as OpenClawConfig;
       const plans = await detectTelegramLegacyStateMigrations({ cfg, env });
       const sentPlan = plans.find((plan) => plan.sourcePath === sentMessagePath);
@@ -331,7 +335,9 @@ describe("telegram state migrations", () => {
 
       const cfg = {
         agents: {
-          list: [{ id: "ops", default: true }],
+          ownership: "explicit",
+          entries: { ops: {} },
+          defaults: { systemAgent: { agentId: "ops" } },
         },
       } as OpenClawConfig;
       const plans = await detectTelegramLegacyStateMigrations({ cfg, env });

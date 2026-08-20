@@ -51,7 +51,12 @@ function withMainAgentRoster(cfg: OpenClawConfig): OpenClawConfig {
   }
   return {
     ...cfg,
-    agents: { ...cfg.agents, entries: { main: { default: true } } },
+    agents: {
+      ...cfg.agents,
+      ownership: "explicit",
+      defaults: { ...cfg.agents?.defaults, systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
   };
 }
 
@@ -347,7 +352,9 @@ describe("doctor state integrity oauth dir checks", () => {
 
     const text = await runStateIntegrityText({
       agents: {
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
     });
 
@@ -361,7 +368,9 @@ describe("doctor state integrity oauth dir checks", () => {
 
     const text = await runStateIntegrityText({
       agents: {
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
     });
 
@@ -376,7 +385,9 @@ describe("doctor state integrity oauth dir checks", () => {
 
     const text = await runStateIntegrityText({
       agents: {
-        list: [{ id: "main", default: true }, { id: "ops" }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, ops: {} },
       },
     });
 
@@ -389,7 +400,9 @@ describe("doctor state integrity oauth dir checks", () => {
 
     const text = await runStateIntegrityText({
       agents: {
-        entries: { ops: { default: true } },
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {} },
       },
     });
 
@@ -403,7 +416,9 @@ describe("doctor state integrity oauth dir checks", () => {
 
     const text = await runStateIntegrityText({
       agents: {
-        entries: { ops: { default: true } },
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {} },
       },
     });
 
@@ -424,7 +439,9 @@ describe("doctor state integrity oauth dir checks", () => {
 
     const text = await runStateIntegrityText({
       agents: {
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
     });
 
@@ -513,7 +530,9 @@ describe("doctor state integrity oauth dir checks", () => {
     try {
       const text = await runStateIntegrityText({
         agents: {
-          list: [{ id: "main", default: true }, { id: "research" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, research: {} },
         },
       });
 
@@ -544,7 +563,9 @@ describe("doctor state integrity oauth dir checks", () => {
     try {
       const text = await runStateIntegrityText({
         agents: {
-          list: [{ id: "main", default: true }, { id: "research" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, research: {} },
         },
       });
 

@@ -824,7 +824,9 @@ test("sessions.reset closes a spawned ACP child that lives in a different agent 
     store: path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json"),
   };
   testState.agentsConfig = {
-    list: [{ id: "main", default: true }, { id: "codex" }],
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, codex: {} },
   };
   const mainStorePath = path.join(stateDir, "agents", "main", "sessions", "sessions.json");
   const codexStorePath = path.join(stateDir, "agents", "codex", "sessions", "sessions.json");

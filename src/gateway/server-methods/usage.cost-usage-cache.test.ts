@@ -66,7 +66,11 @@ describe("costUsageCache bounded growth", () => {
 
   it("does not grow without bound when (startMs, endMs) varies across day rollover and range switches", async () => {
     const config = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
     } as OpenClawConfig;
 
     // 600 distinct (startMs, endMs) pairs — larger than the 256 caps used by
@@ -101,7 +105,11 @@ describe("costUsageCache bounded growth", () => {
 
   it("evicts settled entries before in-flight entries when possible", async () => {
     const config = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
     } as OpenClawConfig;
     const pending = new Promise<ReturnType<typeof createSummary>>(() => {});
     mocks.loadCostUsageSummaryFromCache.mockReturnValueOnce(pending);

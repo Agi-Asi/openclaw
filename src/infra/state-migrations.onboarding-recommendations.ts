@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { resolveWorkspaceStateIdentity } from "../agents/workspace-state-store.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
@@ -31,7 +31,7 @@ export function migrateLegacyOnboardingRecommendationsScope(params: {
   }
 
   try {
-    const migrationAgentId = tryResolveLegacyCompatibilityAgentId(params.cfg);
+    const migrationAgentId = tryResolveAmbientOwnerAgentId(params.cfg);
     const workspaceKey = migrationAgentId
       ? resolveWorkspaceStateIdentity(resolveAgentWorkspaceDir(params.cfg, migrationAgentId, env))
           .workspaceKey

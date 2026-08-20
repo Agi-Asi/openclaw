@@ -98,13 +98,13 @@ describe("Claude live process approvals", () => {
           config: {
             tools: { exec: { security: "full", ask: "off" } },
             agents: {
-              list: [
-                {
-                  id: "main",
-                  default: true,
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "main" } },
+              entries: {
+                main: {
                   tools: { exec: { security: "full", ask: "off" } },
                 },
-              ],
+              },
             },
           },
         }),
@@ -119,13 +119,13 @@ describe("Claude live process approvals", () => {
           config: {
             tools: { exec: { security: "deny", ask: "off" } },
             agents: {
-              list: [
-                {
-                  id: "main",
-                  default: true,
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "main" } },
+              entries: {
+                main: {
                   tools: { exec: { ask: "off" } },
                 },
-              ],
+              },
             },
           },
         }),

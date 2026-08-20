@@ -107,8 +107,10 @@ describe("doctor Skill Workshop SQLite migration", () => {
       migrateLegacySkillWorkshopProposals({
         config: {
           agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
             entries: {
-              main: { default: true, workspace: workspaceDir },
+              main: { workspace: workspaceDir },
             },
           },
         },
@@ -214,8 +216,10 @@ describe("doctor Skill Workshop SQLite migration", () => {
       migrateLegacySkillWorkshopProposals({
         config: {
           agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
             entries: {
-              main: { default: true, workspace: workspaceDir },
+              main: { workspace: workspaceDir },
             },
           },
         },
@@ -385,8 +389,10 @@ describe("doctor Skill Workshop SQLite migration", () => {
     const ambiguous = await migrateLegacySkillWorkshopProposals({
       config: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true, workspace: currentWorkspace },
+            main: { workspace: currentWorkspace },
             other: { workspace: secondWorkspace },
           },
         },

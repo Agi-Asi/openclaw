@@ -13,7 +13,7 @@ import {
   listAgentIds,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "./agent-scope-config.js";
 import {
   externalCliDiscoveryForProviderAuth,
@@ -103,7 +103,7 @@ function resolvePreparedStateForCaller(params: {
   if (!params.cfg) {
     return null;
   }
-  return params.states.get(resolveDefaultAgentId(params.cfg)) ?? null;
+  return params.states.get(resolveSoleAgentId(params.cfg)) ?? null;
 }
 
 function resolveProviderAuthConfigFingerprint(cfg: OpenClawConfig | undefined): string | null {

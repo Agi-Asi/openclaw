@@ -134,7 +134,9 @@ describe("voice-call realtime route ownership", () => {
       };
       const fullConfig = {
         agents: {
-          list: [{ id: "main", default: true }, { id: "sales" }, { id: "support" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, sales: {}, support: {} },
         },
       } as OpenClawConfig;
 

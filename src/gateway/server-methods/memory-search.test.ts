@@ -10,12 +10,12 @@ import {
 import type { GatewayRequestContext, RespondFn } from "./types.js";
 
 const getActiveMemorySearchManagerCore = vi.hoisted(() => vi.fn());
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "main"));
+const resolveSoleAgentId = vi.hoisted(() => vi.fn(() => "main"));
 
 vi.mock("../../plugins/memory-runtime.js", () => ({ getActiveMemorySearchManagerCore }));
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 }));
 
 import { memorySearchHandlers } from "./memory-search.js";
@@ -31,8 +31,9 @@ function createConfig(workspaceDir: string): OpenClawConfig {
       },
     },
     agents: {
-      defaults: { workspace: workspaceDir },
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+      entries: { main: {} },
     },
   };
 }
@@ -73,7 +74,7 @@ describe("memory.search gateway method", () => {
       layout: "state-only",
     });
     getActiveMemorySearchManagerCore.mockReset();
-    resolveDefaultAgentId.mockClear();
+    resolveSoleAgentId.mockClear();
   });
 
   afterEach(async () => {
@@ -137,7 +138,7 @@ describe("memory.search gateway method", () => {
       ownership: "explicit",
       list: [{ id: "ops" }, { id: "research" }],
     };
-    resolveDefaultAgentId.mockImplementationOnce(() => {
+    resolveSoleAgentId.mockImplementationOnce(() => {
       throw new AgentSelectionRequiredError(["ops", "research"], {
         surface: "memory search",
         hint: "Pass agentId to select a configured agent.",
@@ -188,7 +189,7 @@ describe("memory.search gateway method", () => {
           message: "unknown agentId",
         }),
       );
-      expect(resolveDefaultAgentId).not.toHaveBeenCalled();
+      expect(resolveSoleAgentId).not.toHaveBeenCalled();
       expect(getActiveMemorySearchManagerCore).not.toHaveBeenCalled();
     },
   );
@@ -200,7 +201,7 @@ describe("memory.search gateway method", () => {
     const cfg = createConfig(testState.workspaceDir);
     cfg.agents = {
       ...cfg.agents,
-      list: [{ id: "main", default: true }, { id: configured }],
+      entries: { main: {}, [configured]: {} },
     };
     const result = {
       path: "memory/project-lantern.md",
@@ -221,7 +222,7 @@ describe("memory.search gateway method", () => {
       agentId: configured,
       purpose: "cli",
     });
-    expect(resolveDefaultAgentId).not.toHaveBeenCalled();
+    expect(resolveSoleAgentId).not.toHaveBeenCalled();
     expect(respond).toHaveBeenCalledWith(
       true,
       {
@@ -243,7 +244,7 @@ describe("memory.search gateway method", () => {
 
     const respond = await invokeMemorySearch({ query: "lantern" }, cfg);
 
-    expect(resolveDefaultAgentId).toHaveBeenCalledWith(cfg, {
+    expect(resolveSoleAgentId).toHaveBeenCalledWith(cfg, {
       surface: "memory search",
       hint: "Pass agentId to select a configured agent.",
     });

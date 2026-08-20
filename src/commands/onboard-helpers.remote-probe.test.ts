@@ -152,7 +152,13 @@ describe("probeGatewayReachable", () => {
         server: { version: "2026.7.2", connId: "conn-configured" },
         configSnapshot: {
           valid: true,
-          config: { agents: { list: [{ id: "work", default: true, model: "openai/gpt-5.5" }] } },
+          config: {
+            agents: {
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "work" } },
+              entries: { work: { model: "openai/gpt-5.5" } },
+            },
+          },
         },
       })
       .mockResolvedValueOnce({

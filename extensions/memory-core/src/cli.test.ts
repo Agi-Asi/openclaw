@@ -30,7 +30,7 @@ import {
 
 const getMemorySearchManager = vi.hoisted(() => vi.fn());
 const getRuntimeConfig = vi.hoisted(() => vi.fn(() => ({})));
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "main"));
+const resolveSoleAgentId = vi.hoisted(() => vi.fn(() => "main"));
 const resolveCommandSecretRefsViaGateway = vi.hoisted(() =>
   vi.fn(async ({ config }: { config: unknown }) => ({
     resolvedConfig: config,
@@ -102,7 +102,7 @@ vi.mock("./cli.host.runtime.js", async () => {
     getRuntimeConfig,
     normalizeExtraMemoryPaths,
     resolveCommandSecretRefsViaGateway,
-    resolveDefaultAgentId,
+    resolveSoleAgentId,
     resolveSessionTranscriptsDirForAgent,
     resolveStateDir,
     setVerbose,
@@ -142,7 +142,7 @@ beforeAll(async () => {
 beforeEach(() => {
   getMemorySearchManager.mockReset();
   getRuntimeConfig.mockReset().mockReturnValue({});
-  resolveDefaultAgentId.mockReset().mockReturnValue("main");
+  resolveSoleAgentId.mockReset().mockReturnValue("main");
   resolveCommandSecretRefsViaGateway.mockReset().mockImplementation(async ({ config }) => ({
     resolvedConfig: config,
     diagnostics: [] as string[],
@@ -362,7 +362,7 @@ describe("memory cli", () => {
     ["search", ["search", "foo"]],
   ])("keeps a configured single-agent install working for %s", async (_name, args) => {
     getRuntimeConfig.mockReturnValue({ agents: { entries: { solo: {} } } });
-    resolveDefaultAgentId.mockReturnValue("solo");
+    resolveSoleAgentId.mockReturnValue("solo");
     mockCommandManagerForConfiguredAgents();
 
     await runMemoryCli(args);
@@ -758,9 +758,9 @@ describe("memory cli", () => {
     const agentIds = ["main", ...Array.from({ length: 21 }, (_, index) => `agent-${index + 1}`)];
     getRuntimeConfig.mockReturnValue({
       agents: {
-        entries: Object.fromEntries(
-          agentIds.map((agentId, index) => [agentId, { default: index === 0 }]),
-        ),
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: Object.fromEntries(agentIds.map((agentId) => [agentId, {}])),
       },
     });
     getMemorySearchManager.mockImplementation(async ({ agentId }: { agentId: string }) => ({
@@ -1782,8 +1782,9 @@ describe("memory cli", () => {
         },
       },
       agents: {
-        defaults: { workspace: workspaceDir },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
       plugins: { enabled: false },
     } as OpenClawConfig;

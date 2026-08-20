@@ -206,10 +206,12 @@ describe("doctor skills", () => {
     const prompter = { ...createPrompter(), confirmAutoFix };
     const cfg: OpenClawConfig = {
       agents: {
-        list: [
-          { id: "main", default: true, workspace: "/tmp/main" },
-          { id: "secondary", workspace: "/tmp/secondary" },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { workspace: "/tmp/main" },
+          secondary: { workspace: "/tmp/secondary" },
+        },
       },
     };
 

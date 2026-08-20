@@ -114,7 +114,11 @@ test("startup prewarm reuses requested durable targets when no incognito store i
     expect(
       sessionsConfig.canPrewarmCombinedSessionStoresForGateway(
         {
-          agents: { list: [{ id: "main", default: true }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
           session: { store: storeTemplate },
         },
         { agentIds: ["main"], maxRows: 10 },
@@ -151,7 +155,11 @@ test("startup prewarm fills session snapshot and title caches before the first l
   vi.useFakeTimers();
   try {
     const cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { store: storePath },
     } as never;
     let resolveSessionPrewarm!: () => void;
@@ -235,7 +243,11 @@ test("startup skips a large session prewarm while request-time listing remains a
     });
     sidecar = scheduleGatewayHandlerPrewarm({
       cfgAtStart: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
         session: { store: storePath },
       } as never,
       log: { info, warn: vi.fn() },

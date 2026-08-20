@@ -108,7 +108,7 @@ vi.mock("./agent-scope-config.js", () => ({
   resolveAgentDir: () => "/warm/default-agent",
   resolveDefaultAgentDir: () => "/warm/default-agent",
   resolveAgentWorkspaceDir: () => "/warm/default-workspace",
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
 }));
 
 const {

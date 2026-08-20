@@ -481,7 +481,11 @@ describe("initSessionState guarded initialization", () => {
         await expect(
           initSessionState({
             cfg: {
-              agents: { list: [{ id: "main", default: true }, { id: agentId }] },
+              agents: {
+                ownership: "explicit",
+                defaults: { systemAgent: { agentId: "main" } },
+                entries: { main: {}, [agentId]: {} },
+              },
               session: { store: path.join(stateDir, "durable", "{agentId}", "sessions.json") },
             } as OpenClawConfig,
             ctx: {

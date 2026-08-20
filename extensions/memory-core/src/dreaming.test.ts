@@ -643,7 +643,13 @@ describe("gateway startup reconciliation", () => {
     const runtimeCurrentConfig = vi.fn(() =>
       createDreamingConfig(
         { enabled: true, frequency: "15 4 * * *", timezone: "UTC", limit: 0 },
-        { agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] } },
+        {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: workspaceDir } },
+          },
+        },
       ),
     );
     const { api, harness, logger, onMock } = createDreamingTestContext({
@@ -1611,8 +1617,9 @@ describe("gateway startup reconciliation", () => {
       () =>
         ({
           agents: {
-            defaults: { workspace: workspaceDir },
-            list: [{ id: "main", default: true, workspace: workspaceDir }],
+            ownership: "explicit",
+            defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: workspaceDir } },
           },
         }) as OpenClawConfig,
     );

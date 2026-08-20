@@ -676,7 +676,9 @@ describe("createBackupArchive", () => {
         const outputDir = state.path("backups");
         await state.writeConfig({
           agents: {
-            entries: { main: { default: true, workspace: state.workspaceDir } },
+            ownership: "explicit",
+            entries: { main: { workspace: state.workspaceDir } },
+            defaults: { systemAgent: { agentId: "main" } },
           },
         });
         await fs.mkdir(outputDir, { recursive: true });
@@ -2284,7 +2286,9 @@ describe("createBackupArchive", () => {
         const hardlinkedDbPath = state.statePath("state", "hardlinked-global.sqlite");
         await state.writeConfig({
           agents: {
-            entries: { main: { default: true, workspace: state.workspaceDir } },
+            ownership: "explicit",
+            entries: { main: { workspace: state.workspaceDir } },
+            defaults: { systemAgent: { agentId: "main" } },
           },
         });
         await fs.mkdir(path.dirname(linkedDbPath), { recursive: true });
@@ -2700,8 +2704,10 @@ describe("createBackupArchive", () => {
           configPath,
           `${JSON.stringify({
             agents: {
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "main" } },
               entries: {
-                main: { default: true, workspace: workspaceDir },
+                main: { workspace: workspaceDir },
                 external: { workspace: externalTmpWorkspaceDir },
                 worker: { workspace: tmpWorkspaceDir },
               },

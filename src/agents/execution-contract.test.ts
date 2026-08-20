@@ -7,7 +7,11 @@ describe("isStrictAgenticExecutionContractActive", () => {
   const supportedProvider = "openai";
   const unsupportedProvider = "anthropic";
   const emptyConfig: OpenClawConfig = {
-    agents: { entries: { main: { default: true } } },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
   };
 
   describe("supported provider + model detection", () => {
@@ -138,8 +142,10 @@ describe("isStrictAgenticExecutionContractActive", () => {
     it("honors explicit strict-agentic on the supported lane", () => {
       const config: OpenClawConfig = {
         agents: {
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          entries: { main: {} },
           defaults: {
+            systemAgent: { agentId: "main" },
             embeddedAgent: {
               executionContract: "strict-agentic",
             },
@@ -158,8 +164,10 @@ describe("isStrictAgenticExecutionContractActive", () => {
     it("honors explicit default opt-out even on the supported lane", () => {
       const config: OpenClawConfig = {
         agents: {
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          entries: { main: {} },
           defaults: {
+            systemAgent: { agentId: "main" },
             embeddedAgent: {
               executionContract: "default",
             },
@@ -178,8 +186,10 @@ describe("isStrictAgenticExecutionContractActive", () => {
     it("collapses explicit strict-agentic to default on an unsupported lane", () => {
       const config: OpenClawConfig = {
         agents: {
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          entries: { main: {} },
           defaults: {
+            systemAgent: { agentId: "main" },
             embeddedAgent: {
               executionContract: "strict-agentic",
             },

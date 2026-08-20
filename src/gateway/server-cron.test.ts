@@ -9,7 +9,6 @@ import { createDeferred } from "../../test/helpers/promise.js";
 import { AgentDeletionCommitUncertainError } from "../agents/agent-lifecycle-registry.js";
 import type { CliDeps } from "../cli/deps.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolveSystemEventOptionsOwnerAgentId } from "../infra/system-event-ownership.js";
 import {
   getActiveGatewayRootWorkCount,
@@ -492,51 +491,6 @@ describe("buildGatewayCronService", () => {
     } finally {
       state.cron.stop();
       vi.useRealTimers();
-    }
-  });
-
-  it("pins ownerless jobs only when a retained legacy owner is present", async () => {
-    const tmpDir = path.join(os.tmpdir(), `server-cron-retained-owner-${Date.now()}`);
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        cron: { store: path.join(tmpDir, "cron.json") },
-        agents: {
-          ownership: "explicit",
-          entries: { ops: {}, research: {} },
-        },
-      } as OpenClawConfig,
-      "ops",
-    );
-    loadConfigMock.mockReturnValue(cfg);
-    const initial = buildGatewayCronService({
-      cfg,
-      deps: {} as CliDeps,
-      broadcast: () => {},
-    });
-    await initial.cron.start();
-    const job = await initial.cron.add({
-      name: "legacy retained owner",
-      enabled: true,
-      schedule: { kind: "at", at: new Date(Date.now() + 3_600_000).toISOString() },
-      sessionTarget: "isolated",
-      wakeMode: "next-heartbeat",
-      payload: { kind: "agentTurn", message: "pin once" },
-    });
-    expect(job.agentId).toBe("ops");
-    initial.cron.stop();
-
-    const restartedCfg = structuredClone(cfg);
-    loadConfigMock.mockReturnValue(restartedCfg);
-    const restarted = buildGatewayCronService({
-      cfg: restartedCfg,
-      deps: {} as CliDeps,
-      broadcast: () => {},
-    });
-    try {
-      await restarted.cron.start();
-      expect((await restarted.cron.readJob(job.id))?.agentId).toBe("ops");
-    } finally {
-      restarted.cron.stop();
     }
   });
 
@@ -1527,7 +1481,11 @@ describe("buildGatewayCronService", () => {
 
   it("cron_changed hook event includes agentId from the job", async () => {
     const cfg = createCronConfig("server-cron-hook-agentId");
-    cfg.agents = { entries: { main: { default: true }, yinze: {} } };
+    cfg.agents = {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {}, yinze: {} },
+    };
     loadConfigMock.mockReturnValue(cfg);
 
     const state = buildGatewayCronService({
@@ -2664,8 +2622,10 @@ describe("buildGatewayCronService", () => {
       session: { mainKey: "main" },
       cron: { store: path.join(os.tmpdir(), `server-cron-untargeted-${Date.now()}`, "cron.json") },
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "primary" } },
         entries: {
-          primary: { default: true, model: "test/primary" },
+          primary: { model: "test/primary" },
           ops: { model: "test/ops" },
         },
       },
@@ -2723,8 +2683,10 @@ describe("buildGatewayCronService", () => {
       session: { mainKey: "main" },
       cron: { store: path.join(os.tmpdir(), `server-cron-symmetric-${Date.now()}`, "cron.json") },
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "primary" } },
         entries: {
-          primary: { default: true, model: "test/primary" },
+          primary: { model: "test/primary" },
           ops: { model: "test/ops" },
         },
       },
@@ -2857,8 +2819,10 @@ describe("buildGatewayCronService", () => {
         store: path.join(os.tmpdir(), `server-cron-unknown-agent-${Date.now()}`, "cron.json"),
       },
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "primary" } },
         entries: {
-          primary: { default: true, model: "test/primary" },
+          primary: { model: "test/primary" },
           ops: { model: "test/ops" },
         },
       },
@@ -2914,8 +2878,10 @@ describe("buildGatewayCronService", () => {
         store: path.join(os.tmpdir(), `server-cron-wake-service-${Date.now()}`, "cron.json"),
       },
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "primary" } },
         entries: {
-          primary: { default: true, model: "test/primary" },
+          primary: { model: "test/primary" },
           ops: { model: "test/ops" },
         },
       },
@@ -2966,8 +2932,9 @@ describe("buildGatewayCronService", () => {
     const cfg = {
       ...createCronConfig("server-cron-system-owner-wake"),
       agents: {
+        ownership: "explicit",
         defaults: { systemAgent: { agentId: "ops" } },
-        entries: { main: { default: true }, ops: {} },
+        entries: { main: {}, ops: {} },
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(cfg);
@@ -3205,11 +3172,13 @@ describe("buildGatewayCronService", () => {
         store: path.join(tmpDir, "cron.json"),
       },
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: path.join(tmpDir, "workspace"),
+          systemAgent: { agentId: "main" },
         },
         entries: {
-          main: { default: true },
+          main: {},
           yinze: { workspace: path.join(tmpDir, "workspace-yinze") },
         },
       },
@@ -3222,10 +3191,12 @@ describe("buildGatewayCronService", () => {
         store: path.join(tmpDir, "cron.json"),
       },
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: path.join(tmpDir, "workspace"),
+          systemAgent: { agentId: "main" },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(startupCfg);
@@ -3265,8 +3236,9 @@ describe("buildGatewayCronService", () => {
     const cfg = {
       cron: { store: path.join(tmpDir, "cron.json") },
       agents: {
-        defaults: { workspace: path.join(tmpDir, "workspace") },
-        entries: { main: { default: true }, yinze: {}, other: {} },
+        ownership: "explicit",
+        defaults: { workspace: path.join(tmpDir, "workspace"), systemAgent: { agentId: "main" } },
+        entries: { main: {}, yinze: {}, other: {} },
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(cfg);
@@ -3308,7 +3280,11 @@ describe("buildGatewayCronService", () => {
     const tmpDir = path.join(os.tmpdir(), `server-cron-agent-uncertain-${Date.now()}`);
     const cfg = {
       cron: { store: path.join(tmpDir, "cron.json") },
-      agents: { entries: { main: { default: true }, yinze: {}, other: {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, yinze: {}, other: {} },
+      },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(cfg);
     const state = buildGatewayCronService({ cfg, deps: {} as CliDeps, broadcast: () => {} });
@@ -3392,7 +3368,11 @@ describe("buildGatewayCronService", () => {
     const tmpDir = path.join(os.tmpdir(), `server-cron-agent-fenced-${Date.now()}`);
     const cfg = {
       cron: { store: path.join(tmpDir, "cron.json") },
-      agents: { entries: { main: { default: true }, yinze: {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, yinze: {} },
+      },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(cfg);
     const state = buildGatewayCronService({ cfg, deps: {} as CliDeps, broadcast: () => {} });
@@ -3426,13 +3406,14 @@ describe("buildGatewayCronService", () => {
     const cfg = {
       cron: { store: path.join(tmpDir, "cron.json") },
       agents: {
-        defaults: { workspace: path.join(tmpDir, "workspace") },
-        entries: { main: { default: true }, yinze: {} },
+        ownership: "explicit",
+        defaults: { workspace: path.join(tmpDir, "workspace"), systemAgent: { agentId: "main" } },
+        entries: { main: {}, yinze: {} },
       },
     } as OpenClawConfig;
     const deletedCfg = {
       ...cfg,
-      agents: { ...cfg.agents, entries: { main: { default: true } } },
+      agents: { ...cfg.agents, entries: { main: {} } },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(cfg);
     const state = buildGatewayCronService({ cfg, deps: {} as CliDeps, broadcast: () => {} });
@@ -3497,15 +3478,17 @@ describe("buildGatewayCronService", () => {
         store: path.join(tmpDir, "cron.json"),
       },
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: path.join(tmpDir, "workspace"),
+          systemAgent: { agentId: "main" },
           heartbeat: {
             target: "main",
             deliveryFormat: "text",
           },
         },
         entries: {
-          main: { default: true },
+          main: {},
           yinze: {
             workspace: path.join(tmpDir, "workspace-yinze"),
             heartbeat: {
@@ -3524,14 +3507,16 @@ describe("buildGatewayCronService", () => {
         store: path.join(tmpDir, "cron.json"),
       },
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: path.join(tmpDir, "workspace"),
+          systemAgent: { agentId: "main" },
           heartbeat: {
             target: "main",
             deliveryFormat: "text",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(reloadedCfg);

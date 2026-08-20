@@ -1269,9 +1269,11 @@ describe("promptDefaultModel", () => {
     };
     const config = {
       agents: {
-        list: [{ id: "worker", default: true }],
+        ownership: "explicit",
+        entries: { worker: {} },
         defaults: {
           model: "nvidia/nemotron-3-super-120b-a12b",
+          systemAgent: { agentId: "worker" },
         },
       },
     } as OpenClawConfig;

@@ -12,14 +12,16 @@ describe("models.list configured static entries", () => {
   it("projects a configured runtime model from prepared static facts", async () => {
     const config = {
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.6-sol" } },
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: {
+          model: { primary: "openai/gpt-5.6-sol" },
+          systemAgent: { agentId: "main" },
+        },
+        entries: {
+          main: {
             models: { "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } } },
           },
-        ],
+        },
       },
     } as OpenClawConfig;
 

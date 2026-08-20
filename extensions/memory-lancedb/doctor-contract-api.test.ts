@@ -22,7 +22,7 @@ describe("memory-lancedb doctor migration", () => {
     prefix: "openclaw-memory-doctor-",
   });
 
-  test("assigns legacy shared rows to the configured default agent once", async () => {
+  test("assigns legacy shared rows to the sole configured agent once", async () => {
     const connection = await lancedb.connect(getDbPath());
     const table = await connection.createTable("memories", [
       {
@@ -38,7 +38,7 @@ describe("memory-lancedb doctor migration", () => {
     connection.close();
 
     const config = {
-      agents: { list: [{ id: "Owner Agent", default: true }, { id: "other" }] },
+      agents: { entries: { "owner-agent": {} } },
       plugins: {
         entries: {
           "memory-lancedb": {
@@ -186,7 +186,7 @@ describe("memory-lancedb doctor migration", () => {
     connection.close();
 
     const config = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: { entries: { main: {} } },
       plugins: {
         entries: {
           "memory-lancedb": {
@@ -265,7 +265,7 @@ describe("memory-lancedb doctor migration", () => {
     connection.close();
 
     const config = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: { entries: { main: {} } },
       plugins: {
         entries: {
           "memory-lancedb": { config: { dbPath: relativeDbPath } },

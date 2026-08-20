@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { AgentSelectionRequiredError, listAgentIds } from "../../agents/agent-scope-config.js";
+import {
+  AgentSelectionRequiredError,
+  listAgentIds,
+  tryResolveAmbientOwnerAgentId,
+} from "../../agents/agent-scope-config.js";
 import {
   classifySessionKeyShape,
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../../routing/session-key.js";
 import { getRuntimeConfig } from "../io.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { resolveSessionStorePathCore } from "./paths.js";
 import { updateSessionEntry } from "./session-accessor.entry-mutation.js";
@@ -90,7 +93,7 @@ function resolveTranscriptTurnAgentId(params: {
     keyAgentId ??
     (persistedStoreOwner.kind === "configured" ? persistedStoreOwner.agentId : undefined) ??
     scopedAgentId ??
-    tryResolveLegacyCompatibilityAgentId(params.config);
+    tryResolveAmbientOwnerAgentId(params.config);
   if (agentId) {
     return normalizeAgentId(agentId);
   }

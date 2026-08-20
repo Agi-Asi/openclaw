@@ -6,7 +6,6 @@
  */
 import { resolveQueueSettings } from "../../../auto-reply/reply/queue.js";
 import { getRuntimeConfig } from "../../../config/config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../../config/legacy.default-agent-owner.js";
 import { resolveSessionStorePathCore } from "../../../config/sessions.js";
 import { loadSessionEntryReadOnly as loadSessionEntry } from "../../../config/sessions/session-accessor.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../../../config/sessions/session-store-owner.js";
@@ -22,6 +21,7 @@ import {
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../../../routing/session-key.js";
+import { tryResolveAmbientOwnerAgentId } from "../../agent-scope-config.js";
 import type { EmbeddedAgentQueueMessageOptions } from "../../embedded-agent-runner/run-state.js";
 import {
   formatEmbeddedAgentQueueFailureSummary,
@@ -99,7 +99,7 @@ export function tryResolveSubagentRequesterAgentId(
   }
   return (
     (persistedStoreOwner.kind === "configured" ? persistedStoreOwner.agentId : undefined) ??
-    tryResolveLegacyCompatibilityAgentId(cfg)
+    tryResolveAmbientOwnerAgentId(cfg)
   );
 }
 

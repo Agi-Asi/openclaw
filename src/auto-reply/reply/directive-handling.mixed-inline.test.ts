@@ -30,7 +30,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentDir: vi.fn(() => "/tmp/agent"),
   resolveSessionAgentIds: vi.fn(() => ({ requestedAgentId: "main", sessionAgentId: "main" })),
   resolveSessionAgentId: vi.fn(() => "main"),
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
 }));
 
 vi.mock("../../agents/sandbox.js", () => ({

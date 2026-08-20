@@ -22,10 +22,6 @@ import {
 } from "./channel-config-metadata.js";
 import { resolveConfigWidePluginManifestRegistry } from "./io.plugin-metadata.js";
 import { migrateLegacyContextBudgetConfig } from "./legacy.context-budget.js";
-import {
-  inheritLegacyDefaultAgentId,
-  tryGetLegacyDefaultAgentId,
-} from "./legacy.default-agent-owner.js";
 import { materializeLegacyDefaultAgentRoles } from "./legacy.default-agent-roles.js";
 import { migratePersistedImplicitMainRoster } from "./legacy.roster.js";
 import { materializeRuntimeConfig } from "./materialize.js";
@@ -62,6 +58,7 @@ type ValidateConfigWithPluginsParams = {
   loadPluginMetadataSnapshot?: (
     config: OpenClawConfig,
   ) => Pick<PluginMetadataSnapshot, "manifestRegistry">;
+  retainedLegacyDefaultAgentId?: string;
   sourceRaw?: unknown;
   preservedLegacyRootKeys?: readonly string[];
 };
@@ -132,7 +129,8 @@ function validateConfigObjectWithPluginMode(
   applyDefaults: boolean,
 ): ValidateConfigWithPluginsResult {
   const contextBudgetConfig = migrateLegacyContextBudgetConfig(raw).config;
-  const migrated = migratePersistedImplicitMainRoster(contextBudgetConfig).config as OpenClawConfig;
+  const rosterMigration = migratePersistedImplicitMainRoster(contextBudgetConfig);
+  const migrated = rosterMigration.config as OpenClawConfig;
   let manifestRegistry = params?.pluginMetadataSnapshot?.manifestRegistry;
   const result = validateConfigObjectWithPluginsBase(migrated, {
     applyDefaults,
@@ -147,14 +145,13 @@ function validateConfigObjectWithPluginMode(
       manifestRegistry = registry;
     },
   });
-  const legacyDefaultAgentId = tryGetLegacyDefaultAgentId(migrated);
+  const legacyDefaultAgentId =
+    rosterMigration.retainedLegacyDefaultAgentId ?? params?.retainedLegacyDefaultAgentId;
   if (!result.ok || !legacyDefaultAgentId) {
     return result;
   }
-  // Carry the migration sidecar across Zod's fresh object.
-  const validatedConfig = inheritLegacyDefaultAgentId(migrated, result.config);
   const materialized = materializeLegacyAgentOwnershipForActiveChannelsResult(
-    validatedConfig,
+    result.config,
     legacyDefaultAgentId,
     params?.env,
     manifestRegistry?.plugins,
@@ -175,14 +172,12 @@ export function materializeLegacyAgentOwnershipForActiveChannelsResult(
     env,
     ...(manifestRecords ? { manifestRecords } : {}),
   });
-  const materialized = materializeLegacyDefaultAgentRoles(config, legacyDefaultAgentId, {
+  return materializeLegacyDefaultAgentRoles(config, legacyDefaultAgentId, {
     ambientChannelIds,
     env,
     materializeSessionStore: options?.materializeSessionStore,
     materializeWorkspace: options?.materializeWorkspace,
   });
-  const next = inheritLegacyDefaultAgentId(config, materialized.config);
-  return { ...materialized, config: next };
 }
 
 function validateConfigObjectWithPluginsBase(
@@ -200,9 +195,7 @@ function validateConfigObjectWithPluginsBase(
   if (!base.ok) {
     return { ok: false, issues: base.issues, warnings: [] };
   }
-  // Zod returns a fresh object. Preserve the migration-only owner before
-  // workspace-scoped plugin discovery, or legacy-root plugins disappear here.
-  const parsedConfig = inheritLegacyDefaultAgentId(raw as OpenClawConfig, base.config);
+  const parsedConfig = base.config;
 
   const rememberRegistry = (registry: PluginManifestRegistry): RegistryInfo => {
     opts.onManifestRegistryResolved?.(registry);

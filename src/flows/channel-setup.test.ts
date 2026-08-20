@@ -87,7 +87,7 @@ function expectExternalCatalogInstallCall(index = 0) {
 const resolveAgentWorkspaceDir = vi.hoisted(() =>
   vi.fn((_cfg?: unknown, _agentId?: unknown) => "/tmp/openclaw-workspace"),
 );
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn((_cfg?: unknown) => "default"));
+const resolveSoleAgentId = vi.hoisted(() => vi.fn((_cfg?: unknown) => "default"));
 const listTrustedChannelPluginCatalogEntries = vi.hoisted(() =>
   vi.fn((_params?: unknown): unknown[] => []),
 );
@@ -140,7 +140,7 @@ const isChannelConfigured = vi.hoisted(() => vi.fn((_cfg?: unknown, _channel?: u
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: (cfg?: unknown, agentId?: unknown) =>
     resolveAgentWorkspaceDir(cfg, agentId),
-  resolveDefaultAgentId: (cfg?: unknown) => resolveDefaultAgentId(cfg),
+  resolveSoleAgentId: (cfg?: unknown) => resolveSoleAgentId(cfg),
 }));
 
 vi.mock("../channels/plugins/setup-registry.js", () => ({
@@ -214,7 +214,7 @@ describe("setupChannels workspace shadow exclusion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resolveAgentWorkspaceDir.mockReturnValue("/tmp/openclaw-workspace");
-    resolveDefaultAgentId.mockReturnValue("default");
+    resolveSoleAgentId.mockReturnValue("default");
     resolveChannelSetupWorkspaceDir.mockReturnValue("/tmp/openclaw-workspace");
     listTrustedChannelPluginCatalogEntries.mockReturnValue([
       {
@@ -278,8 +278,8 @@ describe("setupChannels workspace shadow exclusion", () => {
         entries: { main: {}, helper: {}, third: {} },
       },
     } as unknown as OpenClawConfig;
-    resolveDefaultAgentId.mockImplementationOnce(() => {
-      throw new Error("legacy default resolver must not own channel setup");
+    resolveSoleAgentId.mockImplementationOnce(() => {
+      throw new Error("sole-agent resolver must not own channel setup");
     });
 
     await setupChannels(

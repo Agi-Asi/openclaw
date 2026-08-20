@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { withTempHome } from "openclaw/plugin-sdk/test-env";
 import { describe, expect, it } from "vitest";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { configIncludeOwnsAgentRoster } from "./agent-roster-provenance.js";
 import { readConfigFileSnapshot, resetConfigRuntimeState } from "./config.js";
 import { migratePersistedImplicitMainRoster } from "./legacy.js";
@@ -445,11 +446,14 @@ describe("persisted implicit-main roster migration", () => {
       const snapshot = await readConfigFileSnapshot();
 
       expect(snapshot.valid).toBe(true);
+      expect(snapshot.sourceConfig.agents?.ownership).toBe("explicit");
       expect(snapshot.sourceConfig.agents?.entries).toMatchObject({ ops: {}, research: {} });
       expect(snapshot.sourceConfig.agents?.defaults?.heartbeat?.agentId).toBe("research");
       expect(snapshot.sourceConfig.agents?.defaults?.systemAgent?.agentId).toBe("research");
       expect(snapshot.sourceConfig.agents?.defaults?.authInheritance?.agentId).toBe("research");
       expect(snapshot.sourceConfig.talk?.agentId).toBe("research");
+      expect(validateConfigObjectRaw(snapshot.sourceConfig).ok).toBe(true);
+      expect(tryResolveAmbientOwnerAgentId(snapshot.sourceConfig)).toBe("research");
     });
   });
 

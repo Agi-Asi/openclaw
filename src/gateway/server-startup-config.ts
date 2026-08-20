@@ -2,7 +2,6 @@
 // plus secrets snapshots before the server exposes user-facing surfaces.
 import { isDeepStrictEqual } from "node:util";
 import { hasLegacyAuthProfileSourcesForStartup } from "../agents/auth-profiles/legacy-source-diagnostic.js";
-import { inheritLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { copyConfigResolutionFacts, hasUnresolvedConfigPath } from "../config/resolution-facts.js";
 import { applyConfigOverrides } from "../config/runtime-overrides.js";
 import type { GatewayAuthConfig, GatewayTailscaleConfig } from "../config/types.gateway.js";
@@ -714,7 +713,5 @@ export async function prepareGatewayStartupConfig(params: {
       { omitErrorMessage: true },
     )
   ).config;
-  const config = inheritLegacyDefaultAgentId(params.configSnapshot.config, activatedConfig);
-  copyConfigResolutionFacts(activatedConfig, config);
-  return { ...authBootstrap, cfg: config };
+  return { ...authBootstrap, cfg: activatedConfig };
 }

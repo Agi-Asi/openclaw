@@ -6,7 +6,7 @@ import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { loadAgentIdentityFromFile } from "../agents/identity-file.js";
 import { DEFAULT_IDENTITY_FILENAME } from "../agents/workspace.js";
@@ -47,9 +47,7 @@ function resolveAgentIdByWorkspace(
 ): string[] {
   const list = listAgentEntries(cfg);
   const ids =
-    list.length > 0
-      ? list.map((entry) => normalizeAgentId(entry.id))
-      : [resolveDefaultAgentId(cfg)];
+    list.length > 0 ? list.map((entry) => normalizeAgentId(entry.id)) : [resolveSoleAgentId(cfg)];
   const normalizedTarget = normalizeWorkspacePath(workspaceDir);
   return ids.filter(
     (id) => normalizeWorkspacePath(resolveAgentWorkspaceDir(cfg, id)) === normalizedTarget,

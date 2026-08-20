@@ -9,7 +9,7 @@ import {
   listAgentIds,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import {
   hasAnyAuthProfileStoreSource,
@@ -565,7 +565,7 @@ export async function noteMemorySearchHealth(
   opts?: MemorySearchHealthOptions,
 ): Promise<void> {
   const scopes = resolveMemoryDoctorAgentScopes(cfg);
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   const labelAgents = scopes.length > 1;
   for (const scope of scopes) {
     if (opts?.includeWorkspaceMemoryHealth !== false) {

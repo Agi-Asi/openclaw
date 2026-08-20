@@ -14,7 +14,11 @@ function classification(params: {
   entry?: SessionEntry;
 }) {
   const cfg = {
-    agents: { list: [{ id: "main", default: true }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
     ...(params.isMain ? {} : { session: { mainKey: "not-main" } }),
   } as OpenClawConfig;
   return sessionClassificationForRow(cfg, params.key, params.agentId ?? "main", params.entry);

@@ -816,20 +816,21 @@ describe("Claude session catalog", () => {
   it("resolves creation against the requested agent's runtime policy", () => {
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           models: {
             "anthropic/claude-opus-4-8": { agentRuntime: { id: "claude-cli" } },
           },
         },
-        list: [
-          { id: "main", default: true },
-          {
-            id: "research",
+        entries: {
+          main: {},
+          research: {
             models: {
               "anthropic/claude-opus-4-8": { agentRuntime: { id: "openclaw" } },
             },
           },
-        ],
+        },
       },
     } satisfies OpenClawConfig;
     let provider: SessionCatalogProvider | undefined;
@@ -887,16 +888,17 @@ describe("Claude session catalog", () => {
   it("uses the requested agent's model allowlist for creation", () => {
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           model: { primary: "anthropic/claude-opus-4-8" },
           models: {
             "anthropic/claude-opus-4-8": { agentRuntime: { id: "claude-cli" } },
           },
         },
-        list: [
-          { id: "main", default: true },
-          {
-            id: "research",
+        entries: {
+          main: {},
+          research: {
             model: { primary: "anthropic/claude-sonnet-4-8" },
             models: {
               "anthropic/claude-opus-4-8": { agentRuntime: { id: "claude-cli" } },
@@ -904,7 +906,7 @@ describe("Claude session catalog", () => {
             },
             modelPolicy: { allow: ["anthropic/claude-sonnet-4-8"] },
           },
-        ],
+        },
       },
     } satisfies OpenClawConfig;
     let provider: SessionCatalogProvider | undefined;

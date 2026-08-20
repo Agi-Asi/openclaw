@@ -170,7 +170,9 @@ describe("gateway compaction hot reload", () => {
 
         const initialConfig = {
           agents: {
+            ownership: "explicit",
             defaults: {
+              systemAgent: { agentId: "dev" },
               workspace: workspaceDir,
               skipBootstrap: true,
               model: { primary: primaryModel.modelRef },
@@ -186,7 +188,7 @@ describe("gateway compaction hot reload", () => {
                 memoryFlush: { enabled: false },
               },
             },
-            entries: { dev: { default: true } },
+            entries: { dev: {} },
           },
           models: {
             mode: "replace",

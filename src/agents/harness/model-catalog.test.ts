@@ -6,14 +6,16 @@ import { augmentModelCatalogWithAgentHarness } from "./model-catalog.js";
 
 const cfg = {
   agents: {
-    defaults: { model: { primary: "openai/gpt-5.6-sol" } },
-    list: [
-      {
-        id: "main",
-        default: true,
+    ownership: "explicit",
+    defaults: {
+      model: { primary: "openai/gpt-5.6-sol" },
+      systemAgent: { agentId: "main" },
+    },
+    entries: {
+      main: {
         models: { "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } } },
       },
-    ],
+    },
   },
 } as OpenClawConfig;
 

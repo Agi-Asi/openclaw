@@ -44,7 +44,7 @@ function createContext(params: {
   replayError?: Error;
   globalScope?: boolean;
   mainKey?: string;
-  agents?: Array<{ id: string; default?: boolean }>;
+  agents?: Record<string, Record<string, never>>;
 }) {
   const rollbackSubscription = vi.fn();
   const subscribeSessionMessageEvents = vi.fn(() => rollbackSubscription);
@@ -57,7 +57,11 @@ function createContext(params: {
   const logError = vi.fn();
   const context = {
     getRuntimeConfig: () => ({
-      agents: { list: params.agents ?? [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: params.agents ?? { main: {} },
+      },
       ...(params.globalScope || params.mainKey
         ? {
             session: {
@@ -115,7 +119,7 @@ describe("sessions.messages.subscribe approval opt-in", () => {
     const { context, listSessionPendingApprovals, subscribeSessionMessageEvents } = createContext({
       replay: approvalReplay,
       globalScope: true,
-      agents: [{ id: "main", default: true }, { id: "work" }],
+      agents: { main: {}, work: {} },
     });
 
     const respond = await subscribe({

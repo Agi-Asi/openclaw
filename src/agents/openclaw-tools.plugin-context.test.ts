@@ -155,16 +155,18 @@ describe("openclaw plugin tool context", () => {
       options: {
         config: {
           agents: {
-            defaults: { workspace: workspaceDir },
-            list: [{ id: "main", default: true }],
+            ownership: "explicit",
+            defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+            entries: { main: {} },
           },
         } as never,
         agentSessionKey: "main",
       },
       resolvedConfig: {
         agents: {
-          defaults: { workspace: workspaceDir },
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
       } as never,
     });
@@ -177,11 +179,12 @@ describe("openclaw plugin tool context", () => {
     const supportWorkspace = path.join(process.cwd(), "tmp-support-workspace");
     const config = {
       agents: {
-        defaults: { workspace: path.join(process.cwd(), "tmp-default-workspace") },
-        list: [
-          { id: "main", default: true },
-          { id: "support", workspace: supportWorkspace },
-        ],
+        ownership: "explicit",
+        defaults: {
+          workspace: path.join(process.cwd(), "tmp-default-workspace"),
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: {}, support: { workspace: supportWorkspace } },
       },
     } as never;
     const result = resolveOpenClawPluginToolInputs({
@@ -200,11 +203,12 @@ describe("openclaw plugin tool context", () => {
     const recallWorkspace = path.join(process.cwd(), "tmp-recall-workspace");
     const config = {
       agents: {
-        defaults: { workspace: path.join(process.cwd(), "tmp-default-workspace") },
-        list: [
-          { id: "main", default: true },
-          { id: "recall", workspace: recallWorkspace },
-        ],
+        ownership: "explicit",
+        defaults: {
+          workspace: path.join(process.cwd(), "tmp-default-workspace"),
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: {}, recall: { workspace: recallWorkspace } },
       },
     } as never;
     const result = resolveOpenClawPluginToolInputs({

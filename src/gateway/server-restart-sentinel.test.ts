@@ -200,7 +200,7 @@ const mocks = vi.hoisted(() => {
     recoverPendingSessionDeliveries: vi.fn<RecoverPendingSessionDeliveriesMock>(),
     resolveAgentConfig: vi.fn(() => undefined),
     resolveAgentWorkspaceDir: vi.fn(() => "/tmp/openclaw-test-workspace"),
-    resolveDefaultAgentId: vi.fn(() => "main"),
+    resolveSoleAgentId: vi.fn(() => "main"),
     recordInboundSessionAndDispatchReply: vi.fn(
       async (_params: RecordInboundSessionAndDispatchReplyParams) => {},
     ),
@@ -232,7 +232,7 @@ vi.mock("../agents/agent-scope.js", async () => {
     ...actual,
     resolveAgentConfig: mocks.resolveAgentConfig,
     resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-    resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+    resolveSoleAgentId: mocks.resolveSoleAgentId,
     resolveSessionAgentId: mocks.resolveSessionAgentId,
   };
 });

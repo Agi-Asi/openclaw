@@ -4,7 +4,7 @@ import { runChannelLogin, runChannelLogout } from "./channel-auth.js";
 
 const mocks = vi.hoisted(() => ({
   resolveAgentWorkspaceDir: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
+  resolveSoleAgentId: vi.fn(),
   getChannelPluginCatalogEntry: vi.fn(),
   listChannelPluginCatalogEntries: vi.fn(),
   resolveChannelDefaultAccountId: vi.fn(),
@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+  resolveSoleAgentId: mocks.resolveSoleAgentId,
 }));
 
 vi.mock("../channels/plugins/catalog.js", () => ({
@@ -184,7 +184,7 @@ describe("channel-auth", () => {
     );
     mocks.callGateway.mockResolvedValue({ ok: true });
     mocks.listChannelPlugins.mockReturnValue([plugin]);
-    mocks.resolveDefaultAgentId.mockReturnValue("main");
+    mocks.resolveSoleAgentId.mockReturnValue("main");
     mocks.resolveAgentWorkspaceDir.mockReturnValue("/tmp/workspace");
     mocks.resolveChannelDefaultAccountId.mockReturnValue("default-account");
     mocks.createClackPrompter.mockReturnValue({} as object);

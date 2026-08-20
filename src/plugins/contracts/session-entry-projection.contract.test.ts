@@ -77,7 +77,11 @@ async function withProjectionSessionStore(
   const stateDir = await fs.mkdtemp(path.join(resolvePreferredOpenClawTmpDir(), prefix));
   const storePath = path.join(stateDir, "sessions.json");
   const tempConfig = {
-    agents: { entries: { main: { default: true } } },
+    agents: {
+      ownership: "explicit" as const,
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
     session: { store: storePath },
   };
   try {

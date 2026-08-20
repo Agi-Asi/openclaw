@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { listAgentIds, tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
+import {
+  listAgentEntries,
+  listAgentIds,
+  tryResolveAmbientOwnerAgentId,
+} from "../agents/agent-scope-config.js";
 import { resolveSharedMainAuthAgentDir } from "../agents/auth-profiles/shared-main-dir.js";
 import {
   discardLegacyRegistryWorktrees,
@@ -569,15 +573,17 @@ export async function detectLegacyStateMigrations(params: {
   // Doctor already resolved this migration owner; plugin defaults must not infer it again.
   let migrationOwnerConfig = params.cfg;
   if (migrationAgentId && listAgentIds(params.cfg).length > 1 && params.cfg.agents) {
-    const agents = structuredClone(params.cfg.agents);
-    delete agents.ownership;
-    for (const [agentId, entry] of Object.entries(agents.entries ?? {})) {
-      entry.default = normalizeAgentId(agentId) === targetAgentId;
+    const selectedAgent = listAgentEntries(params.cfg).find(
+      (entry) => normalizeAgentId(entry.id) === targetAgentId,
+    );
+    if (selectedAgent) {
+      const { id, default: _retiredDefault, ...selectedAgentConfig } = selectedAgent;
+      const { list: _retiredList, ...agents } = params.cfg.agents;
+      migrationOwnerConfig = {
+        ...params.cfg,
+        agents: { ...agents, entries: { [id]: selectedAgentConfig } },
+      };
     }
-    for (const entry of agents.list ?? []) {
-      entry.default = normalizeAgentId(entry.id) === targetAgentId;
-    }
-    migrationOwnerConfig = { ...params.cfg, agents };
   }
   const configuredAccountIds = Object.fromEntries(
     configuredChannels.map(([channelId, value]) => {

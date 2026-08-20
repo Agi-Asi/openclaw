@@ -1195,7 +1195,11 @@ describe("codex command", () => {
         agentId: "work",
         sessionKey: "global",
         config: {
-          agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, work: {} },
+          },
           session: { scope: "global" },
         },
       }),

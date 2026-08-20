@@ -3,8 +3,11 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import { AgentSelectionRequiredError, listAgentIds } from "../agents/agent-scope.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
+import {
+  AgentSelectionRequiredError,
+  listAgentIds,
+  tryResolveAmbientOwnerAgentId,
+} from "../agents/agent-scope.js";
 import {
   canonicalizeMainSessionAlias,
   resolveAgentMainSessionKey,
@@ -46,7 +49,7 @@ function resolveLogicalSessionStoreAgentId(cfg: OpenClawConfig, sessionKey: stri
       hint: `Its recorded owner "${persistedOwner.agentId}" is no longer configured. Select a configured agent explicitly.`,
     });
   }
-  const compatibilityAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const compatibilityAgentId = tryResolveAmbientOwnerAgentId(cfg);
   if (compatibilityAgentId) {
     return normalizeAgentId(compatibilityAgentId);
   }

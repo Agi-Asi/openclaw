@@ -20,6 +20,14 @@ vi.mock("../config/sessions/legacy-main-session-migration.js", () => ({
 
 const { ensureOnboardingAgent } = await import("./onboard-agent.js");
 
+function createMainAgentRoster() {
+  return {
+    ownership: "explicit" as const,
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  };
+}
+
 describe("onboarding main-agent creation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -37,19 +45,19 @@ describe("onboarding main-agent creation", () => {
       .mockResolvedValueOnce({
         exists: false,
         valid: true,
-        sourceConfig: { agents: { list: [{ id: "main", default: true }] }, gateway: {} },
-        config: { agents: { list: [{ id: "main", default: true }] }, gateway: {} },
+        sourceConfig: { agents: createMainAgentRoster(), gateway: {} },
+        config: { agents: createMainAgentRoster(), gateway: {} },
       })
       .mockResolvedValueOnce({
         exists: true,
         valid: true,
         hash: "hash-after-create",
         sourceConfig: {
-          agents: { list: [{ id: "main", default: true }] },
+          agents: createMainAgentRoster(),
           gateway: { controlUi: { enabled: true } },
         },
         config: {
-          agents: { list: [{ id: "main", default: true }] },
+          agents: createMainAgentRoster(),
           gateway: { controlUi: { enabled: true } },
         },
       });
@@ -75,8 +83,12 @@ describe("onboarding main-agent creation", () => {
       agentId: "main",
       config: {
         agents: {
-          defaults: { model: "openai/gpt-5.5" },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: {
+            model: "openai/gpt-5.5",
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: {} },
         },
         gateway: { mode: "local", controlUi: { enabled: true } },
       },
@@ -110,7 +122,7 @@ describe("onboarding main-agent creation", () => {
   });
 
   it("preserves an explicit imported candidate roster", async () => {
-    const config = { agents: { list: [{ id: "main", default: true }] } };
+    const config = { agents: createMainAgentRoster() };
 
     await expect(
       ensureOnboardingAgent({
@@ -140,7 +152,7 @@ describe("onboarding main-agent creation", () => {
   });
 
   it("omits the config hash when no agent had to be created", async () => {
-    const config = { agents: { list: [{ id: "main", default: true }] } };
+    const config = { agents: createMainAgentRoster() };
 
     const result = await ensureOnboardingAgent({
       config,

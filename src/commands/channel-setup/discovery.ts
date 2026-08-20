@@ -1,5 +1,5 @@
 // Builds the channel setup list from bundled channels, installed plugins, and trusted catalog entries.
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import { listChatChannels } from "../../channels/chat-meta.js";
 import type { ChannelPluginCatalogEntry } from "../../channels/plugins/catalog.js";
 import { isChannelVisibleInSetup } from "../../channels/plugins/exposure.js";
@@ -36,7 +36,7 @@ type ResolvedChannelSetupEntries = {
 };
 
 function resolveWorkspaceDir(cfg: OpenClawConfig, workspaceDir?: string): string | undefined {
-  return workspaceDir ?? resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+  return workspaceDir ?? resolveAgentWorkspaceDir(cfg, resolveSoleAgentId(cfg));
 }
 
 /** List channel ids contributed by currently installed manifest-backed plugins. */

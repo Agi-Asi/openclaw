@@ -152,10 +152,12 @@ describe("memory legacy migration cleanup", () => {
           },
         },
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             workspace: workspaceDir,
           },
-          list: [{ id: "main", default: true }],
+          entries: { main: {} },
         },
       }) as OpenClawConfig;
     const cfg = createConfig({ provider: "none", vectorEnabled: false });

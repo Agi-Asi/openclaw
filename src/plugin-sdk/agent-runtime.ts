@@ -122,7 +122,9 @@ export { readToolStringParam as readStringParam } from "../agents/tools/common.j
 export {
   resolveAgentConfig,
   resolveAgentDir,
-  resolveDefaultAgentId,
+  resolveAmbientOwnerAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope-config.js";
+export { resolveDefaultAgentId } from "./agent-scope-runtime.js";
 export { resolveDefaultModelForAgent } from "../agents/model-selection-config.js";
 export { resolveThinkingDefault } from "../agents/model-thinking-default.js";

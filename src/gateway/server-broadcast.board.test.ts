@@ -216,7 +216,13 @@ describe("collaboration event scope guards", () => {
       subscribers,
       isVisible: () => true,
       getConfig: () =>
-        ({ agents: { list: [{ id: "main", default: true }, { id: "work" }] } }) as OpenClawConfig,
+        ({
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, work: {} },
+          },
+        }) as OpenClawConfig,
     });
     const { broadcastToConnIds } = createGatewayBroadcaster({
       clients: new Set([main.client, legacy.client, both.client, work.client, workRaw.client]),
@@ -255,7 +261,13 @@ describe("collaboration event scope guards", () => {
       sessionEventSubscribers,
       isVisible: () => true,
       getConfig: () =>
-        ({ agents: { list: [{ id: "main", default: true }, { id: "work" }] } }) as OpenClawConfig,
+        ({
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, work: {} },
+          },
+        }) as OpenClawConfig,
     });
     const { broadcastToConnIds } = createGatewayBroadcaster({
       clients: new Set([message.client, eventOnly.client, unrelated.client]),

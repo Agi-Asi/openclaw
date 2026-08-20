@@ -23,7 +23,7 @@ const hoisted = vi.hoisted(() => ({
   execOpenPath: vi.fn(),
   loadSessionEntry: vi.fn(),
   resolveAgentWorkspaceDir: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
+  resolveSoleAgentId: vi.fn(),
   readSessionTranscriptVisibleMessageDeltaCore: vi.fn(),
 }));
 
@@ -35,7 +35,7 @@ vi.mock("./open-path.js", async () => {
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   resolveAgentWorkspaceDir: hoisted.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: hoisted.resolveDefaultAgentId,
+  resolveSoleAgentId: hoisted.resolveSoleAgentId,
 }));
 
 vi.mock("../session-utils.js", async () => {

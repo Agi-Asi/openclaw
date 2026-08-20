@@ -1,4 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeAgentId, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
@@ -14,7 +15,6 @@ import {
   resolveHeartbeatAgents,
   resolveHeartbeatForWake,
   resolveHeartbeatSchedulerSeed,
-  tryResolveAmbientHeartbeatAgentId,
   type HeartbeatConfig,
 } from "./heartbeat-runner-config.js";
 import { runHeartbeatOnce } from "./heartbeat-runner-run.js";
@@ -428,7 +428,9 @@ export function startHeartbeatRunner(opts: {
     };
 
     if (requestedSessionKey || requestedAgentId) {
-      const targetAgentId = requestedTargetAgentId ?? tryResolveAmbientHeartbeatAgentId(wakeConfig);
+      const targetAgentId =
+        requestedTargetAgentId ??
+        tryResolveAmbientOwnerAgentId(wakeConfig, wakeConfig.agents?.defaults?.heartbeat?.agentId);
       if (!targetAgentId) {
         return { status: "skipped", reason: "disabled" };
       }

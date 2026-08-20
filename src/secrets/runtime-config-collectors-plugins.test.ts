@@ -25,7 +25,11 @@ vi.mock("../plugins/bundled-plugin-metadata.js", () => ({
 
 function asConfig(value: unknown): OpenClawConfig {
   return {
-    agents: { list: [{ id: "main", default: true }] },
+    agents: {
+      ownership: "explicit",
+      entries: { main: {} },
+      defaults: { systemAgent: { agentId: "main" } },
+    },
     ...(value as OpenClawConfig),
   };
 }
@@ -36,7 +40,7 @@ function makeContext(
 ): ResolverContext {
   return createResolverContext({
     sourceConfig,
-    env: {},
+    env: { HOME: process.env.HOME },
     ...(manifestRegistry ? { manifestRegistry } : {}),
   });
 }

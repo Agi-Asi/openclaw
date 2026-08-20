@@ -35,7 +35,11 @@ it("re-registers durable lineage children before configured-only runtime reads",
     const env = { ...process.env };
     const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json");
     const cfg: OpenClawConfig = {
-      agents: { entries: { ops: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {} },
+      },
       session: { store: storeTemplate },
     };
     const mainKey = "agent:ops:main";
@@ -124,7 +128,11 @@ it("keeps copied state directories self-contained for combined gateway reads", a
   const canonicalSourceStateDir = fs.realpathSync.native(sourceStateDir);
   const copiedStateDir = path.join(root, "copy");
   const cfg: OpenClawConfig = {
-    agents: { entries: { main: { default: true } } },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
   };
   const sessionKey = "agent:main:copied-state";
 

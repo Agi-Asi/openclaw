@@ -4,7 +4,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
-import { resolveAgentDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
   getPreparedRuntimeAuthProfileStoreSnapshot,
@@ -271,7 +271,7 @@ function requestModelsList(params: {
   const getRuntimeConfig = params.getRuntimeConfig ?? (() => runtimeConfig);
   const resolveOwnerFacts = () => {
     const config = getRuntimeConfig();
-    const agentId = params.agentId ?? resolveDefaultAgentId(config);
+    const agentId = params.agentId ?? resolveSoleAgentId(config);
     const agentDir = resolveAgentDir(config, agentId);
     return {
       agentId,
@@ -365,10 +365,9 @@ describe("models.list", () => {
       agentId: "writer",
       runtimeConfig: {
         agents: {
-          list: [
-            { id: "main", default: true },
-            { id: "writer", model: "test/writer-model" },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, writer: { model: "test/writer-model" } },
         },
       },
       loadGatewayModelCatalog,

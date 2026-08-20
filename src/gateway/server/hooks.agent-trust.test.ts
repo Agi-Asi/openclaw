@@ -200,7 +200,11 @@ describe("dispatchAgentHook trust handling", () => {
 
   it("queues and targets a mapped global wake for the same agent", () => {
     loadConfigMock.mockReturnValue({
-      agents: { entries: { main: { default: true }, hooks: {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, hooks: {} },
+      },
       session: { scope: "global" },
     });
 
@@ -860,7 +864,11 @@ describe("dispatchAgentHook trust handling", () => {
 
   it("keeps global-scope announcement events and wakes on the selected agent", async () => {
     loadConfigMock.mockReturnValue({
-      agents: { entries: { main: { default: true }, hooks: {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, hooks: {} },
+      },
       session: { scope: "global" },
     });
     runCronIsolatedAgentTurnMock.mockResolvedValueOnce({
@@ -916,7 +924,11 @@ describe("dispatchAgentHook trust handling", () => {
 
   it("keeps global-scope error events and wakes on the selected agent", async () => {
     loadConfigMock.mockReturnValue({
-      agents: { entries: { main: { default: true }, hooks: {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, hooks: {} },
+      },
       session: { scope: "global" },
     });
     runCronIsolatedAgentTurnMock.mockRejectedValueOnce(new Error("agent exploded"));
@@ -942,7 +954,11 @@ describe("dispatchAgentHook trust handling", () => {
     // a target from it, so the wake must carry the accepted agent or the
     // announced event sits unread.
     loadConfigMock.mockImplementation(() => ({
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { scope: "global" },
     }));
     runCronIsolatedAgentTurnMock.mockResolvedValueOnce({
@@ -971,7 +987,11 @@ describe("dispatchAgentHook trust handling", () => {
 
   it("carries the accepted default agent on the global-scope failure wake", async () => {
     loadConfigMock.mockImplementation(() => ({
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { scope: "global" },
     }));
     runCronIsolatedAgentTurnMock.mockRejectedValueOnce(new Error("agent exploded"));

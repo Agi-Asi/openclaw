@@ -3,8 +3,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { listAgentEntries, tryResolveDefaultAgentId } from "../agents/agent-scope.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
+import {
+  listAgentEntries,
+  tryResolveAmbientOwnerAgentId,
+  tryResolveSoleAgentId,
+} from "../agents/agent-scope.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { SessionScope } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -46,7 +49,7 @@ function listExistingAgentIdsFromDisk(): string[] {
 
 export function resolveGatewayAgentSelectionState(cfg: OpenClawConfig): GatewayAgentSelectionState {
   const configuredIds = listAgentEntries(cfg).map((entry) => normalizeAgentId(entry.id));
-  const soleAgentId = tryResolveDefaultAgentId(cfg);
+  const soleAgentId = tryResolveSoleAgentId(cfg);
   if (soleAgentId) {
     return {
       defaultId: normalizeAgentId(soleAgentId),
@@ -54,7 +57,7 @@ export function resolveGatewayAgentSelectionState(cfg: OpenClawConfig): GatewayA
       selectionRequired: false,
     };
   }
-  const legacyAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const legacyAgentId = tryResolveAmbientOwnerAgentId(cfg);
   const legacyCompatibleId = legacyAgentId ?? configuredIds[0];
   if (!legacyCompatibleId) {
     throw new Error("Cannot project gateway agent ownership without a configured agent.");

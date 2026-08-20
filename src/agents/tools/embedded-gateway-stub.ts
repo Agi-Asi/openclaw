@@ -31,7 +31,7 @@ interface EmbeddedGatewayRuntime {
     agentId?: string;
   }) => string;
   getRuntimeConfig: () => OpenClawConfig;
-  resolveDefaultAgentId: (config: OpenClawConfig) => string;
+  resolveSoleAgentId: (config: OpenClawConfig) => string;
   resolveSessionStoreKey: (params: { cfg: OpenClawConfig; sessionKey: string }) => string;
   resolveStoredSessionKeyForAgentStore: (params: {
     cfg: OpenClawConfig;
@@ -274,8 +274,7 @@ async function handleSessionsSearch(params: Record<string, unknown>) {
   ) {
     throw new Error("sessions.search supports one agent per call");
   }
-  const agentId =
-    requestedAgentId ?? agentIds.values().next().value ?? rt.resolveDefaultAgentId(cfg);
+  const agentId = requestedAgentId ?? agentIds.values().next().value ?? rt.resolveSoleAgentId(cfg);
   const result = rt.searchSessionTranscripts({
     agentId,
     query,

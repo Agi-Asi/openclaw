@@ -94,11 +94,9 @@ import { sessionMutationHandlers } from "./sessions-mutations.js";
 
 const cfg = {
   agents: {
-    defaults: { model: "anthropic/claude-opus-4-6" },
-    list: [
-      { id: "main", default: true },
-      { id: "work", model: "anthropic/claude-sonnet-4-6" },
-    ],
+    ownership: "explicit",
+    defaults: { model: "anthropic/claude-opus-4-6", systemAgent: { agentId: "main" } },
+    entries: { main: {}, work: { model: "anthropic/claude-sonnet-4-6" } },
   },
 } satisfies OpenClawConfig;
 

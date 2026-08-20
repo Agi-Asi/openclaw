@@ -45,7 +45,13 @@ const mockConfig = vi.hoisted(() => {
   const state = {
     path: "/tmp/openclaw.json",
     exists: true,
-    config: { agents: { entries: { main: { default: true } } } } as OpenClawConfig,
+    config: {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    } as OpenClawConfig,
   };
   let bindPluginMetadata = (_config: OpenClawConfig) => {};
   const snapshot = () => {
@@ -71,7 +77,13 @@ const mockConfig = vi.hoisted(() => {
     reset() {
       state.path = "/tmp/openclaw.json";
       state.exists = true;
-      state.config = { agents: { entries: { main: { default: true } } } };
+      state.config = {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      };
       bindPluginMetadata(state.config);
       readConfigFileSnapshot.mockReset().mockImplementation(async () => snapshot());
       withConfigMutationExclusive
@@ -137,8 +149,13 @@ function setRecoveryConfig(
 ) {
   mockConfig.setConfig({
     agents: {
-      defaults: { model: { primary: "openai/gpt-5.5" }, workspace: pending.workspace },
-      entries: { main: { default: true } },
+      ownership: "explicit",
+      defaults: {
+        model: { primary: "openai/gpt-5.5" },
+        workspace: pending.workspace,
+        systemAgent: { agentId: "main" },
+      },
+      entries: { main: {} },
     },
     gateway: { mode: "local" },
     wizard: { securityAcknowledgedAt },
@@ -213,8 +230,9 @@ describe("system-agent setup transaction", () => {
   it("does not provision an agent before a conflicting setup transaction", async () => {
     const config = {
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.5" } },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { model: { primary: "openai/gpt-5.5" }, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     mockConfig.bindPluginMetadata(config);
@@ -445,8 +463,13 @@ describe("system-agent setup transaction", () => {
     const applySetup = vi.fn(async () => {
       mockConfig.setConfig({
         agents: {
-          defaults: { model: { primary: "openai/gpt-5.5" }, workspace: "/tmp/other-workspace" },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: {
+            model: { primary: "openai/gpt-5.5" },
+            workspace: "/tmp/other-workspace",
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: {} },
         },
         gateway: { mode: "local" },
         wizard: { securityAcknowledgedAt: pending.securityAcknowledgedAt },
@@ -478,8 +501,12 @@ describe("system-agent setup transaction", () => {
       replace: (owner: LocalOnboardingState) =>
         mockConfig.setConfig({
           agents: {
-            defaults: { workspace: "/tmp/changed-before-lock" },
-            entries: { main: { default: true } },
+            ownership: "explicit",
+            defaults: {
+              workspace: "/tmp/changed-before-lock",
+              systemAgent: { agentId: "main" },
+            },
+            entries: { main: {} },
           },
           gateway: { mode: "local" },
           wizard: { securityAcknowledgedAt: owner.securityAcknowledgedAt },

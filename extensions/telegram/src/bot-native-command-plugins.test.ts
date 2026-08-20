@@ -160,7 +160,9 @@ describe("registerTelegramNativeCommands", () => {
     const mediaMaxBytes = 50 * 1024 * 1024;
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true }, { id: "work" }],
+        ownership: "explicit",
+        entries: { main: {}, work: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
       bindings: [{ agentId: "work", match: { channel: "telegram", accountId: "default" } }],
     };

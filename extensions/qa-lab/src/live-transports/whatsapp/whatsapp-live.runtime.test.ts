@@ -1941,14 +1941,15 @@ describe("WhatsApp QA live runtime", () => {
       },
       {
         agents: {
+          ownership: "explicit",
           defaults: {
             maxConcurrent: 7,
             model: "mock-openai/gpt-5.6-luna",
+            systemAgent: { agentId: "main" },
             workspace: "/workspace/qa",
           },
           list: [
             {
-              default: true,
               id: "main",
               identity: { name: "Main WhatsApp QA" },
               model: "mock-openai/gpt-5.6-luna",
@@ -1961,11 +1962,11 @@ describe("WhatsApp QA live runtime", () => {
     expect(cfg.agents?.defaults).toEqual({
       maxConcurrent: 7,
       model: "mock-openai/gpt-5.6-luna",
+      systemAgent: { agentId: "main" },
       workspace: "/workspace/qa",
     });
     expect(cfg.agents?.list?.map((agent) => agent.id)).toEqual(["main", "qa-second"]);
     expect(cfg.agents?.list?.find((agent) => agent.id === "main")).toMatchObject({
-      default: true,
       identity: { name: "Main WhatsApp QA" },
       model: "mock-openai/gpt-5.6-luna",
     });

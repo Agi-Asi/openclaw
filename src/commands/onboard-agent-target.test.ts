@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
@@ -33,42 +32,6 @@ describe("onboarding agent target", () => {
         model: { primary: "openai/new" },
         models: { "openai/new": {} },
       },
-    });
-  });
-
-  it("uses the retained compatibility owner after the marker is removed", () => {
-    const config = retainLegacyDefaultAgentId(
-      { agents: { entries: { main: {}, ops: { workspace: "/srv/ops" } } } },
-      "ops",
-    );
-
-    expect(resolveOnboardingAgentTarget(config)).toMatchObject({
-      agentId: "ops",
-      workspaceDir: "/srv/ops",
-    });
-  });
-
-  it("resolves shared system-agent setup to the configured system agent on a legacy roster", () => {
-    const config = {
-      agents: {
-        defaults: {
-          workspace: "/srv/global",
-          systemAgent: { agentId: "main" },
-        },
-        entries: {
-          main: { workspace: "/srv/main" },
-          ops: { default: true, workspace: "/srv/ops" },
-        },
-      },
-    };
-
-    expect(resolveOnboardingAgentTarget(config)).toMatchObject({
-      agentId: "ops",
-      workspaceDir: "/srv/ops",
-    });
-    expect(resolveSystemAgentOnboardingTarget(config)).toMatchObject({
-      agentId: "main",
-      workspaceDir: "/srv/main",
     });
   });
 
@@ -197,7 +160,7 @@ describe("onboarding agent target", () => {
       const config = {
         agents: {
           defaults: { workspace: globalWorkspace },
-          entries: { ops: { default: true, workspace: opsWorkspace } },
+          entries: { ops: { workspace: opsWorkspace } },
         },
       };
       const target = resolveOnboardingAgentTarget(config);

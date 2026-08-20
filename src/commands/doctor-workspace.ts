@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { note } from "../../packages/terminal-core/src/note.js";
-import { resolveAgentWorkspaceDir, tryResolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, tryResolveSoleAgentId } from "../agents/agent-scope.js";
 import { DEFAULT_AGENTS_FILENAME } from "../agents/workspace.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -326,7 +326,7 @@ export async function noteWorkspaceMemoryHealth(
   scope?: WorkspaceMemoryDoctorScope,
 ): Promise<void> {
   try {
-    const agentId = scope?.agentId ?? tryResolveDefaultAgentId(cfg);
+    const agentId = scope?.agentId ?? tryResolveSoleAgentId(cfg);
     if (!agentId) {
       throw new Error("Cannot inspect workspace memory until the agent roster has one default");
     }
@@ -356,7 +356,7 @@ export async function maybeRepairWorkspaceMemoryHealth(params: {
   scope?: WorkspaceMemoryDoctorScope;
 }): Promise<void> {
   try {
-    const agentId = params.scope?.agentId ?? tryResolveDefaultAgentId(params.cfg);
+    const agentId = params.scope?.agentId ?? tryResolveSoleAgentId(params.cfg);
     if (!agentId) {
       throw new Error("Cannot repair workspace memory until the agent roster has one default");
     }

@@ -13,7 +13,11 @@ async function main(): Promise<void> {
   const result = await repairCanonicalSessionKeys({
     apply: false,
     cfg: {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { store: storeTemplate },
     },
     env,

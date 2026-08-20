@@ -245,9 +245,16 @@ export const config = {} as OpenClawConfig;
 export function compatibilityOwnerConfig(owner = "alpha"): OpenClawConfig {
   return {
     agents: {
-      list: ["alpha", "beta"].map((id) => (id === owner ? { id, default: true } : { id })),
+      ownership: "explicit",
+      defaults: {
+        heartbeat: { agentId: owner },
+        systemAgent: { agentId: owner },
+        authInheritance: { agentId: owner },
+      },
+      entries: { alpha: {}, beta: {} },
     },
-  } as OpenClawConfig;
+    talk: { agentId: owner },
+  };
 }
 
 export async function normalizeCodexManifestConfig(

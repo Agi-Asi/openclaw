@@ -6,6 +6,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../config/sessions/session-sqlite-target.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getActivePluginRegistry, setActivePluginRegistry } from "../plugins/runtime.js";
 import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
@@ -98,11 +99,12 @@ describe("getStatusSummary read-only session access", () => {
     const storePath = path.join(tempDir, "sessions.json");
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: { systemAgent: { agentId: "main" } },
-        list: [{ id: "main", default: true }, { id: "ops" }],
+        entries: { main: {}, ops: {} },
       },
       session: { store: storePath },
-    };
+    } satisfies OpenClawConfig;
 
     try {
       for (const agentId of ["main", "ops"]) {

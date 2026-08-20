@@ -92,14 +92,14 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: {
-          list: [
-            {
-              id: "main",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: {
               model: "openai/gpt-5.6-sol@openai:work",
               workspace: workspaceDir,
             },
-          ],
+          },
         },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
@@ -164,7 +164,11 @@ describe("skill collection review", () => {
 
     await runScheduledSkillCollectionReviews({
       config: {
-        agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { workspace: workspaceDir } },
+        },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
@@ -290,7 +294,11 @@ describe("skill collection review", () => {
 
       await runScheduledSkillCollectionReviews({
         config: {
-          agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: workspaceDir } },
+          },
           skills: {
             load: { allowSymlinkTargets: [path.join(targetSkillsDir, "skills")] },
             workshop: { autonomous: { mode: "auto" } },
@@ -333,7 +341,11 @@ describe("skill collection review", () => {
       throw new Error("runner crashed after reconciliation");
     });
     const config = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: workspaceDir } },
+      },
       skills: { workshop: { autonomous: { mode: "auto" as const } } },
     };
 
@@ -407,10 +419,12 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: {
-          list: [
-            { id: "alpha-agent", default: true, workspace: workspaceDir, skills: ["alpha"] },
-            { id: "beta-agent", workspace: workspaceDir, skills: ["beta"] },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "alpha-agent" } },
+          entries: {
+            "alpha-agent": { workspace: workspaceDir, skills: ["alpha"] },
+            "beta-agent": { workspace: workspaceDir, skills: ["beta"] },
+          },
         },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
@@ -444,19 +458,18 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: {
-          list: [
-            {
-              id: "alpha-agent",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "alpha-agent" } },
+          entries: {
+            "alpha-agent": {
               workspace: workspaceDir,
               skills: ["alpha"],
             },
-            {
-              id: "beta-agent",
+            "beta-agent": {
               workspace: workspaceDir,
               skills: ["beta"],
             },
-          ],
+          },
         },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
@@ -484,19 +497,18 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: {
-          list: [
-            {
-              id: "alpha-agent",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "alpha-agent" } },
+          entries: {
+            "alpha-agent": {
               workspace: workspaceDir,
               model: "openai/gpt-5.5",
             },
-            {
-              id: "beta-agent",
+            "beta-agent": {
               workspace: workspaceAlias,
               model: "openai/gpt-5.6-sol",
             },
-          ],
+          },
         },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
@@ -537,7 +549,11 @@ describe("skill collection review", () => {
       return {};
     });
     const config = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: workspaceDir } },
+      },
       skills: { workshop: { autonomous: { mode: "auto" as const } } },
     };
     const first = runScheduledSkillCollectionReviews({ config, env: testState.env });
@@ -581,10 +597,12 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: {
-          list: [
-            { id: "failed", default: true, workspace: oversizedWorkspace },
-            { id: "healthy", workspace: healthyWorkspace },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "failed" } },
+          entries: {
+            failed: { workspace: oversizedWorkspace },
+            healthy: { workspace: healthyWorkspace },
+          },
         },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
@@ -610,7 +628,11 @@ describe("skill collection review", () => {
     const onError = vi.fn();
     await runScheduledSkillCollectionReviews({
       config: {
-        agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { workspace: workspaceDir } },
+        },
         skills: { workshop: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,

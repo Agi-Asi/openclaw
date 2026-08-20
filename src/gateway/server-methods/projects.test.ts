@@ -94,7 +94,9 @@ test("projects.list merges synthesized workspaces with stored rows deterministic
       {},
       {
         agents: {
-          list: [{ id: "main", default: true, workspace: "/workspace/alpha" }],
+          ownership: "explicit",
+          entries: { main: { workspace: "/workspace/alpha" } },
+          defaults: { systemAgent: { agentId: "main" } },
         },
       },
     );
@@ -119,7 +121,9 @@ test("projects.list exposes checkout details only at write scope", async () => {
     await registerProjectRegistry({ path: repo, name: "Registered" });
     const cfg = {
       agents: {
-        list: [{ id: "main", default: true, workspace: "/workspace/alpha" }],
+        ownership: "explicit",
+        entries: { main: { workspace: "/workspace/alpha" } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -277,7 +281,13 @@ test("projects.list returns only the caller's deterministic resolved recents", a
         spawnedCwd: "/work/private-bob",
       },
     );
-    const cfg = { agents: { list: [{ id: "main", default: true, workspace: "/workspace" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        entries: { main: { workspace: "/workspace" } },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
+    };
     linkEmail("source@example.test", targetProfile.id);
     const readResult = await invokeProjectMethod(
       "projects.list",
@@ -490,7 +500,11 @@ test("projects.remove refuses to delete a cloned checkout configured as an agent
       originUrl,
     });
     const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: repo }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: { workspace: repo } },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
     } as OpenClawConfig;
 
     expect(
@@ -525,7 +539,11 @@ test("projects.remove refuses to delete a cloned checkout used by a live direct 
       { sessionId: "project-session", spawnedCwd: repo, updatedAt: 1 },
     );
     const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: state.workspaceDir }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: { workspace: state.workspaceDir } },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
     } as OpenClawConfig;
 
     expect(

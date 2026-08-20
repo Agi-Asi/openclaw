@@ -1,4 +1,4 @@
-import { resolveDefaultAgentId } from "../../agents/agent-scope-config.js";
+import { resolveSoleAgentId } from "../../agents/agent-scope-config.js";
 import { settleProgressVisibilityCallbackResult } from "../../channels/progress-visibility.js";
 import { hasRestartRecoverySourceClaim } from "../../config/sessions/restart-recovery-state.js";
 import { loadSessionEntry, updateSessionEntry } from "../../config/sessions/session-accessor.js";
@@ -355,7 +355,7 @@ export async function runReplyAgent(
     originatingAccountId: followupRun.originatingAccountId,
     agentAccountId: followupRun.run.agentAccountId,
   });
-  followupRun.run.agentId ??= resolveDefaultAgentId(followupRun.run.config);
+  followupRun.run.agentId ??= resolveSoleAgentId(followupRun.run.config);
 
   const replyToChannel = resolveOriginMessageProvider({
     originatingChannel: sessionCtx.OriginatingChannel,

@@ -545,7 +545,11 @@ describe("chat abort transcript persistence", () => {
   ])("%s", async (_name, selectedAgentId, fixtureId) => {
     const { sessionId } = await createTranscriptFixture(`openclaw-chat-stop-global-${fixtureId}-`);
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" as const },
     };
     sessionEntryState.canonicalKey = "global";
@@ -618,7 +622,11 @@ describe("chat abort transcript persistence", () => {
   ])("%s", async (_name, sessionKey, agentId, needsGlobalConfig) => {
     const expectedAgentId = agentId ?? (sessionKey.startsWith("agent:work:") ? "work" : "main");
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" as const },
     };
     const respond = vi.fn();
@@ -680,7 +688,11 @@ describe("chat abort transcript persistence", () => {
     const respond = vi.fn();
     const context = createChatAbortContext({
       getRuntimeConfig: () => ({
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
         session: { scope: "global" },
       }),
     });
@@ -718,7 +730,11 @@ describe("chat abort transcript persistence", () => {
     const context = createChatAbortContext({
       chatAbortControllers: new Map([["run-work-global", workActive]]),
       getRuntimeConfig: () => ({
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
         session: { scope: "global" },
       }),
     });
@@ -748,7 +764,11 @@ describe("chat abort transcript persistence", () => {
     const respond = vi.fn();
     const context = createChatAbortContext({
       getRuntimeConfig: () => ({
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
         session: { scope: "global" },
       }),
     });
@@ -841,7 +861,11 @@ describe("chat abort transcript persistence", () => {
     const respond = vi.fn();
     const context = createChatAbortContext({
       getRuntimeConfig: () => ({
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
         session: { scope: "global" },
       }),
     });
@@ -957,7 +981,13 @@ describe("chat abort transcript persistence", () => {
       sessionId: "sess-work-global",
     });
     const context = createChatAbortContext({
-      getRuntimeConfig: () => ({ agents: { list: [{ id: "work", default: true }] } }),
+      getRuntimeConfig: () => ({
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "work" } },
+          entries: { work: {} },
+        },
+      }),
       chatAbortControllers: new Map([["run-work-global", active]]),
     });
 
@@ -987,7 +1017,11 @@ describe("chat abort transcript persistence", () => {
     const respond = vi.fn();
     const context = createChatAbortContext({
       getRuntimeConfig: () => ({
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
         session: { scope: "global" },
       }),
     });

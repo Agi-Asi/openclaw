@@ -49,10 +49,12 @@ describe("skills entries config schema", () => {
   it("accepts agents.defaults.skills", () => {
     const res = OpenClawSchema.safeParse({
       agents: {
+        ownership: "explicit",
         defaults: {
           skills: ["github", "weather"],
+          systemAgent: { agentId: "main" },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     });
 
@@ -62,10 +64,12 @@ describe("skills entries config schema", () => {
   it("accepts agents.entries.*.skills as explicit replacements", () => {
     const res = OpenClawSchema.safeParse({
       agents: {
+        ownership: "explicit",
         defaults: {
           skills: ["github", "weather"],
+          systemAgent: { agentId: "writer" },
         },
-        entries: { writer: { default: true, skills: ["docs-search"] } },
+        entries: { writer: { skills: ["docs-search"] } },
       },
     });
 
@@ -75,10 +79,12 @@ describe("skills entries config schema", () => {
   it("accepts explicit empty skills arrays for defaults and agents", () => {
     const res = OpenClawSchema.safeParse({
       agents: {
+        ownership: "explicit",
         defaults: {
           skills: [],
+          systemAgent: { agentId: "writer" },
         },
-        entries: { writer: { default: true, skills: [] } },
+        entries: { writer: { skills: [] } },
       },
     });
 

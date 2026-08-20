@@ -17,8 +17,8 @@ const mocks = vi.hoisted(() => ({
   listAgentIds: vi.fn(),
   resolveAgentWorkspaceDir: vi.fn(),
   resolveConfiguredAgentId: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
-  tryResolveLegacyCompatibilityAgentId: vi.fn(),
+  resolveSoleAgentId: vi.fn(),
+  tryResolveAmbientOwnerAgentId: vi.fn(),
 }));
 
 const capture = createCliRuntimeCapture();
@@ -32,8 +32,8 @@ vi.mock("../agents/agent-scope.js", () => ({
   listAgentIds: mocks.listAgentIds,
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
   resolveConfiguredAgentId: mocks.resolveConfiguredAgentId,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
-  tryResolveLegacyCompatibilityAgentId: mocks.tryResolveLegacyCompatibilityAgentId,
+  resolveSoleAgentId: mocks.resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId: mocks.tryResolveAmbientOwnerAgentId,
 }));
 
 vi.mock("../config/config.js", () => ({
@@ -147,8 +147,8 @@ function configureExplicitFleet() {
   };
   mocks.getRuntimeConfig.mockReturnValue(config);
   mocks.listAgentIds.mockReturnValue(["main", "research"]);
-  mocks.tryResolveLegacyCompatibilityAgentId.mockReturnValue(undefined);
-  mocks.resolveDefaultAgentId.mockImplementation(() => {
+  mocks.tryResolveAmbientOwnerAgentId.mockReturnValue(undefined);
+  mocks.resolveSoleAgentId.mockImplementation(() => {
     throw new Error("selection required");
   });
   mocks.resolveAgentWorkspaceDir.mockImplementation(
@@ -174,8 +174,8 @@ describe("hooks CLI metadata config keys", () => {
       },
     );
     mocks.resolveAgentWorkspaceDir.mockReturnValue("/tmp/openclaw-hook-workspace");
-    mocks.resolveDefaultAgentId.mockReturnValue("main");
-    mocks.tryResolveLegacyCompatibilityAgentId.mockReturnValue("main");
+    mocks.resolveSoleAgentId.mockReturnValue("main");
+    mocks.tryResolveAmbientOwnerAgentId.mockReturnValue("main");
     mocks.readConfigFileSnapshot.mockResolvedValue({ sourceConfig, hash: "config-hash" });
     mocks.replaceConfigFile.mockResolvedValue(undefined);
     readConfigMachineStateMock.mockReturnValue(undefined);
@@ -384,7 +384,7 @@ describe("hooks CLI metadata config keys", () => {
 
     await createHooksProgram().parseAsync(argv, { from: "user" });
 
-    expect(mocks.resolveDefaultAgentId).not.toHaveBeenCalled();
+    expect(mocks.resolveSoleAgentId).not.toHaveBeenCalled();
     expect(mocks.resolveAgentWorkspaceDir).toHaveBeenCalledWith(explicitFleet, "research");
     expect(mocks.replaceConfigFile).toHaveBeenCalledWith({
       nextConfig: {
@@ -431,7 +431,7 @@ describe("hooks CLI metadata config keys", () => {
       from: "user",
     });
 
-    expect(mocks.resolveDefaultAgentId).not.toHaveBeenCalled();
+    expect(mocks.resolveSoleAgentId).not.toHaveBeenCalled();
     expect(mocks.resolveAgentWorkspaceDir).toHaveBeenCalledWith(explicitFleet, "research");
     expect(mocks.buildWorkspaceHookStatus).toHaveBeenCalledWith(
       "/tmp/openclaw-research-workspace",

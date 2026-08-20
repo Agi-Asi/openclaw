@@ -161,7 +161,7 @@ vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
     agentId?: string;
   }) => resolveAgentIdFromSessionKeyForTests({ sessionKey, agentId }),
   resolveAgentConfig: () => undefined,
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
   resolveAgentWorkspaceDir: () => TEST_AGENT_WORKSPACE,
 }));
 

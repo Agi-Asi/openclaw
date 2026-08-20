@@ -46,9 +46,11 @@ function latestDeliveryRequest(): DeliveryRequest {
 function makeIsolatedLastTargetConfig(tmpDir: string, storePath: string): OpenClawConfig {
   return {
     agents: {
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      entries: { main: {} },
       defaults: {
         workspace: tmpDir,
+        systemAgent: { agentId: "main" },
         heartbeat: {
           every: "5m",
           target: "last",

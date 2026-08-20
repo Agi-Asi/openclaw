@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { updateAuthProfileStoreWithLock } from "../agents/auth-profiles/store.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { MigrationPlan } from "../plugins/types.js";
 import { listOpenClawRegisteredAgentDatabases } from "../state/openclaw-agent-db-registry.js";
 import type { SetupMigrationPromotionContinuation } from "./setup.migration-promotion.js";
@@ -299,10 +300,14 @@ describe("setup migration stage", () => {
     const workspaceDir = path.join(sharedRoot, "workspace");
     const agentDir = path.join(sharedRoot, "agent");
     const reportDir = path.join(stateDir, "migration", "claude", "attempt");
-    const targetConfig = {
+    const targetConfig: OpenClawConfig = {
       agents: {
-        defaults: { workspace: workspaceDir },
-        list: [{ id: "main", default: true, agentDir }],
+        ownership: "explicit",
+        defaults: {
+          workspace: workspaceDir,
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: { agentDir } },
       },
     };
     const stage = await createSetupMigrationStage({

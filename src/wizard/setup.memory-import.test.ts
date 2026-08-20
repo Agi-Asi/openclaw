@@ -25,8 +25,12 @@ import { runSetupMemoryImportStep } from "./setup.memory-import.js";
 
 const config: OpenClawConfig = {
   agents: {
-    defaults: { workspace: "/tmp/openclaw-memory-step" },
-    list: [{ id: "main", default: true }],
+    ownership: "explicit",
+    defaults: {
+      workspace: "/tmp/openclaw-memory-step",
+      systemAgent: { agentId: "main" },
+    },
+    entries: { main: {} },
   },
 };
 

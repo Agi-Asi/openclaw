@@ -2983,7 +2983,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("registers default global tool-event recipients for unscoped global sends", async () => {
     await createTranscriptFixture("openclaw-chat-send-global-tool-events-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.finalText = "ok";
@@ -3025,7 +3029,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("registers selected global alias tool-event recipients against the canonical run key", async () => {
     await createTranscriptFixture("openclaw-chat-send-global-alias-tool-events-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.sessionEntry = { canonicalKey: "global" };
@@ -3068,7 +3076,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("scopes selected-agent global aliases before loading chat session state", async () => {
     await createTranscriptFixture("openclaw-chat-send-global-alias-load-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.sessionEntry = { canonicalKey: "global" };
@@ -3089,7 +3101,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("accepts selected-agent global main aliases before loading chat session state", async () => {
     await createTranscriptFixture("openclaw-chat-send-global-main-alias-load-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.sessionEntry = { canonicalKey: "global" };
@@ -3117,7 +3133,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("resolves per-sender global agent aliases to the canonical agent main session", async () => {
     await createTranscriptFixture("openclaw-chat-send-per-sender-global-alias-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { scope: "per-sender" },
     };
     const { respond, send } = createChatRequestFixture();
@@ -3157,7 +3177,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("registers selected-agent global aliases under the canonical abort key", async () => {
     await createTranscriptFixture("openclaw-chat-send-global-alias-abort-key-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.sessionEntry = { canonicalKey: "global" };
@@ -3186,7 +3210,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
   it("scopes chat history global aliases before loading session state", async () => {
     await createTranscriptFixture("openclaw-chat-history-global-alias-load-");
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.sessionEntry = { canonicalKey: "global" };
@@ -5393,7 +5421,11 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
       sessionKey: "agent:work:global",
     });
     mockState.config = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mockState.sessionEntry = { canonicalKey: "global" };
@@ -6607,17 +6639,12 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     await createReadyChatTranscript("openclaw-chat-send-agent-scoped-text-only-attachments-");
     mockState.config = {
       agents: {
-        list: [
-          {
-            id: "vision",
-            default: true,
-            model: "test-provider/vision-model",
-          },
-          {
-            id: "writer",
-            model: "test-provider/text-only",
-          },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "vision" } },
+        entries: {
+          vision: { model: "test-provider/vision-model" },
+          writer: { model: "test-provider/text-only" },
+        },
       },
     };
     mockState.modelCatalog = [

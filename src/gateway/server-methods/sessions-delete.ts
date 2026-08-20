@@ -7,8 +7,8 @@ import {
   type SessionsDeleteResult,
   validateSessionsDeleteParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { tryResolveAmbientOwnerAgentId } from "../../agents/agent-scope.js";
 import { classifyWorktreeRemovalError, managedWorktrees } from "../../agents/worktrees/service.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import {
   deleteSessionEntryLifecycle,
   SESSION_LIFECYCLE_CHANGED_ERROR_REASON,
@@ -78,12 +78,11 @@ export const sessionDeleteHandlers: GatewayRequestHandlers = {
     const { target, storePath } = resolveGatewaySessionTargetFromKey(key, cfg, {
       agentId: requestedAgentId,
     });
-    const compatibilityDefaultAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
     const persistedStoreOwner = resolvePersistedSessionStoreOwnerForKey(cfg, key);
     const protectedGlobalAgentId =
       persistedStoreOwner.kind === "configured"
         ? persistedStoreOwner.agentId
-        : compatibilityDefaultAgentId;
+        : tryResolveAmbientOwnerAgentId(cfg);
     const explicitlySelectedGlobalAgentId =
       normalizeOptionalString(p.agentId) ?? parseAgentSessionKey(key)?.agentId;
     const isSelectedNonDefaultGlobal =

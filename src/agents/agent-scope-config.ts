@@ -5,7 +5,6 @@ import {
   readStringValue,
 } from "@openclaw/normalization-core/string-coerce";
 import { formatCliCommand } from "../cli/command-format.js";
-import { getRetainedLegacyDefaultAgentId } from "../config/legacy.default-agent-owner-state.js";
 import { hasExplicitModelPolicyAllow } from "../config/model-policy-allowlist-migration.js";
 import { resolveStateDir } from "../config/paths.js";
 import type {
@@ -165,7 +164,7 @@ export function hasAgentRosterProperty(raw: unknown): boolean {
 export function listAgentIds(cfg: OpenClawConfig): string[] {
   const agents = listAgentEntries(cfg);
   if (agents.length === 0 && !hasAgentRosterProperty(cfg)) {
-    // Match resolveDefaultAgentId's Plugin SDK compatibility for raw pre-roster configs.
+    // Preserve the implicit agent only for configurations without a roster.
     return [LEGACY_IMPLICIT_AGENT_ID];
   }
   const seen = new Set<string>();
@@ -216,34 +215,15 @@ export function resolveSoleAgentId(cfg: OpenClawConfig, context?: AgentSelection
   throw new AgentSelectionRequiredError(agentIds, context);
 }
 
-function tryResolveRawLegacyDefaultAgentId(cfg: OpenClawConfig): string | undefined {
-  if (cfg.agents?.ownership === "explicit") {
-    return undefined;
-  }
-  const marked = listAgentEntries(cfg).filter((entry) => entry.default === true);
-  return marked.length === 1 ? normalizeAgentId(marked[0]!.id) : undefined;
-}
-
-/** Resolves sole/raw legacy owners plus the retained in-process migration owner. */
-export function tryResolveLegacyCompatibilityAgentId(cfg: OpenClawConfig): string | undefined {
-  const retainedAgentId = getRetainedLegacyDefaultAgentId(cfg);
-  return retainedAgentId && listAgentIds(cfg).includes(retainedAgentId)
-    ? retainedAgentId
-    : tryResolveDefaultAgentId(cfg);
-}
-
 /** Resolves the owner for ambient system work and explicit requests. */
 export function tryResolveAmbientOwnerAgentId(
   cfg: OpenClawConfig,
   requestedAgentId?: string,
 ): string | undefined {
-  const explicitAgentId =
+  const agentId =
     normalizeOptionalString(requestedAgentId) ??
     normalizeOptionalString(cfg.agents?.defaults?.systemAgent?.agentId);
-  // The documented system-agent owner is explicit config, so it precedes a stripped legacy marker.
-  return explicitAgentId
-    ? normalizeAgentId(explicitAgentId)
-    : tryResolveLegacyCompatibilityAgentId(cfg);
+  return agentId ? normalizeAgentId(agentId) : tryResolveSoleAgentId(cfg);
 }
 
 /** Ambient owner for surfaces that must fail loudly rather than act on the wrong agent. */
@@ -255,33 +235,13 @@ export function resolveAmbientOwnerAgentId(
   return tryResolveAmbientOwnerAgentId(cfg, requestedAgentId) ?? resolveSoleAgentId(cfg, context);
 }
 
-/** Resolves a CLI operation owner while preserving legacy default markers outside explicit fleets. */
+/** Resolves the explicitly requested or configured owner for a CLI operation. */
 export function resolveAgentOperationAgentId(
   cfg: OpenClawConfig,
   requestedAgentId?: string,
   context?: AgentSelectionContext,
 ): string {
-  if (requestedAgentId !== undefined || cfg.agents?.ownership === "explicit") {
-    return resolveAmbientOwnerAgentId(cfg, requestedAgentId, context);
-  }
-  return tryResolveLegacyCompatibilityAgentId(cfg) ?? resolveDefaultAgentId(cfg, context);
-}
-
-/**
- * @deprecated Ambient system work uses resolveAmbientOwnerAgentId so the configured
- * system agent is honored; explicit-selection surfaces use resolveSoleAgentId. This
- * accepts raw shipped markers only for input compatibility.
- */
-export function resolveDefaultAgentId(
-  cfg: OpenClawConfig,
-  context?: AgentSelectionContext,
-): string {
-  return tryResolveRawLegacyDefaultAgentId(cfg) ?? resolveSoleAgentId(cfg, context);
-}
-
-/** @deprecated Use tryResolveSoleAgentId; accepts raw shipped markers only for input compatibility. */
-export function tryResolveDefaultAgentId(cfg: OpenClawConfig): string | undefined {
-  return tryResolveRawLegacyDefaultAgentId(cfg) ?? tryResolveSoleAgentId(cfg);
+  return resolveAmbientOwnerAgentId(cfg, requestedAgentId, context);
 }
 
 export function resolveAgentEntry(cfg: OpenClawConfig, agentId: string): AgentEntry | undefined {
@@ -378,10 +338,6 @@ export function resolveAgentContextLimits(
   return resolveAgentConfig(cfg, agentId)?.contextLimits ?? defaults;
 }
 
-function tryResolveInheritedWorkspaceAgentId(cfg: OpenClawConfig): string | undefined {
-  return tryResolveLegacyCompatibilityAgentId(cfg);
-}
-
 export function resolveAgentWorkspaceDir(
   cfg: OpenClawConfig,
   agentId: string,
@@ -392,8 +348,7 @@ export function resolveAgentWorkspaceDir(
   if (configured) {
     return stripNullBytes(resolveUserPath(configured, env));
   }
-  // Read-time migration removes default:true before write-time workspace pinning can run.
-  const inheritedWorkspaceAgentId = tryResolveInheritedWorkspaceAgentId(cfg);
+  const inheritedWorkspaceAgentId = tryResolveAmbientOwnerAgentId(cfg);
   const fallback = cfg.agents?.defaults?.workspace?.trim();
   if (inheritedWorkspaceAgentId && id === inheritedWorkspaceAgentId) {
     if (fallback) {
@@ -412,7 +367,7 @@ export function tryResolveConfiguredAgentWorkspaceDir(
   cfg: OpenClawConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const inheritedWorkspaceAgentId = tryResolveInheritedWorkspaceAgentId(cfg);
+  const inheritedWorkspaceAgentId = tryResolveAmbientOwnerAgentId(cfg);
   if (inheritedWorkspaceAgentId) {
     return resolveAgentWorkspaceDir(cfg, inheritedWorkspaceAgentId, env);
   }

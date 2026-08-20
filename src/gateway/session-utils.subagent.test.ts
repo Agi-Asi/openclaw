@@ -59,7 +59,11 @@ describe("listSessionsFromStore subagent metadata", () => {
 
   const cfg = {
     session: { mainKey: "main" },
-    agents: { list: [{ id: "main", default: true }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
   } as OpenClawConfig;
 
   test("searches channel-derived display names before row enrichment", () => {
@@ -1399,8 +1403,10 @@ describe("loadCombinedSessionStoreForGatewayCore includes disk-only agents (#328
       const cfg = {
         session: { mainKey: "main", store: storePath },
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true },
+            main: {},
             ops: {},
           },
         },
@@ -1437,8 +1443,10 @@ describe("loadCombinedSessionStoreForGatewayCore includes disk-only agents (#328
       const cfg = {
         session: { mainKey: "main", store: storePath },
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true },
+            main: {},
             ops: {},
           },
         },
@@ -1468,8 +1476,10 @@ describe("loadCombinedSessionStoreForGatewayCore includes disk-only agents (#328
       const cfg = {
         session: { mainKey: "main", store: storePath },
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
           entries: {
-            ops: { default: true },
+            ops: {},
             worker: {},
           },
         },
@@ -1555,7 +1565,7 @@ describe("loadCombinedSessionStoreForGatewayCore includes disk-only agents (#328
     });
   });
 
-  test("ACP agent sessions are visible even when agents.list is configured", async () => {
+  test("ACP agent sessions are visible even when an agent roster is configured", async () => {
     await withStateDirEnv("openclaw-acp-vis-", async ({ stateDir }) => {
       const customRoot = path.join(stateDir, "custom-state");
       const agentsDir = path.join(customRoot, "agents");
@@ -1579,7 +1589,9 @@ describe("loadCombinedSessionStoreForGatewayCore includes disk-only agents (#328
           store: path.join(customRoot, "agents", "{agentId}", "sessions", "sessions.json"),
         },
         agents: {
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
       } as OpenClawConfig;
 
@@ -1615,7 +1627,9 @@ describe("loadCombinedSessionStoreForGatewayCore includes disk-only agents (#328
           store: path.join(customRoot, "agents", "{agentId}", "sessions", "sessions.json"),
         },
         agents: {
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
       } as OpenClawConfig;
 

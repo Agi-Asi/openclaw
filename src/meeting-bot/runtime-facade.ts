@@ -1,4 +1,4 @@
-import { resolveDefaultAgentId } from "../agents/agent-scope-config.js";
+import { resolveSoleAgentId } from "../agents/agent-scope-config.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import type {
@@ -57,7 +57,7 @@ export function createMeetingRuntimeFacade<
 
     constructor(private readonly params: MeetingRuntimeParams<Config>) {
       this.#defaultAgentId = normalizeAgentId(
-        params.config.realtime.agentId ?? resolveDefaultAgentId(params.fullConfig),
+        params.config.realtime.agentId ?? resolveSoleAgentId(params.fullConfig),
       );
       this.#sessions = new MeetingSessionRuntime({
         logger: params.logger,

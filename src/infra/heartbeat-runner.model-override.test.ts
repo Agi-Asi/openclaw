@@ -142,16 +142,17 @@ describe("runHeartbeatOnce – heartbeat model override", () => {
     await withHeartbeatFixture(async ({ tmpDir, storePath, replySpy, seedSession }) => {
       const cfg: OpenClawConfig = {
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             heartbeat: {
               every: "30m",
               ...params.defaultsHeartbeat,
             },
           },
-          list: [
-            { id: "main", default: true },
-            {
-              id: "ops",
+          entries: {
+            main: {},
+            ops: {
               workspace: tmpDir,
               heartbeat: {
                 every: "5m",
@@ -159,7 +160,7 @@ describe("runHeartbeatOnce – heartbeat model override", () => {
                 ...params.heartbeat,
               },
             },
-          ],
+          },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
         session: { store: storePath },

@@ -2,7 +2,7 @@
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import type { ModelChoice } from "../../../packages/gateway-protocol/src/schema/agents-models-skills.js";
 import type { PreparedAgentCredentialModes } from "../../agents/agent-auth-credential-modes.js";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import type { RuntimeAuthMaterialization } from "../../agents/auth-profiles/runtime-materializations.js";
 import type { AuthProfileStore } from "../../agents/auth-profiles/types.js";
 import { resolveConfiguredModelEntries } from "../../agents/configured-model-entries.js";
@@ -453,7 +453,7 @@ export async function buildModelsListResult(
   params: BuildModelsListResultParams,
 ): Promise<ModelsListResult> {
   const initialConfig = params.context.getRuntimeConfig();
-  const initialAgentId = normalizeAgentId(params.agentId ?? resolveDefaultAgentId(initialConfig));
+  const initialAgentId = normalizeAgentId(params.agentId ?? resolveSoleAgentId(initialConfig));
   const view = resolveModelsListView(params.params);
   const preparedOnly = params.params.preparedOnly === true;
   const refresh = params.params.refresh === true;

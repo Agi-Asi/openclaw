@@ -2378,13 +2378,15 @@ describe("doctor config flow", () => {
     ]);
     const config = {
       agents: {
+        ownership: "explicit" as const,
         defaults: {
+          systemAgent: { agentId: "ops" },
           model: {
             primary: "openai/gpt-5.5",
             fallbacks: ["openai/gpt-5.4"],
           },
         },
-        entries: { ops: { default: true, model: "openai/gpt-5.3" } },
+        entries: { ops: { model: "openai/gpt-5.3" } },
       },
     };
 
@@ -2655,7 +2657,11 @@ describe("doctor config flow", () => {
       config: {
         bridge: { bind: "auto" },
         gateway: { auth: { mode: "token", token: "ok", extra: true } },
-        agents: { entries: { openclaw: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "openclaw" } },
+          entries: { openclaw: {} },
+        },
         session: {
           maintenance: {
             rotateBytes: "10mb",

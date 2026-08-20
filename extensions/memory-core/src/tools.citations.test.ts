@@ -30,6 +30,7 @@ import {
 import {
   asOpenClawConfig,
   createAutoCitationsMemorySearchTool,
+  createDefaultMemoryToolAgents,
   createDefaultMemoryToolConfig,
   createMemoryGetToolOrThrow,
   createMemorySearchToolOrThrow,
@@ -97,7 +98,7 @@ describe("memory search citations", () => {
   it("appends source information when citations are enabled", async () => {
     const cfg = asOpenClawConfig({
       memory: { citations: "on" },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: createDefaultMemoryToolAgents(),
     });
     const tool = createMemorySearchToolOrThrow({ config: cfg });
     const result = await tool.execute("call_citations_on", { query: "notes" });
@@ -110,7 +111,7 @@ describe("memory search citations", () => {
   it("leaves snippet untouched when citations are off", async () => {
     const cfg = asOpenClawConfig({
       memory: { citations: "off" },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: createDefaultMemoryToolAgents(),
     });
     const tool = createMemorySearchToolOrThrow({ config: cfg });
     const result = await tool.execute("call_citations_off", { query: "notes" });
@@ -157,7 +158,7 @@ describe("memory tools", () => {
   it("uses default memory manager mode for shared memory_search", async () => {
     const tool = createMemorySearchToolOrThrow({
       config: asOpenClawConfig({
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
       }),
     });
 
@@ -175,7 +176,7 @@ describe("memory tools", () => {
   it("uses one-shot CLI memory manager mode for explicit local CLI memory_search", async () => {
     const tool = createMemorySearchToolOrThrow({
       config: asOpenClawConfig({
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
       }),
       oneShotCliRun: true,
     });
@@ -240,7 +241,7 @@ describe("memory tools", () => {
 
   it("revokes retained memory tools when live config disables memory", async () => {
     const startupConfig = asOpenClawConfig({
-      agents: { list: [{ id: "main", default: true }] },
+      agents: createDefaultMemoryToolAgents(),
     });
     let liveConfig = startupConfig;
     const getConfig = () => liveConfig;
@@ -252,7 +253,8 @@ describe("memory tools", () => {
 
     liveConfig = asOpenClawConfig({
       agents: {
-        list: [{ id: "main", default: true, memory: { search: { enabled: false } } }],
+        ...createDefaultMemoryToolAgents(),
+        entries: { main: { memory: { search: { enabled: false } } } },
       },
     });
     const disabledMessage =
@@ -323,7 +325,7 @@ describe("memory tools", () => {
 
       const tool = createMemorySearchToolOrThrow({
         config: asOpenClawConfig({
-          agents: { list: [{ id: "main", default: true }] },
+          agents: createDefaultMemoryToolAgents(),
           plugins: {
             entries: {
               "memory-core": {
@@ -423,7 +425,7 @@ describe("memory tools", () => {
         get: async () => null,
       });
       const config = asOpenClawConfig({
-        agents: { list: [{ id: "marketing-agent", default: true }] },
+        agents: createDefaultMemoryToolAgents("marketing-agent"),
       });
       const tool = createMemorySearchTool({
         config,

@@ -1,5 +1,5 @@
 // Session transcript facade resolves transcript files, appends mirror messages, and reads tails.
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveSoleAgentId } from "../../agents/agent-scope.js";
 import type { AgentMessage } from "../../agents/runtime/index.js";
 import type { SessionManager } from "../../agents/sessions/session-manager.js";
 import { redactTranscriptMessage } from "../../agents/transcript-redact.js";
@@ -486,7 +486,7 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
   const sessionAgentId = parseAgentSessionKey(sessionKey)?.agentId;
   const transcriptAgentId = explicitAgentId ?? sessionAgentId;
   const configuredDefaultAgentId =
-    !transcriptAgentId && params.config ? resolveDefaultAgentId(params.config) : undefined;
+    !transcriptAgentId && params.config ? resolveSoleAgentId(params.config) : undefined;
   const storeAgentId =
     transcriptAgentId ?? resolveAgentIdFromSessionKey(sessionKey, configuredDefaultAgentId);
   const storePath =

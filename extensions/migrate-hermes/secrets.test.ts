@@ -108,16 +108,16 @@ describe("Hermes migration secret items", () => {
     await writeFile(path.join(source, ".env"), "OPENAI_API_KEY=sk-hermes\n");
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "custom" },
           workspace: workspaceDir,
         },
-        list: [
-          {
-            id: "custom",
-            default: true,
+        entries: {
+          custom: {
             agentDir: customAgentDir,
           },
-        ],
+        },
       },
     } as OpenClawConfig;
     const plan = await provider.plan(

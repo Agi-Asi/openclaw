@@ -71,7 +71,9 @@ function createRuntime(): OutputRuntimeEnv & { json: unknown[] } {
 function createConfig(): OpenClawConfig {
   return {
     agents: {
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
     },
     bindings: [{ agentId: "main", match: { channel: "telegram" } }],
   };
@@ -256,14 +258,14 @@ describe("agentsListCommand", () => {
 
         requireValidConfigMock.mockResolvedValueOnce({
           agents: {
-            list: [
-              {
-                id: "main",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: {
+              main: {
                 workspace: path.join(homeAlias, "workspace"),
                 agentDir: path.join(homeAlias, "agents", "main", "agent"),
               },
-            ],
+            },
           },
         } satisfies OpenClawConfig);
         const runtime = createRuntime();

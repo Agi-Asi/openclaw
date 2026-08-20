@@ -35,7 +35,13 @@ describe("security audit config symlink findings", () => {
     await fs.symlink(targetConfigPath, configPath);
 
     const findings = await collectSecurityAuditFindings(
-      { agents: { list: [{ id: "main", default: true }] } },
+      {
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
+      },
       {
         stateDir,
         configPath,

@@ -25,10 +25,6 @@ import {
 import { isRecord } from "../utils.js";
 import { findDuplicateAgentDirs, formatDuplicateAgentDirError } from "./agent-dirs.js";
 import { attachAgentListProjection } from "./agent-list-projection.js";
-import {
-  inheritLegacyDefaultAgentId,
-  tryGetLegacyDefaultAgentId,
-} from "./legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "./legacy.roster.js";
 import { materializeRuntimeConfig } from "./materialize.js";
 import {
@@ -324,25 +320,10 @@ export function validateConfigObjectRaw(
     env?: NodeJS.ProcessEnv;
   },
 ): { ok: true; config: OpenClawConfig } | { ok: false; issues: ConfigValidationIssue[] } {
-  const legacyDefaultAgentId = isRecord(raw)
-    ? tryGetLegacyDefaultAgentId(raw as OpenClawConfig)
-    : undefined;
-  let normalizedRaw = stripPreservedLegacyRootKeysForValidation(raw, opts?.preservedLegacyRootKeys);
-  let syntheticLegacyOwnership = false;
-  if (legacyDefaultAgentId && isRecord(normalizedRaw) && isRecord(normalizedRaw.agents)) {
-    const entries = normalizedRaw.agents.entries;
-    if (
-      isRecord(entries) &&
-      Object.keys(entries).length > 1 &&
-      normalizedRaw.agents.ownership === undefined
-    ) {
-      normalizedRaw = {
-        ...normalizedRaw,
-        agents: { ...normalizedRaw.agents, ownership: "explicit" },
-      };
-      syntheticLegacyOwnership = true;
-    }
-  }
+  const normalizedRaw = stripPreservedLegacyRootKeysForValidation(
+    raw,
+    opts?.preservedLegacyRootKeys,
+  );
   // Generic config transforms can rebuild records before schema validation, so
   // validate authored MCP names from the parsed source when it is available.
   const normalizedMcpServerNameIssueKeys = new Set(
@@ -364,15 +345,8 @@ export function validateConfigObjectRaw(
       issues: mergeUnsupportedMutableSecretRefIssues(policyIssues, schemaIssues),
     };
   }
-  let parsedConfig = validated.data as OpenClawConfig;
-  if (syntheticLegacyOwnership && parsedConfig.agents) {
-    const agents = { ...parsedConfig.agents };
-    delete agents.ownership;
-    parsedConfig = { ...parsedConfig, agents };
-  }
-  const validatedConfig = inheritLegacyDefaultAgentId(
-    raw as OpenClawConfig,
-    attachAgentListProjection(materializeBundledModelProviderOverlays(parsedConfig)),
+  const validatedConfig = attachAgentListProjection(
+    materializeBundledModelProviderOverlays(validated.data as OpenClawConfig),
   );
   const channelIssues =
     policyIssues.length > 0 || opts?.validateBundledChannels

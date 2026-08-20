@@ -31,8 +31,8 @@ import {
   resolveMutableAgentEntry,
   resolveAgentConfig,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
-  tryResolveLegacyCompatibilityAgentId,
+  resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId,
 } from "./agent-scope-config.js";
 export { hasSessionAutoModelFallbackProvenance } from "../config/sessions/model-override-provenance.js";
 export {
@@ -48,13 +48,10 @@ export {
   resolveDefaultAgentDir,
   resolveAgentWorkspaceDir,
   tryResolveConfiguredAgentWorkspaceDir,
-  resolveDefaultAgentId,
   resolveAmbientOwnerAgentId,
   resolveSoleAgentId,
   tryResolveAmbientOwnerAgentId,
-  tryResolveLegacyCompatibilityAgentId,
   tryResolveSoleAgentId,
-  tryResolveDefaultAgentId,
   AgentSelectionRequiredError,
   type AgentSelectionContext,
   type ResolvedAgentConfig,
@@ -351,17 +348,17 @@ export function resolveSessionAgentIds(params: {
       hint: `The shared fixed-store row belongs to "${persistedStoreOwner.agentId}", not "${requestedUnscopedAgentId}".`,
     });
   }
-  const compatibilityAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const ambientOwnerAgentId = tryResolveAmbientOwnerAgentId(cfg);
   const sessionAgentId =
     sessionKeyAgentId ??
     (persistedStoreOwner.kind === "configured" ? persistedStoreOwner.agentId : undefined) ??
     requestedUnscopedAgentId ??
-    compatibilityAgentId ??
-    resolveDefaultAgentId(cfg, {
+    ambientOwnerAgentId ??
+    resolveSoleAgentId(cfg, {
       surface: "session agent resolution",
       hint: "Pass an agentId, an agent-scoped session key, or a prepared fallbackAgentId.",
     });
-  const defaultAgentId = compatibilityAgentId ?? sessionAgentId;
+  const defaultAgentId = ambientOwnerAgentId ?? sessionAgentId;
   return { defaultAgentId, sessionAgentId };
 }
 

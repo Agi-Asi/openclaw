@@ -1864,7 +1864,9 @@ describe("buildLiveGatewayConfig", () => {
     const cfg = buildLiveGatewayConfig({
       cfg: {
         agents: {
-          entries: { ops: { default: true } },
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
         },
         bindings: [{ agentId: "ops", match: { channel: "telegram" } }],
         broadcast: {
@@ -1879,12 +1881,13 @@ describe("buildLiveGatewayConfig", () => {
 
     expect(cfg.agents?.entries).toEqual({
       [GATEWAY_LIVE_AGENT_ID]: {
-        default: true,
         agentDir: GATEWAY_LIVE_CONFIG_TEST_AGENT_DIR,
         workspace: GATEWAY_LIVE_CONFIG_TEST_WORKSPACE,
         sandbox: { mode: "off" },
       },
     });
+    expect(cfg.agents?.ownership).toBe("explicit");
+    expect(cfg.agents?.defaults?.systemAgent?.agentId).toBe(GATEWAY_LIVE_AGENT_ID);
     expect(cfg.bindings).toBeUndefined();
     expect(cfg.broadcast).toBeUndefined();
   });
@@ -1893,9 +1896,10 @@ describe("buildLiveGatewayConfig", () => {
     const cfg = buildLiveGatewayConfig({
       cfg: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "dev" } },
           entries: {
             dev: {
-              default: true,
               agentDir: "/operator/agent",
               workspace: "/operator/workspace",
             },
@@ -1909,12 +1913,12 @@ describe("buildLiveGatewayConfig", () => {
 
     expect(cfg.agents?.entries).toEqual({
       [GATEWAY_LIVE_AGENT_ID]: {
-        default: true,
         agentDir: GATEWAY_LIVE_CONFIG_TEST_AGENT_DIR,
         workspace: GATEWAY_LIVE_CONFIG_TEST_WORKSPACE,
         sandbox: { mode: "off" },
       },
     });
+    expect(cfg.agents?.defaults?.systemAgent?.agentId).toBe(GATEWAY_LIVE_AGENT_ID);
   });
 
   it("keeps discovered live model metadata ahead of stale configured model rows", () => {
@@ -4522,7 +4526,6 @@ function buildLiveGatewayConfig(params: {
   const providers = Object.keys(nextProviders).length > 0 ? nextProviders : baseProviders;
   const configuredAgents = {
     [GATEWAY_LIVE_AGENT_ID]: {
-      default: true,
       agentDir: params.liveAgentDir,
       workspace: params.liveAgentWorkspaceDir,
       sandbox: { mode: "off" },
@@ -4535,9 +4538,11 @@ function buildLiveGatewayConfig(params: {
     broadcast: undefined,
     agents: {
       ...params.cfg.agents,
+      ownership: "explicit",
       entries: configuredAgents,
       defaults: {
         ...params.cfg.agents?.defaults,
+        systemAgent: { agentId: GATEWAY_LIVE_AGENT_ID },
         // Live tests should avoid Docker sandboxing so tool probes can
         // operate on the temporary probe files we create in the host workspace.
         sandbox: { mode: "off" },

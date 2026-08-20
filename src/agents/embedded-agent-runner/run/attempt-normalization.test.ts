@@ -40,7 +40,11 @@ describe("buildContextEngineCompactionSessionTarget", () => {
     expect(
       buildContextEngineCompactionSessionTarget({
         config: {
-          agents: { list: [{ id: "main" }, { id: "worker", default: true }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "worker" } },
+            entries: { main: {}, worker: {} },
+          },
           session: { store: "/tmp/{agentId}/sessions.json" },
         },
         sessionFile: "compat-session",

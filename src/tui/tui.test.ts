@@ -5,7 +5,6 @@ import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coerci
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSelectionRequiredError } from "../agents/agent-scope-config.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { MALFORMED_STREAMING_FRAGMENT_ERROR_MESSAGE } from "../shared/assistant-error-format.js";
 import { withEnv } from "../test-utils/env.js";
 import { getSlashCommands, parseCommand } from "./commands.js";
@@ -370,12 +369,6 @@ describe("resolveInitialTuiAgentId", () => {
     } finally {
       cwdSpy.mockRestore();
     }
-  });
-
-  it("falls back to a retained legacy owner", () => {
-    const retained = retainLegacyDefaultAgentId(structuredClone(cfg), "ops");
-
-    expect(resolveInitialTuiAgentId({ cfg: retained, cwd: "/var/tmp/unrelated" })).toBe("ops");
   });
 
   it("keeps an ownerless explicit fleet selection-required", () => {

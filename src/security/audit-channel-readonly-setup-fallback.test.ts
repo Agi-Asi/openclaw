@@ -96,7 +96,11 @@ describe("security audit channel read-only setup fallback", () => {
       },
     } satisfies ChannelPlugin;
     const cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       session: { dmScope: "main" },
       channels: { telegram: { enabled: true } },
     } satisfies OpenClawConfig;

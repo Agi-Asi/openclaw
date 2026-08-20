@@ -61,6 +61,12 @@ vi.mock("openclaw/plugin-sdk/session-store-runtime", async () => {
 type LoginFlowMock = ReturnType<typeof vi.fn>;
 type TelegramLoginFlow = NonNullable<TelegramNativeCommandDeps["runModelsAuthLoginFlow"]>;
 
+const mainAgentRoster: NonNullable<OpenClawConfig["agents"]> = {
+  ownership: "explicit",
+  entries: { main: {} },
+  defaults: { systemAgent: { agentId: "main" } },
+};
+
 let loginAccountIndex = 0;
 
 function registerLoginCommand(params: {
@@ -162,7 +168,7 @@ describe("registerTelegramNativeCommands /login", () => {
           native: true,
           ownerAllowFrom: ["200"],
         },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
     });
@@ -213,7 +219,7 @@ describe("registerTelegramNativeCommands /login", () => {
     const { handler, sendMessage } = registerLoginCommand({
       cfg: {
         commands: { native: true, ownerAllowFrom: ["200"] },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
     });
@@ -272,7 +278,7 @@ describe("registerTelegramNativeCommands /login", () => {
     const { nativeCommandCallbackDispatcher, sendMessage } = registerLoginCommand({
       cfg: {
         commands: { native: true, ownerAllowFrom: ["200"] },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
     });
@@ -335,7 +341,7 @@ describe("registerTelegramNativeCommands /login", () => {
           native: true,
           ownerAllowFrom: ["200"],
         },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
       allowFrom: ["200"],
@@ -399,7 +405,7 @@ describe("registerTelegramNativeCommands /login", () => {
           native: true,
           ownerAllowFrom: ["200"],
         },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
     });
@@ -426,7 +432,7 @@ describe("registerTelegramNativeCommands /login", () => {
     const { handler, sendMessage } = registerLoginCommand({
       cfg: {
         commands: { native: true, ownerAllowFrom: ["200"] },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
     });
@@ -456,7 +462,7 @@ describe("registerTelegramNativeCommands /login", () => {
     const { handler, sendMessage } = registerLoginCommand({
       cfg: {
         commands: { native: true, ownerAllowFrom: ["200"] },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
       runtime,
@@ -507,7 +513,7 @@ describe("registerTelegramNativeCommands /login", () => {
     const { handler, sendMessage } = registerLoginCommand({
       cfg: {
         commands: { native: true, ownerAllowFrom: ["200"] },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
       abortSignal: shutdown.signal,
@@ -539,7 +545,7 @@ describe("registerTelegramNativeCommands /login", () => {
     const { accountId, handler, sendMessage, sendMessageTelegram } = registerLoginCommand({
       cfg: {
         commands: { native: true, ownerAllowFrom: ["200"] },
-        agents: { list: [{ id: "main", default: true }] },
+        agents: mainAgentRoster,
       } as OpenClawConfig,
       loginFlow,
       abortSignal: account.signal,

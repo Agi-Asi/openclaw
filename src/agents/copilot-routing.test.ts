@@ -6,7 +6,12 @@ import { modelSelectionShouldEnsureCopilotRuntimePlugin } from "./copilot-routin
 function withDefaultRoster(config: OpenClawConfig = {}): OpenClawConfig {
   return {
     ...config,
-    agents: { entries: { main: { default: true } }, ...config.agents },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+      ...config.agents,
+    },
   };
 }
 

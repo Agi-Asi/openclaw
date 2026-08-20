@@ -9,9 +9,10 @@ import { resolveSystemAgentConfiguredRouteFromConfig } from "./inference-route.j
 function devConfig(agentRuntime?: string): OpenClawConfig {
   return {
     agents: {
-      defaults: { model: "openai/gpt-5.5" },
+      ownership: "explicit",
+      defaults: { model: "openai/gpt-5.5", systemAgent: { agentId: "dev" } },
       entries: {
-        dev: { default: true, workspace: "/tmp/x" },
+        dev: { workspace: "/tmp/x" },
       },
     },
     models: {

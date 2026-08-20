@@ -9,7 +9,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import {
   acquireAgentRunPreparedModelRuntime,
@@ -83,7 +82,7 @@ describe("prepared model runtime owner selection", () => {
 
   it("finds the configured gateway owner when request config omits its launch workspace", async () => {
     mocks.configuredAgentIds = ["default"];
-    const config = retainLegacyDefaultAgentId({ agents: { entries: { default: {} } } }, "default");
+    const config = { agents: { entries: { default: {} } } };
 
     await refreshPreparedModelRuntimeSnapshots(config, {
       gatewayLifecycle: true,
@@ -106,10 +105,9 @@ describe("prepared model runtime owner selection", () => {
     // rebuild a live ephemeral catalog per request. A reader that explicitly
     // demands binding still never receives a non-binding owner.
     mocks.configuredAgentIds = ["default"];
-    const config = retainLegacyDefaultAgentId(
-      { agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } } },
-      "default",
-    );
+    const config = {
+      agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } },
+    };
     await refreshPreparedModelRuntimeSnapshots(config, {
       allowGatewaySubagentBinding: true,
       catalogMode: "static",
@@ -132,10 +130,9 @@ describe("prepared model runtime owner selection", () => {
 
   it("does not resolve a binding-demanding reader against a non-binding owner", async () => {
     mocks.configuredAgentIds = ["default"];
-    const config = retainLegacyDefaultAgentId(
-      { agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } } },
-      "default",
-    );
+    const config = {
+      agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } },
+    };
     await refreshPreparedModelRuntimeSnapshots(config, {
       catalogMode: "static",
       gatewayLifecycle: true,

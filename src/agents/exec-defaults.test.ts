@@ -8,7 +8,12 @@ import { resolveExecDefaults, resolveNodeExecEligibility } from "./exec-defaults
 function withDefaultAgent(config: OpenClawConfig): OpenClawConfig {
   return {
     ...config,
-    agents: { ...config.agents, list: [{ id: "main", default: true }] },
+    agents: {
+      ...config.agents,
+      ownership: "explicit",
+      defaults: { ...config.agents?.defaults, systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
   };
 }
 
@@ -224,7 +229,11 @@ describe("resolveExecDefaults", () => {
               mode: "full",
             },
           },
-          agents: { list: [{ id: "agent-a", default: true }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "agent-a" } },
+            entries: { "agent-a": {} },
+          },
         },
         agentId: "agent-a",
         sandboxAvailable: false,
@@ -269,17 +278,17 @@ describe("resolveExecDefaults", () => {
             },
           },
           agents: {
-            list: [
-              {
-                id: "agent-a",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "agent-a" } },
+            entries: {
+              "agent-a": {
                 tools: {
                   exec: {
                     mode: "full",
                   },
                 },
               },
-            ],
+            },
           },
         },
         agentId: "agent-a",
@@ -302,17 +311,17 @@ describe("resolveExecDefaults", () => {
             },
           },
           agents: {
-            list: [
-              {
-                id: "agent-a",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "agent-a" } },
+            entries: {
+              "agent-a": {
                 tools: {
                   exec: {
                     mode: "allowlist",
                   },
                 },
               },
-            ],
+            },
           },
         },
         agentId: "agent-a",
@@ -331,9 +340,11 @@ describe("resolveExecDefaults", () => {
         cfg: {
           tools: { exec: { security: "full", ask: "off" } },
           agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
             entries: {
               main: {},
-              ops: { default: true, tools: { exec: { security: "deny", ask: "always" } } },
+              ops: { tools: { exec: { security: "deny", ask: "always" } } },
             },
           },
         },

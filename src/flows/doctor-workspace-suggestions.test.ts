@@ -62,8 +62,10 @@ describe("core/doctor/workspace-suggestions", () => {
       runtime,
       cfg: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true, workspace: "/tmp/main" },
+            main: { workspace: "/tmp/main" },
             secondary: { workspace: "/tmp/secondary" },
           },
         },
@@ -92,8 +94,10 @@ describe("core/doctor/workspace-suggestions", () => {
       runtime,
       cfg: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true, workspace: "/tmp/shared" },
+            main: { workspace: "/tmp/shared" },
             secondary: { workspace: "/tmp/shared" },
           },
         },

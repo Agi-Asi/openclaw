@@ -140,7 +140,12 @@ describe("runNonInteractiveLocalSetup default-agent ownership", () => {
           ...config,
           agents: {
             ...config.agents,
-            entries: { main: { default: true, workspace } },
+            ownership: "explicit",
+            defaults: {
+              ...config.agents?.defaults,
+              systemAgent: { ...config.agents?.defaults?.systemAgent, agentId: "main" },
+            },
+            entries: { main: { workspace } },
           },
         },
         agentId: "main",
@@ -280,7 +285,13 @@ describe("runNonInteractiveLocalSetup default-agent ownership", () => {
           skipHealth: true,
         },
         runtime,
-        baseConfig: { agents: { entries: { ops: { default: true } } } },
+        baseConfig: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
+            entries: { ops: {} },
+          },
+        },
       }),
     ).rejects.toThrow("workspace is unwritable");
 
@@ -291,10 +302,13 @@ describe("runNonInteractiveLocalSetup default-agent ownership", () => {
   it("provisions and reports the keyed default agent while preserving the global workspace", async () => {
     const baseConfig = {
       agents: {
-        defaults: { workspace: "/tmp/global-workspace" },
+        ownership: "explicit",
+        defaults: {
+          workspace: "/tmp/global-workspace",
+          systemAgent: { agentId: "ops" },
+        },
         entries: {
           ops: {
-            default: true,
             agentDir: "/tmp/ops-agent",
             workspace: "/tmp/ops-workspace",
           },

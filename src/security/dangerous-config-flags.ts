@@ -3,7 +3,7 @@ import {
   listAgentEntries,
   resolveAgentConfig,
   resolveAgentWorkspaceDir,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { resolveDefaultAgentWorkspaceDir } from "../agents/workspace-default.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -34,7 +34,7 @@ export function collectEnabledInsecureOrDangerousFlags(
     }
   }
 
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   const workspaceDirs = new Set<string | undefined>();
   if (defaultAgentId) {
     workspaceDirs.add(resolveAgentWorkspaceDir(cfg, defaultAgentId));

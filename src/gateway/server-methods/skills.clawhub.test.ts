@@ -5,7 +5,7 @@ import { callGatewayHandler } from "./skills.test-helpers.js";
 
 const loadConfigMock = vi.fn(() => ({}));
 const listAgentIdsMock = vi.fn<(_cfg: unknown) => string[]>(() => ["main"]);
-const resolveDefaultAgentIdMock = vi.fn(() => "main");
+const resolveSoleAgentIdMock = vi.fn(() => "main");
 const resolveAgentWorkspaceDirMock = vi.fn<(_cfg: unknown, _agentId: string) => string>(
   () => "/tmp/workspace",
 );
@@ -25,7 +25,7 @@ vi.mock("../../config/config.js", () => ({
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: (cfg: unknown) => listAgentIdsMock(cfg),
   resolveAgentConfig: vi.fn(() => undefined),
-  resolveDefaultAgentId: () => resolveDefaultAgentIdMock(),
+  resolveSoleAgentId: () => resolveSoleAgentIdMock(),
   resolveAgentWorkspaceDir: (cfg: unknown, agentId: string) =>
     resolveAgentWorkspaceDirMock(cfg, agentId),
   resolveSessionAgentId: vi.fn(() => undefined),
@@ -95,7 +95,7 @@ describe("skills gateway handlers (clawhub)", () => {
   beforeEach(() => {
     loadConfigMock.mockReset();
     listAgentIdsMock.mockReset();
-    resolveDefaultAgentIdMock.mockReset();
+    resolveSoleAgentIdMock.mockReset();
     resolveAgentWorkspaceDirMock.mockReset();
     buildWorkspaceSkillStatusMock.mockReset();
     readLocalSkillCardContentSyncMock.mockReset();
@@ -107,7 +107,7 @@ describe("skills gateway handlers (clawhub)", () => {
 
     loadConfigMock.mockReturnValue({});
     listAgentIdsMock.mockReturnValue(["main"]);
-    resolveDefaultAgentIdMock.mockReturnValue("main");
+    resolveSoleAgentIdMock.mockReturnValue("main");
     resolveAgentWorkspaceDirMock.mockReturnValue("/tmp/workspace");
     buildWorkspaceSkillStatusMock.mockReturnValue(emptySkillStatusReport());
     resolveClawHubBaseUrlMock.mockReturnValue("https://clawhub.ai");

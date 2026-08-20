@@ -288,11 +288,15 @@ describe("plugin management service", () => {
     const icon = "https://cdn.example.test/workboard.svg";
     const config = {
       agents: {
-        defaults: { workspace: "~/fallback-workspace" },
-        list: [
-          { id: "main" },
-          { id: "research", default: true, workspace: "~/research-workspace" },
-        ],
+        ownership: "explicit" as const,
+        defaults: {
+          workspace: "~/fallback-workspace",
+          systemAgent: { agentId: "research" },
+        },
+        entries: {
+          main: {},
+          research: { workspace: "~/research-workspace" },
+        },
       },
     };
     const env = { HOME: "/tmp/openclaw-managed-plugin-home" };

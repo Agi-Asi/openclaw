@@ -7,9 +7,9 @@ import { normalizeStringEntries } from "@openclaw/normalization-core/string-norm
 import {
   hasAgentRosterProperty,
   listAgentEntries,
-  tryResolveLegacyCompatibilityAgentId,
+  tryResolveAmbientOwnerAgentId,
 } from "../agents/agent-scope-config.js";
-import { tryResolveDefaultAgentId } from "../agents/agent-scope.js";
+import { tryResolveSoleAgentId } from "../agents/agent-scope.js";
 import { resolveExecDefaults } from "../agents/exec-defaults.js";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox/config.js";
 import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
@@ -631,7 +631,7 @@ function collectExecRuntimeFindings(cfg: OpenClawConfig): SecurityAuditFinding[]
   }
 
   const agents = listAgentEntries(cfg);
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   const riskyAgents = agents
     .filter(
       (entry) =>
@@ -937,11 +937,10 @@ function collectAgentRosterFindings(cfg: OpenClawConfig): SecurityAuditFinding[]
   const defaultCount = agents.filter((agent) => agent?.default === true).length;
   const explicitOwnership = cfg.agents?.ownership === "explicit";
   // Mirror runtime default resolution: explicit fleets are ownerless by design,
-  // otherwise the roster is valid exactly when the canonical resolver finds an
-  // owner (sole agent, one legacy marker, or a retained migration owner).
+  // otherwise the roster is valid exactly when its ambient owner resolves.
   const resolvable = explicitOwnership
     ? defaultCount === 0
-    : tryResolveLegacyCompatibilityAgentId(cfg) !== undefined;
+    : tryResolveAmbientOwnerAgentId(cfg) !== undefined;
   if (resolvable) {
     return [];
   }

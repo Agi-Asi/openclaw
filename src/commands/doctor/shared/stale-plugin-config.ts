@@ -1,7 +1,7 @@
 // Doctor scanner and repair for plugin/channel config that references missing plugins.
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { sanitizeForLog } from "../../../../packages/terminal-core/src/ansi.js";
-import { resolveAgentWorkspaceDir, tryResolveDefaultAgentId } from "../../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, tryResolveSoleAgentId } from "../../../agents/agent-scope.js";
 import { CHANNEL_IDS } from "../../../channels/ids.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { normalizePluginId } from "../../../plugins/config-state.js";
@@ -40,7 +40,7 @@ function collectPluginRegistryState(
   env?: NodeJS.ProcessEnv,
 ): StalePluginRegistryState {
   const environment = env ?? process.env;
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   const workspaceDir = defaultAgentId ? resolveAgentWorkspaceDir(cfg, defaultAgentId) : undefined;
   const registry = loadManifestMetadataSnapshot({
     config: cfg,

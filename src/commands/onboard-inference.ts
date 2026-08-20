@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
-import { resolveAgentConfig } from "../agents/agent-scope-config.js";
+import { resolveAgentConfig, tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import {
   formatCliBackendVersionAdvisory,
   resolveCliBackendVersionGuidance,
@@ -15,7 +15,6 @@ import {
   readGeminiCliCredentialsCached,
 } from "../agents/cli-credentials.js";
 import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { probeLocalCommand, type LocalCommandProbe } from "../system-agent/probes.js";
@@ -237,7 +236,7 @@ export async function detectInferenceBackends(
 
   const candidates: InferenceBackendCandidate[] = [];
   const defaultAgentId = options.config
-    ? options.agentId?.trim() || tryResolveLegacyCompatibilityAgentId(options.config)
+    ? options.agentId?.trim() || tryResolveAmbientOwnerAgentId(options.config)
     : undefined;
   const defaultAgentModel =
     options.config && defaultAgentId

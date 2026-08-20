@@ -647,7 +647,7 @@ export async function collectStateDeepFilesystemFindings(params: {
   let defaultAgentId: string | undefined;
   if (agentIds.length > 0) {
     try {
-      defaultAgentId = agentScope.resolveDefaultAgentId(params.cfg);
+      defaultAgentId = agentScope.resolveSoleAgentId(params.cfg);
     } catch {
       // Security audits must still inspect known agent stores when a malformed
       // roster prevents normal default selection; config findings report that defect.

@@ -1,8 +1,7 @@
 // Setup migration staging keeps provider writes isolated until verified promotion.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveAgentDir } from "../agents/agent-scope-config.js";
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentDir, resolveSoleAgentId } from "../agents/agent-scope-config.js";
 import { clearRuntimeAuthProfileStoreSnapshot } from "../agents/auth-profiles/store.js";
 import { resolveGatewayLockDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -272,7 +271,7 @@ export async function createSetupMigrationStage(params: {
   reportDir: string;
   targetConfig: OpenClawConfig;
 }): Promise<SetupMigrationStage> {
-  const agentId = resolveDefaultAgentId(params.targetConfig);
+  const agentId = resolveSoleAgentId(params.targetConfig);
   const finalEnv = { ...process.env, OPENCLAW_STATE_DIR: params.stateDir };
   const finalAgentDir = resolveAgentDir(params.targetConfig, agentId, finalEnv);
   const stagedStateDir = await makePrivateStageNear(params.stateDir, "migration-state");

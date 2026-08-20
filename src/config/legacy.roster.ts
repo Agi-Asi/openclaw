@@ -1,9 +1,5 @@
 import { normalizeAgentId } from "@openclaw/normalization-core/agent-id";
 import { readAgentRosterProperty } from "../agents/agent-scope-config.js";
-import {
-  retainLegacyDefaultAgentId,
-  tryGetLegacyDefaultAgentId,
-} from "./legacy.default-agent-owner.js";
 import { materializeLegacyDefaultAgentRoles } from "./legacy.default-agent-roles.js";
 import type { OpenClawConfig } from "./types.openclaw.js";
 
@@ -17,7 +13,7 @@ type MigrationResult = {
 
 export function migratePersistedImplicitMainRoster(
   raw: unknown,
-  options: { materializeWorkspace?: boolean } = {},
+  options: { materializeWorkspace?: boolean; legacyDefaultAgentId?: string } = {},
 ): MigrationResult {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { config: raw, changed: false, diagnostics: [] };
@@ -117,7 +113,7 @@ export function migratePersistedImplicitMainRoster(
   );
   const hasValidLegacyMarker = agents.ownership !== "explicit" && markedIds.length === 1;
   const legacyDefaultAgentId =
-    tryGetLegacyDefaultAgentId(raw as OpenClawConfig) ??
+    options.legacyDefaultAgentId ??
     (validIds.length > 1 && hasValidLegacyMarker ? markedIds[0] : undefined);
   let nextRoot: Record<string, unknown> = { ...root, agents };
   let insertedPaths: string[][] = [];
@@ -143,6 +139,7 @@ export function migratePersistedImplicitMainRoster(
       ...nextRoot,
       agents: {
         ...nextAgents,
+        ...(legacyDefaultAgentId ? { ownership: "explicit" } : {}),
         entries: Object.fromEntries(
           Object.entries(materializedEntries).map(([id, entry]) => {
             if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -159,7 +156,6 @@ export function migratePersistedImplicitMainRoster(
   }
 
   const config = (changed ? nextRoot : raw) as OpenClawConfig;
-  retainLegacyDefaultAgentId(config, legacyDefaultAgentId);
   return {
     config,
     changed,

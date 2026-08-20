@@ -9,7 +9,11 @@ import {
   setMemoryReadFileImpl,
 } from "./memory-tool-manager.test-mocks.js";
 import { createMemoryGetTool } from "./tools.js";
-import { asOpenClawConfig, createMemoryGetToolOrThrow } from "./tools.test-helpers.js";
+import {
+  asOpenClawConfig,
+  createDefaultMemoryToolAgents,
+  createMemoryGetToolOrThrow,
+} from "./tools.test-helpers.js";
 
 const lookup = "memory/entities/alpha.md";
 const memoryHit = {
@@ -280,7 +284,7 @@ describe("memory_get corpus outcomes", () => {
       const get = vi.fn(async () => wikiHit);
       registerMemoryCorpusSupplement("memory-wiki", { search: async () => [], get });
       const config = asOpenClawConfig({
-        agents: { list: [{ id: "marketing-agent", default: true }] },
+        agents: createDefaultMemoryToolAgents("marketing-agent"),
       });
       const tool = createMemoryGetTool({
         config,

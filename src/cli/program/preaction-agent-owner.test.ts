@@ -1,18 +1,12 @@
-// Preaction parser coverage for explicit legacy migration ownership.
+// Preaction parser coverage for invocation-scoped state migration ownership.
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { tryResolveLegacyCompatibilityAgentId } from "../../agents/agent-scope-config.js";
 import { createDoctorConfigSnapshot } from "../../commands/doctor-config-snapshot.test-helpers.js";
-import type { ConfigFileSnapshot } from "../../config/types.js";
+import { resolveStateMigrationConfigInput } from "../../commands/doctor/shared/legacy-config-state-migration-input.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
 const mocks = vi.hoisted(() => ({
-  ensureConfigReady:
-    vi.fn<
-      (options: {
-        beforeStateMigrations?: (snapshot?: ConfigFileSnapshot) => Promise<boolean>;
-      }) => Promise<void>
-    >(),
+  ensureConfigReady: vi.fn<(options: { stateMigrationAgentId?: string }) => Promise<void>>(),
 }));
 
 vi.mock("../../globals.js", () => ({ setVerbose: vi.fn() }));
@@ -62,13 +56,23 @@ describe("preaction migration agent owner", () => {
     ["unknown", ["models", "auth", "setup-token", "--agent", "missing"], undefined],
     ["invalid", ["models", "auth", "setup-token", "--agent", "main!"], undefined],
   ])(
-    "retains only a valid explicit owner from the %s placement",
+    "uses only a valid explicit migration owner from the %s placement",
     async (_label, argv, expected) => {
       const config = {
-        agents: { ownership: "explicit", entries: { main: {}, work: {} } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ambient" } },
+          entries: { ambient: {}, main: {}, work: {} },
+        },
       } satisfies OpenClawConfig;
+      let migrationOwner: string | undefined;
       mocks.ensureConfigReady.mockImplementationOnce(async (options) => {
-        await options.beforeStateMigrations?.(createDoctorConfigSnapshot({ config }));
+        const snapshot = createDoctorConfigSnapshot({ config });
+        migrationOwner = resolveStateMigrationConfigInput({
+          snapshot,
+          baseConfig: snapshot.sourceConfig,
+          stateMigrationAgentId: options.stateMigrationAgentId,
+        })?.cfg?.agents?.defaults?.systemAgent?.agentId;
       });
       const program = createProgram();
       const { registerPreActionHooks } = await import("./preaction.js");
@@ -77,7 +81,8 @@ describe("preaction migration agent owner", () => {
 
       await program.parseAsync(process.argv);
 
-      expect(tryResolveLegacyCompatibilityAgentId(config)).toBe(expected);
+      expect(migrationOwner).toBe(expected ?? "ambient");
+      expect(config.agents.defaults.systemAgent.agentId).toBe("ambient");
     },
   );
 });

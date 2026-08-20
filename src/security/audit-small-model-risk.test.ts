@@ -43,9 +43,10 @@ describe("security audit small-model risk findings", () => {
       collectSmallModelRiskFindings({
         cfg: {
           agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
             entries: {
               ops: {
-                default: true,
                 model: { primary: "ollama/mistral-8b" },
                 tools: { deny: ["web_search", "web_fetch", "browser"] },
               },

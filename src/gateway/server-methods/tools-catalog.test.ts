@@ -15,7 +15,7 @@ import { toolsCatalogHandlers } from "./tools-catalog.js";
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   listAgentIds: vi.fn(() => ["main"]),
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
   resolveAgentWorkspaceDir: vi.fn(() => "/tmp/workspace-main"),
   resolveAgentDir: vi.fn(() => "/tmp/agents/main/agent"),
 }));

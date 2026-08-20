@@ -15,7 +15,11 @@ describe("known session store owners", () => {
       const storePath = path.join(stateDir, "shared", "sessions.json");
       const cfg: OpenClawConfig = {
         session: { store: storePath },
-        agents: { entries: { ops: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
       };
 
       await replaceSessionEntry(
@@ -39,7 +43,11 @@ describe("known session store owners", () => {
       const storePath = path.join(stateDir, "shared", "sessions.json");
       const cfg: OpenClawConfig = {
         session: { store: storePath },
-        agents: { entries: { ops: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
       };
 
       await replaceSessionEntry(
@@ -70,7 +78,11 @@ describe("known session store owners", () => {
       const storePath = path.join(stateDir, "shared", "sessions.json");
       const cfg: OpenClawConfig = {
         session: { store: storePath },
-        agents: { entries: { ops: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
       };
 
       await replaceSessionEntry(

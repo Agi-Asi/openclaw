@@ -13,7 +13,7 @@ export {
   upsertSessionEntry,
 } from "./session-store-runtime.js";
 
-export { resolveDefaultAgentId } from "../agents/agent-scope.js";
+export { resolveDefaultAgentId } from "./agent-scope-runtime.js";
 export {
   requireRuntimeConfig,
   resolveLivePluginConfigObject,

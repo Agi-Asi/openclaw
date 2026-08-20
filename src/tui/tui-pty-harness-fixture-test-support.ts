@@ -672,8 +672,9 @@ export async function writeTuiPtyFixtureScript(dir: string) {
           backend: new FixtureBackend(),
           config: {
             agents: {
-              defaults: { model: "fixture-provider/fixture-model" },
-              entries: { main: { default: true } },
+              ownership: "explicit",
+              defaults: { model: "fixture-provider/fixture-model", systemAgent: { agentId: "main" } },
+              entries: { main: {} },
             },
             session: { scope: "per-sender", mainKey: "main" },
           },

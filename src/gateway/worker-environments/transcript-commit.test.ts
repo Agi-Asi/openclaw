@@ -176,7 +176,11 @@ describe("worker transcript commit application", () => {
     sessionsDir = path.join(root, "agents", "main", "sessions");
     storePath = path.join(sessionsDir, "sessions.json");
     cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: {
         mainKey: "main",
         store: path.join(root, "agents", "{agentId}", "sessions", "sessions.json"),

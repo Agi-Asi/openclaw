@@ -14,6 +14,7 @@ import {
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../config/sessions/session-sqlite-target.js";
 import { resolveExistingAgentSessionStoreTargetsReadOnlyResult } from "../config/sessions/targets-read-availability.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createPinnedLookup } from "../infra/net/ssrf.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import {
@@ -2691,8 +2692,12 @@ describe("cleanupManagedOutgoingImageRecords", () => {
 
   it("treats legacy unscoped global records as the configured default agent", async () => {
     const config = {
-      agents: { list: [{ id: "main" }, { id: "work", default: true }] },
-    };
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "work" } },
+        entries: { main: {}, work: {} },
+      },
+    } satisfies OpenClawConfig;
     getRuntimeConfigMock.mockReturnValue(config);
     prepareAgentSessionStore(stateDir, "work");
     await replaceTestSessionEntry(

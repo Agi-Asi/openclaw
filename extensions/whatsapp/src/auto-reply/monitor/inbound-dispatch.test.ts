@@ -97,11 +97,11 @@ vi.mock("./runtime-api.js", async () => {
     },
     logVerbose: () => {},
     resolveChunkMode: () => "length",
-    resolveIdentityNamePrefix: (cfg: {
-      agents?: { list?: Array<{ id?: string; default?: boolean; identity?: { name?: string } }> };
-    }) => {
-      const agent = cfg.agents?.list?.find((entry) => entry.default) ?? cfg.agents?.list?.[0];
-      const name = agent?.identity?.name?.trim();
+    resolveIdentityNamePrefix: (
+      cfg: { agents?: { entries?: Record<string, { identity?: { name?: string } }> } },
+      agentId: string,
+    ) => {
+      const name = cfg.agents?.entries?.[agentId]?.identity?.name?.trim();
       return name ? `[${name}]` : undefined;
     },
     resolveInboundLastRouteSessionKey: (params: { sessionKey: string }) => params.sessionKey,
@@ -981,13 +981,13 @@ describe("whatsapp inbound dispatch", () => {
     const responsePrefix = resolveWhatsAppResponsePrefix({
       cfg: {
         agents: {
-          list: [
-            {
-              id: "main",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: {
               identity: { name: "Mainbot", emoji: "🦞", theme: "space lobster" },
             },
-          ],
+          },
         },
         messages: {},
       } as never,

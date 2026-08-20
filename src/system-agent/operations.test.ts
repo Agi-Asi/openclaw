@@ -901,9 +901,11 @@ describe("system agent operations", () => {
     mockConfig.setResolvedConfig(
       {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "10" } },
           entries: {
             "2": {},
-            "10": { default: true },
+            "10": {},
           },
         },
       },

@@ -36,7 +36,11 @@ const { createGatewayHooksRequestHandler } = await import("./hooks.js");
 
 function createConfig(global: boolean): OpenClawConfig {
   return {
-    agents: { entries: { main: { default: true }, hooks: {} } },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {}, hooks: {} },
+    },
     hooks: { enabled: true, token: "hook-secret" },
     ...(global ? { session: { scope: "global" } } : {}),
   };

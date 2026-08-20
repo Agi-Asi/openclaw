@@ -1,7 +1,7 @@
 import {
   resolveAllowedModelRef,
-  resolveDefaultAgentId,
   resolveDefaultModelForAgent,
+  resolveSoleAgentId,
 } from "openclaw/plugin-sdk/agent-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 
@@ -15,7 +15,7 @@ export function resolveCodexCatalogCreateSession(
   if (!config) {
     return undefined;
   }
-  const agentId = requestedAgentId ?? resolveDefaultAgentId(config);
+  const agentId = requestedAgentId ?? resolveSoleAgentId(config);
   const defaultModel = resolveDefaultModelForAgent({ cfg: config, agentId });
   const allowed = resolveAllowedModelRef({
     cfg: config,

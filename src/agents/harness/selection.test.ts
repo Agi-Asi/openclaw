@@ -441,10 +441,12 @@ function agentModelRuntimeConfig(
   if (agentId) {
     return {
       agents: {
-        list: [
-          { id: "main", default: true },
-          { id: agentId, models: { [modelRef]: { agentRuntime: { id: runtime } } } },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {},
+          [agentId]: { models: { [modelRef]: { agentRuntime: { id: runtime } } } },
+        },
       },
     } as OpenClawConfig;
   }
@@ -3002,8 +3004,10 @@ describe("selectAgentHarness", () => {
         agentHarnessId: "codex",
         config: {
           agents: {
-            list: [{ id: "main", default: true, agentDir: "/tmp/main-agent" }],
+            ownership: "explicit",
+            entries: { main: { agentDir: "/tmp/main-agent" } },
             defaults: {
+              systemAgent: { agentId: "main" },
               models: {
                 "openai/gpt-5.5": { agentRuntime: { id: "openclaw" } },
               },

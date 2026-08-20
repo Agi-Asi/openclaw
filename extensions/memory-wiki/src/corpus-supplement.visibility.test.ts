@@ -20,7 +20,11 @@ const { createVault } = createMemoryWikiTestHarness();
 const appConfig = {
   // This suite registers memory-core directly; runtime discovery would load unrelated plugins.
   plugins: { enabled: false },
-  agents: { list: [{ id: "main", default: true }, { id: "secondary" }] },
+  agents: {
+    ownership: "explicit",
+    entries: { main: {}, secondary: {} },
+    defaults: { systemAgent: { agentId: "main" } },
+  },
 } as OpenClawConfig;
 
 async function writeBridgePage(params: {

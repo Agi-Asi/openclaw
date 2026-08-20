@@ -905,9 +905,10 @@ describe("config schema", () => {
 
     const config = OpenClawSchema.parse({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
         entries: {
           main: {
-            default: true,
             tools: {
               exec: {
                 commandHighlighting: false,
@@ -937,9 +938,10 @@ describe("config schema", () => {
 
     const config = OpenClawSchema.parse({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
         entries: {
           main: {
-            default: true,
             tools: {
               exec: {
                 reviewer: {

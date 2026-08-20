@@ -1439,21 +1439,20 @@ describe("doctor preview warnings", () => {
         telegram: {},
       },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             tools: {
               allow: ["read"],
             },
           },
-          {
-            id: "commander",
+          commander: {
             tools: {
               profile: "messaging",
             },
           },
-        ],
+        },
       },
       bindings: [
         {
@@ -1478,21 +1477,20 @@ describe("doctor preview warnings", () => {
         discord: {},
       },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             tools: {
               allow: ["read"],
             },
           },
-          {
-            id: "commander",
+          commander: {
             tools: {
               profile: "messaging",
             },
           },
-        ],
+        },
       },
       bindings: [
         {
@@ -1517,21 +1515,20 @@ describe("doctor preview warnings", () => {
         discord: {},
       },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             tools: {
               allow: ["read"],
             },
           },
-          {
-            id: "commander",
+          commander: {
             tools: {
               profile: "messaging",
             },
           },
-        ],
+        },
       },
       bindings: [
         {
@@ -1558,27 +1555,25 @@ describe("doctor preview warnings", () => {
         },
       },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             tools: {
               allow: ["read"],
             },
           },
-          {
-            id: "personal-agent",
+          "personal-agent": {
             tools: {
               profile: "messaging",
             },
           },
-          {
-            id: "work-agent",
+          "work-agent": {
             tools: {
               profile: "messaging",
             },
           },
-        ],
+        },
       },
       bindings: [
         {
@@ -1607,21 +1602,20 @@ describe("doctor preview warnings", () => {
         imessage: {},
       },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             tools: {
               allow: ["read"],
             },
           },
-          {
-            id: "ios-agent",
+          "ios-agent": {
             tools: {
               profile: "messaging",
             },
           },
-        ],
+        },
       },
       bindings: [
         {
@@ -1651,21 +1645,20 @@ describe("doctor preview warnings", () => {
         },
       },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             tools: {
               allow: ["read"],
             },
           },
-          {
-            id: "personal-agent",
+          "personal-agent": {
             tools: {
               profile: "messaging",
             },
           },
-        ],
+        },
       },
       bindings: [
         {

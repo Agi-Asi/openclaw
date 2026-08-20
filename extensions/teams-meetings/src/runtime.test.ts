@@ -108,7 +108,13 @@ describe("Microsoft Teams meeting session flow", () => {
         defaultMode: "transcribe",
         chrome: { waitForInCallMs: 1 },
       }),
-      fullConfig: { agents: { list: [{ id: "operator", default: true }] } },
+      fullConfig: {
+        agents: {
+          ownership: "explicit",
+          entries: { operator: {} },
+          defaults: { systemAgent: { agentId: "operator" } },
+        },
+      },
       runtime: harness.runtime,
       logger,
     });

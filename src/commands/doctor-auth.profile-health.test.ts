@@ -97,7 +97,9 @@ describe("noteAuthProfileHealth", () => {
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
         agents: {
-          list: [{ id: "main", default: true, agentDir: mainDir }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
         },
       } as OpenClawConfig,
     });
@@ -134,7 +136,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -167,7 +173,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -197,7 +207,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -229,7 +243,9 @@ describe("noteAuthProfileHealth", () => {
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
         agents: {
-          list: [{ id: "main", default: true, agentDir: mainDir }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
         },
       } as OpenClawConfig,
     });
@@ -274,7 +290,11 @@ describe("noteAuthProfileHealth", () => {
 
       const findings = await collectAuthProfileHealthFindings({
         cfg: {
-          agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { agentDir: mainDir } },
+          },
         } as OpenClawConfig,
       });
 
@@ -309,7 +329,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -350,7 +374,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -389,7 +417,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -416,7 +448,11 @@ describe("noteAuthProfileHealth", () => {
 
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
-        agents: { list: [{ id: "main", default: true, agentDir: mainDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
+        },
       } as OpenClawConfig,
     });
 
@@ -442,7 +478,9 @@ describe("noteAuthProfileHealth", () => {
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
         agents: {
-          list: [{ id: "main", default: true, agentDir: mainDir }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: mainDir } },
         },
       } as OpenClawConfig,
     });
@@ -480,10 +518,12 @@ describe("noteAuthProfileHealth", () => {
     const findings = await collectAuthProfileHealthFindings({
       cfg: {
         agents: {
-          list: [
-            { id: "main", default: true, agentDir: mainDir },
-            { id: "coder", agentDir: coderDir },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { agentDir: mainDir },
+            coder: { agentDir: coderDir },
+          },
         },
       } as OpenClawConfig,
     });
@@ -496,7 +536,11 @@ describe("noteAuthProfileHealth", () => {
   it("skips external auth profile resolution when no auth source exists", async () => {
     await noteAuthProfileHealth({
       cfg: {
-        agents: { entries: { main: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
         channels: { telegram: { enabled: true } },
       } as OpenClawConfig,
       prompter: {} as DoctorPrompter,
@@ -520,7 +564,9 @@ describe("noteAuthProfileHealth", () => {
     await noteAuthProfileHealth({
       cfg: {
         agents: {
-          list: [{ id: "main", default: true, agentDir: defaultDir }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: defaultDir } },
         },
       } as OpenClawConfig,
       prompter: {} as DoctorPrompter,
@@ -555,10 +601,12 @@ describe("noteAuthProfileHealth", () => {
     await noteAuthProfileHealth({
       cfg: {
         agents: {
-          list: [
-            { id: "main", default: true, agentDir: mainDir },
-            { id: "coder", agentDir: coderDir },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { agentDir: mainDir },
+            coder: { agentDir: coderDir },
+          },
         },
       } as OpenClawConfig,
       prompter: {
@@ -592,10 +640,12 @@ describe("noteAuthProfileHealth", () => {
     await noteAuthProfileHealth({
       cfg: {
         agents: {
-          list: [
-            { id: "main", default: true, agentDir: mainDir },
-            { id: "coder", agentDir: coderDir },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { agentDir: mainDir },
+            coder: { agentDir: coderDir },
+          },
         },
       } as OpenClawConfig,
       prompter: {
@@ -630,10 +680,12 @@ describe("noteAuthProfileHealth", () => {
     await noteAuthProfileHealth({
       cfg: {
         agents: {
-          list: [
-            { id: "main", default: true, agentDir: mainDir },
-            { id: "coder", agentDir: coderDir },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { agentDir: mainDir },
+            coder: { agentDir: coderDir },
+          },
         },
       } as OpenClawConfig,
       prompter: {
@@ -678,7 +730,9 @@ describe("noteAuthProfileHealth", () => {
     await noteAuthProfileHealth({
       cfg: {
         agents: {
-          list: [{ id: "main", default: true, agentDir }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir } },
         },
       } as OpenClawConfig,
       prompter: {
@@ -713,10 +767,12 @@ describe("noteAuthProfileHealth", () => {
     await noteAuthProfileHealth({
       cfg: {
         agents: {
-          list: [
-            { id: "main", default: true, agentDir: path.join(tempDir, "main-agent") },
-            { id: "coder", agentDir: coderDir },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: {
+            main: { agentDir: path.join(tempDir, "main-agent") },
+            coder: { agentDir: coderDir },
+          },
         },
       } as OpenClawConfig,
       prompter: {
@@ -769,7 +825,11 @@ describe("noteAuthProfileHealth", () => {
 
       await noteAuthProfileHealth({
         cfg: {
-          agents: { list: [{ id: "main", default: true, agentDir }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { agentDir } },
+          },
         } as OpenClawConfig,
         prompter: { confirmAutoFix: vi.fn(async () => true) } as unknown as DoctorPrompter,
         allowKeychainPrompt: false,

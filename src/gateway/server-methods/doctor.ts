@@ -13,7 +13,7 @@ import {
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
@@ -658,7 +658,7 @@ function resolveDoctorMemoryAgent(
   let agentId = requestedAgentId ?? omittedAgentId;
   if (!agentId) {
     try {
-      agentId = resolveDefaultAgentId(cfg, {
+      agentId = resolveSoleAgentId(cfg, {
         surface: "doctor memory",
         hint: "Pass agentId to select a configured agent.",
       });

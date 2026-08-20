@@ -47,7 +47,13 @@ function createBindings(agentId: string | undefined) {
     config: {
       realtime: { ...(agentId ? { agentId } : {}), toolPolicy: "safe-read-only" },
     },
-    fullConfig: { agents: { list: [{ id: "operator", default: true }] } },
+    fullConfig: {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "operator" } },
+        entries: { operator: {} },
+      },
+    },
     runtime: { agent: {} } as never,
     logger: {} as never,
   });

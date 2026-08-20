@@ -153,10 +153,9 @@ it("projects only durable profiles and configured agents as effective owners", (
   const result = listSessionsFromStore({
     cfg: {
       agents: {
-        list: [
-          { id: "main", default: true },
-          { id: "research", identity: { name: "Research" } },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, research: { identity: { name: "Research" } } },
       },
     } as OpenClawConfig,
     storePath: "/tmp/openclaw-session-owner-candidates",
@@ -369,7 +368,9 @@ it("preserves list output across visibility, scope, owner, and search filters", 
   }));
   const cfg = {
     agents: {
-      list: [{ id: "main", default: true }, { id: "work" }],
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {}, work: {} },
     },
   } as OpenClawConfig;
   const store: Record<string, SessionEntry> = {
@@ -514,8 +515,12 @@ it("keeps the serialized list response deterministic for the current filter path
   const result = listSessionsFromStore({
     cfg: {
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.4" } },
-        list: [{ id: "main", default: true, model: { primary: "openai/gpt-5.4" } }],
+        ownership: "explicit",
+        defaults: {
+          model: { primary: "openai/gpt-5.4" },
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: { model: { primary: "openai/gpt-5.4" } } },
       },
     } as OpenClawConfig,
     opts: { archived: "all", includeGlobal: true, search: "needle" },

@@ -21,15 +21,16 @@ function route(agentId: string, provider: string): SystemAgentConfiguredRoute {
 
 const config: OpenClawConfig = {
   agents: {
+    ownership: "explicit",
     defaults: {
       model: { primary: "zeta/model" },
       systemAgent: { agentId: "requester" },
     },
-    list: [
-      { id: "requester", default: true, model: "zeta/model" },
-      { id: "beta", model: "beta/model" },
-      { id: "alpha", model: "alpha/model" },
-    ],
+    entries: {
+      requester: { model: "zeta/model" },
+      beta: { model: "beta/model" },
+      alpha: { model: "alpha/model" },
+    },
   },
 };
 

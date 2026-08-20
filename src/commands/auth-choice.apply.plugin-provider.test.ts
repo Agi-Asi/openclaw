@@ -48,11 +48,11 @@ vi.mock("../agents/auth-profiles.js", () => ({
   persistAuthProfileBatch,
 }));
 
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "default"));
+const resolveSoleAgentId = vi.hoisted(() => vi.fn(() => "default"));
 const resolveAgentWorkspaceDir = vi.hoisted(() => vi.fn(() => "/tmp/workspace"));
 const resolveAgentDir = vi.hoisted(() => vi.fn(() => "/tmp/agent"));
 vi.mock("../agents/agent-scope.js", () => ({
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
 }));

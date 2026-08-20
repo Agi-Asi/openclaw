@@ -1,5 +1,5 @@
 // Google Meet composes platform strategies with the shared meeting session runtime.
-import { resolveDefaultAgentId } from "openclaw/plugin-sdk/agent-runtime";
+import { resolveSoleAgentId } from "openclaw/plugin-sdk/agent-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import {
@@ -302,7 +302,7 @@ export class GoogleMeetRuntime {
     return normalizeAgentId(
       requestedAgentId ??
         this.params.config.realtime.agentId ??
-        resolveDefaultAgentId(this.params.fullConfig),
+        resolveSoleAgentId(this.params.fullConfig),
     );
   }
 

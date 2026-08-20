@@ -2502,7 +2502,11 @@ describe("session.message websocket events", () => {
       storePath,
     });
     const config: OpenClawConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { mainKey: "main", store: storePath },
     };
     const ledger: WorkerTranscriptCommitStore = {

@@ -9,6 +9,7 @@ import { WorkboardStore } from "./store.js";
 import {
   resolveAgentWorkboardWorkspaceRuntime,
   resolveCommandWorkboardWorkspaceAccess,
+  resolveWorkboardAgentWorkspace,
 } from "./workspace-access.js";
 
 function createMemoryStore<T = PersistedWorkboardCard>(): WorkboardKeyedStore<T> {
@@ -97,30 +98,42 @@ async function createAmbiguousPrefix(store: WorkboardStore): Promise<string> {
 
 describe("handleWorkboardCommand", () => {
   it("uses the configured default agent workspace for unscoped local commands", () => {
-    expect(
-      resolveCommandWorkboardWorkspaceAccess({
-        config: {
-          tools: { fs: { workspaceOnly: true } },
-          agents: {
-            list: [
-              {
-                id: "first",
-                workspace: "/first",
-                tools: { fs: { workspaceOnly: false } },
-              },
-              { id: "chosen", default: true, workspace: "/chosen" },
-            ],
+    const config = {
+      tools: { fs: { workspaceOnly: true } },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "chosen" } },
+        entries: {
+          first: {
+            workspace: "/first",
+            tools: { fs: { workspaceOnly: false } },
           },
+          chosen: { workspace: "/chosen" },
         },
-      }),
-    ).toEqual({ unrestricted: false, roots: ["/chosen"], writable: true });
+      },
+    };
+
+    expect(resolveCommandWorkboardWorkspaceAccess({ config })).toEqual({
+      unrestricted: false,
+      roots: ["/chosen"],
+      writable: true,
+    });
+    expect(resolveWorkboardAgentWorkspace(config)).toBe("/chosen");
+    expect(resolveWorkboardAgentWorkspace(config, "first")).toBe("/first");
+    expect(resolveCommandWorkboardWorkspaceAccess({ config, agentId: "first" })).toEqual({
+      unrestricted: true,
+    });
   });
 
   it("inherits slash-session sandbox roots and write mode", () => {
     const config = {
       agents: {
-        defaults: { sandbox: { mode: "all" as const, workspaceAccess: "ro" as const } },
-        list: [{ id: "main", default: true, workspace: "/workspace" }],
+        ownership: "explicit" as const,
+        defaults: {
+          sandbox: { mode: "all" as const, workspaceAccess: "ro" as const },
+          systemAgent: { agentId: "other" },
+        },
+        entries: { main: { workspace: "/workspace" }, other: { workspace: "/other" } },
       },
     };
 
@@ -140,14 +153,17 @@ describe("handleWorkboardCommand", () => {
   it("projects target sandbox authority into Workboard roots", async () => {
     const safeConfig = {
       agents: {
-        defaults: { sandbox: { mode: "all" as const, workspaceAccess: "rw" as const } },
-        list: [{ id: "main", default: true, workspace: "/workspace" }],
+        ownership: "explicit" as const,
+        defaults: {
+          sandbox: { mode: "all" as const, workspaceAccess: "rw" as const },
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: { workspace: "/workspace" }, other: { workspace: "/other" } },
       },
     };
     await expect(
       resolveAgentWorkboardWorkspaceRuntime({
         config: safeConfig,
-        agentId: "main",
         sessionKey: "agent:main:subagent:workboard-card",
         workspaceDir: "/workspace",
         prepareSandboxWorkspaceAuthority: async () => ({
@@ -203,11 +219,12 @@ describe("handleWorkboardCommand", () => {
       senderIsOwner: true,
       config: {
         agents: {
-          defaults: { sandbox: { mode: "all", workspaceAccess: "rw" } },
-          list: [
-            { id: "main", default: true, workspace: "/workspace" },
-            { id: "secondary", workspace: "/workspace" },
-          ],
+          ownership: "explicit",
+          defaults: {
+            sandbox: { mode: "all", workspaceAccess: "rw" },
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: { workspace: "/workspace" }, secondary: { workspace: "/workspace" } },
         },
       },
       agentId: "secondary",
@@ -359,10 +376,12 @@ describe("handleWorkboardCommand", () => {
     const restrictedConfig = {
       tools: { fs: { workspaceOnly: true } },
       agents: {
-        list: [
-          { id: "main", default: true, workspace: "/workspace" },
-          { id: "restricted", workspace: "/workspace" },
-        ],
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { workspace: "/workspace" },
+          restricted: { workspace: "/workspace" },
+        },
       },
     };
     vi.mocked(api.runtime.sandbox.resolveWorkspaceAuthority).mockReturnValue({
@@ -437,7 +456,13 @@ describe("handleWorkboardCommand", () => {
       args: "dispatch",
       context: {
         gatewayClientScopes: ["operator.admin"],
-        config: { agents: { list: [{ id: "admin", default: true, workspace: "/repo-allowed" }] } },
+        config: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "admin" } },
+            entries: { admin: { workspace: "/repo-allowed" } },
+          },
+        },
         agentId: "admin",
       },
     });

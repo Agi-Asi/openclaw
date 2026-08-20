@@ -22,7 +22,13 @@ function createContext(seq = 0) {
       agentRunSeq,
       broadcast,
       nodeSendToSession,
-      getRuntimeConfig: () => ({ agents: { list: [{ id: "main", default: true }] } }),
+      getRuntimeConfig: (): OpenClawConfig => ({
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      }),
     },
     order,
     deleteSpy,

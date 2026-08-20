@@ -13,7 +13,11 @@ const SESSION_LINK_BASE = "http://127.0.0.1:18789/control";
 const SESSION_LINK_RULE = describeSessionLinkRule(SESSION_LINK_BASE);
 
 const VALID_CONFIG: OpenClawConfig = {
-  agents: { entries: { main: { default: true } } },
+  agents: {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  },
 };
 
 const mocks = vi.hoisted(() => ({

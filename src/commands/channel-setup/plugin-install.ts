@@ -1,5 +1,5 @@
 // Channel setup plugin install/reload helpers used by onboarding and channel commands.
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import type { ChannelPluginCatalogEntry } from "../../channels/plugins/catalog.js";
 import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -83,7 +83,7 @@ function loadChannelSetupPluginRegistry(params: {
   const resolvedConfig = autoEnabled.config;
   const workspaceDir =
     params.workspaceDir ??
-    resolveAgentWorkspaceDir(resolvedConfig, resolveDefaultAgentId(resolvedConfig));
+    resolveAgentWorkspaceDir(resolvedConfig, resolveSoleAgentId(resolvedConfig));
   const onlyPluginIds =
     params.onlyPluginIds ??
     resolveConfiguredChannelPluginIds({

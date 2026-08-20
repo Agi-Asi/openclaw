@@ -15,8 +15,8 @@ import { listAgentEntries } from "../agents/agent-scope-config.js";
 import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
   resolveSessionAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { ensureContextWindowCacheLoaded } from "../agents/context.js";
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
@@ -588,7 +588,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
           continue;
         }
         if (opts.sessionKey === "global") {
-          const defaultAgentId = resolveDefaultAgentId(getRuntimeConfig());
+          const defaultAgentId = resolveSoleAgentId(getRuntimeConfig());
           const requestedAgentId = opts.agentId ? normalizeAgentId(opts.agentId) : defaultAgentId;
           const runAgentId = run.agentId ? normalizeAgentId(run.agentId) : defaultAgentId;
           if (runAgentId !== requestedAgentId) {
@@ -609,7 +609,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
       return { ok: true, aborted: false, runIds: [] };
     }
     if (opts.sessionKey === "global") {
-      const defaultAgentId = resolveDefaultAgentId(getRuntimeConfig());
+      const defaultAgentId = resolveSoleAgentId(getRuntimeConfig());
       const requestedAgentId = opts.agentId ? normalizeAgentId(opts.agentId) : defaultAgentId;
       const runAgentId = run.agentId ? normalizeAgentId(run.agentId) : defaultAgentId;
       if (runAgentId !== requestedAgentId) {

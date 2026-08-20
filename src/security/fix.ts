@@ -1,7 +1,7 @@
 // Applies safe automatic fixes for supported security audit findings.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { listAgentEntries, tryResolveDefaultAgentId } from "../agents/agent-scope.js";
+import { listAgentEntries, tryResolveSoleAgentId } from "../agents/agent-scope.js";
 import { resolveAuthProfileDatabaseFilePaths } from "../agents/auth-profiles/sqlite.js";
 import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import { createConfigIO, replaceConfigFile } from "../config/config.js";
@@ -338,7 +338,7 @@ async function collectSecurityPermissionTargets(params: {
 
   const ids = new Set<string>();
   ids.add(LEGACY_IMPLICIT_AGENT_ID);
-  const defaultAgentId = tryResolveDefaultAgentId(params.cfg);
+  const defaultAgentId = tryResolveSoleAgentId(params.cfg);
   if (defaultAgentId) {
     ids.add(defaultAgentId);
   }

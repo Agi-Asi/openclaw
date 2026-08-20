@@ -46,8 +46,9 @@ describe("session observer run bookkeeping", () => {
       gateway: { controlUi: { sessionObserver: true } },
       session: { scope: "global" as const },
       agents: {
-        defaults: { utilityModel: "openai/gpt-test" },
-        list: [{ id: "main", default: true }, { id: "work" }],
+        ownership: "explicit",
+        defaults: { utilityModel: "openai/gpt-test", systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
       },
     } satisfies OpenClawConfig;
     const digest = persistedLiveDigest({ agentId: "work", sessionKey: "global" });

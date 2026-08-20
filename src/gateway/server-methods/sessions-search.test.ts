@@ -25,7 +25,11 @@ vi.mock("../../config/sessions.js", async (importOriginal) => ({
 import { sessionReadHandlers } from "./sessions-read.js";
 
 let cfg: Record<string, unknown> = {
-  agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+  agents: {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, work: {} },
+  },
 };
 
 async function callSearch(
@@ -64,7 +68,13 @@ async function callSearch(
 
 describe("sessions.search gateway method", () => {
   beforeEach(() => {
-    cfg = { agents: { list: [{ id: "main", default: true }, { id: "work" }] } };
+    cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
+    };
     searchSessionTranscriptsMock.mockReset();
     searchSessionTranscriptsMock.mockReturnValue({ hits: [], indexing: false });
     listSessionEntriesMock.mockReset();
@@ -335,7 +345,11 @@ describe("sessions.search gateway method", () => {
 
   it("scopes omitted filters to the requested agent in a fixed store", async () => {
     cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: { store: "/stores/shared/sessions.json" },
     };
     resolveExistingAgentSessionStoreTargetsSyncMock.mockReturnValue([

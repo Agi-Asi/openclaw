@@ -92,8 +92,12 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
-            defaults: { model: "claude-cli/claude-sonnet-4-6" },
-            entries: { main: { default: true } },
+            ownership: "explicit",
+            defaults: {
+              model: "claude-cli/claude-sonnet-4-6",
+              systemAgent: { agentId: "main" },
+            },
+            entries: { main: {} },
           },
         },
         {
@@ -132,10 +136,12 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
+            ownership: "explicit",
             defaults: {
               model: { primary: "claude-cli/claude-sonnet-4-6" },
+              systemAgent: { agentId: "main" },
             },
-            entries: { main: { default: true } },
+            entries: { main: {} },
           },
         },
         {
@@ -181,8 +187,12 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
-            defaults: { model: "claude-cli/claude-sonnet-4-6" },
-            entries: { main: { default: true } },
+            ownership: "explicit",
+            defaults: {
+              model: "claude-cli/claude-sonnet-4-6",
+              systemAgent: { agentId: "main" },
+            },
+            entries: { main: {} },
           },
         },
         {
@@ -223,24 +233,23 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
+            ownership: "explicit",
             defaults: {
               model: { primary: "openai/gpt-5.5" },
+              systemAgent: { agentId: "coder" },
             },
-            list: [
-              {
-                id: "coder",
-                default: true,
+            entries: {
+              coder: {
                 workspace: defaultWorkspace,
               },
-              {
-                id: "xiaoao",
+              xiaoao: {
                 workspace: claudeWorkspace,
                 model: "anthropic/claude-opus-4-7",
                 models: {
                   "anthropic/claude-opus-4-7": { agentRuntime: { id: "claude-cli" } },
                 },
               },
-            ],
+            },
           },
         },
         {
@@ -273,10 +282,12 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
+            ownership: "explicit",
             defaults: {
               model: { primary: "claude-cli/claude-sonnet-4-6" },
+              systemAgent: { agentId: "main" },
             },
-            entries: { main: { default: true } },
+            entries: { main: {} },
           },
         },
         {
@@ -308,10 +319,12 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
+            ownership: "explicit",
             defaults: {
               model: { primary: "claude-cli/claude-sonnet-4-6" },
+              systemAgent: { agentId: "main" },
             },
-            entries: { main: { default: true } },
+            entries: { main: {} },
           },
         },
         {
@@ -336,10 +349,12 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
+            ownership: "explicit",
             defaults: {
               model: { primary: "claude-cli/claude-sonnet-4-6" },
+              systemAgent: { agentId: "main" },
             },
-            entries: { main: { default: true } },
+            entries: { main: {} },
           },
         },
         {
@@ -376,22 +391,20 @@ describe("noteClaudeCliHealth", () => {
       noteClaudeCliHealth(
         {
           agents: {
-            defaults: { model: { primary: runtimeModel } },
-            list: [
-              {
-                id: "zeta",
-                default: true,
+            ownership: "explicit",
+            defaults: { model: { primary: runtimeModel }, systemAgent: { agentId: "zeta" } },
+            entries: {
+              zeta: {
                 workspace: zetaWorkspace,
                 model: runtimeModel,
                 models: { [runtimeModel]: { agentRuntime: { id: "claude-cli" } } },
               },
-              {
-                id: "alpha",
+              alpha: {
                 workspace: alphaWorkspace,
                 model: runtimeModel,
                 models: { [runtimeModel]: { agentRuntime: { id: "claude-cli" } } },
               },
-            ],
+            },
           },
         },
         {

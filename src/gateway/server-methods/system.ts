@@ -16,12 +16,11 @@ import {
   SYSTEM_PRESENCE_CLEAR_LAST_INPUT_TAG,
   validateSystemEventParams,
 } from "../../../packages/gateway-protocol/src/schema.js";
-import { listAgentIds } from "../../agents/agent-scope.js";
+import { listAgentIds, tryResolveAmbientOwnerAgentId } from "../../agents/agent-scope.js";
 import {
   readUtilityModelSetting,
   resolveUtilityModelRefForAgent,
 } from "../../agents/utility-model.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import { resolveGatewayPort, resolveStateDir } from "../../config/paths.js";
 import { resolveSystemMainSessionTarget } from "../../config/sessions.js";
 import { resolveAdvertisedLanHostCore } from "../../infra/advertised-lan-host.js";
@@ -65,11 +64,11 @@ async function collectSystemInfo(context: GatewayRequestContext): Promise<System
   const config = context.getRuntimeConfig();
   const port = resolveGatewayPort(config);
   const lanAddress = (await resolveCachedAdvertisedLanHost()) ?? undefined;
-  const soleAgentId = tryResolveLegacyCompatibilityAgentId(config);
-  const defaultAgentUtilityModel = soleAgentId
+  const ownerAgentId = tryResolveAmbientOwnerAgentId(config);
+  const defaultAgentUtilityModel = ownerAgentId
     ? (() => {
-        const utilitySetting = readUtilityModelSetting(config, soleAgentId);
-        const utilityModel = resolveUtilityModelRefForAgent({ cfg: config, agentId: soleAgentId });
+        const utilitySetting = readUtilityModelSetting(config, ownerAgentId);
+        const utilityModel = resolveUtilityModelRefForAgent({ cfg: config, agentId: ownerAgentId });
         return utilitySetting.kind === "disabled"
           ? ({ status: "disabled" } as const)
           : utilitySetting.kind === "explicit"

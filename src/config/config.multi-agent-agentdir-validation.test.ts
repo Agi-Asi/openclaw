@@ -11,7 +11,9 @@ describe("multi-agent agentDir validation", () => {
     const shared = path.join(tmpdir(), "openclaw-shared-agentdir");
     const res = validateConfigObject({
       agents: {
-        entries: { a: { agentDir: shared, default: true }, b: { agentDir: shared } },
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "a" } },
+        entries: { a: { agentDir: shared }, b: { agentDir: shared } },
       },
     });
     expect(res.ok).toBe(false);
@@ -36,8 +38,10 @@ Auth profiles live in each agent's SQLite store, so a shared agentDir is not how
     await withTempHomeConfig(
       {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "a" } },
           entries: {
-            a: { agentDir: "~/.openclaw/agents/shared/agent", default: true },
+            a: { agentDir: "~/.openclaw/agents/shared/agent" },
             b: { agentDir: "~/.openclaw/agents/shared/agent" },
           },
         },

@@ -225,6 +225,7 @@ export async function ensureConfigReady(
     measure?: ConfigSnapshotReadMeasure;
     skipPristineCoreStateMigrations?: boolean;
     skipPristineStartupStateMigrations?: boolean;
+    stateMigrationAgentId?: string;
     validateConfigOnly?: boolean;
   },
   recoveryDeps?: InvalidConfigRecoveryDeps,
@@ -268,6 +269,9 @@ export async function ensureConfigReady(
           : {}),
         ...(params.skipPristineCoreStateMigrations
           ? { skipPristineCoreStateMigrations: true }
+          : {}),
+        ...(params.stateMigrationAgentId
+          ? { stateMigrationAgentId: params.stateMigrationAgentId }
           : {}),
       });
     try {

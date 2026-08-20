@@ -13,10 +13,13 @@ describe("promptDefaultModel default-agent ownership", () => {
   it("offers the resolved agent override as the current model", async () => {
     const config = {
       agents: {
-        defaults: { model: "openai/global-model" },
+        ownership: "explicit",
+        defaults: {
+          model: "openai/global-model",
+          systemAgent: { agentId: "ops" },
+        },
         entries: {
           ops: {
-            default: true,
             model: "anthropic/ops-model",
           },
         },

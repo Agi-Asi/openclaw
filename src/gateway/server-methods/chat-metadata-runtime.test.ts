@@ -56,7 +56,13 @@ function createOwner(
 }
 
 function createHarness(
-  initialConfig: OpenClawConfig = { agents: { list: [{ id: "main", default: true }] } },
+  initialConfig: OpenClawConfig = {
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
+  },
   runtimeOptions: {
     beforeRefresh?: () => Promise<void>;
     refreshOnRead?: boolean;
@@ -254,10 +260,9 @@ describe("gateway chat metadata runtime", () => {
     const agentIds = Array.from({ length: 65 }, (_, index) => `agent-${index}`);
     const harness = createHarness({
       agents: {
-        list: agentIds.map((id) => ({
-          id,
-          ...(id === defaultAgentId ? { default: true } : {}),
-        })),
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: defaultAgentId } },
+        entries: Object.fromEntries(agentIds.map((id) => [id, {}])),
       },
     });
     await harness.runtime.refresh();
@@ -388,7 +393,11 @@ describe("gateway chat metadata runtime", () => {
     const first = await harness.runtime.read({ agentId: "main" });
 
     harness.setConfig({
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     });
     await harness.runtime.refresh();
     const second = await harness.runtime.read({ agentId: "main" });
@@ -467,11 +476,13 @@ describe("gateway chat metadata runtime", () => {
   test("keeps live provider discovery off chat metadata projection", async () => {
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           model: { primary: "openai/gpt-5.6-sol" },
           models: { "openai/gpt-5.6-sol": {} },
         },
-        list: [{ id: "main", default: true }],
+        entries: { main: {} },
       },
     } as OpenClawConfig;
     const harness = createHarness(config, { useDefaultProjection: true });
@@ -551,7 +562,11 @@ describe("gateway chat metadata runtime", () => {
     const pluginsChanged = await harness.runtime.read({ agentId: "main" });
 
     const nextConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       tools: { swarm: { enabled: true } },
     };
     harness.setConfig(nextConfig);
@@ -589,7 +604,11 @@ describe("gateway chat metadata runtime", () => {
     expect(settled).toBe(false);
 
     const nextConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       tools: { swarm: { enabled: true } },
     };
     harness.setConfig(nextConfig);
@@ -624,7 +643,11 @@ describe("gateway chat metadata runtime", () => {
     await vi.waitFor(() => expect(harness.buildProjection).toHaveBeenCalledTimes(2));
 
     const nextConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       tools: { swarm: { enabled: true } },
     };
     harness.setConfig(nextConfig);
@@ -658,7 +681,11 @@ describe("gateway chat metadata runtime", () => {
     await vi.waitFor(() => expect(harness.buildProjection).toHaveBeenCalledTimes(2));
 
     const nextConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       tools: { swarm: { enabled: true } },
     };
     harness.setConfig(nextConfig);
@@ -714,7 +741,13 @@ describe("gateway chat metadata runtime", () => {
     );
 
     const recovered = createOwner(
-      { agents: { list: [{ id: "main", default: true }] } },
+      {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
       "recovered",
     );
     harness.setOwner(recovered);
@@ -735,7 +768,13 @@ describe("gateway chat metadata runtime", () => {
     await expect(failedRead).rejects.toThrow("replacement failed");
     await expect(harness.runtime.read({ agentId: "main" })).rejects.toThrow("replacement failed");
 
-    const nextConfig = { agents: { list: [{ id: "main", default: true }] } };
+    const nextConfig: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
     harness.setConfig(nextConfig);
     harness.setOwner(createOwner(nextConfig, "recovered"));
     harness.runtime.invalidate();

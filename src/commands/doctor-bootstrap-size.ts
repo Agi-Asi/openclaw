@@ -3,7 +3,7 @@ import { note } from "../../packages/terminal-core/src/note.js";
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import {
   buildBootstrapInjectionStats,
@@ -41,7 +41,7 @@ function formatCauses(causes: Array<"per-file-limit" | "total-limit">): string {
  * Returns the raw budget analysis for tests and callers that need structured evidence.
  */
 export async function noteBootstrapFileSize(cfg: OpenClawConfig) {
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   const agentIds = listAgentIds(cfg);
   const workspaces = agentIds.map((agentId) => ({
     agentId,

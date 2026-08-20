@@ -24,7 +24,11 @@ vi.mock("../agents/provider-model-normalization.runtime.js", () => ({
 
 const baseCfg = {
   session: { mainKey: "main" },
-  agents: { list: [{ id: "main", default: true }] },
+  agents: {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  },
 } as OpenClawConfig;
 
 function createModelDefaultsConfig(primary: string): OpenClawConfig {

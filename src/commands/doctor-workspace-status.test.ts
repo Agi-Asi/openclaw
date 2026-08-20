@@ -17,7 +17,7 @@ import {
 const mocks = vi.hoisted(() => ({
   listAgentIds: vi.fn<(_cfg: OpenClawConfig) => string[]>(() => ["default"]),
   resolveAgentWorkspaceDir: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
+  tryResolveSoleAgentId: vi.fn(),
   buildPluginRegistrySnapshotReport: vi.fn(),
   buildPluginCompatibilityWarnings: vi.fn(),
   listTaskFlowRecords: vi.fn<() => unknown[]>(() => []),
@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../agents/agent-scope.js", () => ({
   listAgentIds: (cfg: OpenClawConfig) => mocks.listAgentIds(cfg),
   resolveAgentWorkspaceDir: (...args: unknown[]) => mocks.resolveAgentWorkspaceDir(...args),
-  tryResolveDefaultAgentId: (...args: unknown[]) => mocks.resolveDefaultAgentId(...args),
+  tryResolveSoleAgentId: (...args: unknown[]) => mocks.tryResolveSoleAgentId(...args),
 }));
 
 vi.mock("../plugins/status.js", () => ({
@@ -68,7 +68,7 @@ async function runNoteWorkspaceStatusForTest(
   },
 ) {
   const cfg: OpenClawConfig = opts?.cfg ?? {};
-  mocks.resolveDefaultAgentId.mockReturnValue("default");
+  mocks.tryResolveSoleAgentId.mockReturnValue("default");
   mocks.listAgentIds.mockReturnValue(["default"]);
   mocks.resolveAgentWorkspaceDir.mockReturnValue("/workspace");
   mocks.buildPluginRegistrySnapshotReport.mockReturnValue({
@@ -186,7 +186,7 @@ describe("noteWorkspaceStatus", () => {
   });
 
   it("collects plugin version drift as structured findings", async () => {
-    mocks.resolveDefaultAgentId.mockReturnValue("default");
+    mocks.tryResolveSoleAgentId.mockReturnValue("default");
     mocks.resolveAgentWorkspaceDir.mockReturnValue("/workspace");
     mocks.buildPluginRegistrySnapshotReport.mockReturnValue({
       workspaceDir: "/workspace",
@@ -228,7 +228,7 @@ describe("noteWorkspaceStatus", () => {
   });
 
   it("collects compatibility warnings, plugin diagnostics, and TaskFlow recovery findings", async () => {
-    mocks.resolveDefaultAgentId.mockReturnValue("default");
+    mocks.tryResolveSoleAgentId.mockReturnValue("default");
     mocks.resolveAgentWorkspaceDir.mockReturnValue("/workspace");
     mocks.buildPluginRegistrySnapshotReport.mockReturnValue({
       workspaceDir: "/workspace",

@@ -1,9 +1,9 @@
 import { Type } from "typebox";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../../config/sessions/session-store-owner.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createAbortError } from "../../infra/abort-signal.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
+import { tryResolveAmbientOwnerAgentId } from "../agent-scope-config.js";
 import { resolveSubagentCompletionResultText } from "../subagents/completion/subagent-completion-result.js";
 import { onSubagentRegistryPersisted } from "../subagents/registry/subagent-registry-state.js";
 import { getSubagentRunsByRunIds } from "../subagents/registry/subagent-registry.js";
@@ -57,7 +57,7 @@ function paramsOwner(config: OpenClawConfig | undefined, sessionKey: string): st
   return persisted.kind === "configured"
     ? persisted.agentId
     : persisted.kind === "none"
-      ? tryResolveLegacyCompatibilityAgentId(config)
+      ? tryResolveAmbientOwnerAgentId(config)
       : undefined;
 }
 

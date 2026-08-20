@@ -116,7 +116,7 @@ const migrateLegacyNodePairingStore = vi.hoisted(() =>
 );
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => "/workspace",
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
   tryResolveConfiguredAgentWorkspaceDir: () => "/workspace",
   tryResolveSystemAgentWorkspaceDir: () => "/workspace",
 }));

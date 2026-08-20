@@ -531,7 +531,9 @@ describe("memory plugin e2e", () => {
       publicArtifacts?.listArtifacts?.({
         cfg: {
           agents: {
-            list: [{ id: "main", default: true, workspace: workspaceDir }],
+            ownership: "explicit",
+            entries: { main: { workspace: workspaceDir } },
+            defaults: { systemAgent: { agentId: "main" } },
           },
         },
       }),
@@ -598,7 +600,9 @@ describe("memory plugin e2e", () => {
       listActiveMemoryPublicArtifacts({
         cfg: {
           agents: {
-            list: [{ id: "main", default: true, workspace: workspaceDir }],
+            ownership: "explicit",
+            entries: { main: { workspace: workspaceDir } },
+            defaults: { systemAgent: { agentId: "main" } },
           },
         },
       }),
@@ -770,7 +774,11 @@ describe("memory plugin e2e", () => {
       autoRecall: true,
     };
     const config = {
-      agents: { list: [{ id: "main", default: true }, { id: "private" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { main: {}, private: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       plugins: { entries: { "memory-lancedb": { enabled: true, config: pluginConfig } } },
     };
     const registerTool = vi.fn();

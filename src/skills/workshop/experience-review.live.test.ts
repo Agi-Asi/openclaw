@@ -58,9 +58,11 @@ function candidate(
         },
       },
       agents: {
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        entries: { main: {} },
         defaults: {
           model: { primary: `openai/${modelId}` },
+          systemAgent: { agentId: "main" },
           models: {
             [`openai/${modelId}`]: {
               agentRuntime: { id: "openclaw" },

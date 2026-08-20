@@ -160,7 +160,11 @@ describe("destructive cleanup with a live unmanaged state owner", () => {
       configState.isNixMode = nixMode;
       const workspacePath = path.join(state.workspaceDir, "project.bin");
       await state.writeConfig({
-        agents: { entries: { main: { default: true, workspace: state.workspaceDir } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { workspace: state.workspaceDir } },
+        },
       });
       const markerPath = await state.writeText("keep.txt", "preserved");
       await fs.mkdir(path.dirname(workspacePath), { recursive: true });

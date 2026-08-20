@@ -109,7 +109,11 @@ describe("agentSessionKeysMatchByRequestKey", () => {
 describe("resolveSessionStoreKey", () => {
   it("scopes unprefixed explicit-agent keys to the requested store agent", () => {
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, ops: {} },
+      },
       session: { mainKey: "primary" },
     };
 

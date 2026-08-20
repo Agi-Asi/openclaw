@@ -101,8 +101,9 @@ describe("detectInferenceBackends", () => {
     const candidates = await detectInferenceBackends({
       config: {
         agents: {
-          defaults: { model: "zai/glm-5.2" },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: { model: "zai/glm-5.2", systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
       },
       env: { OPENAI_API_KEY: "sk-x", ANTHROPIC_API_KEY: "sk-y" },
@@ -280,8 +281,9 @@ describe("detectInferenceBackends", () => {
     const candidates = await detectInferenceBackends({
       config: {
         agents: {
-          defaults: { model: "zai/glm-5.2" },
-          entries: { main: { default: true } },
+          ownership: "explicit",
+          defaults: { model: "zai/glm-5.2", systemAgent: { agentId: "main" } },
+          entries: { main: {} },
         },
       },
       env: { OPENAI_API_KEY: "sk-x" },
@@ -307,11 +309,12 @@ describe("detectInferenceBackends", () => {
     const candidates = await detectInferenceBackends({
       config: {
         agents: {
-          defaults: { model: "openai/gpt-5.5" },
-          list: [
-            { id: "fallback", model: "google/gemini-3.1-pro-preview" },
-            { id: "ops", default: true, model: "anthropic/claude-opus-4-8" },
-          ],
+          ownership: "explicit",
+          defaults: { model: "openai/gpt-5.5", systemAgent: { agentId: "ops" } },
+          entries: {
+            fallback: { model: "google/gemini-3.1-pro-preview" },
+            ops: { model: "anthropic/claude-opus-4-8" },
+          },
         },
       },
       env: {},
@@ -332,11 +335,13 @@ describe("detectInferenceBackends", () => {
     const candidates = await detectInferenceBackends({
       config: {
         agents: {
+          ownership: "explicit",
           defaults: {
             model: { primary: "opus" },
             models: { "anthropic/claude-opus-4-8": { alias: "opus" } },
+            systemAgent: { agentId: "main" },
           },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
       },
       env: {},

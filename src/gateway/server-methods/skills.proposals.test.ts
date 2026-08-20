@@ -35,7 +35,7 @@ vi.mock("../../config/config.js", () => ({
 
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: () => ["main"],
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
   resolveAgentWorkspaceDir: () => mocks.workspaceDir,
 }));
 

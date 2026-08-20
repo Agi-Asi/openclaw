@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
     workspaceDir: params.workspaceDir ?? "/resolved-workspace",
     workspaceScope: "selected",
   })),
-  resolveDefaultAgentId: vi.fn<typeof import("../../agents/agent-scope.js").resolveDefaultAgentId>(
+  resolveSoleAgentId: vi.fn<typeof import("../../agents/agent-scope.js").resolveSoleAgentId>(
     () => "default",
   ),
 }));
@@ -89,8 +89,8 @@ vi.mock("../../agents/agent-scope.js", () => ({
   tryResolveConfiguredAgentWorkspaceDir: (
     ...args: Parameters<typeof mocks.tryResolveConfiguredAgentWorkspaceDir>
   ) => mocks.tryResolveConfiguredAgentWorkspaceDir(...args),
-  resolveDefaultAgentId: (...args: Parameters<typeof mocks.resolveDefaultAgentId>) =>
-    mocks.resolveDefaultAgentId(...args),
+  resolveSoleAgentId: (...args: Parameters<typeof mocks.resolveSoleAgentId>) =>
+    mocks.resolveSoleAgentId(...args),
 }));
 
 vi.mock("../control-plane-workspace.js", () => ({

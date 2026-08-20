@@ -718,7 +718,9 @@ describe("Codex supervision compatibility tools", () => {
     };
     let runtimeConfig = {
       agents: {
-        list: [{ id: "main", default: true, agentDir: "/tmp/codex-supervision-agent-a" }],
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir: "/tmp/codex-supervision-agent-a" } },
       },
     };
     const request = createEndpointRequest(async (_endpoint, method) => {
@@ -727,7 +729,9 @@ describe("Codex supervision compatibility tools", () => {
       }
       runtimeConfig = {
         agents: {
-          list: [{ id: "main", default: true, agentDir: "/tmp/codex-supervision-agent-b" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir: "/tmp/codex-supervision-agent-b" } },
         },
       };
       return {
@@ -784,7 +788,11 @@ describe("Codex supervision compatibility tools", () => {
       supervision: { enabled: true, allowRawTranscripts: true },
     };
     let runtimeConfig = {
-      agents: { list: [{ id: "main", default: true, agentDir }] },
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
+      },
       auth: { order: { openai: ["openai:first", "openai:second"] } },
     };
     const request = createEndpointRequest(async (_endpoint, method) => {
@@ -792,7 +800,11 @@ describe("Codex supervision compatibility tools", () => {
         throw new Error(`unexpected method: ${method}`);
       }
       runtimeConfig = {
-        agents: { list: [{ id: "main", default: true, agentDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir } },
+        },
         auth: { order: { openai: ["openai:second", "openai:first"] } },
       };
       return {

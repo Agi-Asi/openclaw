@@ -334,7 +334,7 @@ describe("Codex supervision actions", () => {
     expect(acquisition).toMatchObject({
       agentDir: expectedAgentDir,
       startOptions: expect.objectContaining({ command: "codex-archive-a", homeScope: "user" }),
-      config: { agents: { list: [{ id: "alpha" }, { id: "beta" }] } },
+      config: initialRuntimeConfig,
     });
     expect(pinnedConnectionMocks.request.mock.calls.map(([request]) => request.method)).toEqual([
       "thread/list",

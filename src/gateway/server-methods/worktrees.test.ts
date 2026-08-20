@@ -180,7 +180,11 @@ describe("worktrees gateway methods", () => {
           client: writeClient,
           context: {
             getRuntimeConfig: () => ({
-              agents: { list: [{ id: "main", default: true, workspace }] },
+              agents: {
+                ownership: "explicit",
+                entries: { main: { workspace } },
+                defaults: { systemAgent: { agentId: "main" } },
+              },
             }),
           },
         },

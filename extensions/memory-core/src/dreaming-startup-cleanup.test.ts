@@ -39,11 +39,11 @@ function createGateway(
   const agentIds = params.agentIds ?? ["main"];
   const config = {
     agents: {
-      list: agentIds.map((id, index) => ({
-        id,
-        default: index === 0,
-        workspace: path.join(stateDir, `workspace-${id}`),
-      })),
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: agentIds[0] } },
+      entries: Object.fromEntries(
+        agentIds.map((id) => [id, { workspace: path.join(stateDir, `workspace-${id}`) }]),
+      ),
     },
     plugins: {
       entries: {

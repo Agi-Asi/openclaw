@@ -223,7 +223,11 @@ describe("closeDiscordThreadSessions", () => {
     await closeDiscordThreadSessions({
       cfg: {
         session: { store: "/custom/path/sessions.json" },
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
       },
       threadId: THREAD_ID,
     });
@@ -264,7 +268,13 @@ describe("closeDiscordThreadSessions", () => {
     );
 
     const count = await closeDiscordThreadSessions({
-      cfg: { agents: { list: [{ id: "main", default: true }, { id: "work" }] } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
+      },
       threadId: THREAD_ID,
     });
 
@@ -294,7 +304,11 @@ describe("closeDiscordThreadSessions", () => {
     const count = await closeDiscordThreadSessions({
       cfg: {
         session: { store: fixedStorePath },
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
       },
       threadId: THREAD_ID,
     });

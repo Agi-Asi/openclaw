@@ -30,7 +30,11 @@ function createContext() {
   );
   const context = {
     getRuntimeConfig: () => ({
-      agents: { list: [{ id: "work", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "work" } },
+        entries: { work: {} },
+      },
       session: { mainKey: "home" },
     }),
     sessionViewerPresence: { replace },
@@ -108,7 +112,7 @@ describe("sessions.viewers.set", () => {
     const replace = vi.fn((_connId: string, sessionKeys: readonly string[]) => sessionKeys);
     const context = {
       getRuntimeConfig: () => ({
-        agents: { ownership: "explicit", list: [{ id: "main" }, { id: "work" }] },
+        agents: { ownership: "explicit", entries: { main: {}, work: {} } },
       }),
       sessionViewerPresence: { replace },
     } as unknown as GatewayRequestContext;

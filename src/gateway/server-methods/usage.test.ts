@@ -456,7 +456,11 @@ describe("gateway usage helpers", () => {
     });
 
     const config = {
-      agents: { entries: { ops: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        entries: { ops: {} },
+        defaults: { systemAgent: { agentId: "ops" } },
+      },
     } as OpenClawConfig;
     await testApi.loadCostUsageSummaryCached({ startMs: 1, endMs: 2, config });
 
@@ -709,7 +713,11 @@ describe("gateway usage helpers", () => {
     );
 
     const config = {
-      agents: { list: [{ id: "main", default: true }, { id: "opus" }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {}, opus: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       session: {},
     } as OpenClawConfig;
     const context = { getRuntimeConfig: () => config };

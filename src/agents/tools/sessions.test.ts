@@ -7,7 +7,6 @@ import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelMessagingAdapter } from "../../channels/plugins/types.public.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/io.js";
-import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { parseSessionThreadInfo } from "../../config/sessions/thread-info.js";
 import {
@@ -295,7 +294,9 @@ async function executeFireAndForgetA2AFrom(
           ...(options.bindingAgentId
             ? {
                 agents: {
-                  list: [{ id: "main", default: true }, { id: options.bindingAgentId }],
+                  ownership: "explicit",
+                  defaults: { systemAgent: { agentId: "main" } },
+                  entries: { main: {}, [options.bindingAgentId]: {} },
                 },
               }
             : {}),
@@ -430,12 +431,17 @@ it("fails closed for cross-agent and resolution-derived bare keys", async () => 
     agents: { ownership: "explicit" as const, entries: { main: {}, other: {} } },
     tools: { agentToAgent: { enabled: false }, sessions: { visibility: "all" as const } },
   };
-  const send = async (retained: boolean) =>
+  const send = async (configuredOwner: boolean) =>
     requireDetails(
       await createSessionsSendTool({
         agentId: "main",
         agentSessionKey: MAIN_AGENT_SESSION_KEY,
-        config: retained ? retainLegacyDefaultAgentId(config, "main") : config,
+        config: configuredOwner
+          ? {
+              ...config,
+              agents: { ...config.agents, defaults: { systemAgent: { agentId: "main" } } },
+            }
+          : config,
       }).execute("authorization", {
         sessionKey: bareKey,
         message: "status?",

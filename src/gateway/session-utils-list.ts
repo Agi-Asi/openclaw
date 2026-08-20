@@ -5,14 +5,13 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
 import { readAcpSessionMetaBatch } from "../acp/runtime/session-meta.js";
-import { listAgentIds } from "../agents/agent-scope-config.js";
+import { listAgentIds, tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.js";
 import {
   countActiveDescendantRuns,
   getSessionDisplaySubagentRunByChildSessionKey,
 } from "../agents/subagents/registry/subagent-registry-read.js";
 import { shouldKeepSubagentRunChildLink } from "../agents/subagents/registry/subagent-run-liveness.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { withPinnedActivePluginRegistryWorkspaceDir } from "../plugins/runtime-workspace-state.js";
@@ -486,7 +485,7 @@ function buildSessionsListResult(params: {
           params.agentId
             ? normalizeAgentId(params.agentId)
             : normalizeAgentId(
-                tryResolveLegacyCompatibilityAgentId(params.cfg) ?? LEGACY_IMPLICIT_AGENT_ID,
+                tryResolveAmbientOwnerAgentId(params.cfg) ?? LEGACY_IMPLICIT_AGENT_ID,
               ),
         )
       : params.modelCatalog;

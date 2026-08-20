@@ -1,13 +1,12 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { listAgentEntries } from "../../agents/agent-scope.js";
+import { listAgentEntries, tryResolveAmbientOwnerAgentId } from "../../agents/agent-scope.js";
 import { redactChannelStatusSummaryBaseUrl } from "../../channels/account-snapshot-fields.js";
 import { resolveChannelDefaultAccountId } from "../../channels/plugins/helpers.js";
 import { listReadOnlyChannelPluginsForConfig } from "../../channels/plugins/read-only.js";
 import { buildChannelAccountSnapshotFromAccount } from "../../channels/plugins/status.js";
 import type { ChannelAccountSnapshot } from "../../channels/plugins/types.public.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../../config/sessions/session-sqlite-target.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -75,7 +74,7 @@ function attachPluginActivation(
 }
 
 export function resolveHealthAgentOrder(cfg: OpenClawConfig) {
-  const defaultAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const defaultAgentId = tryResolveAmbientOwnerAgentId(cfg);
   const entries = listAgentEntries(cfg);
   const seen = new Set<string>();
   const ordered: Array<{ id: string; name?: string }> = [];

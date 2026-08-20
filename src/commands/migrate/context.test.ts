@@ -1,6 +1,7 @@
 // Migration context tests cover report directory naming and timestamp fallback behavior.
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { buildMigrationReportDir, resolveMigrationTargetAgentId } from "./context.js";
 
 describe("migration context helpers", () => {
@@ -18,9 +19,11 @@ describe("migration context helpers", () => {
   });
 
   it("normalizes and validates an explicit migration target agent", () => {
-    const config = {
+    const config: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true }, { id: "research" }],
+        ownership: "explicit",
+        entries: { main: {}, research: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 

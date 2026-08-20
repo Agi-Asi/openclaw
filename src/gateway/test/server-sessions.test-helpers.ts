@@ -407,12 +407,18 @@ function createGatewaySessionsTestHarness(startServer: boolean) {
     return { dir, storePath };
   }
 
+  const globalAgentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, work: {} },
+  };
+
   async function createSelectedGlobalSessionStore() {
     const { dir } = await createSessionStoreDir();
     const storeTemplate = path.join(dir, "agents", "{agentId}", "sessions", "sessions.json");
     testState.sessionStorePath = storeTemplate;
     testState.sessionConfig = { scope: "global" };
-    testState.agentsConfig = { list: [{ id: "main", default: true }, { id: "work" }] };
+    testState.agentsConfig = globalAgentsConfig;
     return {
       dir,
       storeTemplate,
@@ -480,18 +486,11 @@ function createGatewaySessionsTestHarness(startServer: boolean) {
     if (!configPath) {
       throw new Error("OPENCLAW_CONFIG_PATH is required");
     }
-    await fs.writeFile(
-      configPath,
-      `${JSON.stringify(
-        {
-          agents: { list: [{ id: "main", default: true }, { id: "work" }] },
-          session: { scope: "global", store: storeTemplate },
-        },
-        null,
-        2,
-      )}\n`,
-      "utf-8",
-    );
+    const config = {
+      agents: globalAgentsConfig,
+      session: { scope: "global", store: storeTemplate },
+    };
+    await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
     const { clearConfigCache, clearRuntimeConfigSnapshot, getRuntimeConfig } =
       await getGatewayConfigModule();
     clearRuntimeConfigSnapshot();

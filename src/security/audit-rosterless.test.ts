@@ -74,7 +74,13 @@ describe("security audit rosterless configs", () => {
 
   it("distinguishes an authored empty roster from an absent pre-roster source", async () => {
     const { stateDir, workspaceDir } = makeAuditPaths("authored-empty-roster");
-    const config = { agents: { entries: { main: { default: true } } } } as never;
+    const config = {
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
+    } as never;
     const baseOptions = {
       config,
       stateDir,

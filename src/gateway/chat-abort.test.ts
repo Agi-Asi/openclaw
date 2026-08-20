@@ -41,6 +41,12 @@ type CreatedChatAbortOps = ChatAbortOps & {
   removeChatRun: ReturnType<typeof vi.fn>;
 };
 
+const mainAgentRoster = {
+  ownership: "explicit" as const,
+  defaults: { systemAgent: { agentId: "main" } },
+  entries: { main: {} },
+};
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -62,9 +68,7 @@ function createOps(params: {
   buffer?: string;
 }): CreatedChatAbortOps {
   const { runId, entry, buffer } = params;
-  const broadcast = vi.fn();
-  const nodeSendToSession = vi.fn();
-  const removeChatRun = vi.fn();
+  const [broadcast, nodeSendToSession, removeChatRun] = [vi.fn(), vi.fn(), vi.fn()];
   const chatRunState = createChatRunState();
   Object.assign(chatRunState.getOrCreate(runId), {
     ...(buffer !== undefined ? { buffer, deltaLastBroadcastText: buffer } : {}),
@@ -581,26 +585,23 @@ describe("abortChatRunById", () => {
       name: "fans out default-agent global aborts to scoped and legacy global subscribers",
       runId: "run-main-global",
       createEntry: () => ({ ...createActiveEntry("global"), agentId: "main" }),
-      abort: abortChatRunById,
     },
     {
       name: "resolves unscoped global aborts to the default agent subscribers",
       runId: "run-unscoped-global",
       createEntry: () => createActiveEntry("global"),
-      abort: abortChatRunById,
     },
     {
       name: "preserves default-agent global delivery through tracked maintenance aborts",
       runId: "run-tracked-global",
       createEntry: () => ({ ...createActiveEntry("global"), agentId: "main" }),
-      abort: abortChatRunById,
     },
   ]) {
     it(testCase.name, () => {
       const ops = createOps({ runId: testCase.runId, entry: testCase.createEntry() });
-      ops.getRuntimeConfig = () => ({ agents: { list: [{ id: "main", default: true }] } });
+      ops.getRuntimeConfig = () => ({ agents: mainAgentRoster });
 
-      const result = testCase.abort(ops, { runId: testCase.runId, sessionKey: "global" });
+      const result = abortChatRunById(ops, { runId: testCase.runId, sessionKey: "global" });
 
       expect(result).toEqual({ aborted: true });
       const payload = firstBroadcastPayload(ops) as ChatAbortPayload;
@@ -685,7 +686,7 @@ describe("abortChatRunsForProvider", () => {
       authProviderId: "openrouter",
     });
     const result = abortChatRunsForProvider(ops, {
-      cfg: { agents: { list: [{ id: "main" }, { id: "writer" }] } },
+      cfg: { agents: { ...mainAgentRoster, entries: { main: {}, writer: {} } } },
       providerId: "openrouter",
       stopReason: "auth-revoked",
     });
@@ -713,7 +714,7 @@ describe("abortChatRunsForProvider", () => {
     ops.chatAbortControllers.set("run-main", mainEntry);
 
     const result = abortChatRunsForProvider(ops, {
-      cfg: { agents: { list: [{ id: "main" }, { id: "writer" }] } },
+      cfg: { agents: { ...mainAgentRoster, entries: { main: {}, writer: {} } } },
       providerId: "openrouter",
       agentId: "writer",
       stopReason: "auth-revoked",

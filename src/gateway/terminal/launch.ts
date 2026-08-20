@@ -7,7 +7,7 @@ import {
   AgentSelectionRequiredError,
   listAgentIds,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../../agents/agent-scope-config.js";
 import { resolveSandboxConfigForAgent } from "../../agents/sandbox/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -94,7 +94,7 @@ function resolveTerminalLaunch(params: {
   const requested = params.agentId?.trim();
   let agentId: string;
   try {
-    agentId = requested ? normalizeAgentId(requested) : resolveDefaultAgentId(params.config);
+    agentId = requested ? normalizeAgentId(requested) : resolveSoleAgentId(params.config);
   } catch (error) {
     if (!(error instanceof AgentSelectionRequiredError)) {
       throw error;

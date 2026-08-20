@@ -1,7 +1,7 @@
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 
@@ -16,7 +16,7 @@ export function resolveDoctorWorkspaceSuggestionScopes(
   cfg: OpenClawConfig,
 ): DoctorWorkspaceSuggestionScope[] {
   const listedAgentIds = listAgentIds(cfg);
-  const agentIds = listedAgentIds.length > 0 ? listedAgentIds : [resolveDefaultAgentId(cfg)];
+  const agentIds = listedAgentIds.length > 0 ? listedAgentIds : [resolveSoleAgentId(cfg)];
   const labelAgent = agentIds.length > 1;
   return agentIds.map((agentId) => ({
     agentId,

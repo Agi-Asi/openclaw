@@ -14,14 +14,14 @@ import { classifyGatewayConnectFailure } from "../../packages/gateway-protocol/s
 import type { CommandEntry } from "../../packages/gateway-protocol/src/index.js";
 import {
   resolveAgentIdByWorkspacePath,
-  resolveDefaultAgentId,
   resolveSessionAgentId,
-  tryResolveDefaultAgentId,
+  resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { normalizeThinkLevel } from "../auto-reply/thinking.shared.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { getRuntimeConfig, type OpenClawConfig } from "../config/config.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolveCanonicalMainSessionKey } from "../config/sessions/main-session-key.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../config/sessions/session-store-owner.js";
 import type { EmbeddedStateSignalProcess } from "../infra/embedded-state-lock.js";
@@ -291,8 +291,8 @@ export function resolveInitialTuiAgentId(params: {
 
   return normalizeAgentId(
     params.fallbackAgentId ??
-      tryResolveLegacyCompatibilityAgentId(params.cfg) ??
-      resolveDefaultAgentId(params.cfg, {
+      tryResolveAmbientOwnerAgentId(params.cfg) ??
+      resolveSoleAgentId(params.cfg, {
         surface: "TUI startup",
         hint: "Pass an agent-scoped --session key.",
       }),
@@ -774,7 +774,7 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
   const initialSessionInput = (opts.session ?? "").trim();
   const sessionScope = (config.session?.scope ?? "per-sender") as SessionScope;
   const sessionMainKey = normalizeMainKey(config.session?.mainKey);
-  const configuredDefaultAgentId = tryResolveDefaultAgentId(config);
+  const configuredDefaultAgentId = tryResolveSoleAgentId(config);
   const initialAgentId = resolveInitialTuiAgentId({
     cfg: config,
     fallbackAgentId: configuredDefaultAgentId,

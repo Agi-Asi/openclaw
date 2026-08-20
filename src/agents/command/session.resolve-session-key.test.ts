@@ -1,7 +1,6 @@
 // Covers cross-store session-key resolution for multi-agent session stores.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "../../config/legacy.roster.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 
@@ -514,19 +513,17 @@ describe("resolveSessionKeyForRequest", () => {
     ).toThrowError(expect.objectContaining({ code: "AGENT_SELECTION_REQUIRED" }));
   });
 
-  it("creates a missing session-id target under the retained owner", () => {
+  it("creates a missing session-id target under the configured ambient owner", () => {
     hoisted.listAgentIdsMock.mockReturnValue(["ops", "research"]);
     mockSessionStores({});
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        session: { store: "/stores/{agentId}.json" },
-        agents: {
-          ownership: "explicit",
-          entries: { ops: {}, research: {} },
-        },
+    const cfg = {
+      session: { store: "/stores/{agentId}.json" },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {}, research: {} },
       },
-      "ops",
-    );
+    } satisfies OpenClawConfig;
 
     const result = resolveSessionKeyForRequest({ cfg, sessionId: "new-session" });
 

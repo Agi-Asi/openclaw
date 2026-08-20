@@ -30,7 +30,11 @@ vi.mock("../../infra/session-cost-usage.js", async () => {
 import { testApi, usageHandlers } from "./usage.js";
 
 const config = {
-  agents: { list: [{ id: "main", default: true }, { id: "opus" }] },
+  agents: {
+    ownership: "explicit",
+    entries: { main: {}, opus: {} },
+    defaults: { systemAgent: { agentId: "main" } },
+  },
   session: {},
 } as OpenClawConfig;
 

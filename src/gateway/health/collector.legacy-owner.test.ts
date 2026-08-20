@@ -1,6 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
-import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
 let testConfig: OpenClawConfig = {};
@@ -39,7 +38,7 @@ function createHealthPlugin(): ChannelPlugin {
   };
 }
 
-describe("collectGatewayHealthSnapshot legacy owner projection", () => {
+describe("collectGatewayHealthSnapshot ambient owner projection", () => {
   beforeAll(async () => {
     vi.doMock("../../config/config.js", () => ({
       getRuntimeConfig: () => testConfig,
@@ -66,9 +65,11 @@ describe("collectGatewayHealthSnapshot legacy owner projection", () => {
     healthPluginsForTest = [createHealthPlugin()];
   });
 
-  it("projects the retained owner without inventing an explicit fleet default", async () => {
-    const migratedConfig = {
+  it("projects the configured owner without inventing an explicit fleet default", async () => {
+    testConfig = {
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
         entries: { first: {}, ops: {}, research: {} },
       },
       bindings: [{ agentId: "ops", match: { channel: "telegram", accountId: "ops" } }],
@@ -81,7 +82,6 @@ describe("collectGatewayHealthSnapshot legacy owner projection", () => {
         },
       },
     } satisfies OpenClawConfig;
-    testConfig = retainLegacyDefaultAgentId(migratedConfig, "ops");
 
     const migrated = await collectGatewayHealthSnapshot({ audience: "admin", probe: false });
 

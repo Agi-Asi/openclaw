@@ -119,8 +119,12 @@ describe("workboard tools", () => {
       sandboxed: true,
       config: {
         agents: {
-          defaults: { sandbox: { mode: "all", workspaceAccess: "ro" } },
-          list: [{ id: "main", default: true, workspace: "/workspace" }],
+          ownership: "explicit",
+          defaults: {
+            sandbox: { mode: "all", workspaceAccess: "ro" },
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: { workspace: "/workspace" } },
         },
       },
     };

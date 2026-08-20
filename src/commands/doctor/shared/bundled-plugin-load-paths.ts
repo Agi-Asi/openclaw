@@ -2,7 +2,7 @@
 import path from "node:path";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { sanitizeForLog } from "../../../../packages/terminal-core/src/ansi.js";
-import { resolveAgentWorkspaceDir, tryResolveDefaultAgentId } from "../../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, tryResolveSoleAgentId } from "../../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import {
   buildBundledPluginLoadPathAliases,
@@ -21,7 +21,7 @@ type BundledPluginLoadPathHit = {
 };
 
 function resolveBundledWorkspaceDir(cfg: OpenClawConfig): string | undefined {
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   return defaultAgentId ? resolveAgentWorkspaceDir(cfg, defaultAgentId) : undefined;
 }
 

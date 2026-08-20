@@ -8,7 +8,11 @@ import {
   resolveCurrentSessionAgentRuntimeMetadata,
   resolveModelAgentRuntimeMetadata,
 } from "../agents/agent-runtime-metadata.js";
-import { resolveAgentConfig, resolveSessionAgentId } from "../agents/agent-scope.js";
+import {
+  resolveAgentConfig,
+  resolveSessionAgentId,
+  tryResolveAmbientOwnerAgentId,
+} from "../agents/agent-scope.js";
 import { resolveContextTokensForModel } from "../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import {
@@ -37,7 +41,6 @@ import {
   resolveSupportedThinkingLevel,
   resolveThinkingProfile,
 } from "../auto-reply/thinking.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolveAgentMainSessionKey, type SessionEntry } from "../config/sessions.js";
 import { projectPublicSessionEntry } from "../config/sessions/session-entry-projection.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../config/sessions/session-sqlite-target.js";
@@ -321,7 +324,7 @@ export function getSessionDefaults(
   options?: { agentId?: string; allowPluginNormalization?: boolean },
 ): GatewaySessionsDefaults {
   const agentId = normalizeAgentId(
-    options?.agentId ?? tryResolveLegacyCompatibilityAgentId(cfg) ?? LEGACY_IMPLICIT_AGENT_ID,
+    options?.agentId ?? tryResolveAmbientOwnerAgentId(cfg) ?? LEGACY_IMPLICIT_AGENT_ID,
   );
   const resolved = options?.agentId
     ? resolveDefaultModelForAgent({

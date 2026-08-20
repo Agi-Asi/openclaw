@@ -24,7 +24,9 @@ it("loads session backfill execution only for the first valid request", async ()
       config: {
         current: () => ({
           agents: {
-            entries: { main: { default: true, workspace: "/tmp/main-workspace" } },
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: "/tmp/main-workspace" } },
           },
         }),
       },

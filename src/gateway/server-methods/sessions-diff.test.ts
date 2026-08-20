@@ -21,7 +21,7 @@ const hoisted = vi.hoisted(() => ({
   loadSessionEntry: vi.fn(),
   patchSessionEntryCore: vi.fn(),
   resolveAgentWorkspaceDir: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
+  resolveSoleAgentId: vi.fn(),
 }));
 
 vi.mock("../session-utils.js", () => ({
@@ -32,7 +32,7 @@ vi.mock("../session-utils.js", () => ({
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   resolveAgentWorkspaceDir: hoisted.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: hoisted.resolveDefaultAgentId,
+  resolveSoleAgentId: hoisted.resolveSoleAgentId,
 }));
 
 vi.mock("../../config/sessions/session-accessor.js", () => ({
@@ -111,7 +111,7 @@ describe("loadSessionDiff", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     repoRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-sessions-diff-")));
-    hoisted.resolveDefaultAgentId.mockReturnValue("main");
+    hoisted.resolveSoleAgentId.mockReturnValue("main");
     hoisted.resolveAgentWorkspaceDir.mockReturnValue(repoRoot);
   });
 

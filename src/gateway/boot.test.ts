@@ -39,7 +39,11 @@ describe("runBootOnce", () => {
     scope?: SessionScope;
     mainKey?: string;
   }): OpenClawConfig => ({
-    agents: { list: [{ id: "main", default: true }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
     ...(session ? { session } : {}),
   });
 

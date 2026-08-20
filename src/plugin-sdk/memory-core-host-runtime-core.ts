@@ -14,7 +14,7 @@ export { resolveCronStyleNow } from "../agents/current-time.js";
 export {
   listAgentIds,
   resolveConfiguredAgentId,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   resolveSessionAgentIds,
 } from "../agents/agent-scope.js";
 export { resolveMemorySearchConfig } from "../agents/memory-search.js";

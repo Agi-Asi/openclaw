@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConfigFileSnapshot, LegacyConfigIssue } from "../config/types.js";
+import type { ConfigFileSnapshot, LegacyConfigIssue, OpenClawConfig } from "../config/types.js";
 import type { StateMigrationResult } from "./doctor-config-preflight.state-migration.test-helpers.js";
 
 const autoMigrateLegacyStateDir = vi.hoisted(() =>
@@ -132,6 +132,41 @@ describe("runDoctorConfigPreflight state migration input", () => {
       recoverCorruptTargetStore: true,
       doctorOnlyStateMigrations: undefined,
     });
+  });
+
+  it("keeps an explicit state migration owner out of the returned config snapshot", async () => {
+    const sourceConfig = {
+      gateway: { mode: "local", port: 19091 },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ambient" } },
+        entries: { ambient: {}, work: {} },
+      },
+    } satisfies OpenClawConfig;
+    readConfigFileSnapshot.mockResolvedValueOnce({
+      exists: true,
+      valid: true,
+      config: sourceConfig,
+      sourceConfig,
+      parsed: sourceConfig,
+      legacyIssues: [],
+      warnings: [],
+      issues: [],
+    });
+
+    const result = await runDoctorConfigPreflight({
+      migrateLegacyConfig: false,
+      invalidConfigNote: false,
+      stateMigrationAgentId: "work",
+    });
+
+    const migrationConfig = autoMigrateLegacyState.mock.calls[0]?.[0] as
+      | { cfg: OpenClawConfig }
+      | undefined;
+    expect(migrationConfig?.cfg.agents?.defaults?.systemAgent?.agentId).toBe("work");
+    expect(result.snapshot.sourceConfig.agents?.defaults?.systemAgent?.agentId).toBe("ambient");
+    expect(result.baseConfig.agents?.defaults?.systemAgent?.agentId).toBe("ambient");
+    expect(sourceConfig.agents.defaults.systemAgent.agentId).toBe("ambient");
   });
 
   it("passes explicit Doctor-only migration authority only when requested", async () => {

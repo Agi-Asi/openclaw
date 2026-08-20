@@ -140,10 +140,13 @@ describe("runSetupWizard default-agent ownership", () => {
     const config = {
       wizard: { securityAcknowledgedAt: "2026-07-01T00:00:00.000Z" },
       agents: {
-        defaults: { workspace: "/tmp/global-workspace" },
+        ownership: "explicit",
+        defaults: {
+          workspace: "/tmp/global-workspace",
+          systemAgent: { agentId: "ops" },
+        },
         entries: {
           ops: {
-            default: true,
             agentDir: "/tmp/ops-agent",
             workspace: "/tmp/ops-workspace",
           },

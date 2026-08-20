@@ -6,7 +6,6 @@ import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { withProgress } from "../cli/progress.js";
 import { configIncludeOwnsAgentRoster } from "../config/agent-roster-provenance.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "../config/legacy.roster.js";
 import { CONFIG_PATH } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -249,10 +248,6 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
     }),
   );
   state = legacyStep.state;
-  if (legacyDefaultAgentId) {
-    retainLegacyDefaultAgentId(state.cfg, legacyDefaultAgentId);
-    retainLegacyDefaultAgentId(state.candidate, legacyDefaultAgentId);
-  }
   const legacyMigrationPartiallyValid = legacyStep.partiallyValid === true;
   const legacyMigrationBlocksWrite = legacyStep.blocksWrite === true;
   const includeOwnsRoster = configIncludeOwnsAgentRoster(snapshot);
@@ -262,6 +257,7 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
     // again after health repairs, when the retired owner marker is no longer available to recover it.
     const migrated = migratePersistedImplicitMainRoster(state.candidate, {
       materializeWorkspace: true,
+      legacyDefaultAgentId,
     }).config as OpenClawConfig;
     const migratedRoster = readAgentRosterProperty(migrated);
     const migratedEntries = migratedRoster?.kind === "entries" ? migratedRoster.value : undefined;

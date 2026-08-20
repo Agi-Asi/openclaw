@@ -28,8 +28,8 @@ vi.mock("./agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => "/tmp/prepared-model-catalog-workspace",
   resolveAmbientOwnerAgentId: () => "main",
   resolveDefaultAgentDir: () => "/tmp/prepared-model-catalog-agent",
-  resolveDefaultAgentId: () => "main",
-  tryResolveLegacyCompatibilityAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
+  tryResolveAmbientOwnerAgentId: () => "main",
 }));
 
 vi.mock("./prepared-model-runtime.js", () => {
@@ -289,7 +289,13 @@ describe("prepared model catalog access", () => {
     const committedSnapshot = {
       ...fullSnapshot,
       agentDir: "/tmp/prepared-model-catalog-agent",
-      config: { agents: { list: [{ id: "main", default: true }] } },
+      config: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
     };
     mocks.prepareSnapshot.mockResolvedValue(committedSnapshot);
 
@@ -302,7 +308,13 @@ describe("prepared model catalog access", () => {
     const committedSnapshot = {
       ...fullSnapshot,
       agentDir: "/tmp/prepared-model-catalog-agent",
-      config: { agents: { list: [{ id: "main", default: true }] } },
+      config: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
     };
     mocks.prepareSnapshot.mockResolvedValue(committedSnapshot);
 
@@ -327,7 +339,13 @@ describe("prepared model catalog access", () => {
     const committedSnapshot = {
       ...fullSnapshot,
       agentDir: "/tmp/shared-agent-dir",
-      config: { agents: { list: [{ id: "main", default: true }, { id: "worker" }] } },
+      config: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, worker: {} },
+        },
+      },
     };
     mocks.prepareSnapshot.mockResolvedValue(committedSnapshot);
 

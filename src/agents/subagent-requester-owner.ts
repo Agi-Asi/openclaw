@@ -1,7 +1,7 @@
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../config/sessions/session-store-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
+import { tryResolveAmbientOwnerAgentId } from "./agent-scope-config.js";
 
 /** Resolves the durable requester owner for legacy rows that predate requesterAgentId. */
 export function resolveSubagentRequesterAgentId(
@@ -19,11 +19,11 @@ export function resolveSubagentRequesterAgentId(
   return persisted.kind === "configured"
     ? persisted.agentId
     : persisted.kind === "none"
-      ? tryResolveLegacyCompatibilityAgentId(cfg)
+      ? tryResolveAmbientOwnerAgentId(cfg)
       : undefined;
 }
 
-/** Materializes the compatibility owner once so every registry selector sees the same tuple. */
+/** Materializes the ambient owner once so every registry selector sees the same tuple. */
 export function backfillSubagentRequesterAgentIds(
   cfg: OpenClawConfig,
   entries: Iterable<{ requesterSessionKey: string; requesterAgentId?: string }>,

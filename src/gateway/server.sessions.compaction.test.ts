@@ -490,7 +490,11 @@ test("sessions.compaction.branch rejects model-selection-locked session identiti
 test("sessions.compaction list/get scopes selected global checkpoints to the requested agent", async () => {
   const { mainStorePath, storeTemplate, workStorePath } = await createSelectedGlobalSessionStore();
   const runtimeConfig = {
-    agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {}, work: {} },
+    },
     session: { mainKey: "main", scope: "global", store: storeTemplate },
   };
   await fs.mkdir(path.dirname(mainStorePath), { recursive: true });
@@ -1649,7 +1653,11 @@ test("sessions.compact refuses real compaction while a worker inference owns the
     (candidateSessionId: string) => candidateSessionId === sessionId,
   );
   const runtimeConfig = {
-    agents: { list: [{ id: "main", default: true }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
     session: { store: storePath },
   };
 
@@ -1894,10 +1902,12 @@ test("sessions.patch preserves nested model ids under provider overrides", async
     const storePath = path.join(dir, "sessions.json");
     const runtimeConfig = {
       agents: {
+        ownership: "explicit",
         defaults: {
           model: { primary: "openai/gpt-test-a" },
+          systemAgent: { agentId: "main" },
         },
-        list: [{ id: "main", default: true, workspace: dir }],
+        entries: { main: { workspace: dir } },
       },
       session: { mainKey: "main", store: storePath },
     };

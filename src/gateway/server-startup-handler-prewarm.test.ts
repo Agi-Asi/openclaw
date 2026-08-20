@@ -64,7 +64,11 @@ describe("scheduleGatewayHandlerPrewarm", () => {
   it("warms bounded session and process-stable plugin data in dashboard order", async () => {
     vi.useFakeTimers();
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "research" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, research: {} },
+      },
     } as never;
 
     const sidecar = scheduleGatewayHandlerPrewarm({
@@ -223,7 +227,11 @@ describe("scheduleGatewayHandlerPrewarm", () => {
       return false;
     });
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "research" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, research: {} },
+      },
     } as never;
 
     scheduleGatewayHandlerPrewarm({

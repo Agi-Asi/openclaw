@@ -1,7 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
-import { resolveAgentDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
   replaceRuntimeAuthProfileStoreSnapshots,
@@ -53,7 +53,11 @@ import { getProviderUsageRuntimeSnapshot } from "./provider-usage-runtime.js";
 import { usageHandlers } from "./usage.js";
 
 const config = {
-  agents: { list: [{ id: "main", default: true }] },
+  agents: {
+    ownership: "explicit",
+    entries: { main: {} },
+    defaults: { systemAgent: { agentId: "main" } },
+  },
 } as OpenClawConfig;
 
 function createStore(access = "access-one") {
@@ -237,7 +241,7 @@ describe("usage.status provider usage cache", () => {
 
   it("shares the raw snapshot with models.authStatus and invalidates on credential rotation", async () => {
     await runUsageStatus();
-    const agentId = resolveDefaultAgentId(config);
+    const agentId = resolveSoleAgentId(config);
     const agentDir = resolveAgentDir(config, agentId);
     const usage = readProviderUsageStaleWhileRevalidate({
       agentId,

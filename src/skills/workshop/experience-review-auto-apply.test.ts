@@ -149,7 +149,11 @@ describe("experience review auto apply", () => {
         modelId: "gpt-test",
       },
       config: {
-        agents: { list: [{ id: "main", default: true, workspace: canonicalWorkspaceDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { workspace: canonicalWorkspaceDir } },
+        },
         skills: { workshop: { autonomous: { mode: "auto" as const } } },
       },
       transcript: "[user]\nRefine the deployment workflow.",

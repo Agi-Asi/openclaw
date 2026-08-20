@@ -181,7 +181,11 @@ describe("root memory repair", () => {
       return;
     }
     const cfg = {
-      agents: { defaults: { workspace: tmpDir }, entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const prompter = {
       confirmRuntimeRepair: vi.fn(async () => true),
@@ -299,7 +303,11 @@ describe("root memory repair", () => {
       return;
     }
     const cfg = {
-      agents: { defaults: { workspace: tmpDir }, entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const prompter = {
       confirmRuntimeRepair: vi.fn(async () => true),
@@ -324,7 +332,11 @@ describe("root memory repair", () => {
       return;
     }
     const cfg = {
-      agents: { defaults: { workspace: tmpDir }, entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const prompter = {
       confirmRuntimeRepair: vi.fn(async () => true),
@@ -377,7 +389,11 @@ describe("root memory repair", () => {
       return;
     }
     const cfg = {
-      agents: { defaults: { workspace: tmpDir }, entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const prompter = {
       confirmRuntimeRepair: vi.fn(async () => true),
@@ -411,7 +427,11 @@ describe("root memory repair", () => {
       return;
     }
     const cfg = {
-      agents: { defaults: { workspace: tmpDir }, entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const prompter = {
       confirmRuntimeRepair: vi.fn(async () => true),

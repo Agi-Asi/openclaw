@@ -193,7 +193,11 @@ describe("resolveSessionKeyForRun", () => {
 
   it("uses active legacy run contexts for the configured default agent", () => {
     hoisted.loadConfigMock.mockReturnValue({
-      agents: { list: [{ id: "work", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "work" } },
+        entries: { work: {} },
+      },
     });
     registerAgentRunContext("run-live-work", { sessionKey: "main" });
 
@@ -211,7 +215,11 @@ describe("resolveSessionKeyForRun", () => {
 
   it("uses legacy store entries for the configured default agent", () => {
     const cfg: OpenClawConfig = {
-      agents: { list: [{ id: "work", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "work" } },
+        entries: { work: {} },
+      },
     };
     hoisted.loadConfigMock.mockReturnValue(cfg);
     hoisted.loadCombinedSessionStoreForGatewayMock.mockReturnValue({

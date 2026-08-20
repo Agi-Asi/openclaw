@@ -55,7 +55,10 @@ function createDynamicConfig() {
 }
 
 function createCanonicalAgentRoster() {
-  return { list: [{ id: "main", default: true }] };
+  return {
+    defaults: { systemAgent: { agentId: "main" } },
+    list: [{ id: "main" }],
+  };
 }
 
 async function pathExists(target: string): Promise<boolean> {
@@ -125,7 +128,7 @@ describe("maybeCreateDynamicAgent", () => {
       mutate: expect.any(Function),
     });
     expect(result.updatedCfg.agents?.list).toEqual([
-      { id: "main", default: true },
+      { id: "main" },
       {
         id: "feishu-ou_sender",
         workspace: path.join(tempRoot, "workspace-feishu-ou_sender"),
@@ -194,7 +197,7 @@ describe("maybeCreateDynamicAgent", () => {
     expect(canCreateForConfig).toHaveBeenCalledTimes(2);
     expect(mutateConfigFile).toHaveBeenCalledTimes(1);
     expect(commitConfig).not.toHaveBeenCalled();
-    expect(result.updatedCfg.agents?.list).toEqual([{ id: "main", default: true }]);
+    expect(result.updatedCfg.agents?.list).toEqual([{ id: "main" }]);
     expect(result.updatedCfg.bindings).toEqual([]);
     expect(await pathExists(path.join(tempRoot, "workspace-feishu-ou_sender"))).toBe(false);
     expect(await pathExists(path.join(tempRoot, "agent-feishu-ou_sender"))).toBe(false);
@@ -310,8 +313,9 @@ describe("maybeCreateDynamicAgent", () => {
         },
       },
       agents: {
+        ...createCanonicalAgentRoster(),
         list: [
-          { id: "main", default: true },
+          { id: "main" },
           {
             id: "feishu-ou_existing",
             workspace: path.join(tempRoot, "existing-workspace"),
@@ -351,8 +355,9 @@ describe("maybeCreateDynamicAgent", () => {
     const currentCfg = {
       channels: { feishu: { dynamicAgentCreation: createDynamicConfig() } },
       agents: {
+        ...createCanonicalAgentRoster(),
         list: [
-          { id: "main", default: true },
+          { id: "main" },
           {
             id: "feishu-ou_existing",
             workspace: path.join(tempRoot, "existing-workspace"),
@@ -447,8 +452,9 @@ describe("maybeCreateDynamicAgent", () => {
     const currentCfg = {
       channels: { feishu: { configWrites: false } },
       agents: {
+        ...createCanonicalAgentRoster(),
         list: [
-          { id: "main", default: true },
+          { id: "main" },
           {
             id: "feishu-ou_sender",
             workspace: path.join(tempRoot, "existing-workspace"),

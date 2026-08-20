@@ -1,6 +1,6 @@
 /** Collects agent-scoped sandbox SSH SecretRefs during runtime preparation. */
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import { listAgentEntriesWithSource, resolveDefaultAgentId } from "../agents/agent-scope-config.js";
+import { listAgentEntriesWithSource, resolveSoleAgentId } from "../agents/agent-scope-config.js";
 import { resolveSandboxScope } from "../agents/sandbox/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeAgentId } from "../routing/session-key.js";
@@ -180,7 +180,7 @@ export function collectAgentSandboxAssignments(params: {
     const active = defaultsBackend === "ssh";
     const fallbackAgentId =
       params.agentId === undefined
-        ? resolveDefaultAgentId(params.config)
+        ? resolveSoleAgentId(params.config)
         : normalizeAgentId(params.agentId);
     collectAssignment({
       target: defaultsSsh,

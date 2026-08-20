@@ -199,12 +199,12 @@ vi.mock("../../config/sessions.js", async (importOriginal) => ({
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: () => ["main"],
   listAgentEntries: mocks.listAgentEntries,
-  resolveDefaultAgentId: (cfg: unknown) => {
-    const defaults = getAgentList(cfg).filter((entry) => entry.default === true);
-    if (defaults.length !== 1) {
-      throw new Error("expected exactly one default agent");
+  resolveSoleAgentId: (cfg: unknown) => {
+    const entries = getAgentList(cfg);
+    if (entries.length !== 1) {
+      throw new Error("expected exactly one configured agent");
     }
-    return defaults[0]!.id;
+    return entries[0]!.id;
   },
   tryResolveSoleAgentId: (cfg: unknown) => {
     const entries = getAgentList(cfg);
@@ -584,7 +584,6 @@ type MockIdentity = {
 
 type MockAgentEntry = {
   id: string;
-  default?: boolean;
   name?: string;
   workspace?: string;
   agentDir?: string;
@@ -594,14 +593,17 @@ type MockAgentEntry = {
 
 type MockConfig = {
   agents?: {
+    entries?: Record<string, Omit<MockAgentEntry, "id">>;
     list?: MockAgentEntry[];
   };
 };
 
 function getAgentList(cfg: unknown): MockAgentEntry[] {
-  return ((cfg as MockConfig | undefined)?.agents?.list ?? []).map((entry) =>
-    Object.assign({}, entry),
-  );
+  const agents = (cfg as MockConfig | undefined)?.agents;
+  const entries = agents?.entries
+    ? Object.entries(agents.entries).map(([id, entry]) => Object.assign({}, entry, { id }))
+    : (agents?.list ?? []);
+  return entries.map((entry) => Object.assign({}, entry));
 }
 
 function mergeAgentConfig(cfg: unknown, opts: unknown): MockConfig {
@@ -634,11 +636,13 @@ function mergeAgentConfig(cfg: unknown, opts: unknown): MockConfig {
   } else {
     list.push(nextEntry);
   }
+  const agents = { ...config.agents };
+  delete agents.list;
   return {
     ...config,
     agents: {
-      ...config.agents,
-      list,
+      ...agents,
+      entries: Object.fromEntries(list.map(({ id, ...entry }) => [id, entry])),
     },
   };
 }
@@ -735,7 +739,11 @@ describe("agents.create", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     };
   });
 
@@ -912,7 +920,7 @@ describe("agents.create", () => {
 
     expectRespondErrorContaining(respond, "unsafe workspace file");
     expect(mocks.writeConfigFile).not.toHaveBeenCalled();
-    expect(getAgentList(mocks.loadConfigReturn)).toEqual([{ id: "main", default: true }]);
+    expect(getAgentList(mocks.loadConfigReturn)).toEqual([{ id: "main" }]);
   });
 
   it("passes model to applyAgentConfig when provided", async () => {
@@ -1010,7 +1018,7 @@ describe("agents.update", () => {
     expectRecordFields(mockCallArg(mocks.applyAgentConfig, 0, 1), { model: null });
     const persisted = expectRecordFields(mockCallArg(mocks.writeConfigFile), {});
     const agents = expectRecordFields(persisted.agents, {});
-    const [agent] = agents.list as MockAgentEntry[];
+    const agent = (agents.entries as Record<string, Omit<MockAgentEntry, "id">>)["test-agent"];
     expect(agent).not.toHaveProperty("model");
   });
 
@@ -1329,15 +1337,20 @@ describe("agents.delete", () => {
     mocks.fsRealpath.mockImplementation(async (pathname: string) => pathname);
     mocks.loadConfigReturn = {
       agents: {
-        list: [
-          { id: "test-agent", workspace: "/workspace/test-agent" },
-          { id: "main", default: true },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { "test-agent": { workspace: "/workspace/test-agent" }, main: {} },
       },
     };
     mocks.findAgentEntryIndex.mockReturnValue(0);
     mocks.pruneAgentConfig.mockReturnValue({
-      config: { agents: { list: [{ id: "main", default: true }] } },
+      config: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
       removedBindings: 2,
     });
     mocks.movePathToTrash.mockReset().mockResolvedValue("/trashed");
@@ -1347,11 +1360,12 @@ describe("agents.delete", () => {
   it("rejects deleting the auth-inheritance owner before starting cleanup", async () => {
     mocks.loadConfigReturn = {
       agents: {
-        defaults: { authInheritance: { agentId: "test-agent" } },
-        list: [
-          { id: "test-agent", workspace: "/workspace/test-agent" },
-          { id: "main", default: true },
-        ],
+        ownership: "explicit",
+        defaults: {
+          authInheritance: { agentId: "test-agent" },
+          systemAgent: { agentId: "main" },
+        },
+        entries: { "test-agent": { workspace: "/workspace/test-agent" }, main: {} },
       },
     };
     const { respond, promise } = makeCall("agents.delete", { agentId: "test-agent" });
@@ -2494,7 +2508,11 @@ describe("agents.delete", () => {
 
   it("protects every journaled path claimed as a surviving agent workspace", async () => {
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "other-agent", workspace: "/journal", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "other-agent" } },
+        entries: { "other-agent": { workspace: "/journal" } },
+      },
     };
     mocks.findAgentEntryIndex.mockReturnValue(-1);
     mocks.readAgentDeletionJournal.mockReturnValue({
@@ -3028,7 +3046,11 @@ describe("agents.delete", () => {
 
   it("rejects deleting the main agent", async () => {
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { main: {}, ops: {} },
+      },
     };
     const { respond, promise } = makeCall("agents.delete", {
       agentId: "main",
@@ -3043,7 +3065,11 @@ describe("agents.delete", () => {
   it("rejects an unrepresentable id before targeting the main agent", async () => {
     mocks.sharedAuthStoreOwnership = { location: "state-db" };
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { main: {}, ops: {} },
+      },
     };
 
     const { respond, promise } = makeCall("agents.delete", {
@@ -3060,7 +3086,14 @@ describe("agents.delete", () => {
   it("deletes main through the normal journal path after shared auth relocation", async () => {
     mocks.sharedAuthStoreOwnership = { location: "state-db" };
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main" }, { id: "ops", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: {
+          authInheritance: { agentId: "ops" },
+          systemAgent: { agentId: "ops" },
+        },
+        entries: { main: {}, ops: {} },
+      },
     };
 
     const { respond, promise } = makeCall("agents.delete", {

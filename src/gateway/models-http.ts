@@ -1,6 +1,6 @@
 // OpenAI-compatible `/v1/models` HTTP route backed by configured OpenClaw agents.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { listAgentIds, tryResolveLegacyCompatibilityAgentId } from "../agents/agent-scope.js";
+import { listAgentIds, tryResolveAmbientOwnerAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
@@ -64,7 +64,7 @@ async function authorizeRequest(
 function loadAgentModelIds(): string[] {
   const cfg = getRuntimeConfig();
   const ids = new Set<string>([OPENCLAW_MODEL_ID, OPENCLAW_DEFAULT_MODEL_ID]);
-  const compatibilityAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const compatibilityAgentId = tryResolveAmbientOwnerAgentId(cfg);
   if (compatibilityAgentId) {
     ids.add(`openclaw/${compatibilityAgentId}`);
   }

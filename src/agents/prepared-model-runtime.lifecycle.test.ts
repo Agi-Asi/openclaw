@@ -6,7 +6,6 @@ import {
   resetPreparedModelRuntimeHarness,
 } from "./prepared-model-runtime.test-harness.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import {
   acquireAgentRunPreparedModelRuntime,
   acquireReadOnlyPreparedModelRuntime,
@@ -135,10 +134,9 @@ describe("prepared model runtime snapshots", () => {
 
   it("does not let a read-only draft replace a configured gateway owner", async () => {
     mocks.configuredAgentIds = ["default"];
-    const configured = retainLegacyDefaultAgentId(
-      { agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } } },
-      "default",
-    );
+    const configured = {
+      agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } },
+    };
     await refreshPreparedModelRuntimeSnapshots(configured, {
       gatewayLifecycle: true,
       defaultWorkspaceDir: "/tmp/gateway-launch-workspace",
@@ -554,7 +552,7 @@ describe("prepared model runtime snapshots", () => {
 
   it("reuses the configured owner at canonical gateway run admission", async () => {
     mocks.configuredAgentIds = ["default"];
-    const config = retainLegacyDefaultAgentId({ agents: { entries: { default: {} } } }, "default");
+    const config = { agents: { entries: { default: {} } } };
     await refreshPreparedModelRuntimeSnapshots(config, {
       gatewayLifecycle: true,
       defaultWorkspaceDir: "/tmp/gateway-launch-workspace",

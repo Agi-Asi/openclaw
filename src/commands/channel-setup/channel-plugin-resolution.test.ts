@@ -5,7 +5,7 @@ import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
 
 const mocks = vi.hoisted(() => ({
   resolveAgentWorkspaceDir: vi.fn(() => "/tmp/workspace"),
-  resolveDefaultAgentId: vi.fn(() => "default"),
+  resolveSoleAgentId: vi.fn(() => "default"),
   listChannelPluginCatalogEntries: vi.fn(),
   getChannelPluginCatalogEntry: vi.fn(),
   getChannelPlugin: vi.fn(),
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+  resolveSoleAgentId: mocks.resolveSoleAgentId,
 }));
 
 vi.mock("../../channels/plugins/catalog.js", () => ({
@@ -135,7 +135,7 @@ describe("resolveInstallableChannelPlugin", () => {
     expect(snapshotRequest?.pluginId).toBe("telegram");
     expect(snapshotRequest?.workspaceDir).toBe("/tmp/workspace");
     expect(mocks.resolveAgentWorkspaceDir).toHaveBeenCalledWith(config, "ops");
-    expect(mocks.resolveDefaultAgentId).not.toHaveBeenCalled();
+    expect(mocks.resolveSoleAgentId).not.toHaveBeenCalled();
   });
 
   it("keeps trusted workspace channel plugins eligible for setup resolution", async () => {

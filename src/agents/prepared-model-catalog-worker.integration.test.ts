@@ -416,14 +416,17 @@ describe("prepared model catalog worker boundary", () => {
       ...fixture.config,
       agents: {
         ...fixture.config.agents,
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: {
+          ...fixture.config.agents.defaults,
+          systemAgent: { agentId: "main" },
+        },
+        entries: {
+          main: {
             agentDir: fixture.agentDir,
             workspace: fixture.workspaceDir,
           },
-        ],
+        },
       },
     } satisfies OpenClawConfig;
     const owner = Object.freeze({
@@ -589,14 +592,17 @@ describe("prepared model catalog worker boundary", () => {
       ...fixture.config,
       agents: {
         ...fixture.config.agents,
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: {
+          ...fixture.config.agents.defaults,
+          systemAgent: { agentId: "main" },
+        },
+        entries: {
+          main: {
             agentDir: fixture.agentDir,
             workspace: fixture.workspaceDir,
           },
-        ],
+        },
       },
       plugins: {
         ...fixture.config.plugins,

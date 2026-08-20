@@ -1,9 +1,9 @@
 // Formats provider authentication choices exposed by plugin setup flows.
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 import {
-  resolveDefaultAgentId,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { persistAuthProfileBatch } from "../agents/auth-profiles.js";
 import { formatLiteralProviderPrefixedModelRef } from "../agents/model-ref-shared.js";
@@ -347,7 +347,7 @@ async function prepareProviderPluginAuthMethod(
   authProfiles: ProviderAuthResult["profiles"];
   persistAuthProfiles: (profiles?: ProviderAuthResult["profiles"]) => Promise<void>;
 }> {
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.config);
+  const agentId = params.agentId ?? resolveSoleAgentId(params.config);
   const agentDir = params.agentDir ?? resolveAgentDir(params.config, agentId);
   const workspaceDir =
     params.workspaceDir ??
@@ -405,7 +405,7 @@ async function prepareProviderPluginAuthMethod(
 export async function prepareAuthChoiceLoadedPluginProvider(
   params: ApplyProviderAuthChoiceParams,
 ): Promise<PreparedApplyProviderAuthChoiceResult | null> {
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.config);
+  const agentId = params.agentId ?? resolveSoleAgentId(params.config);
   const workspaceDir =
     params.workspaceDir ??
     resolveAgentWorkspaceDir(params.config, agentId) ??

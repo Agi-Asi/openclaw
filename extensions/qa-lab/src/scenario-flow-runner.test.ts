@@ -626,7 +626,11 @@ describe("scenario-flow-runner", () => {
         env: {
           providerMode: "mock-openai",
           cfg: {
-            agents: { list: [{ id: "main", default: true }] },
+            agents: {
+              ownership: "explicit",
+              entries: { main: {} },
+              defaults: { systemAgent: { agentId: "main" } },
+            },
           },
           gateway: {
             baseUrl: "http://127.0.0.1:43124",

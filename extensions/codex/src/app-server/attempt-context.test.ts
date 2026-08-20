@@ -165,16 +165,21 @@ describe("Codex app-server attempt context", () => {
     });
 
     try {
+      const config: NonNullable<EmbeddedRunAttemptParams["config"]> = {
+        agents: {
+          ownership: "explicit",
+          defaults: {
+            systemAgent: { agentId: "marketing-agent" },
+            workspace: workspaceDir,
+          },
+          entries: { "marketing-agent": { workspace: workspaceDir } },
+        },
+      };
       const context = await buildCodexWorkspaceBootstrapContext({
         params: {
           sessionId: "session-1",
           sessionKey: "agent:marketing-agent:session-1",
-          config: {
-            agents: {
-              defaults: { workspace: workspaceDir },
-              list: [{ id: "marketing-agent", default: true, workspace: workspaceDir }],
-            },
-          },
+          config,
         } as EmbeddedRunAttemptParams,
         resolvedWorkspace: workspaceDir,
         effectiveWorkspace: workspaceDir,

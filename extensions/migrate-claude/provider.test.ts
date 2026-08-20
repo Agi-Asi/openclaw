@@ -87,11 +87,12 @@ describe("Claude migration provider", () => {
     await writeFile(path.join(source, "CLAUDE.md"), "# Global instructions\n");
     const config = {
       agents: {
-        defaults: { workspace: defaultWorkspace },
-        list: [
-          { id: "main", default: true },
-          { id: "research", workspace: targetWorkspace },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" }, workspace: defaultWorkspace },
+        entries: {
+          main: {},
+          research: { workspace: targetWorkspace },
+        },
       },
     } as never;
     const context = makeContext({

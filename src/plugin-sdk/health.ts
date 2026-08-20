@@ -1,7 +1,8 @@
 /**
  * Public SDK subpath for health checks, doctor linting, and repair result types.
  */
-export { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+export { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../agents/agent-scope.js";
+export { resolveDefaultAgentId } from "./agent-scope-runtime.js";
 export { readConfigFileSnapshot } from "../config/config.js";
 export type { OpenClawConfig } from "../config/types.openclaw.js";
 export { configValidationIssuesToHealthFindings } from "../flows/doctor-core-checks.js";

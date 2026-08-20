@@ -6,7 +6,7 @@ const note = vi.hoisted(() => vi.fn());
 const resolveAgentWorkspaceDir = vi.hoisted(() =>
   vi.fn<(_cfg: OpenClawConfig, agentId: string) => string>(() => "/tmp/workspace"),
 );
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "main"));
+const tryResolveSoleAgentId = vi.hoisted(() => vi.fn(() => "main"));
 const listAgentIds = vi.hoisted(() => vi.fn(() => ["main"]));
 const resolveBootstrapContextForRun = vi.hoisted(() => vi.fn());
 const resolveBootstrapMaxChars = vi.hoisted(() => vi.fn(() => 20_000));
@@ -19,7 +19,7 @@ vi.mock("../../packages/terminal-core/src/note.js", () => ({
 vi.mock("../agents/agent-scope.js", () => ({
   listAgentIds,
   resolveAgentWorkspaceDir,
-  tryResolveDefaultAgentId: resolveDefaultAgentId,
+  tryResolveSoleAgentId,
 }));
 
 vi.mock("../agents/bootstrap-files.js", () => ({
@@ -73,7 +73,7 @@ describe("noteBootstrapFileSize", () => {
   });
 
   it("threads the default agent id through bootstrap size resolution", async () => {
-    resolveDefaultAgentId.mockReturnValueOnce("custom-agent");
+    tryResolveSoleAgentId.mockReturnValueOnce("custom-agent");
     listAgentIds.mockReturnValueOnce(["custom-agent"]);
     resolveBootstrapContextForRun.mockResolvedValue({
       bootstrapFiles: [],

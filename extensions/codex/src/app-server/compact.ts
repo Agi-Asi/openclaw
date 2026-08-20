@@ -9,7 +9,7 @@ import {
   type EmbeddedAgentCompactResult,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resolveAgentDir } from "openclaw/plugin-sdk/agent-runtime";
-import { resolveDefaultAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
+import { resolveSoleAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
 import { createDedupeCache } from "openclaw/plugin-sdk/dedupe-runtime";
 import { coerceErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
@@ -483,9 +483,7 @@ async function compactCodexNativeThread(
   try {
     const config = params.config ?? {};
     const agentId =
-      params.agentId ??
-      readAgentIdFromSessionKey(params.sessionKey) ??
-      resolveDefaultAgentId(config);
+      params.agentId ?? readAgentIdFromSessionKey(params.sessionKey) ?? resolveSoleAgentId(config);
     connection = resolveCodexBindingAppServerConnection({
       binding,
       authProfileId: requestedAuthProfileId ?? binding.authProfileId,

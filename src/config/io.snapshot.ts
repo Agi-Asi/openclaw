@@ -206,6 +206,7 @@ export async function readConfigFileSnapshotInternal(
         env: deps.env,
         pluginValidation: context.options.pluginValidation,
         loadPluginMetadataSnapshot: pluginMetadata.load,
+        retainedLegacyDefaultAgentId: rosterMigration.retainedLegacyDefaultAgentId,
         sourceRaw: effectiveParsed,
         preservedLegacyRootKeys: context.options.preservedLegacyRootKeys,
       }),

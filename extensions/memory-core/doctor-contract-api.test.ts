@@ -1403,7 +1403,13 @@ describe("memory-core doctor dreaming migration", () => {
       }),
       "utf8",
     );
-    const config = { agents: { list: [{ id: "main", default: true }] } };
+    const config: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
 
     const preview = await dreamingStateMigration().detectLegacyState(migrationParams(config));
     expect(preview?.preview).toEqual([expect.stringContaining("Memory Core short-term recall")]);

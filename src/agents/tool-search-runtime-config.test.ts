@@ -7,8 +7,12 @@ import { resolveAgentToolSearchRuntimeConfig } from "./tool-search-runtime-confi
 function createRuntimeConfigPair() {
   const sourceConfig = {
     agents: {
-      defaults: { experimental: { localModelLean: true } },
-      entries: { main: { default: true } },
+      ownership: "explicit",
+      defaults: {
+        experimental: { localModelLean: true },
+        systemAgent: { agentId: "main" },
+      },
+      entries: { main: {} },
     },
     plugins: {
       entries: {
@@ -83,7 +87,11 @@ describe("resolveAgentToolSearchRuntimeConfig", () => {
     const { runtimeConfig, sourceConfig } = createRuntimeConfigPair();
     setRuntimeConfigSnapshot(runtimeConfig, sourceConfig);
     const explicitConfig = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       plugins: {
         entries: {
           "example-plugin": { config: { marker: "explicit" } },
@@ -97,7 +105,11 @@ describe("resolveAgentToolSearchRuntimeConfig", () => {
 
   it("uses the input config when no runtime snapshot exists", () => {
     const config = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       tools: { toolSearch: false },
     } as OpenClawConfig;
 

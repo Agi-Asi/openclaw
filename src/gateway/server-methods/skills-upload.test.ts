@@ -35,7 +35,7 @@ vi.mock("../../agents/agent-scope.js", async (importOriginal) => {
     ...actual,
     listAgentIds: vi.fn(() => ["main"]),
     resolveAgentWorkspaceDir: vi.fn(() => agentScopeState.workspaceDir),
-    resolveDefaultAgentId: vi.fn(() => "main"),
+    resolveSoleAgentId: vi.fn(() => "main"),
   };
 });
 

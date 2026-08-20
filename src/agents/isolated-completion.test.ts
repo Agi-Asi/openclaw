@@ -44,7 +44,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./agent-scope.js", () => ({
   resolveAgentDir: () => "/tmp/agent",
   resolveAgentWorkspaceDir: () => "/tmp/workspace",
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
 }));
 vi.mock("./cli-backends.js", () => ({
   resolveCliBackendConfig: mocks.resolveCliBackendConfig,

@@ -1098,17 +1098,18 @@ describe("runHeartbeatOnce", () => {
     try {
       const cfg: OpenClawConfig = {
         agents: {
+          ownership: "explicit",
           defaults: {
             heartbeat: { every: "30m", prompt: "Default prompt" },
+            systemAgent: { agentId: "main" },
           },
-          list: [
-            { id: "main", default: true },
-            {
-              id: "ops",
+          entries: {
+            main: {},
+            ops: {
               workspace: tmpDir,
               heartbeat: { every: "5m", target: "whatsapp", prompt: "Ops check" },
             },
-          ],
+          },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
         session: { store: storePath },
@@ -1167,17 +1168,18 @@ describe("runHeartbeatOnce", () => {
     try {
       const cfg: OpenClawConfig = {
         agents: {
+          ownership: "explicit",
           defaults: {
             heartbeat: { every: "30m", prompt: "Default prompt" },
+            systemAgent: { agentId: "main" },
           },
-          list: [
-            { id: "main", default: true },
-            {
-              id: agentId,
+          entries: {
+            main: {},
+            [agentId]: {
               workspace: tmpDir,
               heartbeat: { every: "5m", target: "whatsapp", prompt: "Ops check" },
             },
-          ],
+          },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
         session: { store: storeTemplate },
@@ -1663,8 +1665,13 @@ describe("runHeartbeatOnce", () => {
     try {
       const cfg: OpenClawConfig = {
         agents: {
-          defaults: { workspace: tmpDir, heartbeat: { every: "5m", target: "whatsapp" } },
-          list: [{ id: "work", default: true }],
+          ownership: "explicit",
+          defaults: {
+            workspace: tmpDir,
+            heartbeat: { every: "5m", target: "whatsapp" },
+            systemAgent: { agentId: "work" },
+          },
+          entries: { work: {} },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
         session: { store: storeTemplate },

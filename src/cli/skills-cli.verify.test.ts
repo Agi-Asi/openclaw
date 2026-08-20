@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => {
     resolveAgentIdByWorkspacePathMock: vi.fn(
       (_config: unknown, _workspacePath: string): string | undefined => undefined,
     ),
-    resolveDefaultAgentIdMock: vi.fn((_config: unknown) => "main"),
+    resolveSoleAgentIdMock: vi.fn((_config: unknown) => "main"),
     resolveAgentWorkspaceDirMock: vi.fn((_config: unknown, _agentId: string) => ""),
     resolveClawHubBaseUrlMock: vi.fn((baseUrl?: string) =>
       (baseUrl ?? "https://clawhub.ai").replace(/\/+$/, ""),
@@ -60,7 +60,7 @@ vi.mock("../config/config.js", () => ({
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentIdByWorkspacePath: (config: unknown, workspacePath: string) =>
     mocks.resolveAgentIdByWorkspacePathMock(config, workspacePath),
-  resolveDefaultAgentId: (config: unknown) => mocks.resolveDefaultAgentIdMock(config),
+  resolveSoleAgentId: (config: unknown) => mocks.resolveSoleAgentIdMock(config),
   resolveAgentWorkspaceDir: (config: unknown, agentId: string) =>
     mocks.resolveAgentWorkspaceDirMock(config, agentId),
 }));

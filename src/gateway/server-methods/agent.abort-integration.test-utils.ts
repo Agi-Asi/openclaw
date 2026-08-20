@@ -407,7 +407,11 @@ describe("gateway agent handler chat.abort integration", () => {
   it("keeps selected-global alias scope when aborting during pre-accept setup", async () => {
     mocks.listAgentIds.mockReturnValue(["main", "work"]);
     mocks.loadConfigReturn = {
-      agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
+      },
       session: { scope: "global" },
     };
     mocks.loadSessionEntry.mockReturnValue({

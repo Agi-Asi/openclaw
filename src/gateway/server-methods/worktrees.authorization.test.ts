@@ -51,7 +51,11 @@ async function dispatchCreate(params: { repoRoot: string; scopes: string[]; work
     isWebchatConnect: () => false,
     context: {
       getRuntimeConfig: () => ({
-        agents: { list: [{ id: "main", default: true, workspace: params.workspace }] },
+        agents: {
+          ownership: "explicit",
+          entries: { main: { workspace: params.workspace } },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
       }),
       logGateway: { warn: vi.fn() },
     } as unknown as Parameters<typeof handleGatewayRequest>[0]["context"],

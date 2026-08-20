@@ -797,7 +797,9 @@ describe("resolveAgentRoute", () => {
       name: "defaultAgentId is used when no binding matches",
       cfg: {
         agents: {
-          list: [{ id: "home", default: true, workspace: "~/openclaw-home" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "home" } },
+          entries: { home: { workspace: "~/openclaw-home" } },
         },
       } satisfies OpenClawConfig,
       channel: "whatsapp" as const,
@@ -1306,7 +1308,11 @@ describe("wildcard peer bindings (peer.id=*)", () => {
 
   test("peer.id=* does not match group peers when kind is direct", () => {
     const cfg: OpenClawConfig = {
-      agents: { list: [{ id: "main", default: true }, { id: "dm-only" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, "dm-only": {} },
+      },
       bindings: [
         {
           agentId: "dm-only",
@@ -1512,7 +1518,11 @@ describe("resolved route cache keys", () => {
 
   test("does not reuse a cached route when guildId is omitted versus the literal hyphen string", () => {
     const cfg: OpenClawConfig = {
-      agents: { list: [{ id: "main", default: true }, { id: "hyphen-guild" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, "hyphen-guild": {} },
+      },
       bindings: [
         {
           agentId: "hyphen-guild",

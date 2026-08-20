@@ -16,7 +16,7 @@ import {
   SESSION_ICON_GLYPH_IDS,
 } from "../../packages/gateway-protocol/src/session-agent-status.js";
 import { readAcpSessionMetaForEntry } from "../acp/runtime/session-meta.js";
-import { resolveAgentDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentDir, resolveSoleAgentId } from "../agents/agent-scope.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.js";
 import { splitTrailingAuthProfile } from "../agents/model-ref-profile.js";
 import {
@@ -201,7 +201,7 @@ export async function projectSessionsPatchEntry(params: {
   const now = Date.now();
   const parsedAgent = parseAgentSessionKey(storeKey);
   const sessionAgentId = normalizeAgentId(
-    params.agentId ?? parsedAgent?.agentId ?? resolveDefaultAgentId(cfg),
+    params.agentId ?? parsedAgent?.agentId ?? resolveSoleAgentId(cfg),
   );
   const resolvedDefault = resolveDefaultModelForAgent({ cfg, agentId: sessionAgentId });
   const subagentModelHint = isSubagentSessionKey(storeKey)

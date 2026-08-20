@@ -3,7 +3,7 @@ import { note } from "../../packages/terminal-core/src/note.js";
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
-  tryResolveDefaultAgentId,
+  tryResolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -230,7 +230,7 @@ function notePluginVersionDrift(drift: PluginVersionDriftReport | undefined) {
 
 /** Emits plugin and TaskFlow recovery problem notes for doctor. */
 export function noteWorkspaceStatus(cfg: OpenClawConfig, options: NoteWorkspaceStatusOptions = {}) {
-  const defaultAgentId = tryResolveDefaultAgentId(cfg);
+  const defaultAgentId = tryResolveSoleAgentId(cfg);
   const agentIds = listAgentIds(cfg);
   const scopes = agentIds.map((agentId) => ({
     agentId,

@@ -187,10 +187,6 @@ vi.mock("../../agents/agent-scope.js", async () => {
   return {
     ...actual,
     listAgentIds: mocks.listAgentIds,
-    resolveDefaultAgentId: (cfg?: {
-      agents?: { list?: Array<{ id?: string; default?: boolean }> };
-    }) =>
-      cfg?.agents?.list?.find((agent) => agent.default)?.id ?? cfg?.agents?.list?.[0]?.id ?? "main",
     resolveSessionAgentId: ({
       sessionKey,
     }: {
@@ -215,17 +211,21 @@ vi.mock("../../agents/agent-scope.js", async () => {
         sessionAgentId: agentId ?? parsedAgentId ?? fallbackAgentId ?? "main",
       };
     },
-    resolveAgentConfig: (cfg: { agents?: { list?: Array<{ id?: string }> } }, agentId: string) =>
-      cfg.agents?.list?.find((agent) => agent.id === agentId),
+    resolveAgentConfig: (
+      cfg: { agents?: { entries?: Record<string, object>; list?: Array<{ id?: string }> } },
+      agentId: string,
+    ) => cfg.agents?.entries?.[agentId] ?? cfg.agents?.list?.find((agent) => agent.id === agentId),
     resolveAgentWorkspaceDir: (
       cfg: {
         agents?: {
           defaults?: { workspace?: string };
+          entries?: Record<string, { workspace?: string }>;
           list?: Array<{ id?: string; workspace?: string }>;
         };
       },
       agentId?: string,
     ) =>
+      (agentId ? cfg?.agents?.entries?.[agentId]?.workspace : undefined) ??
       cfg?.agents?.list?.find((agent) => agent.id === agentId)?.workspace ??
       cfg?.agents?.defaults?.workspace ??
       "/tmp/workspace",

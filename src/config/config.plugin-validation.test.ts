@@ -820,9 +820,10 @@ describe("config plugin validation", () => {
     it("does not attribute keyed agent model refs to another agent", () => {
       const res = validateWithMissingCodexPlugin({
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "openclaw" } },
           entries: {
             openclaw: {
-              default: true,
               model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: [] },
               subagents: { model: "anthropic/claude-sonnet-4-6" },
             },

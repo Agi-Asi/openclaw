@@ -24,6 +24,11 @@ type TelegramInlineKeyboardReplyMarkup = {
 };
 
 const pluginCommandHandler = vi.fn(async (_ctx: Record<string, unknown>) => ({ text: "ok" }));
+const mainAgentRoster: NonNullable<OpenClawConfig["agents"]> = {
+  ownership: "explicit",
+  entries: { main: {} },
+  defaults: { systemAgent: { agentId: "main" } },
+};
 
 function registerTestPluginCommand(params: {
   name: string;
@@ -85,7 +90,9 @@ describe("registerTelegramNativeCommands", () => {
   it("scopes skill commands when account binding exists", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true }, { id: "butler" }],
+        ownership: "explicit",
+        entries: { main: {}, butler: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
       bindings: [
         {
@@ -106,7 +113,9 @@ describe("registerTelegramNativeCommands", () => {
   it("scopes skill commands to default agent without a matching binding (#15599)", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true }, { id: "butler" }],
+        ownership: "explicit",
+        entries: { main: {}, butler: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 
@@ -133,7 +142,7 @@ describe("registerTelegramNativeCommands", () => {
       createNativeCommandTestParams(
         {
           commands: { native: true, nativeSkills: true },
-          agents: { list: [{ id: "main", default: true }] },
+          agents: mainAgentRoster,
         },
         { bot },
       ),
@@ -158,7 +167,7 @@ describe("registerTelegramNativeCommands", () => {
     ];
     const cfg: OpenClawConfig = {
       commands: { native: true, nativeSkills: true },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: mainAgentRoster,
     };
     listSkillCommandsForAgents.mockReturnValue(skillCommands);
     registerTestPluginCommand({ name: "zeta", description: "Zeta unchanged" });
@@ -203,7 +212,7 @@ describe("registerTelegramNativeCommands", () => {
     const runtimeLog = vi.fn();
     const cfg: OpenClawConfig = {
       commands: { native: true, nativeSkills: true },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: mainAgentRoster,
     };
     const directSkills = Array.from({ length: 3 }, (_, index) => ({
       name: `demo_skill_${index}`,

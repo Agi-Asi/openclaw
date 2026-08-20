@@ -503,10 +503,9 @@ describe("resolveGatewayScopedTools excludeToolNames", () => {
   it("uses the explicit agent identity when a session key is an alias", () => {
     const cfg = {
       agents: {
-        list: [
-          { id: "main", default: true },
-          { id: "worker", tools: { deny: ["exec"] } },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, worker: { tools: { deny: ["exec"] } } },
       },
     } as OpenClawConfig;
     const defaultAgent = resolveGatewayScopedTools({

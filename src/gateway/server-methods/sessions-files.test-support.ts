@@ -88,7 +88,13 @@ export function createSessionFilesHandlerInvoker(handlers: GatewayRequestHandler
       isWebchatConnect: () => false,
       respond: responder.respond,
       context: {
-        getRuntimeConfig: () => ({ agents: { list: [{ id: "main", default: true }] } }),
+        getRuntimeConfig: () => ({
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
+        }),
         ...context,
       } as never,
     });
@@ -168,14 +174,14 @@ export function prepareSessionFilesTest(
     loadSessionEntry: ReturnValueMock;
     readSessionTranscriptVisibleMessageDeltaCore: ReturnValueMock & { mockReset: () => unknown };
     resolveAgentWorkspaceDir: ReturnValueMock;
-    resolveDefaultAgentId: ReturnValueMock;
+    resolveSoleAgentId: ReturnValueMock;
   },
   mockVisibleMessages: (messages: unknown[]) => void,
 ): string {
   vi.clearAllMocks();
   mocks.readSessionTranscriptVisibleMessageDeltaCore.mockReset();
   const workspaceRoot = createWorkspaceFixture("openclaw-session-files-test-");
-  mocks.resolveDefaultAgentId.mockReturnValue("main");
+  mocks.resolveSoleAgentId.mockReturnValue("main");
   mocks.resolveAgentWorkspaceDir.mockReturnValue(workspaceRoot);
   mocks.execOpenPath.mockResolvedValue(undefined);
   mocks.loadSessionEntry.mockReturnValue(createSessionEntryFixture(workspaceRoot, "sess-main"));

@@ -289,6 +289,16 @@ describe("agents add command", () => {
     });
   }
 
+  function createAgentOwnerConfig(agentId = "main") {
+    return {
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId } },
+        entries: { [agentId]: {} },
+      },
+    };
+  }
+
   function useFreshAgentWizard(params: { workspaceDir: string; confirmValues?: boolean[] }) {
     const wizard = createQueuedWizardPrompter({
       textValues: ["work", params.workspaceDir],
@@ -476,8 +486,8 @@ describe("agents add command", () => {
   it("uses the explicit agent target and skips catalog validation", async () => {
     readConfigFileSnapshotMock.mockResolvedValue({
       ...baseConfigSnapshot,
-      config: { agents: { list: [{ id: "main", default: true }] } },
-      sourceConfig: { agents: { list: [{ id: "main", default: true }] } },
+      config: createAgentOwnerConfig(),
+      sourceConfig: createAgentOwnerConfig(),
     });
     const prompter = {
       intro: vi.fn(),
@@ -617,7 +627,7 @@ describe("agents add command", () => {
         } else {
           await seedAgentAuthStore(root, "main", sourceStore);
         }
-        setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+        setConfigSnapshot(createAgentOwnerConfig());
         const wizard = useFreshAgentWizard({ workspaceDir, confirmValues: [true, false] });
 
         await agentsAddCommand({}, runtime);
@@ -645,8 +655,8 @@ describe("agents add command", () => {
       database.close();
       readConfigFileSnapshotMock.mockResolvedValue({
         ...baseConfigSnapshot,
-        config: { agents: { list: [{ id: "main", default: true }] } },
-        sourceConfig: { agents: { list: [{ id: "main", default: true }] } },
+        config: createAgentOwnerConfig(),
+        sourceConfig: createAgentOwnerConfig(),
       });
       const prompter = {
         intro: vi.fn(),
@@ -676,7 +686,7 @@ describe("agents add command", () => {
           "openai:api-key": { type: "api_key", provider: "openai", key: "sk-test" },
         },
       });
-      setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+      setConfigSnapshot(createAgentOwnerConfig());
       const wizard = useFreshAgentWizard({ workspaceDir });
       wizard.confirm.mockResolvedValueOnce(true).mockRejectedValueOnce(new WizardCancelledError());
 
@@ -692,7 +702,7 @@ describe("agents add command", () => {
     await withAgentsAddStateRoot("openclaw-agents-add-auth-cancel-provider-", async (root) => {
       const agentDir = path.join(root, "agents", "work", "agent");
       const workspaceDir = path.join(root, "workspace-work");
-      setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+      setConfigSnapshot(createAgentOwnerConfig());
       useFreshAgentWizard({ workspaceDir, confirmValues: [true] });
       stageGuidedAuth();
       authChoiceMocks.warnIfModelConfigLooksOff.mockRejectedValueOnce(new WizardCancelledError());
@@ -726,7 +736,7 @@ describe("agents add command", () => {
         },
         order: { openai: ["openai:api-key", "openai:portable"] },
       });
-      setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+      setConfigSnapshot(createAgentOwnerConfig());
       const wizard = createQueuedWizardPrompter({
         textValues: ["work", workspaceDir],
         confirmValues: [true, true],
@@ -764,7 +774,7 @@ describe("agents add command", () => {
     await withAgentsAddStateRoot("openclaw-agents-add-auth-create-", async (root) => {
       const agentDir = path.join(root, "agents", "work", "agent");
       const workspaceDir = path.join(root, "workspace-work");
-      setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+      setConfigSnapshot(createAgentOwnerConfig());
       useFreshAgentWizard({ workspaceDir, confirmValues: [true] });
       stageGuidedAuth();
       createAgentMock.mockImplementationOnce(
@@ -817,7 +827,7 @@ describe("agents add command", () => {
         profileId: `openai:${name}`,
         credential: { type: "api_key" as const, provider: "openai", key: `sk-${name}` },
       }));
-      setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+      setConfigSnapshot(createAgentOwnerConfig());
       useFreshAgentWizard({ workspaceDir, confirmValues: [true] });
       stageGuidedAuth(profiles);
       authProfileMocks.persistBatch.mockRejectedValueOnce(
@@ -894,7 +904,7 @@ describe("agents add command", () => {
 
   it("runs channel post-write hooks only after fresh agent creation", async () => {
     const hook = vi.fn(async () => {});
-    setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+    setConfigSnapshot(createAgentOwnerConfig());
     useFreshAgentWizard({ workspaceDir: "/tmp/workspace-work", confirmValues: [false] });
     stageChannelPostWriteHook(hook);
 
@@ -912,7 +922,7 @@ describe("agents add command", () => {
       plugins: { installs: {} },
     };
     const hook = vi.fn(async () => {});
-    setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+    setConfigSnapshot(createAgentOwnerConfig());
     useFreshAgentWizard({ workspaceDir: "/tmp/staged-workspace", confirmValues: [false] });
     stageChannelPostWriteHook(hook);
     createAgentMock.mockResolvedValueOnce({
@@ -932,7 +942,7 @@ describe("agents add command", () => {
 
   it("does not run channel post-write hooks when fresh agent creation fails", async () => {
     const hook = vi.fn(async () => {});
-    setConfigSnapshot({ agents: { list: [{ id: "main", default: true }] } });
+    setConfigSnapshot(createAgentOwnerConfig());
     useFreshAgentWizard({ workspaceDir: "/tmp/workspace-work", confirmValues: [false] });
     stageChannelPostWriteHook(hook);
     createAgentMock.mockResolvedValueOnce({
@@ -984,8 +994,8 @@ describe("agents add command", () => {
     it("creates with explicit non-interactive inputs without a usable terminal", async () => {
       readConfigFileSnapshotMock.mockResolvedValue({
         ...baseConfigSnapshot,
-        config: { agents: { list: [{ id: "main", default: true }] } },
-        sourceConfig: { agents: { list: [{ id: "main", default: true }] } },
+        config: createAgentOwnerConfig(),
+        sourceConfig: createAgentOwnerConfig(),
       });
       terminalMocks.isTerminalInteractive.mockReturnValue(false);
 
@@ -1009,8 +1019,8 @@ describe("agents add command", () => {
     it("reports a duplicate rejected by the canonical service", async () => {
       readConfigFileSnapshotMock.mockResolvedValue({
         ...baseConfigSnapshot,
-        config: { agents: { list: [{ id: "main", default: true }] } },
-        sourceConfig: { agents: { list: [{ id: "main", default: true }] } },
+        config: createAgentOwnerConfig(),
+        sourceConfig: createAgentOwnerConfig(),
       });
       createAgentMock.mockResolvedValueOnce({
         status: "error",
@@ -1033,18 +1043,18 @@ describe("agents add command", () => {
         .mockResolvedValueOnce({
           ...baseConfigSnapshot,
           hash: "hash-1",
-          config: { agents: { list: [{ id: "main", default: true }] } },
-          sourceConfig: { agents: { list: [{ id: "main", default: true }] } },
+          config: createAgentOwnerConfig(),
+          sourceConfig: createAgentOwnerConfig(),
         })
         .mockResolvedValueOnce({
           ...baseConfigSnapshot,
           hash: "hash-2",
           config: {
-            agents: { list: [{ id: "other-agent", default: true }] },
+            ...createAgentOwnerConfig("other-agent"),
             bindings: [{ type: "route", agentId: "other-agent", match: { channel: "telegram" } }],
           },
           sourceConfig: {
-            agents: { list: [{ id: "other-agent", default: true }] },
+            ...createAgentOwnerConfig("other-agent"),
             bindings: [{ type: "route", agentId: "other-agent", match: { channel: "telegram" } }],
           },
         });

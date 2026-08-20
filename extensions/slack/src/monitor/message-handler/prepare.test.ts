@@ -702,7 +702,11 @@ describe("slack prepareSlackMessage inbound contract", () => {
 
   it("routes Enterprise messages through workspace-qualified configured bindings", async () => {
     const cfg = {
-      agents: { list: [{ id: "main", default: true }, { id: "strategist" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, strategist: {} },
+      },
       bindings: [
         {
           agentId: "strategist",
@@ -1349,10 +1353,12 @@ describe("slack prepareSlackMessage inbound contract", () => {
       ...(scenario.bindingOwner === "runtime"
         ? {
             agents: {
-              list: [
-                { id: "main", default: true },
-                { id: "review", groupChat: { mentionPatterns: ["\\breviewbot\\b"] } },
-              ],
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "main" } },
+              entries: {
+                main: {},
+                review: { groupChat: { mentionPatterns: ["\\breviewbot\\b"] } },
+              },
             },
           }
         : {}),
@@ -2984,7 +2990,9 @@ Second paragraph should still reach the agent after Slack's preview cutoff.`;
       const cfg = {
         session: { dmScope: "per-peer" },
         agents: {
-          list: [{ id: "main", default: true }, { id: "strategist" }],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, strategist: {} },
         },
         bindings: [
           {

@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { writeTextAtomic } from "@openclaw/fs-safe/atomic";
 import { resolveAgentConfig } from "../agents/agent-scope-config.js";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../agents/agent-scope.js";
 import { ensureAbsoluteDirectory, pathExists, root as openFsSafeRoot } from "../infra/fs-safe.js";
 import { resolveHomeRelativePath } from "../infra/home-dir.js";
 import {
@@ -42,7 +42,7 @@ export function resolvePlannedMigrationTargets(
   ctx: MigrationProviderContext,
 ): PlannedMigrationTargets {
   const cfg = ctx.config;
-  const agentId = ctx.targetAgentId ?? resolveDefaultAgentId(cfg);
+  const agentId = ctx.targetAgentId ?? resolveSoleAgentId(cfg);
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
   const configuredAgentDir = resolveAgentConfig(cfg, agentId)?.agentDir?.trim();
   const agentDir =

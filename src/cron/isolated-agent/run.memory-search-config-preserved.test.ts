@@ -25,8 +25,9 @@ describe("resolveCronAgentConfig memory search preservation", () => {
     const runCfg: OpenClawConfig = {
       plugins: { enabled: false },
       agents: {
-        defaults: agentDefaults,
-        list: [{ id: "main", default: true, memory: { search: agentMemorySearch } }],
+        ownership: "explicit",
+        defaults: { ...agentDefaults, systemAgent: { agentId: "main" } },
+        entries: { main: { memory: { search: agentMemorySearch } } },
       },
       memory: { search: defaultMemorySearch },
     };

@@ -97,10 +97,11 @@ function createPreparedDispatchRuntime(
     config: {
       channels: { telegram: { botToken: "resolved-telegram-token" } },
       agents: {
-        defaults: { userTimezone: "America/New_York" },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { userTimezone: "America/New_York", systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
-    },
+    } satisfies OpenClawConfig,
     modelCatalog: { entries: [], routeVariants: [] },
     inboundPluginRegistry: createEmptyPluginRegistry(),
     pluginGeneration: {} as never,
@@ -275,7 +276,13 @@ describe("getReplyFromConfig configOverride", () => {
   it("rejects a prepared dispatch runtime that crosses the admitted session agent", async () => {
     const preparedRuntime = createPreparedDispatchRuntime({
       agentId: "worker",
-      config: { agents: { list: [{ id: "worker", default: true }] } },
+      config: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "worker" } },
+          entries: { worker: {} },
+        },
+      },
     });
 
     await expect(

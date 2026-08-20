@@ -175,10 +175,10 @@ describe("buildPromptSection", () => {
   ])("keeps eager, lazy, and prompt contracts aligned for $label", async (sourceCase) => {
     const config = {
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: {
               search: {
                 sources: sourceCase.sessions ? ["memory", "sessions"] : ["memory"],
@@ -186,7 +186,7 @@ describe("buildPromptSection", () => {
               },
             },
           },
-        ],
+        },
       },
       memory: { search: { provider: "none", extraPaths: sourceCase.extraPaths } },
     } as OpenClawConfig;

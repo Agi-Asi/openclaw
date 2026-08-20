@@ -294,7 +294,9 @@ describe("models-config write serialization", () => {
     await withModelsTempHome(async (home) => {
       const cfg = {
         agents: {
-          list: [{ id: "main" }, { id: "ops", default: true }],
+          ownership: "explicit" as const,
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { main: {}, ops: {} },
         },
       };
 

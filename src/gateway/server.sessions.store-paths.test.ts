@@ -40,7 +40,11 @@ test("sessions.list reports multiple physical agent stores", async () => {
   }
   const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json");
   testState.sessionConfig = { store: storeTemplate };
-  testState.agentsConfig = { list: [{ id: "main", default: true }, { id: "ops" }] };
+  testState.agentsConfig = {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, ops: {} },
+  };
   for (const agentId of ["main", "ops"]) {
     await writeSessionStore({
       agentId,
@@ -82,7 +86,11 @@ test.runIf(process.platform !== "win32")(
         storePath: realStore,
       });
       testState.sessionConfig = { store: aliasTemplate };
-      testState.agentsConfig = { list: [{ id: "main", default: true }] };
+      testState.agentsConfig = {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      };
 
       const listed = await directSessionReq<{
         path: string;
@@ -114,7 +122,11 @@ test("configured-only multi-store target preparation is reused across distinct l
     const agentIds = Array.from({ length: 29 }, (_, index) => `agent-${index}`);
     const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json");
     testState.sessionConfig = { store: storeTemplate };
-    testState.agentsConfig = { list: agentIds.map((id, index) => ({ id, default: index === 0 })) };
+    testState.agentsConfig = {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "agent-0" } },
+      entries: Object.fromEntries(agentIds.map((id) => [id, {}])),
+    };
     for (const agentId of agentIds) {
       const storePath = storeTemplate.replace("{agentId}", agentId);
       await writeSessionStore({

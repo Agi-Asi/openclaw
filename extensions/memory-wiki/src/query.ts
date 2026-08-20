@@ -4,7 +4,7 @@ import path from "node:path";
 import { filterMemorySearchHitsBySessionVisibility } from "@openclaw/memory-core/api.js";
 import { runTasksWithConcurrency } from "openclaw/plugin-sdk/concurrency-runtime";
 import type { MemorySearchResult } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
-import { resolveDefaultAgentId, resolveSessionAgentId } from "openclaw/plugin-sdk/memory-host-core";
+import { resolveSessionAgentId, resolveSoleAgentId } from "openclaw/plugin-sdk/memory-host-core";
 import { getActiveMemorySearchManager } from "openclaw/plugin-sdk/memory-host-search";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import {
@@ -1006,7 +1006,7 @@ function resolveActiveMemoryAgentId(params: {
       config: params.appConfig,
     });
   }
-  return resolveDefaultAgentId(params.appConfig);
+  return resolveSoleAgentId(params.appConfig);
 }
 
 async function resolveActiveMemoryManager(params: {

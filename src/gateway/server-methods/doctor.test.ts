@@ -12,7 +12,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 
 const getRuntimeConfig = vi.hoisted(() => vi.fn(() => ({}) as OpenClawConfig));
 const listAgentIds = vi.hoisted(() => vi.fn(() => ["main", "research-analyst", "alpha"]));
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "main"));
+const resolveSoleAgentId = vi.hoisted(() => vi.fn(() => "main"));
 const resolveAgentWorkspaceDir = vi.hoisted(() =>
   vi.fn((_cfg: OpenClawConfig, _agentId: string) => "/tmp/openclaw"),
 );
@@ -45,8 +45,8 @@ vi.mock("../../agents/agent-scope.js", () => ({
         })
       : cfg.agents?.list
         ? cfg.agents.list
-        : [{ id: "main", default: true }],
-  resolveDefaultAgentId,
+        : [{ id: "main" }],
+  resolveSoleAgentId,
   resolveAgentWorkspaceDir,
 }));
 
@@ -242,7 +242,7 @@ describe("doctor.memory agent targeting", () => {
   beforeEach(() => {
     getRuntimeConfig.mockReset().mockReturnValue({});
     listAgentIds.mockClear();
-    resolveDefaultAgentId.mockReset().mockReturnValue("main");
+    resolveSoleAgentId.mockReset().mockReturnValue("main");
     resolveAgentWorkspaceDir.mockReset().mockReturnValue("/tmp/openclaw");
     getMemorySearchManager.mockReset().mockResolvedValue({
       manager: null,
@@ -266,7 +266,7 @@ describe("doctor.memory agent targeting", () => {
       getRuntimeConfig.mockReturnValue({
         agents: { ownership: "explicit", entries: { ops: {}, research: {} } },
       });
-      resolveDefaultAgentId.mockImplementationOnce(() => {
+      resolveSoleAgentId.mockImplementationOnce(() => {
         throw new AgentSelectionRequiredError(["ops", "research"], {
           surface: "doctor memory",
           hint: "Pass agentId to select a configured agent.",
@@ -332,7 +332,7 @@ describe("doctor.memory agent targeting", () => {
 describe("doctor.memory.status", () => {
   beforeEach(() => {
     getRuntimeConfig.mockReset().mockReturnValue({});
-    resolveDefaultAgentId.mockClear();
+    resolveSoleAgentId.mockClear();
     resolveAgentWorkspaceDir.mockReset().mockReturnValue("/tmp/openclaw");
     resolveMemorySearchConfig.mockReset().mockReturnValue({ enabled: true });
     getMemorySearchManager.mockReset();
@@ -1257,7 +1257,7 @@ describe("doctor.memory dream actions", () => {
 describe("doctor.memory.dreamDiary", () => {
   beforeEach(() => {
     getRuntimeConfig.mockClear();
-    resolveDefaultAgentId.mockClear();
+    resolveSoleAgentId.mockClear();
     resolveAgentWorkspaceDir.mockReset().mockReturnValue("/tmp/openclaw");
     previewGroundedRemMarkdown.mockReset();
     writeBackfillDiaryEntries.mockReset();

@@ -55,7 +55,9 @@ describe("listMemoryCorePublicArtifacts", () => {
 
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: workspaceDir } },
       },
     };
 
@@ -111,7 +113,9 @@ describe("listMemoryCorePublicArtifacts", () => {
 
     const cfg: OpenClawConfig = {
       agents: {
-        list: [{ id: "main", default: true, workspace: workspaceDir }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: workspaceDir } },
       },
     };
 

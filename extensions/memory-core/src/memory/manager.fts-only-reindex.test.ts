@@ -134,10 +134,12 @@ describe("memory manager FTS-only reindex", () => {
         },
       },
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           workspace: workspaceDir,
         },
-        list: [{ id: "main", default: true }],
+        entries: { main: {} },
       },
     } as OpenClawConfig;
     const result = await getMemorySearchManager({ cfg, agentId: "main" });

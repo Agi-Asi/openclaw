@@ -10,8 +10,10 @@ describe("identity avatar validation", () => {
       const workspace = path.join(home, "openclaw");
       const res = validateConfigObject({
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true, workspace, identity: { avatar: "avatars/openclaw.png" } },
+            main: { workspace, identity: { avatar: "avatars/openclaw.png" } },
           },
         },
       });
@@ -24,9 +26,10 @@ describe("identity avatar validation", () => {
       const workspace = path.join(home, "openclaw");
       const httpRes = validateConfigObject({
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
             main: {
-              default: true,
               workspace,
               identity: { avatar: "https://example.com/avatar.png" },
             },
@@ -37,9 +40,10 @@ describe("identity avatar validation", () => {
 
       const dataRes = validateConfigObject({
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
             main: {
-              default: true,
               workspace,
               identity: { avatar: "data:image/png;base64,AAA" },
             },
@@ -55,8 +59,10 @@ describe("identity avatar validation", () => {
       const workspace = path.join(home, "openclaw");
       const res = validateConfigObject({
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true, workspace, identity: { avatar: "../oops.png" } },
+            main: { workspace, identity: { avatar: "../oops.png" } },
           },
         },
       });

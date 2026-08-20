@@ -99,7 +99,7 @@ const mocks = vi.hoisted(() => {
   return {
     callGatewayMock: vi.fn(),
     loadConfigMock: vi.fn((_options?: unknown) => ({})),
-    resolveDefaultAgentIdMock: vi.fn(
+    resolveSoleAgentIdMock: vi.fn(
       (_configForTest: unknown, _context?: AgentSelectionContext) => "main",
     ),
     resolveAgentIdByWorkspacePathMock: vi.fn(
@@ -132,7 +132,7 @@ const mocks = vi.hoisted(() => {
 const {
   callGatewayMock,
   loadConfigMock,
-  resolveDefaultAgentIdMock,
+  resolveSoleAgentIdMock,
   resolveAgentIdByWorkspacePathMock,
   resolveAgentWorkspaceDirMock,
   searchSkillsFromClawHubMock,
@@ -272,8 +272,8 @@ vi.mock("../config/config.js", () => ({
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentIdByWorkspacePath: (config: unknown, workspacePath: string) =>
     mocks.resolveAgentIdByWorkspacePathMock(config, workspacePath),
-  resolveDefaultAgentId: (config: unknown, context?: AgentSelectionContext) =>
-    mocks.resolveDefaultAgentIdMock(config, context),
+  resolveSoleAgentId: (config: unknown, context?: AgentSelectionContext) =>
+    mocks.resolveSoleAgentIdMock(config, context),
   resolveAgentWorkspaceDir: (config: unknown, agentId: string) =>
     mocks.resolveAgentWorkspaceDirMock(config, agentId),
 }));
@@ -345,7 +345,7 @@ describe("skills cli commands", () => {
     runtimeErrors.length = 0;
     callGatewayMock.mockReset();
     loadConfigMock.mockReset();
-    resolveDefaultAgentIdMock.mockReset();
+    resolveSoleAgentIdMock.mockReset();
     resolveAgentIdByWorkspacePathMock.mockReset();
     resolveAgentWorkspaceDirMock.mockReset();
     searchSkillsFromClawHubMock.mockReset();
@@ -364,7 +364,7 @@ describe("skills cli commands", () => {
 
     callGatewayMock.mockRejectedValue(new Error("gateway unavailable"));
     loadConfigMock.mockReturnValue({});
-    resolveDefaultAgentIdMock.mockReturnValue("main");
+    resolveSoleAgentIdMock.mockReturnValue("main");
     resolveAgentIdByWorkspacePathMock.mockReturnValue(undefined);
     resolveAgentWorkspaceDirMock.mockReturnValue("/tmp/workspace");
     searchSkillsFromClawHubMock.mockResolvedValue([]);
@@ -855,7 +855,7 @@ describe("skills cli commands", () => {
     await runCommand(["skills", "install", "calendar", "--global"]);
 
     expect(resolveAgentIdByWorkspacePathMock).not.toHaveBeenCalled();
-    expect(resolveDefaultAgentIdMock).not.toHaveBeenCalled();
+    expect(resolveSoleAgentIdMock).not.toHaveBeenCalled();
     expect(resolveAgentWorkspaceDirMock).not.toHaveBeenCalled();
     expect(installSkillFromClawHubMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1054,7 +1054,7 @@ describe("skills cli commands", () => {
     await runCommand(["skills", "update", selection, "--global"]);
 
     expect(resolveAgentIdByWorkspacePathMock).not.toHaveBeenCalled();
-    expect(resolveDefaultAgentIdMock).not.toHaveBeenCalled();
+    expect(resolveSoleAgentIdMock).not.toHaveBeenCalled();
     expect(resolveAgentWorkspaceDirMock).not.toHaveBeenCalled();
     expect(readTrackedClawHubSkillSlugsMock).toHaveBeenCalledWith("/tmp/openclaw-config");
     expect(updateSkillsFromClawHubMock).toHaveBeenCalledWith({
@@ -1197,7 +1197,7 @@ describe("skills cli commands", () => {
     await runCommand(["skills", "verify", "agentreceipt", "--version", "2.0.0", "--global"]);
 
     expect(resolveAgentIdByWorkspacePathMock).not.toHaveBeenCalled();
-    expect(resolveDefaultAgentIdMock).not.toHaveBeenCalled();
+    expect(resolveSoleAgentIdMock).not.toHaveBeenCalled();
     expect(resolveAgentWorkspaceDirMock).not.toHaveBeenCalled();
     expect(resolveClawHubSkillVerificationTargetMock).toHaveBeenCalledWith({
       workspaceDir: "/tmp/openclaw-config",
@@ -1575,7 +1575,7 @@ describe("skills cli commands", () => {
 
   it("falls back to the default agent outside configured workspaces", async () => {
     routeWorkspaceByAgent();
-    resolveDefaultAgentIdMock.mockReturnValue("main");
+    resolveSoleAgentIdMock.mockReturnValue("main");
     resolveAgentIdByWorkspacePathMock.mockReturnValue(undefined);
 
     await withCwd("/tmp/unrelated", async () => {
@@ -1583,7 +1583,7 @@ describe("skills cli commands", () => {
     });
 
     expect(resolveAgentIdByWorkspacePathMock).toHaveBeenCalledWith({}, "/tmp/unrelated");
-    expect(resolveDefaultAgentIdMock).toHaveBeenCalledWith(
+    expect(resolveSoleAgentIdMock).toHaveBeenCalledWith(
       {},
       expect.objectContaining({ hint: "Pass --agent <id>." }),
     );
@@ -1591,7 +1591,7 @@ describe("skills cli commands", () => {
   });
 
   it("renders the supported skills escape without advertising --all-agents", async () => {
-    resolveDefaultAgentIdMock.mockImplementationOnce((_config, context) => {
+    resolveSoleAgentIdMock.mockImplementationOnce((_config, context) => {
       throw new AgentSelectionRequiredError(["main", "helper", "third"], context);
     });
 
@@ -1605,7 +1605,7 @@ describe("skills cli commands", () => {
 
   it("redacts secrets from rendered skills CLI errors", async () => {
     const secret = "sk-abcdefghijklmnopqrstuv";
-    resolveDefaultAgentIdMock.mockImplementationOnce(() => {
+    resolveSoleAgentIdMock.mockImplementationOnce(() => {
       throw new Error(`Skill lookup failed with token=${secret}`);
     });
 

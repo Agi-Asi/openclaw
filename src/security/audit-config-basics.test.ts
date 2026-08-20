@@ -64,7 +64,11 @@ describe("security audit config basics", () => {
 
   it("flags tools.elevated allowFrom wildcard as critical", async () => {
     const findings = await collectSecurityAuditFindings({
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
+      },
       tools: {
         elevated: {
           allowFrom: { whatsapp: ["*"] },
@@ -99,14 +103,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -147,14 +151,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -185,14 +189,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -223,14 +227,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -259,7 +263,13 @@ describe("security audit config basics", () => {
       );
 
       const report = await runSecurityAuditCore({
-        config: { agents: { list: [{ id: "main", default: true }] } },
+        config: {
+          agents: {
+            ownership: "explicit",
+            entries: { main: {} },
+            defaults: { systemAgent: { agentId: "main" } },
+          },
+        },
         sourceConfig: {},
         env: { OPENCLAW_STATE_DIR: stateDir },
         stateDir,
@@ -287,14 +297,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -326,14 +336,14 @@ describe("security audit config basics", () => {
         const report = await runSecurityAuditCore({
           config: {
             agents: {
-              list: [
-                {
-                  id: "asset-agent",
-                  default: true,
+              ownership: "explicit",
+              defaults: { systemAgent: { agentId: "asset-agent" } },
+              entries: {
+                "asset-agent": {
                   skills: ["asset-lifecycle-tracking"],
                   tools: { exec: { host: "gateway", mode: "full" } },
                 },
-              ],
+              },
             },
           },
           sourceConfig: {},
@@ -372,14 +382,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -414,14 +424,14 @@ describe("security audit config basics", () => {
       const report = await runSecurityAuditCore({
         config: {
           agents: {
-            list: [
-              {
-                id: "asset-agent",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "asset-agent" } },
+            entries: {
+              "asset-agent": {
                 skills: ["asset-lifecycle-tracking"],
                 tools: { exec: { host: "gateway", mode: "full" } },
               },
-            ],
+            },
           },
         },
         sourceConfig: {},
@@ -450,8 +460,12 @@ describe("security audit config basics", () => {
             },
           },
           agents: {
-            defaults: { skills: ["docs-search"] },
-            entries: { "docs-agent": { default: true, tools: { exec: { mode: "deny" } } } },
+            ownership: "explicit",
+            defaults: {
+              skills: ["docs-search"],
+              systemAgent: { agentId: "docs-agent" },
+            },
+            entries: { "docs-agent": { tools: { exec: { mode: "deny" } } } },
           },
           tools: { exec: { mode: "deny" } },
         },
@@ -482,16 +496,18 @@ describe("security audit config basics", () => {
           },
           tools: { exec: { host: "gateway", security: "full", ask: "off" } },
           agents: {
-            defaults: { skills: ["docs-search"] },
-            list: [
-              {
-                id: "safe-default",
-                default: true,
+            ownership: "explicit",
+            defaults: {
+              skills: ["docs-search"],
+              systemAgent: { agentId: "safe-default" },
+            },
+            entries: {
+              "safe-default": {
                 skills: ["safe-only"],
                 tools: { exec: { security: "deny" } },
               },
-              { id: "inheritor" },
-            ],
+              inheritor: {},
+            },
           },
         },
         sourceConfig: {},
@@ -515,7 +531,11 @@ describe("security audit config basics", () => {
   it("suppresses configured accepted findings from the active audit report", async () => {
     const report = await runSecurityAuditCore({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
         security: {
           audit: {
             suppressions: [
@@ -557,7 +577,11 @@ describe("security audit config basics", () => {
   it("keeps unrelated dangerous flags active when one dangerous flag is suppressed", async () => {
     const report = await runSecurityAuditCore({
       config: {
-        agents: { entries: { main: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
         hooks: { gmail: { allowUnsafeExternalContent: true } },
         tools: {
           exec: {
@@ -608,7 +632,13 @@ describe("security audit config basics", () => {
     let report: Awaited<ReturnType<typeof runSecurityAuditCore>>;
     try {
       report = await runSecurityAuditCore({
-        config: { agents: { entries: { main: { default: true } } } },
+        config: {
+          agents: {
+            ownership: "explicit",
+            entries: { main: {} },
+            defaults: { systemAgent: { agentId: "main" } },
+          },
+        },
         sourceConfig: {},
         env: {},
         includeFilesystem: false,

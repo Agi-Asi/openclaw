@@ -34,13 +34,15 @@ describe("agent concurrency defaults", () => {
   it("accepts subagent spawn depth and per-agent child limits", () => {
     const parsed = OpenClawSchema.parse({
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           subagents: {
             maxSpawnDepth: 2,
             maxChildrenPerAgent: 7,
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     });
 

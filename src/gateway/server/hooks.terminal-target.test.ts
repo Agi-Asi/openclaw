@@ -64,9 +64,11 @@ function payload(overrides: Partial<HookPayload> = {}): HookPayload {
 function globalConfig(defaultAgentId: "main" | "work", includeMain = true): OpenClawConfig {
   return {
     agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: defaultAgentId } },
       entries: {
-        ...(includeMain ? { main: { default: defaultAgentId === "main" } } : {}),
-        work: { default: defaultAgentId === "work" },
+        ...(includeMain ? { main: {} } : {}),
+        work: {},
       },
     },
     session: { scope: "global" },

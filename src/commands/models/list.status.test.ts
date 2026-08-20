@@ -53,7 +53,7 @@ const mocks = vi.hoisted(() => {
     store,
     resolveAgentDir: vi.fn().mockReturnValue("/tmp/openclaw-agent"),
     resolveAgentWorkspaceDir: vi.fn().mockReturnValue("/tmp/openclaw-agent/workspace"),
-    resolveDefaultAgentId: vi.fn().mockReturnValue("main"),
+    resolveSoleAgentId: vi.fn().mockReturnValue("main"),
     resolveSessionAgentIds: vi.fn(({ agentId }: { agentId?: string } = {}) => ({
       defaultAgentId: "main",
       sessionAgentId: agentId ?? "main",
@@ -179,7 +179,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentDir: mocks.resolveAgentDir,
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+  resolveSoleAgentId: mocks.resolveSoleAgentId,
   resolveSessionAgentIds: mocks.resolveSessionAgentIds,
   resolveAgentExplicitModelPrimary: mocks.resolveAgentExplicitModelPrimary,
   resolveAgentEffectiveModelPrimary: mocks.resolveAgentEffectiveModelPrimary,

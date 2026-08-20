@@ -53,10 +53,12 @@ describe("boot-md startup hook integration", () => {
     const cfg = {
       hooks: { internal: { enabled: true } },
       agents: {
-        list: [
-          { id: "main", default: true, workspace: "/ws/main" },
-          { id: "ops", workspace: "/ws/ops" },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { workspace: "/ws/main" },
+          ops: { workspace: "/ws/ops" },
+        },
       },
     } as OpenClawConfig;
     const deps = {} as CliDeps;

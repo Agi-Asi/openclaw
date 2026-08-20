@@ -46,8 +46,10 @@ function liveConfig(): OpenClawConfig {
       },
     },
     agents: {
+      ownership: "explicit",
       defaults: {
         model: { primary: `openai/${modelId}` },
+        systemAgent: { agentId: "main" },
         models: {
           [`openai/${modelId}`]: {
             agentRuntime: { id: "openclaw" },
@@ -55,7 +57,7 @@ function liveConfig(): OpenClawConfig {
           },
         },
       },
-      list: [{ id: "main", default: true, workspace: workspaceDir }],
+      entries: { main: { workspace: workspaceDir } },
     },
     skills: { workshop: { autonomous: { mode: "off" } } },
   };

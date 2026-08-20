@@ -143,11 +143,10 @@ describe("memory search config", () => {
       },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: {
               search: {
                 remote: {
@@ -156,7 +155,7 @@ describe("memory search config", () => {
               },
             },
           },
-        ],
+        },
       },
     });
   }
@@ -184,14 +183,13 @@ describe("memory search config", () => {
       memory: { search: { enabled: true } },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: { search: { enabled: false } },
           },
-        ],
+        },
       },
     });
     const resolved = resolveMemorySearchConfig(cfg, "main");
@@ -224,14 +222,13 @@ describe("memory search config", () => {
       memory: { search: { enabled: true } },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: { search: { enabled: false } },
           },
-        ],
+        },
       },
     });
     const resolved = resolveMemorySearchSyncConfig(cfg, "main");
@@ -554,18 +551,17 @@ describe("memory search config", () => {
       },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: {
               search: {
                 query: { maxResults: 8 },
               },
             },
           },
-        ],
+        },
       },
     });
     const resolved = resolveMemorySearchConfig(cfg, "main");
@@ -591,11 +587,10 @@ describe("memory search config", () => {
       },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: {
               search: {
                 extraPaths: [
@@ -606,7 +601,7 @@ describe("memory search config", () => {
               },
             },
           },
-        ],
+        },
       },
     });
     const resolved = resolveMemorySearchConfig(cfg, "main");
@@ -849,18 +844,17 @@ describe("memory search config", () => {
       },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: {
               search: {
                 documentInputType: "document",
               },
             },
           },
-        ],
+        },
       },
     });
     const resolved = resolveMemorySearchConfig(cfg, "main");
@@ -936,18 +930,17 @@ describe("memory search config", () => {
       },
 
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             memory: {
               search: {
                 rememberAcrossConversations: false,
               },
             },
           },
-        ],
+        },
       },
     });
     const resolved = resolveMemorySearchConfig(cfg, "main");

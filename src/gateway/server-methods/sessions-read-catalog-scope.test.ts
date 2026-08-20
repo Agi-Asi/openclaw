@@ -62,7 +62,11 @@ async function listSessions(params: {
 
 async function seedSessions(): Promise<OpenClawConfig> {
   const config: OpenClawConfig = {
-    agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {}, work: {} },
+    },
   };
   await upsertSessionEntryCore(
     { agentId: "main", sessionKey: "agent:main:active" },

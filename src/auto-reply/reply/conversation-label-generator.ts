@@ -1,6 +1,6 @@
 // Generates short labels for sessions from conversation context.
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveSoleAgentId } from "../../agents/agent-scope.js";
 import { runIsolatedCompletion } from "../../agents/isolated-completion.js";
 import { splitTrailingAuthProfile } from "../../agents/model-ref-profile.js";
 import { resolveSimpleCompletionSelectionForAgent } from "../../agents/simple-completion-runtime.js";
@@ -169,7 +169,7 @@ async function runLabelAttempts(params: {
 export async function generateConversationLabel(
   params: ConversationLabelParams,
 ): Promise<string | null> {
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.cfg);
+  const agentId = params.agentId ?? resolveSoleAgentId(params.cfg);
   const attempts: ConversationLabelAttempt[] = params.modelRef
     ? [{ modelRef: params.modelRef }]
     : [{ useUtilityModel: true }, { useUtilityModel: false }];
@@ -192,7 +192,7 @@ export async function generateConversationLabel(
 export async function generateConversationLabelWithFallback(
   params: ConversationLabelFallbackParams,
 ): Promise<string | null> {
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.cfg);
+  const agentId = params.agentId ?? resolveSoleAgentId(params.cfg);
   const regularAttempt: ConversationLabelAttempt = {
     modelRef: params.regularModelRef,
     ...(params.preferredProfile ? { preferredProfile: params.preferredProfile } : {}),

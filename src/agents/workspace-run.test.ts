@@ -13,7 +13,13 @@ describe("resolveRunWorkspaceDir", () => {
     const result = resolveRunWorkspaceDir({
       workspaceDir: explicit,
       sessionKey: "agent:main:subagent:test",
-      config: { agents: { list: [{ id: "main", default: true }] } },
+      config: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
     });
 
     expect(result.usedFallback).toBe(false);
@@ -25,7 +31,11 @@ describe("resolveRunWorkspaceDir", () => {
   it("recognizes an explicitly supplied configured workspace as canonical", () => {
     const workspaceDir = path.join(process.cwd(), "tmp", "workspace-run-canonical");
     const cfg = {
-      agents: { defaults: { workspace: workspaceDir }, list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { workspace: workspaceDir, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } satisfies OpenClawConfig;
 
     const result = resolveRunWorkspaceDir({
@@ -43,8 +53,9 @@ describe("resolveRunWorkspaceDir", () => {
     const researchWorkspace = path.join(process.cwd(), "tmp", "workspace-research");
     const cfg = {
       agents: {
-        defaults: { workspace: defaultWorkspace },
-        list: [{ id: "research", workspace: researchWorkspace, default: true }],
+        ownership: "explicit",
+        defaults: { workspace: defaultWorkspace, systemAgent: { agentId: "research" } },
+        entries: { research: { workspace: researchWorkspace } },
       },
     } satisfies OpenClawConfig;
 
@@ -65,8 +76,9 @@ describe("resolveRunWorkspaceDir", () => {
     const defaultWorkspace = path.join(process.cwd(), "tmp", "workspace-default-main");
     const cfg = {
       agents: {
-        defaults: { workspace: defaultWorkspace },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { workspace: defaultWorkspace, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
 
@@ -141,7 +153,13 @@ describe("resolveRunWorkspaceDir", () => {
         workspaceDir: undefined,
         agentId,
         sessionKey,
-        config: { agents: { entries: { ops: { default: true } } } },
+        config: {
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
+            entries: { ops: {} },
+          },
+        },
       }),
     ).toThrow(expect.objectContaining({ code: "RUN_WORKSPACE_AGENT_NOT_CONFIGURED" }));
   });
@@ -153,11 +171,12 @@ describe("resolveRunWorkspaceDir", () => {
     const researchWorkspace = path.join(process.cwd(), "tmp", "workspace-research-default");
     const cfg = {
       agents: {
-        defaults: { workspace: mainWorkspace },
-        list: [
-          { id: "main", workspace: mainWorkspace },
-          { id: "research", workspace: researchWorkspace, default: true },
-        ],
+        ownership: "explicit",
+        defaults: { workspace: mainWorkspace, systemAgent: { agentId: "research" } },
+        entries: {
+          main: { workspace: mainWorkspace },
+          research: { workspace: researchWorkspace },
+        },
       },
     } satisfies OpenClawConfig;
 
@@ -174,8 +193,9 @@ describe("resolveRunWorkspaceDir", () => {
     const fallbackWorkspace = path.join(process.cwd(), "tmp", "workspace-default-legacy");
     const cfg = {
       agents: {
-        defaults: { workspace: fallbackWorkspace },
-        list: [{ id: "main", default: true }],
+        ownership: "explicit",
+        defaults: { workspace: fallbackWorkspace, systemAgent: { agentId: "main" } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
 

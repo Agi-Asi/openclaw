@@ -9,7 +9,6 @@ import { finiteSecondsToTimerSafeMilliseconds } from "@openclaw/normalization-co
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
 import { readAcpSessionMeta } from "../../acp/runtime/session-meta.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../../config/sessions/session-store-owner.js";
 import { parseSessionThreadInfo } from "../../config/sessions/thread-info.js";
@@ -50,7 +49,11 @@ import { recordSessionParticipantBestEffort } from "../../sessions/session-parti
 import { registerSessionStateWatch } from "../../sessions/session-state-events.js";
 import { stripFormattedReasoningMessage } from "../../shared/text/formatted-reasoning-message.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { listAgentIds, resolveSessionAgentId } from "../agent-scope.js";
+import {
+  listAgentIds,
+  resolveSessionAgentId,
+  tryResolveAmbientOwnerAgentId,
+} from "../agent-scope.js";
 import {
   type EmbeddedAgentQueueMessageOptions,
   type EmbeddedAgentQueueMessageOutcome,
@@ -724,7 +727,7 @@ export function createSessionsSendTool(opts?: {
         : { kind: "none" as const };
       const compatibilityTargetAgentId =
         isLiteralUnscopedTarget && persistedTargetOwner.kind === "none"
-          ? tryResolveLegacyCompatibilityAgentId(cfg)
+          ? tryResolveAmbientOwnerAgentId(cfg)
           : undefined;
       const isLiteralUnscopedMainTarget =
         isLiteralUnscopedTarget &&

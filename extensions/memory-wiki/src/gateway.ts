@@ -1,6 +1,6 @@
 // Memory Wiki plugin module implements gateway behavior.
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
-import { resolveDefaultAgentId } from "openclaw/plugin-sdk/memory-host-core";
+import { resolveSoleAgentId } from "openclaw/plugin-sdk/memory-host-core";
 import { readPositiveIntegerParam } from "openclaw/plugin-sdk/param-readers";
 import type { OpenClawConfig, OpenClawPluginApi } from "../api.js";
 import { applyMemoryWikiMutation, normalizeMemoryWikiMutationInput } from "./apply.js";
@@ -114,9 +114,7 @@ export function registerMemoryWikiGatewayMethods(params: {
           ...(requestedAgentId ? { agentId: requestedAgentId } : {}),
         });
     const agentId =
-      config.agentId ??
-      requestedAgentId ??
-      (appConfig ? resolveDefaultAgentId(appConfig) : undefined);
+      config.agentId ?? requestedAgentId ?? (appConfig ? resolveSoleAgentId(appConfig) : undefined);
     return { agentId, appConfig, config };
   };
 

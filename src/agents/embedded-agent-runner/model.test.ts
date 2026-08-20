@@ -176,6 +176,7 @@ vi.mock("../prepared-model-runtime.js", async () => {
     const workspaceDir = discoveryContext.resolveModelWorkspaceDir(
       input.config,
       input.workspaceDir,
+      input.agentId,
     );
     const key = `${input.agentId ?? ""}\u0000${input.agentDir}\u0000${workspaceDir ?? ""}`;
     const current = preparedSnapshotState.snapshots.get(key);
@@ -712,15 +713,18 @@ describe("resolveModel", () => {
     fs.mkdirSync(defaultAgentDir, { recursive: true });
     const cfg = makeOpenClawConfigFixture({
       agents: {
-        list: [
-          { id: "main", default: true, agentDir: defaultAgentDir },
-          { id: "worker", agentDir },
-        ],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: { agentDir: defaultAgentDir },
+          worker: { agentDir },
+        },
       },
     });
     mockModelDiscovery();
 
     const first = await resolveModelAsync("openai", "gpt-5.5", agentDir, cfg, {
+      agentId: "worker",
       runtimeHooks: createRuntimeHooks(),
     });
     saveAuthProfileStore(
@@ -732,6 +736,7 @@ describe("resolveModel", () => {
       { filterExternalAuthProfiles: false, syncExternalCli: false },
     );
     const second = await resolveModelAsync("openai", "gpt-5.5", agentDir, cfg, {
+      agentId: "worker",
       runtimeHooks: createRuntimeHooks(),
     });
 
@@ -749,7 +754,9 @@ describe("resolveModel", () => {
     mockModelDiscovery();
     const cfg = makeOpenClawConfigFixture({
       agents: {
-        list: [{ id: "workspace-agent", default: true, agentDir, workspace: workspaceDir }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "workspace-agent" } },
+        entries: { "workspace-agent": { agentDir, workspace: workspaceDir } },
       },
     });
 

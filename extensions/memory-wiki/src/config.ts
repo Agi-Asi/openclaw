@@ -3,10 +3,7 @@ import os from "node:os";
 import path from "node:path";
 // agent-scope-runtime exports the same resolvers without memory-host-core's
 // event-store/kysely graph, which doctor enumeration must not cold-load.
-import {
-  resolveDefaultAgentId,
-  resolveSessionAgentId,
-} from "openclaw/plugin-sdk/agent-scope-runtime";
+import { resolveSessionAgentId, resolveSoleAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
 import { mapPluginConfigIssues } from "openclaw/plugin-sdk/extension-shared";
 import {
   buildPluginConfigSchema,
@@ -315,7 +312,7 @@ export function resolveMemoryWikiConfiguredAgentIds(
     }
     return [resolveSessionAgentId({ config: appConfig, agentId: rawId })];
   });
-  return [...new Set(ids.length > 0 ? ids : [resolveDefaultAgentId(appConfig ?? {})])];
+  return [...new Set(ids.length > 0 ? ids : [resolveSoleAgentId(appConfig ?? {})])];
 }
 
 /** Resolve the exact vault for one trusted runtime agent context. */
@@ -338,7 +335,7 @@ export function resolveMemoryWikiAgentConfig(params: {
   }
   const agentId = resolveSessionAgentId({
     config: params.appConfig,
-    agentId: requestedAgentId ?? resolveDefaultAgentId(params.appConfig ?? {}),
+    agentId: requestedAgentId ?? resolveSoleAgentId(params.appConfig ?? {}),
   });
   if (!configuredAgentIds.includes(agentId)) {
     throw new Error(`Unknown memory-wiki agentId: ${requestedAgentId ?? agentId}.`);

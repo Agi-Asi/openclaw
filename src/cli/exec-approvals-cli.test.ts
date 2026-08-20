@@ -830,7 +830,9 @@ describe("exec approvals CLI", () => {
         },
       },
       agents: {
-        list: [{ id: "main", default: true }, { id: "runner" }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, runner: {} },
       },
     });
 

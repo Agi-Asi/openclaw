@@ -8,7 +8,7 @@ import { AgentSelectionRequiredError } from "../../agents/agent-scope-config.js"
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../../agents/agent-scope.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
@@ -26,7 +26,7 @@ export function resolveSkillsAgentWorkspace(params: unknown, context: GatewayReq
   try {
     agentId = agentIdRaw
       ? normalizeAgentId(agentIdRaw)
-      : resolveDefaultAgentId(cfg, {
+      : resolveSoleAgentId(cfg, {
           surface: "skills workspace",
           hint: "Pass agentId to select a configured agent.",
         });

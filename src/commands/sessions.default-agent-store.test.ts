@@ -57,14 +57,13 @@ function toSessionEntrySummaries(store: Record<string, Record<string, unknown>>)
 function createSessionsConfig(store = "/tmp/sessions-{agentId}.json") {
   return {
     agents: {
+      ownership: "explicit",
       defaults: {
         model: { primary: "test:opus" },
         models: { "test:opus": {} },
+        systemAgent: { agentId: "voice" },
       },
-      list: [
-        { id: "main", default: false },
-        { id: "voice", default: true },
-      ],
+      entries: { main: {}, voice: {} },
     },
     session: { store },
   };

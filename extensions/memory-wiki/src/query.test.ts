@@ -16,12 +16,12 @@ import { createWikiGetTool } from "./tool.js";
 const {
   getActiveMemorySearchManagerMock,
   loadCombinedSessionStoreForGatewayMock,
-  resolveDefaultAgentIdMock,
   resolveSessionAgentIdMock,
+  resolveSoleAgentIdMock,
 } = vi.hoisted(() => ({
   getActiveMemorySearchManagerMock: vi.fn(),
   loadCombinedSessionStoreForGatewayMock: vi.fn(),
-  resolveDefaultAgentIdMock: vi.fn(() => "main"),
+  resolveSoleAgentIdMock: vi.fn(() => "main"),
   resolveSessionAgentIdMock: vi.fn(({ sessionKey }: { sessionKey?: string }) => {
     const match = /^agent:([^:]+):/.exec(sessionKey ?? "");
     return match?.[1] ?? "main";
@@ -35,8 +35,8 @@ vi.mock("openclaw/plugin-sdk/memory-host-search", () => ({
 vi.mock("@openclaw/memory-core/api.js", { spy: true });
 
 vi.mock("openclaw/plugin-sdk/memory-host-core", () => ({
-  resolveDefaultAgentId: resolveDefaultAgentIdMock,
   resolveSessionAgentId: resolveSessionAgentIdMock,
+  resolveSoleAgentId: resolveSoleAgentIdMock,
 }));
 
 vi.mock("openclaw/plugin-sdk/session-transcript-hit", async (importOriginal) => {
@@ -78,7 +78,7 @@ beforeEach(() => {
   getActiveMemorySearchManagerMock.mockResolvedValue({ manager: null, error: "unavailable" });
   loadCombinedSessionStoreForGatewayMock.mockReset();
   loadCombinedSessionStoreForGatewayMock.mockReturnValue({ storePath: "(test)", store: {} });
-  resolveDefaultAgentIdMock.mockClear();
+  resolveSoleAgentIdMock.mockClear();
   resolveSessionAgentIdMock.mockClear();
   vi.mocked(filterMemorySearchHitsBySessionVisibility).mockClear();
 });
@@ -108,7 +108,9 @@ async function createQueryVault(options?: {
 function createAppConfig(): OpenClawConfig {
   return {
     agents: {
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      entries: { main: {} },
+      defaults: { systemAgent: { agentId: "main" } },
     },
   } as OpenClawConfig;
 }
@@ -116,8 +118,12 @@ function createAppConfig(): OpenClawConfig {
 function createSessionVisibilityAppConfig(): OpenClawConfig {
   return {
     agents: {
-      defaults: { sandbox: { sessionToolsVisibility: "all" } },
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      entries: { main: {} },
+      defaults: {
+        sandbox: { sessionToolsVisibility: "all" },
+        systemAgent: { agentId: "main" },
+      },
     },
     tools: {
       sessions: { visibility: "self" },
@@ -127,7 +133,11 @@ function createSessionVisibilityAppConfig(): OpenClawConfig {
 
 function createAgentSessionVisibilityAppConfig(): OpenClawConfig {
   return {
-    agents: { list: [{ id: "main", default: true }, { id: "secondary" }] },
+    agents: {
+      ownership: "explicit",
+      entries: { main: {}, secondary: {} },
+      defaults: { systemAgent: { agentId: "main" } },
+    },
     tools: { sessions: { visibility: "agent" } },
   } as OpenClawConfig;
 }
@@ -1139,7 +1149,9 @@ describe("searchMemoryWiki", () => {
     const appConfig = {
       session: { scope: "global" },
       agents: {
-        list: [{ id: "main", default: true }, { id: "secondary" }],
+        ownership: "explicit",
+        entries: { main: {}, secondary: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     } as OpenClawConfig;
     loadCombinedSessionStoreForGatewayMock.mockReturnValue({

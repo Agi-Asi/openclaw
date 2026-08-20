@@ -83,7 +83,11 @@ describe("AcpSessionManager", () => {
     const cfg = {
       ...baseCfg,
       session: { mainKey: "main" },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
 
     await manager.runTurn({

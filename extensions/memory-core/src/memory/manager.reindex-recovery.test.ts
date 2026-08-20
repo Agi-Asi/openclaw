@@ -71,10 +71,12 @@ describe("memory manager reindex recovery", () => {
         },
       },
       agents: {
+        ownership: "explicit",
         defaults: {
+          systemAgent: { agentId: "main" },
           workspace: workspaceDir,
         },
-        list: [{ id: "main", default: true }],
+        entries: { main: {} },
       },
     };
   }

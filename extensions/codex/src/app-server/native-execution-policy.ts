@@ -1,7 +1,4 @@
-import {
-  resolveAgentConfig,
-  tryResolveDefaultAgentId,
-} from "openclaw/plugin-sdk/agent-scope-runtime";
+import { resolveAgentConfig, tryResolveSoleAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
 /**
  * Resolves whether Codex app-server native execution can own shell/file work,
  * or whether OpenClaw must keep exec/process on a configured node host.
@@ -131,7 +128,7 @@ function resolvePolicyAgentId(params: {
   if (sessionAgentId) {
     return sessionAgentId;
   }
-  return tryResolveDefaultAgentId(params.config);
+  return tryResolveSoleAgentId(params.config);
 }
 
 function resolvePolicyAgentExec(params: {
@@ -176,7 +173,7 @@ function isDefaultAgentSessionKeyForAgent(params: {
   config: OpenClawConfig;
   agentId: string;
 }): boolean {
-  return normalizeAgentId(params.agentId) === tryResolveDefaultAgentId(params.config);
+  return normalizeAgentId(params.agentId) === tryResolveSoleAgentId(params.config);
 }
 
 function normalizeAgentIdOrDefault(value?: string | null): string | undefined {

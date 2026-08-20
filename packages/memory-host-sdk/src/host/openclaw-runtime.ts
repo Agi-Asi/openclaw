@@ -6,9 +6,10 @@ export {
   resolveAgentContextLimits,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   resolveSessionAgentId,
 } from "../../../../src/agents/agent-scope.js";
+export { resolveDefaultAgentId } from "../../../../src/plugin-sdk/agent-scope-runtime.js";
 export { stripInternalRuntimeContext } from "../../../../src/agents/internal-runtime-context.js";
 export { DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR } from "../../../../src/agents/agent-settings.js";
 export {

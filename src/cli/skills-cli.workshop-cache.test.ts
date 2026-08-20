@@ -52,7 +52,7 @@ vi.mock("../config/config.js", () => ({
 }));
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentIdByWorkspacePath: () => undefined,
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
   resolveAgentWorkspaceDir: () => mocks.workspaceDir,
 }));
 

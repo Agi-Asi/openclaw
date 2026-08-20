@@ -90,7 +90,7 @@ vi.mock("./auth-choice.apply.api-providers.js", () => {
 const detectZaiEndpoint = vi.hoisted(() => vi.fn<DetectZaiEndpoint>(async () => null));
 
 vi.mock("../agents/agent-scope.js", () => ({
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
   resolveAgentDir: (configForTest: unknown, agentId: string) =>
     `${process.env.OPENCLAW_STATE_DIR ?? "/tmp/openclaw-state"}/agents/${agentId}/agent`,
   resolveAgentWorkspaceDir: (configForTest: unknown, agentId: string) =>

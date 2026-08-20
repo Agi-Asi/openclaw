@@ -4,7 +4,6 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import {
   applyLocalModelLeanToolSearchDefaults,
@@ -56,8 +55,10 @@ describe("local model lean tool filtering", () => {
   it("keeps explicitly preserved tools when lean mode is enabled", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        entries: { main: {} },
         defaults: {
+          systemAgent: { agentId: "main" },
           experimental: {
             localModelLean: true,
           },
@@ -99,8 +100,10 @@ describe("local model lean tool filtering", () => {
   it("keeps image understanding while trimming optional media production tools", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        entries: { main: {} },
         defaults: {
+          systemAgent: { agentId: "main" },
           experimental: {
             localModelLean: true,
           },
@@ -138,8 +141,10 @@ describe("local model lean tool filtering", () => {
   it("does not treat wildcard preservation as disabling lean mode", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        entries: { main: {} },
         defaults: {
+          systemAgent: { agentId: "main" },
           experimental: {
             localModelLean: true,
           },
@@ -159,8 +164,12 @@ describe("local model lean tool filtering", () => {
   it("matches wildcard preservation without treating a bare wildcard as an override", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        defaults: { experimental: { localModelLean: true } },
-        entries: { main: { default: true } },
+        ownership: "explicit",
+        defaults: {
+          experimental: { localModelLean: true },
+          systemAgent: { agentId: "main" },
+        },
+        entries: { main: {} },
       },
     };
     expect(
@@ -252,15 +261,15 @@ describe("local model lean tool filtering", () => {
   it("uses the configured default agent when no agent id is explicit", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: "gemma",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "gemma" } },
+        entries: {
+          gemma: {
             experimental: {
               localModelLean: true,
             },
           },
-        ],
+        },
       },
     };
 
@@ -273,19 +282,17 @@ describe("local model lean tool filtering", () => {
     ).toEqual(["read", "exec"]);
   });
 
-  it("uses the retained legacy owner when no session scope is provided", () => {
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        agents: {
-          ownership: "explicit",
-          entries: {
-            ops: { experimental: { localModelLean: false } },
-            gemma: { experimental: { localModelLean: true } },
-          },
+  it("uses the configured ambient owner when no session scope is provided", () => {
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "gemma" } },
+        entries: {
+          ops: { experimental: { localModelLean: false } },
+          gemma: { experimental: { localModelLean: true } },
         },
       },
-      "gemma",
-    );
+    } satisfies OpenClawConfig;
 
     expect(isLocalModelLeanEnabled({ config: cfg })).toBe(true);
   });

@@ -159,7 +159,13 @@ function joinMeeting(
 describe("Zoom meeting session flow", () => {
   it("joins, reuses, reports, snapshots, speaks safely, and leaves through core", async () => {
     const { harness, runtime } = runtimeFixture({
-      fullConfig: { agents: { list: [{ id: "operator", default: true }] } },
+      fullConfig: {
+        agents: {
+          ownership: "explicit",
+          entries: { operator: {} },
+          defaults: { systemAgent: { agentId: "operator" } },
+        },
+      },
     });
 
     const first = await joinMeeting(runtime);

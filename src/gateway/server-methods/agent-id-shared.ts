@@ -4,8 +4,8 @@ import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/i
 import {
   AgentSelectionRequiredError,
   listAgentIds,
-  resolveDefaultAgentId,
-  tryResolveLegacyCompatibilityAgentId,
+  resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId,
 } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { RespondFn } from "./types.js";
@@ -25,8 +25,8 @@ export function resolveAgentIdOrRespondError(params: {
   try {
     agentId =
       requestedAgentId ||
-      tryResolveLegacyCompatibilityAgentId(params.cfg) ||
-      resolveDefaultAgentId(params.cfg, {
+      tryResolveAmbientOwnerAgentId(params.cfg) ||
+      resolveSoleAgentId(params.cfg, {
         surface: "this Gateway request",
         hint: "Set agentId to one of the configured agents.",
       });

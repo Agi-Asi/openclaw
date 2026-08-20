@@ -20,7 +20,7 @@ const refreshPreparedModelRuntimeSnapshotsMock = vi.fn(
 vi.mock("../agents/agent-scope.js", () => ({
   resolveDefaultAgentDir: () => "/tmp/agent",
   resolveAgentWorkspaceDir: () => "/tmp/workspace",
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
 }));
 
 vi.mock("../agents/prepared-model-runtime.js", () => ({

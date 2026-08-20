@@ -45,10 +45,12 @@ export function makeCfg(
 ): OpenClawConfig {
   const base: OpenClawConfig = {
     agents: {
-      entries: { main: { default: true } },
+      ownership: "explicit",
+      entries: { main: {} },
       defaults: {
         model: "anthropic/claude-opus-4-6",
         workspace: path.join(home, "openclaw"),
+        systemAgent: { agentId: "main" },
       },
     },
     session: { store: storePath, mainKey: "main" },

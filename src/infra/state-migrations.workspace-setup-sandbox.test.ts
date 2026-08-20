@@ -110,8 +110,10 @@ describe("sandbox workspace Doctor migration", () => {
     const configuredSandboxRoot = "~/sandboxes";
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "agent",
@@ -119,7 +121,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: configuredSandboxRoot,
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const sandboxLayout = resolveSandboxWorkspaceLayoutPaths({
@@ -177,8 +179,10 @@ describe("sandbox workspace Doctor migration", () => {
       const sandboxRoot = path.join(context.homeDir, "sandboxes");
       const cfg = {
         agents: {
+          ownership: "explicit",
           defaults: {
             workspace: context.workspaceDir,
+            systemAgent: { agentId: "main" },
             sandbox: {
               mode: "all",
               scope,
@@ -186,7 +190,7 @@ describe("sandbox workspace Doctor migration", () => {
               workspaceRoot: "~/sandboxes",
             },
           },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
       } satisfies OpenClawConfig;
       const sandboxLayout = resolveSandboxWorkspaceLayoutPaths({
@@ -249,8 +253,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(context.homeDir, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "session",
@@ -258,7 +264,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: "~/sandboxes",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const layout = resolveSandboxWorkspaceLayoutPaths({
@@ -314,8 +320,10 @@ describe("sandbox workspace Doctor migration", () => {
       const sandboxRoot = path.join(context.homeDir, "sandboxes");
       const cfg = {
         agents: {
+          ownership: "explicit",
           defaults: {
             workspace: context.workspaceDir,
+            systemAgent: { agentId: "main" },
             sandbox: {
               mode,
               scope: "agent",
@@ -323,7 +331,7 @@ describe("sandbox workspace Doctor migration", () => {
               workspaceRoot: "~/sandboxes",
             },
           },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
       } satisfies OpenClawConfig;
       const sandboxLayout = resolveSandboxWorkspaceLayoutPaths({
@@ -356,8 +364,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(context.homeDir, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "session",
@@ -366,7 +376,7 @@ describe("sandbox workspace Doctor migration", () => {
           },
         },
         entries: {
-          main: { default: true },
+          main: {},
           "main-foo": { sandbox: { mode: "off" } },
           writer: { sandbox: { workspaceAccess: "rw" } },
         },
@@ -459,8 +469,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(context.homeDir, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "session",
@@ -469,7 +481,7 @@ describe("sandbox workspace Doctor migration", () => {
           },
         },
         entries: {
-          main: { default: true, sandbox: { mode: "off" } },
+          main: { sandbox: { mode: "off" } },
           "main-telegram": {},
         },
       },
@@ -529,11 +541,13 @@ describe("sandbox workspace Doctor migration", () => {
     const sessionKey = "agent:main:telegram:direct:requested-default-root";
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: { mode: "all", scope: "session", workspaceAccess: "ro" },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const workspaceFor = (stateDir: string) =>
@@ -596,8 +610,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(context.homeDir, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "session",
@@ -605,7 +621,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: "~/sandboxes",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const requestedSession = "agent:main:telegram:direct:requested-profile";
@@ -669,8 +685,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(context.homeDir, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "session",
@@ -678,7 +696,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: "~/sandboxes",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const activeLayout = resolveSandboxWorkspaceLayoutPaths({
@@ -734,8 +752,10 @@ describe("sandbox workspace Doctor migration", () => {
     const cfg = {
       session: { scope: "global" },
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "session",
@@ -743,7 +763,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: "~/sandboxes",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const sandboxLayout = resolveSandboxWorkspaceLayoutPaths({
@@ -791,8 +811,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(context.homeDir, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "non-main",
             scope: "session",
@@ -800,7 +822,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: "~/sandboxes",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const mainLayout = resolveSandboxWorkspaceLayoutPaths({
@@ -864,8 +886,10 @@ describe("sandbox workspace Doctor migration", () => {
     const sandboxRoot = path.join(effectiveHome, "sandboxes");
     const cfg = {
       agents: {
+        ownership: "explicit",
         defaults: {
           workspace: context.workspaceDir,
+          systemAgent: { agentId: "main" },
           sandbox: {
             mode: "all",
             scope: "agent",
@@ -873,7 +897,7 @@ describe("sandbox workspace Doctor migration", () => {
             workspaceRoot: "~/sandboxes",
           },
         },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     } satisfies OpenClawConfig;
     const sandboxLayout = resolveSandboxWorkspaceLayoutPaths({

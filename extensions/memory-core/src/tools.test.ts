@@ -22,6 +22,7 @@ import { createMemorySearchTool, testing as memoryToolsTesting } from "./tools.j
 import { buildMemorySearchUnavailableResult } from "./tools.shared.js";
 import {
   asOpenClawConfig,
+  createDefaultMemoryToolAgents,
   createMemorySearchToolOrThrow,
   expectUnavailableMemorySearchDetails,
 } from "./tools.test-helpers.js";
@@ -171,7 +172,7 @@ describe("memory_search unavailable payloads", () => {
     ]);
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -202,7 +203,7 @@ describe("memory_search unavailable payloads", () => {
     ]);
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -216,7 +217,7 @@ describe("memory_search unavailable payloads", () => {
     const acquireLocalService = vi.fn(async () => undefined);
     const tool = createMemorySearchTool({
       config: asOpenClawConfig({
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
       }),
       acquireLocalService,
     });
@@ -439,7 +440,7 @@ describe("memory_search unavailable payloads", () => {
 
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -486,7 +487,7 @@ describe("memory_search unavailable payloads", () => {
 
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
       oneShotCliRun: true,
@@ -522,7 +523,7 @@ describe("memory_search unavailable payloads", () => {
 
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -538,7 +539,7 @@ describe("memory_search unavailable payloads", () => {
     setMemorySearchImpl(async () => []);
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -572,7 +573,7 @@ describe("memory_search unavailable payloads", () => {
     });
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -611,7 +612,7 @@ describe("memory_search unavailable payloads", () => {
 
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
       },
     });
@@ -680,7 +681,7 @@ describe("memory_search unavailable payloads", () => {
 
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
       },
     });
     const result = await tool.execute("manager-debug", { query: "favorite food" });
@@ -711,10 +712,11 @@ describe("memory_search corpus labels", () => {
     const tool = createMemorySearchToolOrThrow({
       config: asOpenClawConfig({
         agents: {
-          list: [
-            { id: "main", default: true, memory: { search: { enabled: false } } },
-            { id: "recall", memory: { search: { enabled: true } } },
-          ],
+          ...createDefaultMemoryToolAgents(),
+          entries: {
+            main: { memory: { search: { enabled: false } } },
+            recall: { memory: { search: { enabled: true } } },
+          },
         },
       }),
       agentId: "recall",
@@ -728,10 +730,7 @@ describe("memory_search corpus labels", () => {
 
   it("re-resolves config when executing a previously created tool", async () => {
     const startupConfig = asOpenClawConfig({
-      agents: {
-        defaults: {},
-        list: [{ id: "main", default: true }],
-      },
+      agents: createDefaultMemoryToolAgents(),
       memory: {
         search: {
           provider: "ollama",
@@ -740,10 +739,7 @@ describe("memory_search corpus labels", () => {
       },
     });
     const patchedConfig = asOpenClawConfig({
-      agents: {
-        defaults: {},
-        list: [{ id: "main", default: true }],
-      },
+      agents: createDefaultMemoryToolAgents(),
       memory: {
         search: {
           provider: "openai",
@@ -776,10 +772,7 @@ describe("memory_search corpus labels", () => {
     });
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: {
-          defaults: {},
-          list: [{ id: "main", default: true }],
-        },
+        agents: createDefaultMemoryToolAgents(),
         memory: {
           citations: "off",
           search: { rememberAcrossConversations: true },
@@ -870,10 +863,7 @@ describe("memory_search corpus labels", () => {
       });
       const tool = createMemorySearchToolOrThrow({
         config: {
-          agents: {
-            defaults: {},
-            list: [{ id: "main", default: true }],
-          },
+          agents: createDefaultMemoryToolAgents(),
           memory: {
             citations: "off",
             search: { rememberAcrossConversations: true },
@@ -901,10 +891,7 @@ describe("memory_search corpus labels", () => {
       });
       const tool = createMemorySearchToolOrThrow({
         config: {
-          agents: {
-            defaults: {},
-            list: [{ id: "main", default: true }],
-          },
+          agents: createDefaultMemoryToolAgents(),
           memory: {
             citations: "off",
             search: {
@@ -948,7 +935,7 @@ describe("memory_search corpus labels", () => {
     });
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
         tools: { sessions: { visibility: "self" } },
       },
@@ -983,10 +970,7 @@ describe("memory_search corpus labels", () => {
     });
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: {
-          defaults: {},
-          list: [{ id: "main", default: true }],
-        },
+        agents: createDefaultMemoryToolAgents(),
         memory: {
           citations: "off",
           search: { rememberAcrossConversations: true },
@@ -1031,7 +1015,7 @@ describe("memory_search corpus labels", () => {
     });
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: { citations: "off" },
         tools: { sessions: { visibility: "self" } },
       },
@@ -1098,7 +1082,7 @@ describe("memory_search corpus labels", () => {
     setMemorySourceCounts([{ source: "sessions", files: 3, chunks: 4 }]);
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: createDefaultMemoryToolAgents(),
         memory: {
           citations: "off",
           search: {
@@ -1197,10 +1181,7 @@ describe("memory_search corpus labels", () => {
 
     const tool = createMemorySearchToolOrThrow({
       config: {
-        agents: {
-          defaults: {},
-          list: [{ id: "main", default: true }],
-        },
+        agents: createDefaultMemoryToolAgents(),
         memory: {
           citations: "off",
           search: {

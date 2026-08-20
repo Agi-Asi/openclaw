@@ -587,7 +587,7 @@ vi.mock("./agent-scope.js", () => ({
       ?.agents?.defaults?.model;
     return typeof raw === "string" ? raw : raw?.primary;
   },
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
   resolveEffectiveModelFallbacks: state.resolveEffectiveModelFallbacksMock,
   resolveSessionAgentIds: () => ({ defaultAgentId: "default", sessionAgentId: "default" }),
   resolveSessionAgentId: () => "default",

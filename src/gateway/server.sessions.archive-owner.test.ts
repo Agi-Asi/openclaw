@@ -1,5 +1,4 @@
 import { expect, test, vi } from "vitest";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { registerChatAbortController } from "./chat-abort.js";
 import { createChatRunState } from "./server-chat-state.js";
 import { writeSessionStore } from "./test-helpers.js";
@@ -11,15 +10,16 @@ import {
 
 const { createSessionStoreDir } = setupGatewaySessionsHandlerTestHarness();
 
-test("archiving a non-default agent ignores the compatibility owner's ownerless run", async () => {
+test("archiving a non-default agent ignores the ambient owner's ownerless run", async () => {
   const { storePath } = await createSessionStoreDir();
-  const cfg = retainLegacyDefaultAgentId(
-    {
-      agents: { ownership: "explicit", entries: { ops: {}, research: {} } },
-      session: { store: storePath },
+  const cfg = {
+    agents: {
+      ownership: "explicit" as const,
+      defaults: { systemAgent: { agentId: "ops" } },
+      entries: { ops: {}, research: {} },
     },
-    "ops",
-  );
+    session: { store: storePath },
+  };
   const sessionKey = "agent:research:archive-owner-scope";
   const sessionId = "session-archive-owner-scope";
   await writeSessionStore({

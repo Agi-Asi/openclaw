@@ -244,7 +244,9 @@ describe("plugin session attachments", () => {
         config: {
           session: { store: storePath },
           agents: {
-            list: [{ id: "main", default: true, workspace: workspaceDir }],
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: workspaceDir } },
           },
         },
       });

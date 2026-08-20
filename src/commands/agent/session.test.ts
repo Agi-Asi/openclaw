@@ -34,10 +34,12 @@ vi.mock("../../agents/agent-scope.js", async () => {
   );
   return {
     listAgentIds: mocks.listAgentIds,
-    resolveDefaultAgentId: (cfg: OpenClawConfig) => {
+    resolveSoleAgentId: (cfg: OpenClawConfig) => {
       const agents = cfg.agents?.list ?? [];
-      return normalizeAgentId(agents.find((agent) => agent?.default)?.id ?? agents[0]?.id);
+      return normalizeAgentId(agents[0]?.id);
     },
+    tryResolveAmbientOwnerAgentId: (cfg: OpenClawConfig) =>
+      normalizeAgentId(cfg.agents?.defaults?.systemAgent?.agentId ?? cfg.agents?.list?.[0]?.id),
   };
 });
 
@@ -118,7 +120,7 @@ describe("resolveSessionKeyForRequest", () => {
 
     const result = resolveSessionKeyForRequest({
       cfg: {
-        agents: { list: [{ id: "mybot", default: true }] },
+        agents: { list: [{ id: "mybot" }] },
       } satisfies OpenClawConfig,
       to: "+15551234567",
     });
@@ -136,7 +138,7 @@ describe("resolveSessionKeyForRequest", () => {
 
     const result = resolveSessionKeyForRequest({
       cfg: {
-        agents: { list: [{ id: "mybot", default: true }] },
+        agents: { list: [{ id: "mybot" }] },
         session: { mainKey: "work" },
       } satisfies OpenClawConfig,
       sessionKey: "main",
@@ -159,7 +161,7 @@ describe("resolveSessionKeyForRequest", () => {
 
     const result = resolveSessionKeyForRequest({
       cfg: {
-        agents: { list: [{ id: "mybot", default: true }] },
+        agents: { list: [{ id: "mybot" }] },
       } satisfies OpenClawConfig,
       to: "+15551234567",
     });
@@ -180,7 +182,7 @@ describe("resolveSessionKeyForRequest", () => {
 
     const result = resolveSessionKeyForRequest({
       cfg: {
-        agents: { list: [{ id: "mybot", default: true }] },
+        agents: { list: [{ id: "mybot" }] },
         session: { store: SHARED_STORE_PATH },
       } satisfies OpenClawConfig,
       to: "+15551234567",
@@ -211,7 +213,7 @@ describe("resolveSessionKeyForRequest", () => {
 
     const result = resolveSessionKeyForRequest({
       cfg: {
-        agents: { list: [{ id: "mybot", default: true }] },
+        agents: { list: [{ id: "mybot" }] },
       } satisfies OpenClawConfig,
       to: "+15551234567",
     });

@@ -262,7 +262,13 @@ describe("stale OAuth profile shadow doctor repair", () => {
     );
 
     const result = await repairStaleOAuthProfileShadows({
-      cfg: { agents: { entries: { telegram: { default: true } } } } satisfies OpenClawConfig,
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          entries: { telegram: {} },
+          defaults: { systemAgent: { agentId: "telegram" } },
+        },
+      } satisfies OpenClawConfig,
       env,
       now,
     });

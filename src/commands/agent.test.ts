@@ -400,6 +400,7 @@ function mockConfig(
   agentOverrides?: Partial<NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]>>,
   telegramOverrides?: Partial<NonNullable<NonNullable<OpenClawConfig["channels"]>["telegram"]>>,
   agentsList?: NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>,
+  systemAgentId?: string,
 ) {
   const cfg = {
     meta: { migrations: { modelPolicyAllowlist: true } },
@@ -409,8 +410,14 @@ function mockConfig(
         models: { "anthropic/claude-opus-4-6": {} },
         workspace: path.join(home, "openclaw"),
         ...agentOverrides,
+        ...(systemAgentId ? { systemAgent: { agentId: systemAgentId } } : {}),
       },
-      list: agentsList,
+      ...(agentsList
+        ? {
+            ownership: "explicit",
+            entries: Object.fromEntries(agentsList.map(({ id, ...entry }) => [id, entry])),
+          }
+        : {}),
     },
     session: { store: storePath, mainKey: "main" },
     channels: {
@@ -1293,7 +1300,8 @@ describe("agentCommand", () => {
           thinkingDefault: "high",
         },
         undefined,
-        [{ id: "main", default: true, thinkingDefault: "off" }],
+        [{ id: "main", thinkingDefault: "off" }],
+        "main",
       );
 
       await agentCommandFromIngress(
@@ -2420,7 +2428,7 @@ describe("agentCommand", () => {
   it("scopes bare explicit session keys to the default agent for embedded runs", async () => {
     await withTempHome(async (home) => {
       const store = path.join(home, "sessions.json");
-      mockConfig(home, store, undefined, undefined, [{ id: "ops", default: true }, { id: "main" }]);
+      mockConfig(home, store, undefined, undefined, [{ id: "ops" }, { id: "main" }], "ops");
 
       await agentCommand({ message: "hi", sessionKey: "incident-42" }, runtime);
 

@@ -75,8 +75,12 @@ describe.runIf(process.platform === "win32")("host-local media tool file URLs", 
 
         const config: OpenClawConfig = {
           agents: {
-            entries: { main: { default: true } },
-            defaults: { pdfModel: { primary: "anthropic/claude-opus-4-6" } },
+            ownership: "explicit",
+            entries: { main: {} },
+            defaults: {
+              pdfModel: { primary: "anthropic/claude-opus-4-6" },
+              systemAgent: { agentId: "main" },
+            },
           },
         } as OpenClawConfig;
         const tools = createOpenClawTools({

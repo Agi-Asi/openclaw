@@ -138,7 +138,11 @@ describe("worker placement session evidence", () => {
       const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json");
       const cfg: OpenClawConfig = {
         session: { store: storeTemplate },
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
       };
       setRuntimeConfigSnapshot(cfg, cfg);
       const placement = localPlacement("session-canonical-main", "agent:main:main", "ops");
@@ -169,7 +173,11 @@ describe("worker placement session evidence", () => {
         session: {
           store: path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json"),
         },
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
       };
       setRuntimeConfigSnapshot(cfg, cfg);
       const placement = localPlacement("session-legacy-main", "agent:main:main", "ops");

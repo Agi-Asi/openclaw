@@ -23,7 +23,11 @@ import { normalizeMainKey } from "../routing/session-key.js";
 function makeNonDefaultAgentCfg(overrides?: Partial<OpenClawConfig>): OpenClawConfig {
   return {
     session: { mainKey: "work", scope: "per-sender" },
-    agents: { list: [{ id: "ops", default: true }] },
+    agents: {
+      ownership: "explicit",
+      entries: { ops: {} },
+      defaults: { systemAgent: { agentId: "ops" } },
+    },
     ...overrides,
   } as OpenClawConfig;
 }
@@ -130,7 +134,11 @@ describe("session key write/read round-trip (#29683)", () => {
   describe("no-op when default agent is main", () => {
     it("write and gateway canonical keys match when agent is main", () => {
       const cfg = {
-        agents: { entries: { main: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          entries: { main: {} },
+          defaults: { systemAgent: { agentId: "main" } },
+        },
         session: { scope: "per-sender" },
       } as OpenClawConfig;
       const mainKey = normalizeMainKey(cfg.session?.mainKey);

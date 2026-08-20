@@ -475,7 +475,13 @@ function supportsPreparedOpenAIAuth(ctx: Parameters<AgentHarness["supports"]>[0]
 
 function runSideQuestion(overrides: Partial<RunBtwSideQuestionParams> = {}) {
   return runBtwSideQuestion({
-    cfg: { agents: { entries: { main: { default: true } } } } as never,
+    cfg: {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    } as never,
     agentDir: DEFAULT_AGENT_DIR,
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
@@ -841,7 +847,13 @@ describe("runBtwSideQuestion", () => {
     );
 
     const result = await runBtwSideQuestion({
-      cfg: { agents: { entries: { main: { default: true } } } } as never,
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      } as never,
       agentDir: DEFAULT_AGENT_DIR,
       provider: DEFAULT_PROVIDER,
       model: DEFAULT_MODEL,
@@ -914,7 +926,13 @@ describe("runBtwSideQuestion", () => {
   });
 
   it("keeps model, runtime auth, and stream selection on prepared A after current advances to B", async () => {
-    const cfg = { agents: { entries: { main: { default: true } } } } as never;
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    } as never;
     const generationA = createModelGenerationFixture({
       config: cfg,
       label: "btw-a",

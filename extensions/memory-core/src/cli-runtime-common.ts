@@ -14,7 +14,7 @@ import {
   getMemorySearchManager,
   getRuntimeConfig,
   resolveCommandSecretRefsViaGateway,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   shortenHomePath,
   theme,
   type OpenClawConfig,
@@ -133,7 +133,7 @@ function resolveAgent(cfg: OpenClawConfig, agent?: string) {
   if (agent !== undefined && !trimmed) {
     throw new Error("--agent must not be blank");
   }
-  return trimmed ? resolveConfiguredAgentId(cfg, trimmed) : resolveDefaultAgentId(cfg);
+  return trimmed ? resolveConfiguredAgentId(cfg, trimmed) : resolveSoleAgentId(cfg);
 }
 export function buildCliMemorySearchSessionKey(agentId: string): string {
   return buildAgentSessionKey({

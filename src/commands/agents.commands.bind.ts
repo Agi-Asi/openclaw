@@ -1,6 +1,6 @@
 // Implements agent route binding list/add/remove subcommands.
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import { listAgentEntries, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { listAgentEntries, resolveSoleAgentId } from "../agents/agent-scope.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { isRouteBinding, listRouteBindings } from "../config/bindings.js";
 import { replaceConfigFile } from "../config/config.js";
@@ -47,7 +47,7 @@ function hasAgent(cfg: Awaited<ReturnType<typeof requireValidConfig>>, agentId: 
   const targetAgentId = normalizeAgentId(agentId);
   const agents = listAgentEntries(cfg);
   if (agents.length === 0) {
-    return targetAgentId === normalizeAgentId(resolveDefaultAgentId(cfg));
+    return targetAgentId === normalizeAgentId(resolveSoleAgentId(cfg));
   }
   return agents.some((agent) => normalizeAgentId(agent.id) === targetAgentId);
 }
@@ -70,7 +70,7 @@ function resolveTargetAgentIdOrExit(params: {
     params.runtime.exit(1);
     return null;
   }
-  const agentId = normalized?.value ?? resolveDefaultAgentId(params.cfg);
+  const agentId = normalized?.value ?? resolveSoleAgentId(params.cfg);
   if (!hasAgent(params.cfg, agentId)) {
     params.runtime.error(
       `Agent "${agentId}" not found. Run ${formatCliCommand("openclaw agents list")} to see configured agents.`,

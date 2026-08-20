@@ -230,8 +230,9 @@ describe("runPreflightCompactionIfNeeded stale totalTokens gating", () => {
       const result = await runPreflightCompactionIfNeeded({
         cfg: {
           agents: {
-            list: [{ id: "ops", default: true }, { id: "worker" }],
-            defaults: { compaction: { memoryFlush: {} } },
+            ownership: "explicit",
+            entries: { ops: {}, worker: {} },
+            defaults: { compaction: { memoryFlush: {} }, systemAgent: { agentId: "ops" } },
           },
         },
         followupRun: createTestFollowupRun({

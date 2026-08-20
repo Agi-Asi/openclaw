@@ -1,5 +1,5 @@
 // Skill Workshop diagnostics explain which effective policy layer hides its agent tool.
-import { listAgentEntriesWithSource, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { listAgentEntriesWithSource, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import {
   resolveConversationCapabilityProfile,
   type ResolvedConversationCapabilityProfile,
@@ -230,7 +230,7 @@ export function detectSkillWorkshopToolPolicyDiagnostic(params: {
   if (!params.workshopEnabled) {
     return null;
   }
-  const agentId = normalizeAgentId(params.agentId ?? resolveDefaultAgentId(params.config));
+  const agentId = normalizeAgentId(params.agentId ?? resolveSoleAgentId(params.config));
   const model = resolveDefaultModelForAgent({ cfg: params.config, agentId });
   const capabilityProfile = resolveConversationCapabilityProfile({
     config: params.config,

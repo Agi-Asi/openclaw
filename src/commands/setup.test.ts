@@ -167,7 +167,11 @@ describe("setupCommand", () => {
       const configPath = path.join(configDir, "openclaw.json");
       const workspace = "/srv/ops";
       const raw = JSON.stringify({
-        agents: { entries: { ops: { default: true, workspace } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: { workspace } },
+        },
         gateway: { mode: "local" },
       });
       await fs.mkdir(configDir, { recursive: true });
@@ -198,7 +202,11 @@ describe("setupCommand", () => {
       await fs.writeFile(
         configPath,
         JSON.stringify({
-          agents: { entries: { ops: { default: true, workspace } } },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "ops" } },
+            entries: { ops: { workspace } },
+          },
         }),
       );
       const deps = {
@@ -269,8 +277,9 @@ describe("setupCommand", () => {
         includePath,
         JSON.stringify({
           agents: {
-            defaults: { workspace },
-            entries: { ops: { default: true } },
+            ownership: "explicit",
+            defaults: { workspace, systemAgent: { agentId: "ops" } },
+            entries: { ops: {} },
           },
           gateway: { mode: "local" },
         }),
@@ -299,8 +308,9 @@ describe("setupCommand", () => {
       const nextWorkspace = path.join(home, "next-workspace");
       const included = {
         agents: {
-          defaults: { workspace: oldWorkspace },
-          entries: { ops: { default: true, workspace: "   " } },
+          ownership: "explicit",
+          defaults: { workspace: oldWorkspace, systemAgent: { agentId: "ops" } },
+          entries: { ops: { workspace: "   " } },
         },
         gateway: { mode: "local" },
       };
@@ -335,8 +345,9 @@ describe("setupCommand", () => {
       const oldWorkspace = path.join(home, "old-workspace");
       const nextWorkspace = path.join(home, "next-workspace");
       const includedAgents = {
-        defaults: { workspace: oldWorkspace },
-        entries: { ops: { default: true } },
+        ownership: "explicit",
+        defaults: { workspace: oldWorkspace, systemAgent: { agentId: "ops" } },
+        entries: { ops: {} },
       };
       await fs.mkdir(configDir, { recursive: true });
       await fs.writeFile(

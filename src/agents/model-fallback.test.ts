@@ -1550,16 +1550,17 @@ describe("runWithModelFallback", () => {
   it("uses agent runtime context before auth cooldown skips", async () => {
     const cfg = makeCfg({
       agents: {
-        list: [
-          { id: "main", default: true },
-          {
-            id: "worker",
+        ownership: "explicit",
+        entries: {
+          main: {},
+          worker: {
             models: {
               "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
             },
           },
-        ],
+        },
         defaults: {
+          systemAgent: { agentId: "main" },
           model: {
             primary: "openai/gpt-5.5",
             fallbacks: ["anthropic/claude-sonnet-4-6"],
@@ -3248,16 +3249,17 @@ describe("runWithModelFallback", () => {
   it("executes fallback aliases in the selected agent scope", async () => {
     const cfg = makeCfg({
       agents: {
-        list: [
-          { id: "main", default: true },
-          {
-            id: "worker",
+        ownership: "explicit",
+        entries: {
+          main: {},
+          worker: {
             models: {
               "anthropic/worker-fallback": { alias: "fast" },
             },
           },
-        ],
+        },
         defaults: {
+          systemAgent: { agentId: "main" },
           model: {
             primary: "openai/primary",
             fallbacks: ["fast"],

@@ -9,7 +9,7 @@ import {
 import {
   AgentSelectionRequiredError,
   listAgentIds,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import { modelKey, parseModelRef, resolveDefaultModelForAgent } from "../agents/model-selection.js";
 import { createModelVisibilityPolicy } from "../agents/model-visibility-policy.js";
@@ -125,7 +125,7 @@ export function resolveAgentIdFromModel(
   }
   const lowered = normalizeLowercaseStringOrEmpty(raw);
   if (lowered === OPENCLAW_MODEL_ID || lowered === OPENCLAW_DEFAULT_MODEL_ID) {
-    return resolveDefaultAgentId(cfg);
+    return resolveSoleAgentId(cfg);
   }
 
   const m =
@@ -237,7 +237,7 @@ export function resolveAgentIdForRequest(params: {
     return fromModel;
   }
 
-  return resolveDefaultAgentId(cfg);
+  return resolveSoleAgentId(cfg);
 }
 
 function resolveSessionKey(params: {

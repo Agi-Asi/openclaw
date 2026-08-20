@@ -99,7 +99,13 @@ vi.mock("../config/config.js", async (importOriginal) => {
       issues: [],
       config: {},
       sourceConfig: {},
-      runtimeConfig: { agents: { entries: { main: { default: true } } } },
+      runtimeConfig: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
     })),
   };
 });
@@ -129,7 +135,11 @@ vi.mock("../commands/onboard-inference.js", async (importActual) => {
 
 const runtime = { log: () => {}, error: () => {}, exit: () => {} } as never;
 const materializedMainRuntimeConfig: OpenClawConfig = {
-  agents: { entries: { main: { default: true } } },
+  agents: {
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {} },
+  },
 };
 const testCliRuntimeArtifactFingerprint = "test-cli-runtime-artifact";
 const testCodexRuntimeArtifact = {
@@ -194,7 +204,11 @@ async function createMainAgentFixture() {
   const stateDir = await suiteTempRootTracker.make("case");
   const agentDir = path.join(stateDir, "agent");
   const initialConfig = {
-    agents: { list: [{ id: "main", default: true, agentDir }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: { agentDir } },
+    },
   } satisfies OpenClawConfig;
   return { stateDir, agentDir, initialConfig };
 }
@@ -625,10 +639,10 @@ describe("applySystemAgentModelSelection", () => {
   it("overrides higher-priority runtime metadata on an inheriting default agent", async () => {
     const config = {
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.4" } },
+        ownership: "explicit",
+        defaults: { model: { primary: "openai/gpt-5.4" }, systemAgent: { agentId: "ops" } },
         entries: {
           ops: {
-            default: true,
             models: {
               "openai/gpt-5.5": { agentRuntime: { id: "openclaw" } },
             },
@@ -1116,10 +1130,10 @@ describe("detectSetupInference", () => {
     const { readConfigFileSnapshot } = await import("../config/config.js");
     const config: OpenClawConfig = {
       agents: {
-        defaults: { model: "openai/gpt-5.6-sol" },
+        ownership: "explicit",
+        defaults: { model: "openai/gpt-5.6-sol", systemAgent: { agentId: "main" } },
         entries: {
           main: {
-            default: true,
             models: {
               "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } },
             },
@@ -1175,10 +1189,10 @@ describe("detectSetupInference", () => {
     const { readConfigFileSnapshot } = await import("../config/config.js");
     const config: OpenClawConfig = {
       agents: {
-        defaults: { model: "openai/gpt-5.5" },
+        ownership: "explicit",
+        defaults: { model: "openai/gpt-5.5", systemAgent: { agentId: "main" } },
         entries: {
           main: {
-            default: true,
             models: {
               "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
             },
@@ -1532,21 +1546,19 @@ describe("activateSetupInference", () => {
   it("persists inference only after the live test succeeds", async () => {
     const initialConfig = {
       agents: {
+        ownership: "explicit",
         defaults: { systemAgent: { agentId: "ops" } },
-        list: [
-          {
-            id: "ops",
-            default: true,
+        entries: {
+          ops: {
             agentDir: "/tmp/openclaw-ops-agent",
             params: { temperature: 0.2 },
             tools: { allow: ["read"], deny: ["exec"] },
           },
-          {
-            id: "openclaw",
+          openclaw: {
             params: { temperature: 1.7 },
             tools: { allow: ["exec"] },
           },
-        ],
+        },
       },
     } satisfies OpenClawConfig;
     const configHarness = createConfigTransformHarness(initialConfig);
@@ -1747,7 +1759,12 @@ describe("activateSetupInference", () => {
         sourceConfig,
         runtimeConfig: {
           ...sourceConfig,
-          agents: { ...sourceConfig.agents, entries: { main: { default: true } } },
+          agents: {
+            ...sourceConfig.agents,
+            ownership: "explicit",
+            defaults: { ...sourceConfig.agents?.defaults, systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
         },
       };
     });
@@ -1844,7 +1861,11 @@ describe("activateSetupInference", () => {
 
   it("uses the materialized runtime roster when activating from a missing config file", async () => {
     const runtimeConfig: OpenClawConfig = {
-      agents: { entries: { main: { default: true } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     };
     const configHarness = createConfigTransformHarness(runtimeConfig, runtimeConfig);
 
@@ -1865,7 +1886,7 @@ describe("activateSetupInference", () => {
     expect(configHarness.current()).toMatchObject({
       agents: {
         defaults: { model: "claude-cli/claude-opus-5" },
-        entries: { main: { default: true } },
+        entries: { main: {} },
       },
     });
   });
@@ -1983,15 +2004,20 @@ describe("activateSetupInference", () => {
 
   it("rebases model persistence on concurrent default-agent edits", async () => {
     const probedConfig: OpenClawConfig = {
-      agents: { list: [{ id: "work", default: true, model: "openai/broken" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "work" } },
+        entries: { work: { model: "openai/broken" } },
+      },
     };
     const concurrentConfig: OpenClawConfig = {
       agents: {
+        ownership: "explicit",
         defaults: { systemAgent: { agentId: "work" } },
-        list: [
-          { id: "work", default: true, model: "openai/broken", name: "edited during probe" },
-          { id: "new-agent", model: "anthropic/claude-opus-5" },
-        ],
+        entries: {
+          work: { model: "openai/broken", name: "edited during probe" },
+          "new-agent": { model: "anthropic/claude-opus-5" },
+        },
       },
     };
     const configHarness = createConfigTransformHarness(concurrentConfig);
@@ -2011,7 +2037,6 @@ describe("activateSetupInference", () => {
     expect(persistedConfig.agents?.defaults?.systemAgent).toEqual({ agentId: "work" });
     expect(persistedConfig.agents?.entries).toEqual({
       work: {
-        default: true,
         model: "claude-cli/claude-opus-5",
         name: "edited during probe",
         models: { "claude-cli/claude-opus-5": {} },
@@ -2020,21 +2045,20 @@ describe("activateSetupInference", () => {
     });
   });
 
-  it.each([
+  it.each<{ name: string; concurrent: OpenClawConfig }>([
     {
       name: "default model",
       concurrent: {
         agents: {
+          ownership: "explicit",
           defaults: { systemAgent: { agentId: "ops" } },
-          list: [
-            {
-              id: "ops",
-              default: true,
+          entries: {
+            ops: {
               agentDir: "/tmp/ops",
               model: "anthropic/claude-opus-5",
             },
-            { id: "other", agentDir: "/tmp/other", model: "openai/broken" },
-          ],
+            other: { agentDir: "/tmp/other", model: "openai/broken" },
+          },
         },
       } satisfies OpenClawConfig,
     },
@@ -2042,11 +2066,12 @@ describe("activateSetupInference", () => {
       name: "system agent",
       concurrent: {
         agents: {
+          ownership: "explicit",
           defaults: { systemAgent: { agentId: "other" } },
-          list: [
-            { id: "ops", default: true, agentDir: "/tmp/ops", model: "openai/broken" },
-            { id: "other", agentDir: "/tmp/other", model: "openai/broken" },
-          ],
+          entries: {
+            ops: { agentDir: "/tmp/ops", model: "openai/broken" },
+            other: { agentDir: "/tmp/other", model: "openai/broken" },
+          },
         },
       } satisfies OpenClawConfig,
     },
@@ -2054,14 +2079,14 @@ describe("activateSetupInference", () => {
       name: "default agent directory",
       concurrent: {
         agents: {
-          list: [
-            {
-              id: "ops",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: {
+            ops: {
               agentDir: "/tmp/ops-moved",
               model: "openai/broken",
             },
-          ],
+          },
         },
       } satisfies OpenClawConfig,
     },
@@ -2069,29 +2094,29 @@ describe("activateSetupInference", () => {
       name: "system agent execution settings",
       concurrent: {
         agents: {
+          ownership: "explicit",
           defaults: { systemAgent: { agentId: "ops" } },
-          list: [
-            {
-              id: "ops",
-              default: true,
+          entries: {
+            ops: {
               agentDir: "/tmp/ops",
               model: "openai/broken",
               params: { temperature: 0.9 },
               tools: { deny: ["exec"] },
             },
-            { id: "other", agentDir: "/tmp/other", model: "openai/broken" },
-          ],
+            other: { agentDir: "/tmp/other", model: "openai/broken" },
+          },
         },
       } satisfies OpenClawConfig,
     },
   ])("rejects a changed $name after the live probe", async ({ concurrent }) => {
     const probedConfig = {
       agents: {
+        ownership: "explicit",
         defaults: { systemAgent: { agentId: "ops" } },
-        list: [
-          { id: "ops", default: true, agentDir: "/tmp/ops", model: "openai/broken" },
-          { id: "other", agentDir: "/tmp/other", model: "openai/broken" },
-        ],
+        entries: {
+          ops: { agentDir: "/tmp/ops", model: "openai/broken" },
+          other: { agentDir: "/tmp/other", model: "openai/broken" },
+        },
       },
     } satisfies OpenClawConfig;
     const configHarness = createConfigTransformHarness(concurrent);
@@ -2606,14 +2631,13 @@ describe("activateSetupInference", () => {
     const initialConfig = {
       models: { providers: { anthropic: providerConfig } },
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.4" } },
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { model: { primary: "openai/gpt-5.4" }, systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             model: { primary: "openai/gpt-5.4" },
           },
-        ],
+        },
       },
     } satisfies OpenClawConfig;
     const runEmbeddedAgent = vi.fn(successfulRunner("anthropic", "claude-opus-5"));
@@ -2888,7 +2912,11 @@ describe("activateSetupInference", () => {
       const stateDir = await suiteTempRootTracker.make("case");
       const agentDir = path.join(stateDir, "agent");
       const initialConfig = {
-        agents: { list: [{ id: "main", default: true, agentDir }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: { agentDir } },
+        },
         auth: {
           profiles: {
             "groq:legacy": { provider: "groq", mode: credentialType },
@@ -3070,8 +3098,9 @@ describe("activateSetupInference", () => {
       gateway: { port: 18_789 },
       channels: { discord: { enabled: false } },
       agents: {
-        defaults: { workspace: "/operator/workspace" },
-        list: [{ id: "main", default: true, agentDir }],
+        ownership: "explicit",
+        defaults: { workspace: "/operator/workspace", systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
       },
       auth: {
         profiles: { "operator:existing": { provider: "operator", mode: "api_key" } },
@@ -3312,7 +3341,11 @@ describe("activateSetupInference", () => {
     const stateDir = await suiteTempRootTracker.make("case");
     const agentDir = path.join(stateDir, "agent");
     const initialConfig = {
-      agents: { list: [{ id: "main", default: true, agentDir }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
+      },
       auth: { profiles: { "groq:default": { provider: "groq", mode: "api_key" } } },
     } satisfies OpenClawConfig;
     resolveAgentDir(initialConfig, "main");
@@ -3695,7 +3728,11 @@ describe("activateSetupInference", () => {
       models: [],
     };
     const initialConfig = {
-      agents: { list: [{ id: "main", default: true, agentDir }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
+      },
       models: { providers: { aux: auxProvider } },
     } satisfies OpenClawConfig;
     const concurrentConfig: OpenClawConfig = {
@@ -3856,15 +3893,17 @@ describe("activateSetupInference", () => {
     const initialConfig = {
       gateway: { port: 18789 },
       agents: {
-        defaults: { model: { primary: existingModel } },
-        list: [{ id: "main", default: true, agentDir }],
+        ownership: "explicit",
+        defaults: { model: { primary: existingModel }, systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
       },
     } satisfies OpenClawConfig;
     const concurrentConfig: OpenClawConfig = {
       gateway: { port: 19000 },
       agents: {
-        defaults: { model: { primary: existingModel } },
-        list: [{ id: "main", default: true, agentDir }],
+        ownership: "explicit",
+        defaults: { model: { primary: existingModel }, systemAgent: { agentId: "main" } },
+        entries: { main: { agentDir } },
       },
     } satisfies OpenClawConfig;
     const configHarness = createConfigTransformHarness(concurrentConfig);
@@ -4086,11 +4125,10 @@ describe("activateSetupInference", () => {
     const initialConfig = {
       gateway: { port: 18789 },
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.4" } },
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { model: { primary: "openai/gpt-5.4" }, systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             model: {
               primary: "anthropic/claude-opus-5",
               fallbacks: ["google/gemini-3.1-pro-preview"],
@@ -4099,7 +4137,7 @@ describe("activateSetupInference", () => {
               "openai/gpt-5.5": { agentRuntime: { id: "openclaw" } },
             },
           },
-        ],
+        },
       },
       models: {
         providers: {
@@ -4239,7 +4277,10 @@ describe("activateSetupInference", () => {
       expect.objectContaining({
         cfg: expect.objectContaining({
           agents: expect.objectContaining({
-            defaults: { model: { primary: "openai/gpt-5.4" } },
+            defaults: {
+              model: { primary: "openai/gpt-5.4" },
+              systemAgent: { agentId: "ops" },
+            },
             entries: expect.objectContaining({
               ops: expect.objectContaining({
                 model: {
@@ -4335,6 +4376,7 @@ describe("activateSetupInference", () => {
         agents: expect.objectContaining({
           defaults: {
             model: { primary: "openai/gpt-5.4" },
+            systemAgent: { agentId: "ops" },
           },
           entries: expect.objectContaining({
             ops: expect.objectContaining({
@@ -5965,14 +6007,14 @@ describe("verifySetupInference", () => {
             order: { openai: [profileId] },
           },
           agents: {
-            list: [
-              {
-                id: "main",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: {
+              main: {
                 agentDir,
                 model: { primary: `openai/gpt-5.5@${profileId}` },
               },
-            ],
+            },
           },
         },
         authProfiles: [
@@ -6153,16 +6195,16 @@ describe("verifySetupInference", () => {
     const result = await verifySetupInferenceConfig({
       config: {
         agents: {
-          list: [
-            {
-              id: "ops",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: {
+            ops: {
               model: { primary: "openai/gpt-5.5" },
               models: {
                 "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
               },
             },
-          ],
+          },
         },
       },
       deps: {
@@ -6190,15 +6232,14 @@ describe("verifySetupInference", () => {
     const result = await verifySetupInferenceConfig({
       config: {
         agents: {
-          defaults: {},
-          list: [
-            {
-              id: "ops",
-              default: true,
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: {
+            ops: {
               agentDir,
               model: { primary: "claude-cli/claude-opus-5@claude-cli:ops" },
             },
-          ],
+          },
         },
       },
       deps: {
@@ -6330,18 +6371,17 @@ describe("verifySetupInference", () => {
         order: { [testCase.profileProvider]: [testCase.profileId] },
       },
       agents: {
-        defaults: {},
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             agentDir,
             model: { primary: modelRef },
             models: {
               [modelRef]: { agentRuntime: { id: "google-gemini-cli" } },
             },
           },
-        ],
+        },
       },
     };
     resolveAgentDir(config, "ops");

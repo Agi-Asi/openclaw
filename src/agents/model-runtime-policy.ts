@@ -6,13 +6,16 @@
  */
 import { parseModelCatalogRef } from "@openclaw/model-catalog-core/model-catalog-refs";
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import type { AgentModelEntryConfig } from "../config/types.agent-defaults.js";
 import type { AgentRuntimePolicyConfig } from "../config/types.agents-shared.js";
 import type { ModelDefinitionConfig, ModelProviderConfig } from "../config/types.models.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeAgentId } from "../routing/session-key.js";
-import { listAgentEntries, resolveSessionAgentIds } from "./agent-scope.js";
+import {
+  listAgentEntries,
+  resolveSessionAgentIds,
+  tryResolveAmbientOwnerAgentId,
+} from "./agent-scope.js";
 
 /** Config surface that supplied a resolved model runtime policy. */
 type ModelRuntimePolicySource = "model" | "provider";
@@ -160,7 +163,7 @@ function resolveAgentModelEntryRuntimePolicy(params: {
         agentId: params.agentId,
         sessionKey: params.sessionKey,
       }).sessionAgentId
-    : tryResolveLegacyCompatibilityAgentId(params.config);
+    : tryResolveAmbientOwnerAgentId(params.config);
   const agentEntry = sessionAgentId
     ? listAgentEntries(params.config).find((entry) => normalizeAgentId(entry.id) === sessionAgentId)
     : undefined;

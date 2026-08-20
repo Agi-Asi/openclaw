@@ -473,6 +473,14 @@ describe("gateway method authorization", () => {
 });
 
 describe("sessions.patchMany orchestration", () => {
+  const mainAliasConfig = {
+    session: { mainKey: "work" },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
+  } satisfies OpenClawConfig;
   const context = (overrides: Record<string, unknown> = {}) =>
     ({
       getRuntimeConfig: () => ({}),
@@ -686,10 +694,7 @@ describe("sessions.patchMany orchestration", () => {
 
   it("rejects an alias conflict introduced after preflight without blocking siblings", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
-      const cfg = {
-        session: { mainKey: "work" },
-        agents: { list: [{ id: "main", default: true }] },
-      } satisfies OpenClawConfig;
+      const cfg = mainAliasConfig;
       const canonicalKey = "agent:main:work";
       const conflictingAlias = "agent:main:main";
       const siblingKeys = ["agent:main:alias-race-before", "agent:main:alias-race-after"];
@@ -790,10 +795,7 @@ describe("sessions.patchMany orchestration", () => {
 
   it("rejects an alias inserted after single-patch preflight while waiting for the writer", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
-      const cfg = {
-        session: { mainKey: "work" },
-        agents: { list: [{ id: "main", default: true }] },
-      } satisfies OpenClawConfig;
+      const cfg = mainAliasConfig;
       const canonicalKey = "agent:main:work";
       const conflictingAlias = "agent:main:main";
       await upsertSessionEntryCore(

@@ -12,7 +12,7 @@ import {
 import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import {
   buildPortableAuthProfileStoreForAgentCopy,
@@ -296,7 +296,7 @@ export async function agentsAddCommand(
     let stagedAuthOrder: AuthProfileStore["order"];
     let reportPortableAuthCopy: (() => Promise<void>) | undefined;
 
-    const defaultAgentId = resolveDefaultAgentId(cfg);
+    const defaultAgentId = resolveSoleAgentId(cfg);
     if (defaultAgentId !== agentId) {
       const sourceAgentDir = resolveAgentDir(cfg, defaultAgentId);
       const sourceAuthPath = resolveAuthProfileDatabasePath(sourceAgentDir);

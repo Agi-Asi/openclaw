@@ -490,7 +490,11 @@ describe("config io write", () => {
     const configPath = configPathForHome(home);
     const cleanConfig = {
       gateway: { mode: "local" },
-      agents: { entries: { main: { default: true }, "discord-dm": {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, "discord-dm": {} },
+      },
     } satisfies ConfigFileSnapshot["config"];
     const cleanRaw = formatConfig(cleanConfig);
     await fs.mkdir(path.dirname(configPath), { recursive: true });
@@ -531,7 +535,11 @@ describe("config io write", () => {
     const configPath = configPathForHome(home);
     const cleanConfig = {
       gateway: { mode: "local" },
-      agents: { entries: { main: { default: true }, "discord-dm": {} } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, "discord-dm": {} },
+      },
     } satisfies ConfigFileSnapshot["config"];
     const cleanRaw = formatConfig(cleanConfig);
     await fs.mkdir(path.dirname(configPath), { recursive: true });
@@ -573,7 +581,11 @@ describe("config io write", () => {
       const configPath = configPathForHome(home);
       const cleanConfig = {
         gateway: { mode: "local" },
-        agents: { entries: { main: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
       } satisfies ConfigFileSnapshot["config"];
       const cleanRaw = formatConfig(cleanConfig);
       const warn = vi.fn();
@@ -615,7 +627,11 @@ describe("config io write", () => {
     const original = {
       gateway: { mode: "local" },
       channels: { telegram: { enabled: true, dmPolicy: "pairing" } },
-      agents: { entries: { main: { default: true, workspace: "/tmp/openclaw-main" } } },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: "/tmp/openclaw-main" } },
+      },
       tools: { profile: "messaging" },
       commands: { restart: false },
     } satisfies ConfigFileSnapshot["config"];
@@ -1506,8 +1522,9 @@ describe("config io write", () => {
       await fs.writeFile(
         includePath,
         `${JSON.stringify({
-          defaults: { workspace: "/srv/old" },
-          entries: { ops: { default: true } },
+          ownership: "explicit",
+          defaults: { workspace: "/srv/old", systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
         })}\n`,
         "utf-8",
       );
@@ -1556,8 +1573,9 @@ describe("config io write", () => {
       await fs.writeFile(
         agentsPath,
         `${JSON.stringify({
-          defaults: { workspace: "/srv/old" },
-          entries: { ops: { default: true } },
+          ownership: "explicit",
+          defaults: { workspace: "/srv/old", systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
         })}\n`,
         "utf-8",
       );
@@ -1603,8 +1621,9 @@ describe("config io write", () => {
       await fs.writeFile(
         agentsPath,
         `${JSON.stringify({
-          defaults: { workspace: "/srv/old" },
-          entries: { ops: { default: true } },
+          ownership: "explicit",
+          defaults: { workspace: "/srv/old", systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
         })}\n`,
         "utf-8",
       );
@@ -1702,7 +1721,11 @@ describe("config io write", () => {
       const configPath = configPathForHome(home);
       const agentsPath = path.join(home, ".openclaw", "agents.json5");
       await fs.mkdir(path.dirname(configPath), { recursive: true });
-      await writeConfigJson(agentsPath, { entries: { main: { default: true } } });
+      await writeConfigJson(agentsPath, {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      });
       await writeConfigJson(configPath, {
         agents: { $include: "./agents.json5" },
         plugins: {

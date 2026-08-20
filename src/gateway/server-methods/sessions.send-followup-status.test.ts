@@ -525,7 +525,13 @@ describe("sessions.send completed subagent follow-up status", () => {
 
   for (const method of ["sessions.send", "sessions.steer"] as const) {
     it(`${method} passes selected-global agent scope through chat.send`, async () => {
-      const cfg = { agents: { list: [{ id: "main", default: true }, { id: "work" }] } };
+      const cfg = {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
+      };
       loadSessionEntryMock.mockReturnValue({
         cfg,
         canonicalKey: "global",

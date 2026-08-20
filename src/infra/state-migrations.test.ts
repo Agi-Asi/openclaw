@@ -5,9 +5,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { readAcpSessionMetaForEntry } from "../acp/runtime/session-meta.js";
-import { AgentSelectionRequiredError, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { AgentSelectionRequiredError, resolveSoleAgentId } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { readExactSessionEntryRowForCanonicalRepair } from "../config/sessions/session-accessor.sqlite-canonical-repair.js";
 import { writeSessionEntry } from "../config/sessions/session-accessor.sqlite-entry-store.js";
 import { readMemoryHostEventRecords } from "../memory-host-sdk/events.js";
@@ -437,7 +436,9 @@ function insertCurrentConversationBindingRow(
 function createConfig(): OpenClawConfig {
   return {
     agents: {
-      list: [{ id: "worker-1", default: true }],
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "worker-1" } },
+      entries: { "worker-1": {} },
     },
     session: {
       mainKey: "desk",
@@ -841,21 +842,18 @@ describe("state migrations", () => {
     await expectMissingPath(path.join(credentialsDir, "chatapp-alpha-allowFrom.json"));
   });
 
-  it("uses the retained migration owner for channel pairing account selection", async () => {
+  it("uses the selected system owner for channel pairing account selection", async () => {
     const root = await createTempDir();
     const stateDir = path.join(root, ".openclaw");
     const env = createEnv(stateDir);
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        agents: {
-          ownership: "explicit",
-          defaults: { pdfMaxPages: 42 },
-          entries: { main: { name: "Main" }, ops: { name: "Ops" } },
-        },
-        channels: { chatapp: {} },
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { pdfMaxPages: 42, systemAgent: { agentId: "main" } },
+        entries: { main: { name: "Main" }, ops: { name: "Ops" } },
       },
-      "main",
-    );
+      channels: { chatapp: {} },
+    };
     const credentialsDir = path.join(stateDir, "credentials");
     await fs.mkdir(credentialsDir, { recursive: true });
     await fs.writeFile(
@@ -867,7 +865,7 @@ describe("state migrations", () => {
       id: "chatapp",
       config: {
         defaultAccountId: (config) => {
-          const ownerAgentId = resolveDefaultAgentId(config);
+          const ownerAgentId = resolveSoleAgentId(config);
           const owner = config.agents?.entries?.[ownerAgentId];
           return owner?.name === "Main" && config.agents?.defaults?.pdfMaxPages === 42
             ? "default"
@@ -907,7 +905,7 @@ describe("state migrations", () => {
     );
     const plugin = createChannelTestPluginBase({
       id: "chatapp",
-      config: { defaultAccountId: (config) => resolveDefaultAgentId(config) },
+      config: { defaultAccountId: (config) => resolveSoleAgentId(config) },
     });
     setActivePluginRegistry(createTestRegistry([{ pluginId: plugin.id, source: "test", plugin }]));
 
@@ -1339,7 +1337,11 @@ describe("state migrations", () => {
     const eventPath = path.join(workspaceDir, "memory", ".dreams", "events.jsonl");
     const env = createEnv(stateDir);
     const cfg = {
-      agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: workspaceDir } },
+      },
     } as OpenClawConfig;
     const event = {
       type: "memory.recall.recorded",
@@ -1648,7 +1650,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { mainKey: "work" },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const detected = await detectLegacyStateMigrations({ cfg, env, homedir: () => root });
 
@@ -1690,7 +1696,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { mainKey: "work", store: configuredStorePath },
-      agents: { list: [{ id: "ops", default: true }, { id: "research" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {}, research: {} },
+      },
     } as OpenClawConfig;
     const detected = await detectLegacyStateMigrations({ cfg, env, homedir: () => root });
     expect(detected.sessions.preserveAmbiguousKeys).toBe(true);
@@ -1730,7 +1740,13 @@ describe("state migrations", () => {
       }),
       "utf8",
     );
-    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    } as OpenClawConfig;
     const detected = await detectLegacyStateMigrations({ cfg, env, homedir: () => root });
 
     const result = await runLegacyStateMigrations({ detected, config: cfg, now: () => 1234 });
@@ -1761,7 +1777,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { store: configuredStorePath },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const realStatSync = fsSync.statSync.bind(fsSync);
     const statSpy = vi.spyOn(fsSync, "statSync").mockImplementation((candidate) => {
@@ -1802,7 +1822,11 @@ describe("state migrations", () => {
       "utf8",
     );
     const cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
     const detected = await detectLegacyStateMigrations({ cfg, env, homedir: () => root });
     const realSaveSessionStore = sessionStore.saveLegacySessionStore;
@@ -1849,7 +1873,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { mainKey: "work", store: configuredStorePath },
-      agents: { list: [{ id: "ops", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {} },
+      },
     } as OpenClawConfig;
     const detected = await detectLegacyStateMigrations({
       cfg,
@@ -1908,7 +1936,11 @@ describe("state migrations", () => {
       configuredStorePath = path.join(root, "configured-sessions.json");
       await fs.link(targetStorePath, configuredStorePath);
       const cfg = {
-        agents: { list: [{ id: "worker-1", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "worker-1" } },
+          entries: { "worker-1": {} },
+        },
         session: { mainKey: "desk", store: configuredStorePath },
         plugins: {
           entries: {
@@ -1955,7 +1987,13 @@ describe("state migrations", () => {
     const storePath = path.join(stateDir, "agents", "main", "sessions", "sessions.json");
     await fs.mkdir(path.dirname(storePath), { recursive: true });
     await fs.symlink(outsideStorePath, storePath);
-    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    } as OpenClawConfig;
 
     const result = await autoMigrateLegacyState({ cfg, env, homedir: () => root });
 
@@ -1999,7 +2037,11 @@ describe("state migrations", () => {
     await fs.symlink(outsideStorePath, configuredStorePath);
     const cfg = {
       session: { store: configuredStorePath },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
 
     const result = await autoMigrateLegacyState({ cfg, env, homedir: () => root });
@@ -2054,7 +2096,11 @@ describe("state migrations", () => {
     await fs.link(targetStorePath, configuredStorePath);
     const cfg = {
       session: { store: configuredStorePath },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
 
     const result = await autoMigrateLegacyState({ cfg, env, homedir: () => root });
@@ -2102,7 +2148,11 @@ describe("state migrations", () => {
     await fs.link(targetStorePath, configuredStorePath);
     const cfg = {
       session: { scope: "global", store: configuredStorePath },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
     } as OpenClawConfig;
 
     const result = await autoMigrateLegacyState({ cfg, env, homedir: () => root });
@@ -2156,7 +2206,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { scope: "global", ...(templated ? { store: storeTemplate } : {}) },
-      agents: { list: [{ id: templated ? "main" : "voice", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: templated ? "main" : "voice" } },
+        entries: { [templated ? "main" : "voice"]: {} },
+      },
       plugins: {
         entries: {
           "voice-call": { config: { agentId: "voice" } },
@@ -2229,7 +2283,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { store: storeTemplate },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       plugins: {
         entries: {
           "voice-call": { config: { agentId: "voice" } },
@@ -2331,7 +2389,11 @@ describe("state migrations", () => {
     await fs.writeFile(legacyStorePath, "{}\n", "utf8");
     const cfg = {
       session: { store: storeTemplate },
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       acp: { allowedAgents: ["voice"] },
     } as OpenClawConfig;
 
@@ -2388,7 +2450,13 @@ describe("state migrations", () => {
     const storePath = path.join(stateDir, "agents", "main", "sessions", "sessions.json");
     await fs.mkdir(path.dirname(storePath), { recursive: true });
     await fs.symlink(outsideStorePath, storePath);
-    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    } as OpenClawConfig;
 
     const result = await autoMigrateLegacyState({ cfg, env, homedir: () => root });
 
@@ -2434,7 +2502,13 @@ describe("state migrations", () => {
     );
 
     const result = await autoMigrateLegacyState({
-      cfg: { agents: { list: [{ id: "main", default: true }] } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
       env,
       homedir: () => root,
     });
@@ -2473,7 +2547,13 @@ describe("state migrations", () => {
     closeOpenClawStateDatabaseForTest();
     resetAutoMigrateLegacyStateForTest();
     const rerun = await autoMigrateLegacyState({
-      cfg: { agents: { list: [{ id: "main", default: true }] } },
+      cfg: {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      },
       env,
       homedir: () => root,
     });
@@ -2538,7 +2618,11 @@ describe("state migrations", () => {
     );
     const cfg = {
       session: { mainKey: "desk", store: storeTemplate },
-      agents: { list: [{ id: "main", default: true }, { id: "voice" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, voice: {} },
+      },
     } as OpenClawConfig;
 
     const result = await autoMigrateLegacyState({ cfg, env, homedir: () => root });

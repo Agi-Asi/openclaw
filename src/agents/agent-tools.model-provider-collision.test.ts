@@ -240,15 +240,15 @@ describe("applyModelProviderToolPolicy", () => {
       {
         config: {
           agents: {
-            list: [
-              {
-                id: "gemma",
-                default: true,
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "gemma" } },
+            entries: {
+              gemma: {
                 experimental: {
                   localModelLean: true,
                 },
               },
-            ],
+            },
           },
         },
         modelProvider: "lmstudio",

@@ -289,14 +289,14 @@ function codexHarnessConfig(
 ): OpenClawConfig {
   return {
     agents: {
-      list: [
-        {
-          id: "ops",
-          default: true,
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "ops" } },
+      entries: {
+        ops: {
           model: `openai/gpt-5.5${profileId ? `@${profileId}` : ""}`,
           models: { "openai/gpt-5.5": { agentRuntime: { id: "codex" } } },
         },
-      ],
+      },
     },
     ...(profileId
       ? { auth: { profiles: { [profileId]: { provider: "openai", mode: "api_key" } } } }
@@ -487,7 +487,9 @@ describe("verified OpenClaw inference binding", () => {
   it("accepts and revalidates an opaque CLI owner emitted after a successful turn", async () => {
     const cliConfig = {
       agents: {
-        entries: { ops: { default: true, model: "claude-cli/claude-opus-5" } },
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: { model: "claude-cli/claude-opus-5" } },
       },
     } satisfies OpenClawConfig;
     const route = await requireRoute(cliConfig, "cli");
@@ -551,13 +553,13 @@ describe("verified OpenClaw inference binding", () => {
     const profileId = "claude-cli:work";
     const cliConfig = {
       agents: {
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             model: `claude-cli/claude-opus-4-8@${profileId}`,
           },
-        ],
+        },
       },
       auth: { profiles: { [profileId]: { provider: "claude-cli", mode: "api_key" } } },
     } satisfies OpenClawConfig;

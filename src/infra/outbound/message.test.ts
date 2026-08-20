@@ -20,7 +20,7 @@ vi.mock("../../channels/plugins/index.js", () => ({
 }));
 
 vi.mock("../../agents/agent-scope.js", () => ({
-  resolveDefaultAgentId: () => "main",
+  resolveSoleAgentId: () => "main",
   resolveSessionAgentId: ({
     sessionKey,
   }: {

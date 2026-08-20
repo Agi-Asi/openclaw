@@ -30,7 +30,9 @@ function createHarness(config?: Record<string, unknown>) {
       ? config
       : {
           agents: {
-            entries: { main: { default: true, workspace: "/tmp/main-workspace" } },
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: { workspace: "/tmp/main-workspace" } },
           },
         };
   const api = {
@@ -157,8 +159,10 @@ describe("session backfill gateway methods", () => {
   it("accepts a keyed non-default agent", async () => {
     const { methods } = createHarness({
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
         entries: {
-          main: { default: true },
+          main: {},
           tester: {},
         },
       },

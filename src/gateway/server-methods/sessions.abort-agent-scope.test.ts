@@ -102,22 +102,22 @@ function createActiveRun(sessionKey: string, params: { agentId?: string } = {}) 
 }
 
 type ActiveRun = ReturnType<typeof createActiveRun>;
-type TestAgentConfig = { id: string; default?: boolean };
-
-function createDefaultAgents(): TestAgentConfig[] {
-  return [{ id: "main", default: true }, { id: "work" }];
-}
 
 function createContext(
   options: {
     activeRuns?: ReadonlyArray<readonly [string, ActiveRun]>;
-    agents?: TestAgentConfig[];
+    agents?: Record<string, Record<string, never>>;
+    systemAgentId?: string;
     globalScope?: boolean;
     extra?: Partial<GatewayRequestContext>;
   } = {},
 ): GatewayRequestContext {
   const cfg = {
-    agents: { list: options.agents ?? createDefaultAgents() },
+    agents: {
+      ownership: "explicit" as const,
+      defaults: { systemAgent: { agentId: options.systemAgentId ?? "main" } },
+      entries: options.agents ?? { main: {}, work: {} },
+    },
     ...(options.globalScope ? { session: { scope: "global" as const } } : {}),
   };
   return {
@@ -134,7 +134,7 @@ function createRespond(): RespondFn {
 function createBetaRunContext(activeRun: ActiveRun): GatewayRequestContext {
   return createContext({
     activeRuns: [["run-beta", activeRun]],
-    agents: [{ id: "main", default: true }, { id: "beta" }],
+    agents: { main: {}, beta: {} },
   });
 }
 
@@ -695,7 +695,8 @@ describe("sessions.abort agent scope", () => {
       { key: "main", agentId: "work", clearQueued: true },
       {
         context: createContext({
-          agents: [{ id: "work", default: true }, { id: "main" }],
+          agents: { work: {}, main: {} },
+          systemAgentId: "work",
         }),
         reqId: "req-owned-legacy-alias-abort",
       },
@@ -822,7 +823,8 @@ describe("sessions.abort agent scope", () => {
   it("subscribes bare global message events on the configured default agent key", async () => {
     const subscribeSessionMessageEvents = vi.fn();
     const context = createContext({
-      agents: [{ id: "main" }, { id: "work", default: true }],
+      agents: { main: {}, work: {} },
+      systemAgentId: "work",
       globalScope: true,
       extra: { subscribeSessionMessageEvents },
     });
@@ -868,7 +870,8 @@ describe("sessions.abort agent scope", () => {
     const activeRun = createActiveRun("main");
     const context = createContext({
       activeRuns: [["run-work", activeRun]],
-      agents: [{ id: "work", default: true }],
+      agents: { work: {} },
+      systemAgentId: "work",
     });
     resolveSessionKeyForRunMock.mockReturnValue(undefined);
 
@@ -880,7 +883,7 @@ describe("sessions.abort agent scope", () => {
 
   it("rejects key-based aborts when key agent does not match agentId", async () => {
     const context = createContext({
-      agents: [{ id: "main", default: true }, { id: "beta" }],
+      agents: { main: {}, beta: {} },
     });
     const respond = await callSessions(
       "sessions.abort",
@@ -931,7 +934,7 @@ describe("sessions.abort agent scope", () => {
   });
 
   it("rejects unknown explicit agentId before session mutations", async () => {
-    const context = createContext({ agents: [{ id: "main", default: true }] });
+    const context = createContext({ agents: { main: {} } });
     const respond = await callSessions(
       "sessions.patch",
       { key: "global", agentId: "work", label: "Work" },
@@ -995,7 +998,8 @@ describe("sessions.abort agent scope", () => {
     const activeRun = createActiveRun("main");
     const context = createContext({
       activeRuns: [["run-work", activeRun]],
-      agents: [{ id: "work", default: true }, { id: "main" }],
+      agents: { work: {}, main: {} },
+      systemAgentId: "work",
     });
 
     await callSessions(

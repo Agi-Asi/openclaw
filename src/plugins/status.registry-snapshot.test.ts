@@ -480,8 +480,12 @@ describe("buildPluginRegistrySnapshotReport", () => {
     };
     const config = {
       agents: {
-        defaults: { workspace: fallbackWorkspace },
-        list: [{ id: "main" }, { id: "research", default: true, workspace: workspaceDir }],
+        ownership: "explicit" as const,
+        defaults: {
+          workspace: fallbackWorkspace,
+          systemAgent: { agentId: "research" },
+        },
+        entries: { main: {}, research: { workspace: workspaceDir } },
       },
       plugins: {
         allow: [fixture.pluginId],

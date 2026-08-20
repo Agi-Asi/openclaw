@@ -5,8 +5,13 @@ import { resolveSessionModelIdentityRef, resolveSessionModelRef } from "./sessio
 function modelConfig(primary: string, models?: Record<string, object>): OpenClawConfig {
   return {
     agents: {
-      defaults: { model: { primary }, ...(models ? { models } : {}) },
-      list: [{ id: "main", default: true }],
+      ownership: "explicit",
+      defaults: {
+        model: { primary },
+        ...(models ? { models } : {}),
+        systemAgent: { agentId: "main" },
+      },
+      entries: { main: {} },
     },
   } as OpenClawConfig;
 }

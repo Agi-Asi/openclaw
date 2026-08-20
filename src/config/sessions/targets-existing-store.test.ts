@@ -18,7 +18,11 @@ describe("resolveExistingAgentSessionStoreTargetsSync retired store", () => {
         ...unrelatedAgentIds,
       ]);
       const cfg: OpenClawConfig = {
-        agents: { list: [{ id: "main", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
       };
       const lstat = vi.spyOn(nodeFs, "lstatSync");
       const stat = vi.spyOn(nodeFs, "statSync");
@@ -60,7 +64,11 @@ describe("resolveExistingAgentSessionStoreTargetsSync retired store", () => {
             "sessions.json",
           ),
         },
-        agents: { list: [{ id: "ops", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {}, work: {} },
+        },
       };
 
       expect(resolveExistingAgentSessionStoreTargetsSync(cfg, "old", { env: process.env })).toEqual(

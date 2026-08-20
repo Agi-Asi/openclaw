@@ -85,10 +85,13 @@ function createRuntime(): RuntimeEnv {
 function createDefaultAgentConfig(): OpenClawConfig {
   return {
     agents: {
-      defaults: { workspace: "/tmp/global-workspace" },
+      ownership: "explicit",
+      defaults: {
+        workspace: "/tmp/global-workspace",
+        systemAgent: { agentId: "ops" },
+      },
       entries: {
         ops: {
-          default: true,
           agentDir: "/tmp/ops-agent",
           workspace: "/tmp/ops-workspace",
         },

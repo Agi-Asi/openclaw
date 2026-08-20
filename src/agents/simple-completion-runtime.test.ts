@@ -813,7 +813,7 @@ describe("prepareSimpleCompletionModelForAgent", () => {
     ).toBe("openai-responses");
     // Route materialization re-resolves the model on a multi-agent config; both
     // calls must keep the authorized agentId or the second falls back to
-    // resolveDefaultAgentId, which throws on a multi-agent config.
+    // resolveSoleAgentId, which throws on a multi-agent config.
     expect(modelResolver.mock.calls[0]?.[4]).toMatchObject({ agentId: "main" });
     expect(modelResolver.mock.calls[1]?.[4]).toMatchObject({ agentId: "main" });
   });

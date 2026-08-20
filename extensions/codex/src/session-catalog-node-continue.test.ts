@@ -289,7 +289,11 @@ describe("Codex supervision actions", () => {
     expect(pendingList?.[0]?.sessions[0]?.sessionKey).toBeUndefined();
     await first?.afterConversationBound?.();
     runtimeConfig = {
-      agents: { list: [{ id: "alpha" }, { id: "beta", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "alpha" } },
+        entries: { alpha: {}, beta: {} },
+      },
     } as OpenClawConfig;
     const second = await provider?.continueSession?.({
       agentId: "alpha",
@@ -351,7 +355,7 @@ describe("Codex supervision actions", () => {
     // One finalize patch per continue; the restore rides afterConversationBound.
     expect(patchSessionEntry).toHaveBeenCalledTimes(2);
 
-    const listed = await provider?.list({ hostIds: ["node:devbox"] });
+    const listed = await provider?.list({ agentId: "alpha", hostIds: ["node:devbox"] });
     expect(listed?.[0]?.sessions[0]).toMatchObject({
       threadId: "thread-remote",
       sessionKey: first?.sessionKey,

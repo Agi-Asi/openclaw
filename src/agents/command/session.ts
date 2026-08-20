@@ -10,7 +10,6 @@ import {
   type ThinkLevel,
   type VerboseLevel,
 } from "../../auto-reply/thinking.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../../config/legacy.default-agent-owner.js";
 import { hasProviderOwnedSession } from "../../config/sessions/entry-freshness.js";
 import {
   hasTerminalMainSessionTranscriptNewerThanRegistrySync,
@@ -48,7 +47,8 @@ import { sessionDeliveryChannel } from "../../utils/delivery-context.shared.js";
 import {
   AgentSelectionRequiredError,
   listAgentIds,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId,
 } from "../agent-scope.js";
 import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
 import { clearAllCliSessions } from "../cli-session.js";
@@ -184,7 +184,7 @@ function collectSessionIdMatchesForRequest(opts: {
   const candidates: SessionIdMatchCandidate[] = [];
   let ownerConflict = false;
   const configuredAgentIds = listAgentIds(opts.cfg).map(normalizeAgentId);
-  const compatibilityAgentId = tryResolveLegacyCompatibilityAgentId(opts.cfg);
+  const compatibilityAgentId = tryResolveAmbientOwnerAgentId(opts.cfg);
   const persistedStoreOwner = resolvePersistedSessionStoreOwner(opts.cfg);
   const configuredStoreOwners = new Map<string, Set<string>>();
   for (const agentId of configuredAgentIds) {
@@ -305,8 +305,8 @@ export function resolveStoredSessionKeyForSessionId(opts: {
   const storeAgentId =
     requestedAgentId ??
     (persistedStoreOwner.kind === "configured" ? persistedStoreOwner.agentId : undefined) ??
-    tryResolveLegacyCompatibilityAgentId(opts.cfg) ??
-    resolveDefaultAgentId(opts.cfg, {
+    tryResolveAmbientOwnerAgentId(opts.cfg) ??
+    resolveSoleAgentId(opts.cfg, {
       surface: "stored session lookup",
       hint: "Pass an explicit agent id when looking up a session by id.",
     });
@@ -331,7 +331,7 @@ export function resolveStoredSessionKeyForSessionId(opts: {
       ? persistedRowOwner.agentId
       : persistedRowOwner.kind === "retired"
         ? undefined
-        : (requestedAgentId ?? tryResolveLegacyCompatibilityAgentId(opts.cfg));
+        : (requestedAgentId ?? tryResolveAmbientOwnerAgentId(opts.cfg));
   };
   const sessionIdMatches = Object.entries(sessionStore).filter(
     ([, entry]) => entry?.sessionId === sessionId,
@@ -431,7 +431,7 @@ function resolveSessionKeyForRequestInternal(opts: {
     requestedAgentId ??
     scopedSessionAgentId ??
     (explicitKeyStoreOwner.kind === "configured" ? explicitKeyStoreOwner.agentId : undefined) ??
-    tryResolveLegacyCompatibilityAgentId(opts.cfg);
+    tryResolveAmbientOwnerAgentId(opts.cfg);
   const unownedBareSessionKey = Boolean(
     requestedSessionId &&
     explicitSessionKey &&
@@ -448,7 +448,7 @@ function resolveSessionKeyForRequestInternal(opts: {
     : requestedSessionId
       ? undefined
       : normalizeAgentId(
-          resolveDefaultAgentId(opts.cfg, {
+          resolveSoleAgentId(opts.cfg, {
             surface: "agent command session routing",
             hint: "Pass --agent <id> or an agent-prefixed --session-key.",
           }),
@@ -530,8 +530,8 @@ function resolveSessionKeyForRequestInternal(opts: {
   if (requestedSessionId && !sessionKey && opts.createMissingSessionId) {
     const explicitSessionAgentId =
       requestedAgentId ??
-      tryResolveLegacyCompatibilityAgentId(opts.cfg) ??
-      resolveDefaultAgentId(opts.cfg, {
+      tryResolveAmbientOwnerAgentId(opts.cfg) ??
+      resolveSoleAgentId(opts.cfg, {
         surface: "agent command session creation",
         hint: "Pass --agent <id> when creating a session from --session-id.",
       });
@@ -609,8 +609,8 @@ export function resolveSession(opts: {
     (opts.agentId?.trim() ? normalizeAgentId(opts.agentId) : undefined) ??
     resolvedAgentId ??
     parseAgentSessionKey(sessionKey)?.agentId ??
-    tryResolveLegacyCompatibilityAgentId(opts.cfg) ??
-    resolveDefaultAgentId(opts.cfg, {
+    tryResolveAmbientOwnerAgentId(opts.cfg) ??
+    resolveSoleAgentId(opts.cfg, {
       surface: "agent command session ownership",
       hint: "Pass --agent <id> or an agent-prefixed --session-key.",
     });

@@ -299,10 +299,12 @@ describe("gateway startup log", () => {
       formatAgentModelStartupDetails({
         cfg: {
           agents: {
+            ownership: "explicit",
             defaults: {
               model: "openai/gpt-5.5",
+              systemAgent: { agentId: "main" },
             },
-            list: [{ id: "main", default: true, fastModeDefault: true }],
+            entries: { main: { fastModeDefault: true } },
           },
         },
         provider: "openai",
@@ -378,14 +380,16 @@ describe("gateway startup log", () => {
       formatAgentModelStartupDetails({
         cfg: {
           agents: {
+            ownership: "explicit",
             defaults: {
               thinkingDefault: "low",
               reasoningDefault: "off",
+              systemAgent: { agentId: "alpha" },
               models: {
                 "openai/gpt-5.5": { params: { fastMode: false } },
               },
             },
-            list: [{ id: "alpha", default: true, thinkingDefault: "high", fastModeDefault: true }],
+            entries: { alpha: { thinkingDefault: "high", fastModeDefault: true } },
           },
         },
         provider: "openai",

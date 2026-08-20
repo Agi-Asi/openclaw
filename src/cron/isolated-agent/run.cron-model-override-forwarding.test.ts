@@ -164,8 +164,9 @@ describe("runCronIsolatedAgentTurn — cron model override forwarding (#58065)",
     const callerConfig = { agents: { defaults: { model: "anthropic/caller" } } };
     const ownerConfig = {
       agents: {
-        defaults: { model: "google/gemini-2.0-flash" },
-        list: [{ id: "main", default: true, workspace: "/tmp/replacement-workspace" }],
+        ownership: "explicit",
+        defaults: { model: "google/gemini-2.0-flash", systemAgent: { agentId: "main" } },
+        entries: { main: { workspace: "/tmp/replacement-workspace" } },
       },
     };
     const ownerCatalog = [{ provider: "google", id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" }];
@@ -197,7 +198,11 @@ describe("runCronIsolatedAgentTurn — cron model override forwarding (#58065)",
 
   it("rejects a replacement owner that changes an explicitly requested agent", async () => {
     const callerConfig = {
-      agents: { list: [{ id: "main", default: true }, { id: "worker" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, worker: {} },
+      },
     };
     loadModelCatalogOwnerMock.mockResolvedValueOnce({
       agentId: "main",

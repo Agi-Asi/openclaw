@@ -36,19 +36,26 @@ beforeEach(() => {
 });
 
 describe("persistStickyModelSelection", () => {
-  it.each([
+  it.each<{
+    name: string;
+    agentId: string;
+    cfg: OpenClawConfig;
+    target: "defaults" | "agent";
+  }>([
     {
       name: "shared default for an inheriting agent",
       agentId: "main",
       cfg: {
         agents: {
+          ownership: "explicit",
           defaults: {
             model: {
               primary: "anthropic/claude-opus-4-6",
               fallbacks: ["openai/gpt-5.6-luna"],
             },
+            systemAgent: { agentId: "main" },
           },
-          list: [{ id: "main", default: true }],
+          entries: { main: {} },
         },
       } satisfies OpenClawConfig,
       target: "defaults" as const,
@@ -58,17 +65,20 @@ describe("persistStickyModelSelection", () => {
       agentId: "work",
       cfg: {
         agents: {
-          defaults: { model: "anthropic/claude-opus-4-6" },
-          list: [
-            { id: "main", default: true },
-            {
-              id: "work",
+          ownership: "explicit",
+          defaults: {
+            model: "anthropic/claude-opus-4-6",
+            systemAgent: { agentId: "main" },
+          },
+          entries: {
+            main: {},
+            work: {
               model: {
                 primary: "anthropic/claude-sonnet-4-6",
                 fallbacks: ["openai/gpt-5.6-luna"],
               },
             },
-          ],
+          },
         },
       } satisfies OpenClawConfig,
       target: "agent" as const,
@@ -88,7 +98,7 @@ describe("persistStickyModelSelection", () => {
     const persistedPrimary =
       target === "defaults"
         ? mocks.cfg.agents?.defaults?.model
-        : mocks.cfg.agents?.list?.find((entry) => entry.id === agentId)?.model;
+        : mocks.cfg.agents?.entries?.[agentId]?.model;
     expect(persistedPrimary).toMatchObject({
       primary: "openai/gpt-5.6-sol",
       fallbacks: ["openai/gpt-5.6-luna"],

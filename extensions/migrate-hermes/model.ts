@@ -1,7 +1,7 @@
 // Migrate Hermes plugin module implements model behavior.
 import {
   resolveAgentEffectiveModelPrimary,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
   setAgentEffectiveModelPrimary,
 } from "openclaw/plugin-sdk/agent-runtime";
 import { resolveMigrationConfigRuntime } from "openclaw/plugin-sdk/migration";
@@ -339,7 +339,7 @@ function resolveDefaultAgentModelState(config: MigrationProviderContext["config"
   agentId: string;
   effectivePrimary?: string;
 } {
-  const agentId = resolveDefaultAgentId(config);
+  const agentId = resolveSoleAgentId(config);
   const effectivePrimary = resolveAgentEffectiveModelPrimary(config, agentId);
   return {
     agentId,

@@ -1,5 +1,6 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { hasOutboundReplyContent } from "openclaw/plugin-sdk/reply-payload";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { appendCronStyleCurrentTimeLine } from "../agents/current-time.js";
 import { resolveEmbeddedSessionLane } from "../agents/embedded-agent-runner/lanes.js";
 import { listActiveEmbeddedRunSessionKeys } from "../agents/embedded-agent-runner/run-state.js";
@@ -60,7 +61,6 @@ import {
   resolveHeartbeatForWake,
   resolveHeartbeatTimeoutOverrideSeconds,
   shouldUseHeartbeatResponseToolPrompt,
-  tryResolveAmbientHeartbeatAgentId,
   type HeartbeatConfig,
 } from "./heartbeat-runner-config.js";
 import {
@@ -152,7 +152,9 @@ export async function resolveHeartbeatWakeStage(opts: HeartbeatRunOptions) {
   const forcedSessionAgentId =
     explicitAgentId.length > 0 ? undefined : parseAgentSessionKey(opts.sessionKey)?.agentId;
   const resolvedAgentId =
-    explicitAgentId || forcedSessionAgentId || tryResolveAmbientHeartbeatAgentId(cfg);
+    explicitAgentId ||
+    forcedSessionAgentId ||
+    tryResolveAmbientOwnerAgentId(cfg, cfg.agents?.defaults?.heartbeat?.agentId);
   if (!resolvedAgentId) {
     return { kind: "skipped", reason: "disabled" } as const;
   }

@@ -2,10 +2,7 @@
  * Normalizes and delivers agent command results to outbound channels.
  */
 import { hasNonEmptyString } from "@openclaw/normalization-core/string-coerce";
-import {
-  resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
-} from "../../agents/agent-scope-config.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../../agents/agent-scope-config.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { copyReplyPayloadMetadata, type ReplyPayload } from "../../auto-reply/reply-payload.js";
 import {
@@ -578,7 +575,7 @@ export async function deliverAgentCommandResult(
       sessionKey: effectiveSessionKey,
       config: cfg,
     }) ??
-    resolveDefaultAgentId(cfg);
+    resolveSoleAgentId(cfg);
   const deliver = opts.deliver === true;
   const bestEffortDeliver = opts.bestEffortDeliver === true;
   const turnSourceChannel = opts.runContext?.messageChannel ?? opts.messageChannel;

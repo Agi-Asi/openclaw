@@ -96,7 +96,7 @@ describe("session typing handler", () => {
   ])("uses the canonical global subscription keys for $agentId", async ({ agentId, expected }) => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const cfg = {
-        agents: { list: [{ id: "main" }, { id: "work" }] },
+        agents: { ownership: "explicit", entries: { main: {}, work: {} } },
       } satisfies OpenClawConfig;
       await upsertSessionEntryCore(
         { agentId, sessionKey: "global" },

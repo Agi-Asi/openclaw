@@ -445,8 +445,12 @@ describe("getReplyFromConfig message hooks", () => {
       },
       cfg: {
         agents: {
-          defaults: { sandbox: { mode: "non-main", scope: "agent" } },
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          defaults: {
+            sandbox: { mode: "non-main", scope: "agent" },
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: {} },
         },
       },
     });
@@ -463,8 +467,12 @@ describe("getReplyFromConfig message hooks", () => {
       },
       cfg: {
         agents: {
-          defaults: { sandbox: { mode: "non-main", scope: "agent" } },
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          defaults: {
+            sandbox: { mode: "non-main", scope: "agent" },
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: {} },
         },
       },
     });
@@ -503,8 +511,12 @@ describe("getReplyFromConfig message hooks", () => {
       },
       cfg: {
         agents: {
-          defaults: { sandbox: { mode: "non-main", scope: "agent" } },
-          list: [{ id: "main", default: true }],
+          ownership: "explicit",
+          defaults: {
+            sandbox: { mode: "non-main", scope: "agent" },
+            systemAgent: { agentId: "main" },
+          },
+          entries: { main: {} },
         },
       },
     });

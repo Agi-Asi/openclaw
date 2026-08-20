@@ -329,10 +329,10 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
       const workspace = path.join(stateDir, "openclaw");
       const warningRuntime = { ...runtime, error: vi.fn() };
       const passwordRef = { source: "env" as const, provider: "default", id: "GATEWAY_PASSWORD" };
-      const seededAgents = [
-        { id: "alpha", default: true, model: "anthropic/claude-3-5-sonnet" },
-        { id: "beta", model: "openai/gpt-4o" },
-      ];
+      const seededAgents = {
+        alpha: { model: "anthropic/claude-3-5-sonnet" },
+        beta: { model: "openai/gpt-4o" },
+      };
       const seededBindings = [
         {
           type: "route" as const,
@@ -352,7 +352,11 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
         },
       ];
       testConfigStore.set(resolveTestConfigPath(), {
-        agents: { list: seededAgents, defaults: { workspace } },
+        agents: {
+          ownership: "explicit",
+          entries: seededAgents,
+          defaults: { workspace, systemAgent: { agentId: "alpha" } },
+        },
         bindings: seededBindings,
         gateway: {
           mode: "local",
@@ -377,7 +381,7 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
       );
 
       const cfg = readTestConfig();
-      expect(cfg.agents?.list?.map((a) => a.id)).toEqual(["alpha", "beta"]);
+      expect(Object.keys(cfg.agents?.entries ?? {})).toEqual(["alpha", "beta"]);
       expect(cfg.agents?.defaults?.workspace).toBe(workspace);
       expect(cfg.bindings).toEqual(seededBindings);
       expect(warningRuntime.error).toHaveBeenCalledWith(

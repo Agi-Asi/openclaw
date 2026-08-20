@@ -13,8 +13,9 @@ vi.mock("../agents/embedded-agent.js", () => ({
 }));
 
 vi.mock("../agents/prepared-model-catalog.js", async () => {
-  const { resolveAgentDir, resolveAgentWorkspaceDir, resolveDefaultAgentId } =
-    await vi.importActual<typeof import("../agents/agent-scope.js")>("../agents/agent-scope.js");
+  const { resolveAgentDir, resolveAgentWorkspaceDir, resolveSoleAgentId } = await vi.importActual<
+    typeof import("../agents/agent-scope.js")
+  >("../agents/agent-scope.js");
   return {
     loadPreparedModelCatalog,
     loadPreparedModelCatalogSnapshot: vi.fn(async (params) => ({
@@ -35,7 +36,7 @@ vi.mock("../agents/prepared-model-catalog.js", async () => {
         workspaceDir?: string;
       }) => {
         const config = params.config ?? {};
-        const agentId = params.agentId ?? resolveDefaultAgentId(config);
+        const agentId = params.agentId ?? resolveSoleAgentId(config);
         return {
           agentId,
           agentDir: params.agentDir ?? resolveAgentDir(config, agentId),

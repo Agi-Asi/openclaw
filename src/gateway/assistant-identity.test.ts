@@ -5,7 +5,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { AVATAR_MAX_DATA_URL_CHARS } from "../shared/avatar-limits.js";
 import { AVATAR_MAX_BYTES } from "../shared/avatar-policy.js";
 import { withTestDir } from "../test-helpers/temp-dir.js";
@@ -85,7 +84,7 @@ describe("resolveAssistantIdentity", () => {
     });
   });
 
-  it("applies ui.assistant identity only as authoritative for the retained owner", () => {
+  it("applies ui.assistant identity only as authoritative for the ambient owner", () => {
     const baseCfg: OpenClawConfig = {
       ui: { assistant: { name: "Shared assistant", avatar: "S" } },
       agents: {
@@ -96,12 +95,12 @@ describe("resolveAssistantIdentity", () => {
         ],
       },
     };
-    const ownerlessCfg = { ...baseCfg };
-    const migratedCfg = retainLegacyDefaultAgentId(baseCfg, "ops");
+    const ownedCfg: OpenClawConfig = {
+      ...baseCfg,
+      agents: { ...baseCfg.agents, defaults: { systemAgent: { agentId: "ops" } } },
+    };
 
-    expect(
-      resolveAssistantIdentity({ cfg: migratedCfg, agentId: "ops", workspaceDir: "" }),
-    ).toEqual({
+    expect(resolveAssistantIdentity({ cfg: ownedCfg, agentId: "ops", workspaceDir: "" })).toEqual({
       agentId: "ops",
       name: "Shared assistant",
       nameSource: "config",
@@ -109,10 +108,10 @@ describe("resolveAssistantIdentity", () => {
       emoji: undefined,
     });
     expect(
-      resolveAssistantIdentity({ cfg: migratedCfg, agentId: "research", workspaceDir: "" }),
+      resolveAssistantIdentity({ cfg: ownedCfg, agentId: "research", workspaceDir: "" }),
     ).toMatchObject({ name: "Research agent", avatar: "R" });
     expect(
-      resolveAssistantIdentity({ cfg: ownerlessCfg, agentId: "ops", workspaceDir: "" }),
+      resolveAssistantIdentity({ cfg: baseCfg, agentId: "ops", workspaceDir: "" }),
     ).toMatchObject({ name: "Ops agent", avatar: "O" });
   });
 

@@ -9,7 +9,7 @@ import type { GatewayRequestHandlerOptions } from "./types.js";
 const mocks = vi.hoisted(() => ({
   listAgentIds: vi.fn(() => ["main", "writer"]),
   resolveAgentDir: vi.fn((_cfg: unknown, agentId: string) => `/tmp/agent-${agentId}`),
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
   resolveAgentWorkspaceDir: vi.fn((_cfg: unknown, agentId: string) => `/tmp/workspace-${agentId}`),
   runAuthProbes: vi.fn(),
 }));
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: mocks.listAgentIds,
   resolveAgentDir: mocks.resolveAgentDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+  resolveSoleAgentId: mocks.resolveSoleAgentId,
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
 }));
 
@@ -71,8 +71,8 @@ describe("models.probe", () => {
     mocks.resolveAgentDir.mockImplementation(
       (_cfg: unknown, agentId: string) => `/tmp/agent-${agentId}`,
     );
-    mocks.resolveDefaultAgentId.mockClear();
-    mocks.resolveDefaultAgentId.mockReturnValue("main");
+    mocks.resolveSoleAgentId.mockClear();
+    mocks.resolveSoleAgentId.mockReturnValue("main");
     mocks.resolveAgentWorkspaceDir.mockClear();
     mocks.resolveAgentWorkspaceDir.mockImplementation(
       (_cfg: unknown, agentId: string) => `/tmp/workspace-${agentId}`,
@@ -93,7 +93,7 @@ describe("models.probe", () => {
   });
 
   it("returns typed selection-required when agentId is omitted", async () => {
-    mocks.resolveDefaultAgentId.mockImplementationOnce(() => {
+    mocks.resolveSoleAgentId.mockImplementationOnce(() => {
       throw new AgentSelectionRequiredError(["main", "writer"], {
         surface: "model auth",
         hint: "Pass agentId to select a configured agent.",
@@ -149,7 +149,13 @@ describe("models.probe", () => {
     { name: "omitted", params: {} },
     { name: "empty", params: { agentId: "" } },
   ])("probes the default agent when agentId is $name", async ({ params }) => {
-    const cfg: OpenClawConfig = { agents: { list: [{ id: "main", default: true }] } };
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
     const { options } = createOptions({ provider: "openai", ...params }, cfg);
 
     await handler(options);
@@ -165,7 +171,11 @@ describe("models.probe", () => {
 
   it("probes an explicit configured agent", async () => {
     const cfg: OpenClawConfig = {
-      agents: { list: [{ id: "main", default: true }, { id: "writer" }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, writer: {} },
+      },
     };
     const { options } = createOptions({ provider: "openai", agentId: "Writer" }, cfg);
 
@@ -181,7 +191,13 @@ describe("models.probe", () => {
   });
 
   it.each(["retired", "   "])("rejects explicit unknown agentId %j", async (agentId) => {
-    const cfg: OpenClawConfig = { agents: { list: [{ id: "main", default: true }] } };
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
     mocks.listAgentIds.mockReturnValue(["main"]);
     const { options, respond } = createOptions({ provider: "openai", agentId }, cfg);
 

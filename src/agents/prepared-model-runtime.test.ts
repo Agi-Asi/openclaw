@@ -395,15 +395,17 @@ describe("prepared model runtime snapshots", () => {
     mocks.resolveStaticCatalogModel.mockReturnValueOnce(runtimeModel);
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: {
           model: { primary: "openai/gpt-5.4" },
           models: { "openai/gpt-5.4": {} },
+          systemAgent: { agentId: "qa" },
         },
         entries: {
-          qa: { default: true, model: { primary: "openai/gpt-5.4" } },
+          qa: { model: { primary: "openai/gpt-5.4" } },
         },
       },
-    };
+    } satisfies OpenClawConfig;
 
     const snapshot = await publishPreparedModelRuntimeSnapshot({
       agentId: "qa",

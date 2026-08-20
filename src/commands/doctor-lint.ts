@@ -1,7 +1,7 @@
 /** CLI entrypoint for non-mutating doctor lint health checks. */
 import fs from "node:fs";
 import path from "node:path";
-import { resolveAgentWorkspaceDir, tryResolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, tryResolveSoleAgentId } from "../agents/agent-scope.js";
 import { createConfigIO, readConfigFileSnapshot } from "../config/config.js";
 import { maybeLoadDotEnvForConfig } from "../config/io.read-helpers.js";
 import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
@@ -175,7 +175,7 @@ async function executeDoctorLint(
   }
 
   const sourceEnv = { ...stateView.sourceEnv };
-  const defaultAgentId = tryResolveDefaultAgentId(snapshot.config);
+  const defaultAgentId = tryResolveSoleAgentId(snapshot.config);
   const ctx: HealthCheckContext = {
     mode: "lint",
     runtime,

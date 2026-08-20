@@ -188,7 +188,9 @@ function createAuthSearchTool() {
   return requireXaiWebSearchTool({
     config: {
       agents: {
-        list: [{ id: "main", default: true, agentDir: "/tmp/openclaw-xai-main-agent" }],
+        ownership: "explicit",
+        entries: { main: { agentDir: "/tmp/openclaw-xai-main-agent" } },
+        defaults: { systemAgent: { agentId: "main" } },
       },
       tools: { web: { search: { provider: "grok" } } },
     },
@@ -326,7 +328,9 @@ describe("xai web search config resolution", () => {
     const tool = requireXaiWebSearchTool({
       config: {
         agents: {
-          list: [{ id: "main", default: true, agentDir: "/tmp/openclaw-xai-main-agent" }],
+          ownership: "explicit",
+          entries: { main: { agentDir: "/tmp/openclaw-xai-main-agent" } },
+          defaults: { systemAgent: { agentId: "main" } },
         },
         ...xaiPluginConfig({ webSearch: { apiKey: "configured-xai-key" } }),
       },
@@ -355,10 +359,12 @@ describe("xai web search config resolution", () => {
       agentDir: "/tmp/openclaw-xai-active-agent",
       config: {
         agents: {
-          list: [
-            { id: "main", default: true, agentDir: "/tmp/openclaw-xai-main-agent" },
-            { id: "side", agentDir: "/tmp/openclaw-xai-active-agent" },
-          ],
+          ownership: "explicit",
+          entries: {
+            main: { agentDir: "/tmp/openclaw-xai-main-agent" },
+            side: { agentDir: "/tmp/openclaw-xai-active-agent" },
+          },
+          defaults: { systemAgent: { agentId: "main" } },
         },
       },
     });

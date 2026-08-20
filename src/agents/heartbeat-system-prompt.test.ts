@@ -8,8 +8,9 @@ describe("resolveHeartbeatPromptForSystemPrompt", () => {
       resolveHeartbeatPromptForSystemPrompt({
         config: {
           agents: {
-            defaults: { heartbeat: {} },
-            entries: { main: { default: true } },
+            ownership: "explicit",
+            defaults: { heartbeat: {}, systemAgent: { agentId: "main" } },
+            entries: { main: {} },
           },
         },
         agentId: "main",
@@ -48,12 +49,14 @@ describe("resolveHeartbeatPromptForSystemPrompt", () => {
       resolveHeartbeatPromptForSystemPrompt({
         config: {
           agents: {
+            ownership: "explicit",
             defaults: {
+              systemAgent: { agentId: "main" },
               heartbeat: {
                 every: "0m",
               },
             },
-            entries: { main: { default: true } },
+            entries: { main: {} },
           },
         },
         agentId: "main",
@@ -95,15 +98,16 @@ describe("resolveHeartbeatPromptForSystemPrompt", () => {
       resolveHeartbeatPromptForSystemPrompt({
         config: {
           agents: {
-            list: [
-              { id: "main", default: true },
-              {
-                id: "ops",
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: {
+              main: {},
+              ops: {
                 heartbeat: {
                   every: "30m",
                 },
               },
-            ],
+            },
           },
         },
         agentId: "main",

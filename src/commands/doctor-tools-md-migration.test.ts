@@ -123,7 +123,11 @@ async function createFixture() {
   const workspace = path.join(root, "workspace");
   await fs.mkdir(workspace, { recursive: true });
   const cfg = {
-    agents: { list: [{ id: "main", default: true, workspace }] },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: { workspace } },
+    },
   } as OpenClawConfig;
   return {
     root,
@@ -220,7 +224,7 @@ describe("TOOLS.md migration", () => {
     const agents = `# Agent\n\n## Tools\n\n${"a".repeat(15_000)}\n`;
     const tools = `${"b".repeat(15_000)}\n`;
     const merged = `${agents}\n### Local notes (migrated from TOOLS.md)\n\n${tools}`;
-    fixture.cfg.agents!.list![0]!.bootstrapMaxChars = 20_000;
+    fixture.cfg.agents!.entries!.main!.bootstrapMaxChars = 20_000;
     await fs.writeFile(fixture.agentsPath, agents);
     await fs.writeFile(fixture.toolsPath, tools);
 
@@ -240,10 +244,10 @@ describe("TOOLS.md migration", () => {
     const agents = `# Agent\n\n## Tools\n\n${"a".repeat(15_000)}\n`;
     const tools = `${"b".repeat(15_000)}\n`;
     const merged = `${agents}\n### Local notes (migrated from TOOLS.md)\n\n${tools}`;
-    fixture.cfg.agents!.list = [
-      { id: "main", default: true, workspace: fixture.workspace, bootstrapMaxChars: 40_000 },
-      { id: "limited", workspace: fixture.workspace, bootstrapMaxChars: 20_000 },
-    ];
+    fixture.cfg.agents!.entries = {
+      main: { workspace: fixture.workspace, bootstrapMaxChars: 40_000 },
+      limited: { workspace: fixture.workspace, bootstrapMaxChars: 20_000 },
+    };
     await fs.writeFile(fixture.agentsPath, agents);
     await fs.writeFile(fixture.toolsPath, tools);
 

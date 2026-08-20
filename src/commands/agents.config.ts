@@ -8,7 +8,7 @@ import {
   listAgentEntries,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  tryResolveLegacyCompatibilityAgentId,
+  tryResolveAmbientOwnerAgentId,
   toAgentEntriesRecord,
 } from "../agents/agent-scope.js";
 import { resolveAgentAvatarUrlFromSource } from "../agents/identity-avatar-file.js";
@@ -74,7 +74,7 @@ export function loadAgentIdentity(workspace: string): AgentIdentity | null {
 
 /** Build config-derived summaries for text/JSON agent listing. */
 export function buildAgentSummaries(cfg: OpenClawConfig): AgentSummary[] {
-  const defaultAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const defaultAgentId = tryResolveAmbientOwnerAgentId(cfg);
   const configuredAgents = listAgentEntries(cfg);
   const orderedIds =
     configuredAgents.length > 0
@@ -177,7 +177,7 @@ export function applyAgentConfig(
   if (list.length !== 1 || nextList.length <= 1) {
     return nextConfig;
   }
-  const priorSystemAgentId = tryResolveLegacyCompatibilityAgentId(cfg);
+  const priorSystemAgentId = tryResolveAmbientOwnerAgentId(cfg);
   const transitionedConfig =
     priorSystemAgentId &&
     !normalizeOptionalString(nextConfig.agents?.defaults?.systemAgent?.agentId)

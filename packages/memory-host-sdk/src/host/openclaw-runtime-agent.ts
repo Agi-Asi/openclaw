@@ -12,6 +12,7 @@ export {
   resolveAgentWorkspaceDir,
   resolveCronStyleNow,
   resolveDefaultAgentId,
+  resolveSoleAgentId,
   resolveMemorySearchConfig,
   resolveMemorySearchSyncConfig,
   resolveSessionAgentId,

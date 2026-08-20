@@ -370,7 +370,11 @@ describe("resolveSlackSystemEventRoute", () => {
     const ctx = createSlackMonitorContext({
       ...baseParams(),
       cfg: {
-        agents: { list: [{ id: "ops", default: true }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { ops: {} },
+        },
       },
     });
     expect(ctx.resolveSlackSystemEventRoute({ channelId: "C123" })).toEqual({

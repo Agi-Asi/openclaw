@@ -29,12 +29,14 @@ import type { GatewayPostReadySidecarHandle } from "./server-startup-post-attach
 const mocks = getPreparedModelRuntimeMocks();
 const config = {
   agents: {
+    ownership: "explicit",
     defaults: {
+      systemAgent: { agentId: "main" },
       model: { primary: "openai/gpt-5.4" },
       models: { "openai/gpt-5.4": {} },
       modelPolicy: { allow: ["openai/gpt-5.4"] },
     },
-    list: [{ id: "main", default: true }],
+    entries: { main: {} },
   },
 } as OpenClawConfig;
 const model = {

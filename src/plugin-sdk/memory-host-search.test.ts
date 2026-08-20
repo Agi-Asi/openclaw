@@ -33,7 +33,13 @@ describe("memory-host-search facade", () => {
   });
 
   it("delegates active manager lookup to the lazy runtime module", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
     const expected = { manager: null, error: "unavailable" };
     getActiveMemorySearchManagerMock.mockResolvedValue(expected);
 
@@ -42,7 +48,13 @@ describe("memory-host-search facade", () => {
   });
 
   it("delegates runtime cleanup to the lazy runtime module", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
 
     await closeActiveMemorySearchManagers(cfg);
 
@@ -50,7 +62,13 @@ describe("memory-host-search facade", () => {
   });
 
   it("delegates scoped runtime cleanup to the lazy runtime module", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
 
     await closeActiveMemorySearchManager({ cfg, agentId: "main" });
 

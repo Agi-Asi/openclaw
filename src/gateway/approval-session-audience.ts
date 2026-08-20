@@ -1,4 +1,4 @@
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveSoleAgentId } from "../agents/agent-scope.js";
 import { buildLatestSubagentRunReadIndex } from "../agents/subagents/registry/subagent-registry-read.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
@@ -157,7 +157,7 @@ function canonicalizeApprovalSourceStreamKey(
   sessionKey: string,
   sourceAgentId?: string | null,
 ): string {
-  const ownerAgentId = normalizeAgentId(sourceAgentId ?? resolveDefaultAgentId(cfg));
+  const ownerAgentId = normalizeAgentId(sourceAgentId ?? resolveSoleAgentId(cfg));
   // Unscoped source aliases (e.g. "child", "main") must resolve against the
   // raising agent's store, not the default agent's, or multi-agent audiences
   // route to the wrong session streams.

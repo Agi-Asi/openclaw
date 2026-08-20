@@ -11,7 +11,7 @@ import {
   resolveAgentDir,
   resolveAgentEffectiveModelPrimary,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../../agents/agent-scope.js";
 import { resolveSessionAuthSelection } from "../../agents/auth-profiles/session-override.js";
 import { applyExtraParamsToAgent } from "../../agents/embedded-agent-runner/extra-params.js";
@@ -321,7 +321,7 @@ const DEFAULT_DEPENDENCIES: WorkerInferenceRuntimeDependencies = {
     }
     return {
       ...target,
-      agentId: target.agentId ?? resolveDefaultAgentId(config),
+      agentId: target.agentId ?? resolveSoleAgentId(config),
     };
   },
   acquireRuntimeLease: acquireAgentRunPreparedModelRuntime,

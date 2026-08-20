@@ -62,7 +62,11 @@ async function configureNonGlobalMainSession(): Promise<() => Promise<void>> {
     configPath,
     `${JSON.stringify(
       {
-        agents: { list: [{ id: "main", default: true }, { id: "work" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, work: {} },
+        },
         session: { store: storePath },
       },
       null,

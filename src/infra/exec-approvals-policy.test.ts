@@ -829,7 +829,7 @@ describe("exec approvals policy helpers", () => {
           },
         },
         agents: {
-          entries: { runner: { default: true } },
+          entries: { runner: {} },
         },
       } satisfies OpenClawConfig,
       approvals: {
@@ -869,7 +869,7 @@ describe("exec approvals policy helpers", () => {
             ask: "off",
           },
         },
-        agents: { entries: { [DEFAULT_AGENT_ID]: { default: true } } },
+        agents: { entries: { [DEFAULT_AGENT_ID]: {} } },
       } satisfies OpenClawConfig,
       approvals: {
         version: 1,
@@ -905,7 +905,6 @@ describe("exec approvals policy helpers", () => {
         agents: {
           entries: {
             [DEFAULT_AGENT_ID]: {
-              default: true,
               tools: {
                 exec: {
                   ask: "always",
@@ -931,8 +930,10 @@ describe("exec approvals policy helpers", () => {
     const snapshots = collectExecPolicyScopeSnapshots({
       cfg: {
         agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
           entries: {
-            main: { default: true },
+            main: {},
             runner: { tools: { exec: { ask: "always" } } },
           },
         },

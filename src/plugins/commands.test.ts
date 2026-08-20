@@ -1481,10 +1481,12 @@ describe("registerPluginCommand", () => {
       commandBody: "/runtimecheck",
       config: {
         agents: {
-          list: [{ id: "ops", default: true }],
+          ownership: "explicit",
           defaults: {
             model: "openai/gpt-5.5",
+            systemAgent: { agentId: "ops" },
           },
+          entries: { ops: {} },
         },
         session: {
           mainKey: "main",

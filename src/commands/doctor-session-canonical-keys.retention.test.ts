@@ -28,7 +28,11 @@ describe("doctor canonical session-key retention repair", () => {
       const mainStore = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
       const opsStore = resolveSessionStorePathCore(storeTemplate, { agentId: "ops", env });
       const cfg = {
-        agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, ops: {} },
+        },
         session: { mainKey: "shared", store: storeTemplate },
       } as OpenClawConfig;
 
@@ -217,7 +221,11 @@ describe("doctor canonical session-key retention repair", () => {
         const mainStore = resolveSessionStorePathCore(storeTemplate, { agentId: "main", env });
         const opsStore = resolveSessionStorePathCore(storeTemplate, { agentId: "ops", env });
         const cfg = {
-          agents: { list: [{ id: "main", default: true }, { id: "ops" }] },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, ops: {} },
+          },
           session: { mainKey: "work", store: storeTemplate },
         } as OpenClawConfig;
         insertLegacySession({

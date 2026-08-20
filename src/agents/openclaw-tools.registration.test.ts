@@ -35,7 +35,11 @@ type CreateOpenClawToolsOptions = NonNullable<Parameters<typeof createOpenClawTo
 function withDefaultRoster(config: OpenClawConfig | undefined): OpenClawConfig {
   return {
     ...config,
-    agents: config?.agents ?? { entries: { main: { default: true } } },
+    agents: config?.agents ?? {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
   };
 }
 
@@ -573,10 +577,7 @@ describe("Swarm registration", () => {
     const names = createOpenClawCodingTools({
       sessionKey: "agent:worker:subagent:child",
       runId: "collector-run",
-      config: {
-        agents: { entries: { main: { default: true } } },
-        tools: { allow: ["read"], swarm: true },
-      },
+      config: withDefaultRoster({ tools: { allow: ["read"], swarm: true } }),
       swarmCollector: true,
       swarmOutputSchema: { type: "object", properties: { answer: { type: "string" } } },
     }).map((tool) => tool.name);
@@ -590,10 +591,7 @@ describe("Swarm registration", () => {
     const names = createOpenClawCodingTools({
       sessionKey: "agent:worker:subagent:child",
       runId: "collector-run",
-      config: {
-        agents: { entries: { main: { default: true } } },
-        tools: { swarm: true },
-      },
+      config: withDefaultRoster({ tools: { swarm: true } }),
       swarmCollector: true,
     }).map((tool) => tool.name);
 
@@ -604,10 +602,7 @@ describe("Swarm registration", () => {
     const names = createOpenClawCodingTools({
       sessionKey: "agent:worker:main",
       runId: "collector-run",
-      config: {
-        agents: { entries: { main: { default: true } } },
-        tools: { swarm: true },
-      },
+      config: withDefaultRoster({ tools: { swarm: true } }),
       swarmCollector: true,
     }).map((tool) => tool.name);
 

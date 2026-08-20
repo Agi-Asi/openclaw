@@ -688,7 +688,9 @@ async function writeLiveGatewayConfig(params: {
     // The Codex plugin owns the `codex/*` catalog/auth marker. Keeping runtime
     // policy on the model entry proves the app-server harness path.
     agents: {
+      ownership: "explicit",
       defaults: {
+        systemAgent: { agentId: "dev" },
         workspace: params.workspace,
         skipBootstrap: true,
         timeoutSeconds: CODEX_HARNESS_AGENT_TIMEOUT_SECONDS,
@@ -709,7 +711,6 @@ async function writeLiveGatewayConfig(params: {
       },
       entries: {
         dev: {
-          default: true,
           workspace: params.workspace,
           thinkingDefault: CODEX_HARNESS_THINKING,
           model: { primary: params.modelKey },

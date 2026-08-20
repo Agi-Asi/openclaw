@@ -648,7 +648,11 @@ describe("Memory Wiki compiled cache lifecycle", () => {
   it("deletes cache rows when their agent owner is removed", async () => {
     const rootDir = path.join((await createPersistentVault()).rootDir, "agents");
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     };
     const baseConfig = resolveMemoryWikiConfig({ vault: { scope: "agent", path: rootDir } });
     const support = resolveMemoryWikiAgentConfig({

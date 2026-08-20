@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { listAgentIds, listAgentEntries, resolveAgentConfig } from "../agents/agent-scope.js";
 import { resolveModelRefFromString, type ModelRef } from "../agents/model-selection.js";
 import { resolveEffectiveAgentRuntime } from "../agents/thinking-runtime.js";
@@ -20,7 +21,6 @@ import { normalizeAgentId } from "../routing/session-key.js";
 import { readStoredDeviceIdentityReadOnly } from "./device-identity-store.js";
 import { loadOrCreateDeviceIdentity } from "./device-identity.js";
 import { resolveActiveHoursTimezone } from "./heartbeat-active-hours.js";
-import { tryResolveAmbientHeartbeatAgentId } from "./heartbeat-agent-resolution.js";
 import { resolveHeartbeatIntervalMs } from "./heartbeat-summary.js";
 import type { HeartbeatWakeSource } from "./heartbeat-wake.js";
 
@@ -195,7 +195,7 @@ export function resolveHeartbeatAgents(cfg: OpenClawConfig): HeartbeatAgent[] {
       heartbeat: resolveHeartbeatConfig(cfg, agentId),
     }));
   }
-  const fallbackId = tryResolveAmbientHeartbeatAgentId(cfg);
+  const fallbackId = tryResolveAmbientOwnerAgentId(cfg, cfg.agents?.defaults?.heartbeat?.agentId);
   if (!fallbackId) {
     return [];
   }
@@ -207,7 +207,7 @@ export function isHeartbeatOwnerUnresolved(cfg: OpenClawConfig): boolean {
     listAgentIds(cfg).length > 1 &&
     !hasExplicitHeartbeatAgents(cfg) &&
     !cfg.agents?.defaults?.heartbeat &&
-    tryResolveAmbientHeartbeatAgentId(cfg) === undefined
+    tryResolveAmbientOwnerAgentId(cfg, cfg.agents?.defaults?.heartbeat?.agentId) === undefined
   );
 }
 
@@ -322,4 +322,3 @@ export function resolveHeartbeatTypingIntervalSeconds(cfg: OpenClawConfig) {
   const configured = cfg.agents?.defaults?.typingIntervalSeconds;
   return typeof configured === "number" && configured > 0 ? configured : undefined;
 }
-export { tryResolveAmbientHeartbeatAgentId } from "./heartbeat-agent-resolution.js";

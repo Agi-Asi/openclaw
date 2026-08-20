@@ -186,21 +186,21 @@ describe("Codex runtime plugin install repair", () => {
     });
     const cfg = {
       agents: {
-        list: [
-          {
-            id: "ops",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: {
+          ops: {
             model: { primary: "openai/gpt-5.5" },
             models: { "openai/gpt-5.5": { agentRuntime: { id: "codex" } } },
           },
-        ],
+        },
       },
       models: {
         providers: {
           openai: { baseUrl: "https://proxy.example.test/v1", models: [] },
         },
       },
-    };
+    } satisfies OpenClawConfig;
     const { ensureCodexRuntimePluginForModelSelection } =
       await import("./codex-runtime-plugin-install.js");
 

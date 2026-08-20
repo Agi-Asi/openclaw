@@ -226,6 +226,7 @@ describe("memory watcher config", () => {
 
   function createWatcherConfig(overrides?: Partial<MemorySearchConfig>): OpenClawConfig {
     const defaults: NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]> = {
+      systemAgent: { agentId: "main" },
       workspace: workspaceDir,
     };
     return isolateMemoryManagerTestConfig({
@@ -242,8 +243,9 @@ describe("memory watcher config", () => {
         },
       },
       agents: {
+        ownership: "explicit",
         defaults,
-        list: [{ id: "main", default: true }],
+        entries: { main: {} },
       },
     } as OpenClawConfig);
   }

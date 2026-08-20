@@ -477,8 +477,10 @@ function buildLocalModeConfig(params: {
       },
     },
     agents: {
+      ownership: "explicit",
       defaults: {
         workspace: params.workspaceDir,
+        systemAgent: { agentId: "main" },
         model: { primary: "tui-pty-mock/gpt-5.5" },
         models: {
           "tui-pty-mock/gpt-5.5": { agentRuntime: { id: "openclaw" } },
@@ -488,7 +490,6 @@ function buildLocalModeConfig(params: {
       },
       entries: {
         main: {
-          default: true,
           skills: [],
           model: { primary: "tui-pty-mock/gpt-5.5" },
         },
@@ -670,8 +671,10 @@ function buildGatewayModeConfig(params: { tempDir: string; providerBaseUrl: stri
   return {
     ...base,
     agents: {
+      ownership: "explicit",
       defaults: {
         workspace: path.join(params.tempDir, defaultScenario.agentId),
+        systemAgent: { agentId: defaultScenario.agentId },
         model: { primary: defaultModelRef },
         models: Object.fromEntries(
           modelRefs.map((modelRef) => [modelRef, { agentRuntime: { id: "openclaw" } }]),
@@ -680,10 +683,9 @@ function buildGatewayModeConfig(params: { tempDir: string; providerBaseUrl: stri
         skipBootstrap: true,
       },
       entries: Object.fromEntries(
-        agentScenarios.map((scenario, index) => [
+        agentScenarios.map((scenario) => [
           scenario.agentId,
           {
-            ...(index === 0 ? { default: true } : {}),
             workspace: path.join(params.tempDir, scenario.agentId),
             skills: [],
             model: { primary: `tui-pty-mock/${scenario.modelId}` },

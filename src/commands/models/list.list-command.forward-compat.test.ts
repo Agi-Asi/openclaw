@@ -311,8 +311,9 @@ function installModelsListCommandForwardCompatMocks() {
     listAgentEntries: vi.fn(() => []),
     resolveAgentWorkspaceDir: vi.fn(() => "/tmp/openclaw-workspace"),
     resolveDefaultAgentDir: mocks.resolveDefaultAgentDir,
-    resolveDefaultAgentId: vi.fn(() => "main"),
+    resolveSoleAgentId: vi.fn(() => "main"),
     resolveSessionAgentIds: vi.fn(() => ({ defaultAgentId: "main", sessionAgentId: "main" })),
+    tryResolveAmbientOwnerAgentId: vi.fn(() => "main"),
   }));
 
   vi.doMock("../../agents/prepared-model-catalog.js", async (importOriginal) => ({

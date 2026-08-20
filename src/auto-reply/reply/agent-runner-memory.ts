@@ -8,7 +8,7 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { prepareSystemAgentRunAdmission } from "../../agents/admitted-run-context.js";
-import { resolveDefaultAgentId } from "../../agents/agent-scope-config.js";
+import { resolveSoleAgentId } from "../../agents/agent-scope-config.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
 import { resolveCliBackendConfig } from "../../agents/cli-backends.js";
 import { estimateMessagesTokens } from "../../agents/compaction.js";
@@ -302,7 +302,7 @@ function resolveFollowupAgentRuntimeId(params: FollowupRuntimeParams): string {
     cfg: params.cfg,
     provider: params.followupRun.run.provider,
     modelId: params.followupRun.run.model,
-    agentId: params.followupRun.run.agentId ?? resolveDefaultAgentId(params.cfg),
+    agentId: params.followupRun.run.agentId ?? resolveSoleAgentId(params.cfg),
     sessionKey:
       params.runtimePolicySessionKey ??
       params.sessionKey ??
@@ -759,7 +759,7 @@ export async function runPreflightCompactionIfNeeded(params: {
   if (!compactionSessionKey) {
     return entry ?? params.sessionEntry;
   }
-  const configuredAgentId = params.followupRun.run.agentId ?? resolveDefaultAgentId(params.cfg);
+  const configuredAgentId = params.followupRun.run.agentId ?? resolveSoleAgentId(params.cfg);
   const compactionAgentId = isUnscopedSessionKeySentinel(compactionSessionKey)
     ? configuredAgentId
     : resolveAgentIdFromSessionKey(compactionSessionKey, configuredAgentId);

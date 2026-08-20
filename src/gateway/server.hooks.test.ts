@@ -67,7 +67,9 @@ async function postHook(
 
 function setMainAndHooksAgents(): void {
   testState.agentsConfig = {
-    entries: { main: { default: true }, hooks: {} },
+    ownership: "explicit",
+    defaults: { systemAgent: { agentId: "main" } },
+    entries: { main: {}, hooks: {} },
   };
 }
 
@@ -1019,7 +1021,9 @@ describe("gateway server hooks", () => {
       allowedAgentIds: [],
     };
     testState.agentsConfig = {
-      entries: { main: { default: true }, hooks: {} },
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {}, hooks: {} },
     };
     await withGatewayServer(async ({ port }) => {
       const resNoAgent = await postHook(port, "/hooks/agent", {

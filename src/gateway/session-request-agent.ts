@@ -3,8 +3,11 @@ import {
   type ErrorShape,
   errorShape,
 } from "../../packages/gateway-protocol/src/index.js";
-import { AgentSelectionRequiredError, listAgentIds } from "../agents/agent-scope.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
+import {
+  AgentSelectionRequiredError,
+  listAgentIds,
+  tryResolveAmbientOwnerAgentId,
+} from "../agents/agent-scope.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../config/sessions/session-store-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
@@ -27,9 +30,7 @@ export function tryResolveSessionCompatibilityOwnerAgentId(
   if (persistedStoreOwner.kind === "configured") {
     return persistedStoreOwner.agentId;
   }
-  return persistedStoreOwner.kind === "retired"
-    ? undefined
-    : tryResolveLegacyCompatibilityAgentId(cfg);
+  return persistedStoreOwner.kind === "retired" ? undefined : tryResolveAmbientOwnerAgentId(cfg);
 }
 
 export function resolveRequestedSessionAgentId(

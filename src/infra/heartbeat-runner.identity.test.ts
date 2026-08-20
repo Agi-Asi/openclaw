@@ -58,11 +58,13 @@ describe("runHeartbeatOnce identity", () => {
         const storeTemplate = path.join(tmpDir, "agents", "{agentId}", "sessions.json");
         const cfg: OpenClawConfig = {
           agents: {
+            ownership: "explicit",
             defaults: {
               workspace: tmpDir,
               heartbeat: { every: "5m", target: "last", isolatedSession },
+              systemAgent: { agentId: "main" },
             },
-            entries: { main: { default: true }, historian2: {} },
+            entries: { main: {}, historian2: {} },
           },
           session: { scope: "global", dmScope: "per-channel-peer", store: storeTemplate },
         };
@@ -119,8 +121,9 @@ describe("runHeartbeatOnce identity", () => {
       const storeTemplate = path.join(tmpDir, "agents", "{agentId}", "sessions.json");
       const cfg: OpenClawConfig = {
         agents: {
-          defaults: { workspace: tmpDir },
-          entries: { main: { default: true }, hooks: {} },
+          ownership: "explicit",
+          defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+          entries: { main: {}, hooks: {} },
         },
         session: { scope: "global", store: storeTemplate },
       };
@@ -161,8 +164,9 @@ describe("runHeartbeatOnce identity", () => {
       const storeTemplate = path.join(tmpDir, "agents", "{agentId}", "sessions.json");
       const cfg: OpenClawConfig = {
         agents: {
-          defaults: { workspace: tmpDir },
-          entries: { main: { default: true }, alpha: {}, beta: {} },
+          ownership: "explicit",
+          defaults: { workspace: tmpDir, systemAgent: { agentId: "main" } },
+          entries: { main: {}, alpha: {}, beta: {} },
         },
         session: { scope: "global", store: storeTemplate },
       };

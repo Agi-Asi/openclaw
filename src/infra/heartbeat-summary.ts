@@ -1,5 +1,6 @@
 // Summarizes heartbeat config for CLI and UI display.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { listAgentEntries, resolveAgentConfig } from "../agents/agent-scope.js";
 import {
   DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
@@ -10,7 +11,6 @@ import { parseDurationMs } from "../cli/parse-duration.js";
 import type { AgentDefaultsConfig } from "../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeAgentId } from "../routing/session-key.js";
-import { tryResolveAmbientHeartbeatAgentId } from "./heartbeat-agent-resolution.js";
 
 // Heartbeat summaries merge default and per-agent heartbeat config for CLI/UI
 // display without scheduling any work.
@@ -37,7 +37,10 @@ function hasExplicitHeartbeatAgents(cfg: OpenClawConfig) {
 
 /** Return whether heartbeat scheduling applies to an agent. */
 export function isHeartbeatEnabledForAgent(cfg: OpenClawConfig, agentId?: string): boolean {
-  const ambientAgentId = tryResolveAmbientHeartbeatAgentId(cfg);
+  const ambientAgentId = tryResolveAmbientOwnerAgentId(
+    cfg,
+    cfg.agents?.defaults?.heartbeat?.agentId,
+  );
   if (agentId === undefined && ambientAgentId === undefined) {
     return false;
   }

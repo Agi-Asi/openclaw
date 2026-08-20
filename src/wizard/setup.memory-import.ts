@@ -1,4 +1,4 @@
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../agents/agent-scope.js";
 import { createMigrationLogger } from "../commands/migrate/context.js";
 import {
   applyProviderMemoryImport,
@@ -59,7 +59,7 @@ export async function runSetupMemoryImportStep(params: {
   /** Observe completed provider attempts without changing onboarding behavior. */
   onProviderOutcome?: (outcome: MemoryImportProviderOutcome) => void;
 }): Promise<SetupMemoryImportOutcome> {
-  const agentId = params.agentId ?? resolveDefaultAgentId(params.config);
+  const agentId = params.agentId ?? resolveSoleAgentId(params.config);
   const providers = listMemoryMigrationProviders(params.config);
   if (providers.length === 0) {
     return { status: "nothing-to-import", providers: [] };

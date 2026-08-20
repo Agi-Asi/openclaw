@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginRuntime } from "./runtime/types.js";
 import { importSessionCatalogHistory } from "./session-catalog-history-import.js";
@@ -89,25 +88,6 @@ function messageText(message: Record<string, unknown>): string | undefined {
 }
 
 describe("listSessionCatalogEntries", () => {
-  it("scans the retained compatibility owner first", () => {
-    const config = retainLegacyDefaultAgentId(
-      {
-        agents: { list: [{ id: "alpha" }, { id: "beta" }] },
-      } as OpenClawConfig,
-      "beta",
-    );
-    const listSessionEntries = vi.fn((_params: { agentId: string }) => []);
-    const runtime = {
-      agent: { session: { listSessionEntries } },
-    } as unknown as PluginRuntime;
-
-    expect(listSessionCatalogEntries({ config, runtime })).toEqual([]);
-    expect(listSessionEntries.mock.calls.map(([params]) => params.agentId)).toEqual([
-      "beta",
-      "alpha",
-    ]);
-  });
-
   it("requires and scopes an owner under explicit multi-agent ownership", () => {
     const config = {
       agents: {

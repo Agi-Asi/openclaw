@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
   resolveAgentDir: vi.fn((_cfg: unknown, agentId: string) =>
     agentId === "main" ? "/tmp/agent" : `/tmp/agent-${agentId}`,
   ),
-  resolveDefaultAgentId: vi.fn(() => "main"),
+  resolveSoleAgentId: vi.fn(() => "main"),
   ensureAuthProfileStoreWithoutExternalProfiles: vi.fn((agentDir?: string): AuthProfileStore => {
     void agentDir;
     return { version: 1, profiles: {} };
@@ -68,11 +68,17 @@ vi.mock("../../config/config.js", () => ({
   getRuntimeConfig: mocks.getRuntimeConfig,
 }));
 
-vi.mock("../../agents/agent-scope.js", () => ({
-  listAgentIds: mocks.listAgentIds,
-  resolveAgentDir: mocks.resolveAgentDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
-}));
+vi.mock("../../agents/agent-scope.js", async () => {
+  const { tryResolveAmbientOwnerAgentId } = await vi.importActual<
+    typeof import("../../agents/agent-scope-config.js")
+  >("../../agents/agent-scope-config.js");
+  return {
+    listAgentIds: mocks.listAgentIds,
+    resolveAgentDir: mocks.resolveAgentDir,
+    resolveSoleAgentId: mocks.resolveSoleAgentId,
+    tryResolveAmbientOwnerAgentId,
+  };
+});
 
 vi.mock("../../agents/auth-profiles.js", async () => {
   const actual = await vi.importActual<typeof import("../../agents/auth-profiles.js")>(
@@ -283,7 +289,7 @@ function resetAuthStatusMocks(): void {
   mocks.resolveAgentDir.mockImplementation((_cfg: unknown, agentId: string) =>
     agentId === "main" ? "/tmp/agent" : `/tmp/agent-${agentId}`,
   );
-  mocks.resolveDefaultAgentId.mockReturnValue("main");
+  mocks.resolveSoleAgentId.mockReturnValue("main");
   setPreparedAuthStore({ version: 1, profiles: {} });
   setPreparedMetadataSnapshot({
     index: { plugins: [] },
@@ -420,7 +426,13 @@ describe("models.authStatus", () => {
   );
 
   it("rejects an explicit unknown agentId before reading auth state", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }, { id: "writer" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, writer: {} },
+      },
+    };
     mocks.getRuntimeConfig.mockReturnValue(cfg);
     mocks.listAgentIds.mockReturnValue(["main", "writer"]);
     const opts = createOptions({ agentId: "retired", refresh: true });
@@ -442,7 +454,13 @@ describe("models.authStatus", () => {
   });
 
   it("accepts an explicitly configured normalized roster id", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }, { id: "_writer" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, _writer: {} },
+      },
+    };
     mocks.getRuntimeConfig.mockReturnValue(cfg);
     mocks.listAgentIds.mockReturnValue(["main", "_writer"]);
     const opts = createOptions({ agentId: "_writer" });
@@ -457,7 +475,13 @@ describe("models.authStatus", () => {
   it.each(["???", "ſ", "   ", "\t"])(
     "rejects explicit id %j when it collapses to the normalization fallback",
     async (agentId) => {
-      const cfg = { agents: { list: [{ id: "main", default: true }] } };
+      const cfg = {
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
+      };
       mocks.getRuntimeConfig.mockReturnValue(cfg);
       mocks.listAgentIds.mockReturnValue(["main"]);
       const opts = createOptions({ agentId });
@@ -475,7 +499,13 @@ describe("models.authStatus", () => {
   );
 
   it("reads the published auth owner for each requested agent", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }, { id: "writer" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, writer: {} },
+      },
+    };
     mocks.getRuntimeConfig.mockReturnValue(cfg);
     mocks.listAgentIds.mockReturnValue(["main", "writer"]);
 
@@ -493,7 +523,13 @@ describe("models.authStatus", () => {
   });
 
   it("re-reads runtime config after an explicit auth refresh", async () => {
-    const before = { agents: { list: [{ id: "main", default: true }] } };
+    const before = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
+    };
     const after = {
       ...before,
       models: { providers: { openai: { auth: "oauth" } } },
@@ -2074,7 +2110,13 @@ describe("models.authLogout", () => {
     { name: "empty", agentId: "", expectedAgentId: "main" },
     { name: "valid", agentId: "Writer", expectedAgentId: "writer" },
   ])("targets the $name agentId auth store", async ({ agentId, expectedAgentId }) => {
-    const cfg = { agents: { list: [{ id: "main", default: true }, { id: "writer" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, writer: {} },
+      },
+    };
     mocks.getRuntimeConfig.mockReturnValue(cfg);
     mocks.listAgentIds.mockReturnValue(["main", "writer"]);
     const opts = createLogoutOptions({
@@ -2094,7 +2136,13 @@ describe("models.authLogout", () => {
   });
 
   it("rejects an explicit unknown agentId without touching the default auth store", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }, { id: "writer" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, writer: {} },
+      },
+    };
     mocks.getRuntimeConfig.mockReturnValue(cfg);
     mocks.listAgentIds.mockReturnValue(["main", "writer"]);
     const opts = createLogoutOptions({ provider: "openrouter", agentId: "retired" });
@@ -2274,7 +2322,13 @@ describe("models.authLogout", () => {
   });
 
   it("aborts provider runs only for the logged-out agent", async () => {
-    const cfg = { agents: { list: [{ id: "main", default: true }, { id: "writer" }] } };
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, writer: {} },
+      },
+    };
     mocks.getRuntimeConfig.mockReturnValue(cfg);
     mocks.listAgentIds.mockReturnValue(["main", "writer"]);
     const opts = createLogoutOptions({ provider: "openrouter", agentId: "writer" });

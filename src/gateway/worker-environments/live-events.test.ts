@@ -172,7 +172,11 @@ describe("worker live events", () => {
     root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "openclaw-worker-live-"));
     store = path.join(root, "agents", "main", "sessions", "sessions.json");
     cfg = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {} },
+      },
       session: {
         mainKey: "main",
         store: path.join(root, "agents", "{agentId}", "sessions", "sessions.json"),

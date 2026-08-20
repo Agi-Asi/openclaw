@@ -1,4 +1,4 @@
-import { resolveDefaultAgentId } from "openclaw/plugin-sdk/agent-runtime";
+import { resolveSoleAgentId } from "openclaw/plugin-sdk/agent-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createBeamRequestHandler } from "./src/http.js";
@@ -23,7 +23,7 @@ export default definePluginEntry({
           const config = api.runtime.config.current();
           return {
             // The resolver only reads; the plugin runtime exposes a DeepReadonly view.
-            agentId: resolveDefaultAgentId(config as OpenClawConfig),
+            agentId: resolveSoleAgentId(config as OpenClawConfig),
             basePath: config.gateway?.controlUi?.basePath,
           };
         },

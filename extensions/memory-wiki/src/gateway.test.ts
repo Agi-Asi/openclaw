@@ -217,7 +217,11 @@ describe("memory-wiki gateway methods", () => {
       });
       const { api, registerGatewayMethod } = createPluginApi();
       const appConfig = {
-        agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+        agents: {
+          ownership: "explicit" as const,
+          entries: { support: {}, marketing: {} },
+          defaults: { systemAgent: { agentId: "support" } },
+        },
       };
       const agentConfig = {
         ...config,
@@ -269,7 +273,13 @@ describe("memory-wiki gateway methods", () => {
       config: { vault: { scope: "agent" } },
     });
     const { api, registerGatewayMethod } = createPluginApi();
-    const appConfig = { agents: { list: [{ id: "support", default: true }] } };
+    const appConfig = {
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
+    };
 
     registerMemoryWikiGatewayMethods({ api, config, appConfig });
     const handler = findGatewayHandler(registerGatewayMethod, "wiki.obsidian.search");
@@ -318,7 +328,11 @@ describe("memory-wiki gateway methods", () => {
     const { config } = await createVault({ prefix: "memory-wiki-gateway-" });
     const { api, registerGatewayMethod } = createPluginApi();
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     };
 
     registerMemoryWikiGatewayMethods({ api, config, appConfig });
@@ -340,7 +354,11 @@ describe("memory-wiki gateway methods", () => {
     });
     const { api, registerGatewayMethod } = createPluginApi();
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     };
     const getAppConfig = vi.fn(() => appConfig);
 
@@ -381,7 +399,11 @@ describe("memory-wiki gateway methods", () => {
     });
     const { api, registerGatewayMethod } = createPluginApi();
     const appConfig = {
-      agents: { list: [{ id: "support", default: true }, { id: "marketing" }] },
+      agents: {
+        ownership: "explicit" as const,
+        entries: { support: {}, marketing: {} },
+        defaults: { systemAgent: { agentId: "support" } },
+      },
     };
 
     registerMemoryWikiGatewayMethods({ api, config, appConfig });
@@ -730,7 +752,9 @@ describe("memory-wiki gateway methods", () => {
     const { api, registerGatewayMethod } = createPluginApi();
     const appConfig = {
       agents: {
-        list: [{ id: "main", default: true }],
+        ownership: "explicit" as const,
+        entries: { main: {} },
+        defaults: { systemAgent: { agentId: "main" } },
       },
     };
 

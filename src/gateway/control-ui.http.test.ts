@@ -1685,8 +1685,9 @@ describe("handleControlUiHttpRequest", () => {
             root: { kind: "resolved", path: tmp },
             config: {
               agents: {
-                defaults: { workspace: tmp },
-                list: [{ id: "roboclaw", default: true, workspace: tmp }],
+                ownership: "explicit",
+                defaults: { workspace: tmp, systemAgent: { agentId: "roboclaw" } },
+                entries: { roboclaw: { workspace: tmp } },
               },
               ui: {
                 seamColor: "#1A2b3C",

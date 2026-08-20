@@ -1,6 +1,6 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { AgentSelectionRequiredError } from "../../agents/agent-scope-config.js";
-import { listAgentIds, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { listAgentIds, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type {
   MemoryProviderStatus,
@@ -111,7 +111,7 @@ export const memorySearchHandlers: GatewayRequestHandlers = {
     let agentId = requestedAgentId;
     if (!agentId) {
       try {
-        agentId = resolveDefaultAgentId(cfg, {
+        agentId = resolveSoleAgentId(cfg, {
           surface: "memory search",
           hint: "Pass agentId to select a configured agent.",
         });

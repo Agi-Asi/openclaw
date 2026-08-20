@@ -9,6 +9,7 @@ import {
   listAgentEntries,
   resolveAgentEntry,
   resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId,
   toAgentEntriesRecord,
 } from "../agents/agent-scope-config.js";
 import { formatCliCommand } from "../cli/command-format.js";
@@ -17,7 +18,6 @@ import {
   hasResolvedRosterBeforeMigrations,
 } from "../config/agent-roster-provenance.js";
 import type { ConfigWriteOptions, ReadConfigFileSnapshotForWriteResult } from "../config/io.js";
-import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "../config/legacy.js";
 import type { OptionalBootstrapFileName } from "../config/types.agent-defaults.js";
 import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.js";
@@ -168,7 +168,7 @@ export async function setupCommand(
   const authoredDefaults = cfg.agents?.defaults ?? {};
   const resolvedDefaults = resolvedConfig.agents?.defaults ?? authoredDefaults;
   const selectedAgentId =
-    tryResolveLegacyCompatibilityAgentId(resolvedConfig) ?? resolveSoleAgentId(resolvedConfig);
+    tryResolveAmbientOwnerAgentId(resolvedConfig) ?? resolveSoleAgentId(resolvedConfig);
   const defaultEntry = resolveAgentEntry(resolvedConfig, selectedAgentId);
   const defaultEntryWorkspace = defaultEntry?.workspace?.trim();
   const configuredWorkspace = defaultEntryWorkspace || resolvedDefaults.workspace;

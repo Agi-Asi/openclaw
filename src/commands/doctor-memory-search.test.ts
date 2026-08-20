@@ -3,7 +3,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { DoctorPrompter } from "./doctor-prompter.js";
 
 const note = vi.hoisted(() => vi.fn());
-const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "agent-default"));
+const tryResolveSoleAgentId = vi.hoisted(() => vi.fn(() => "agent-default"));
 const listAgentIds = vi.hoisted(() =>
   vi.fn(
     (cfg: { agents?: { list?: Array<{ id: string }> } }) =>
@@ -36,7 +36,7 @@ vi.mock("../../packages/terminal-core/src/note.js", () => ({
 
 vi.mock("../agents/agent-scope.js", () => ({
   listAgentIds,
-  tryResolveDefaultAgentId: resolveDefaultAgentId,
+  tryResolveSoleAgentId,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
 }));
@@ -289,7 +289,7 @@ describe("noteMemorySearchHealth", () => {
 
   beforeEach(() => {
     note.mockClear();
-    resolveDefaultAgentId.mockClear();
+    tryResolveSoleAgentId.mockClear();
     listAgentIds.mockImplementation(
       (config: { agents?: { list?: Array<{ id: string }> } }) =>
         config.agents?.list?.map((agent) => agent.id) ?? ["agent-default"],

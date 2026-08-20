@@ -16,7 +16,7 @@ import {
 import {
   listAgentEntries,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
+  resolveSoleAgentId,
 } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 
@@ -601,7 +601,7 @@ export function resolveMemoryDreamingWorkspaces(
     agentIds.push(id);
   }
   if (agentIds.length === 0) {
-    agentIds.push(resolveDefaultAgentId(cfg));
+    agentIds.push(resolveSoleAgentId(cfg));
   }
 
   const byWorkspace = new Map<string, MemoryDreamingWorkspace>();
@@ -610,7 +610,7 @@ export function resolveMemoryDreamingWorkspaces(
     if (!workspaceDir) {
       return;
     }
-    const agentId = normalizeOptionalLowercaseString(agentIdRaw) || resolveDefaultAgentId(cfg);
+    const agentId = normalizeOptionalLowercaseString(agentIdRaw) || resolveSoleAgentId(cfg);
     const key = normalizePathForComparison(workspaceDir);
     const existing = byWorkspace.get(key);
     if (existing) {
@@ -627,7 +627,7 @@ export function resolveMemoryDreamingWorkspaces(
   }
   const primaryWorkspaceDir = options.primaryWorkspaceDir?.trim();
   if (primaryWorkspaceDir) {
-    addWorkspace(primaryWorkspaceDir, options.primaryAgentId ?? resolveDefaultAgentId(cfg));
+    addWorkspace(primaryWorkspaceDir, options.primaryAgentId ?? resolveSoleAgentId(cfg));
   }
   return [...byWorkspace.values()];
 }

@@ -1,6 +1,6 @@
 // Resolves or installs channel plugins needed by setup/onboarding flows.
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveSoleAgentId } from "../../agents/agent-scope.js";
 import {
   listRawChannelPluginCatalogEntries,
   type ChannelPluginCatalogEntry,
@@ -37,7 +37,7 @@ type ResolveInstallableChannelPluginResult = {
 };
 
 function resolveWorkspaceDir(cfg: OpenClawConfig, agentId?: string) {
-  return resolveAgentWorkspaceDir(cfg, agentId ?? resolveDefaultAgentId(cfg));
+  return resolveAgentWorkspaceDir(cfg, agentId ?? resolveSoleAgentId(cfg));
 }
 
 function resolveResolvedChannelId(params: {

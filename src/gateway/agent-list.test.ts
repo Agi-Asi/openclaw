@@ -5,12 +5,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import { listGatewayAgentsBasic } from "./agent-list.js";
 
 describe("listGatewayAgentsBasic", () => {
-  it("projects sole, retained-legacy, and explicit fleet ownership honestly", async () => {
+  it("projects sole, ambient-owner, and explicit fleet ownership honestly", async () => {
     await withStateDirEnv("openclaw-agent-list-", async () => {
       expect(listGatewayAgentsBasic({ agents: { entries: { ops: {} } } })).toMatchObject({
         defaultId: "ops",
@@ -18,11 +17,15 @@ describe("listGatewayAgentsBasic", () => {
         selectionRequired: false,
       });
 
-      const legacy = retainLegacyDefaultAgentId(
-        { agents: { entries: { first: {}, retired: {}, research: {} } } },
-        "retired",
-      );
-      expect(listGatewayAgentsBasic(legacy)).toMatchObject({
+      expect(
+        listGatewayAgentsBasic({
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "retired" } },
+            entries: { first: {}, retired: {}, research: {} },
+          },
+        }),
+      ).toMatchObject({
         defaultId: "retired",
         ownership: "legacy",
         selectionRequired: false,
@@ -49,7 +52,11 @@ describe("listGatewayAgentsBasic", () => {
       );
 
       const result = listGatewayAgentsBasic({
-        agents: { entries: { main: { default: true } } },
+        agents: {
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {} },
+        },
       });
 
       expect(result.agents).toEqual([
@@ -64,7 +71,11 @@ describe("listGatewayAgentsBasic", () => {
     await withStateDirEnv("openclaw-agent-list-", async () => {
       expect(
         listGatewayAgentsBasic({
-          agents: { entries: { main: { default: true } } },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
         }).agents,
       ).toEqual([{ id: "main", kind: "agent", name: undefined }]);
     });
@@ -75,10 +86,9 @@ describe("listGatewayAgentsBasic", () => {
       await fs.mkdir(path.join(stateDir, "agents", "openclaw"), { recursive: true });
       const cfg: OpenClawConfig = {
         agents: {
-          list: [
-            { id: "main", default: true },
-            { id: "openclaw", name: "OpenClaw" },
-          ],
+          ownership: "explicit",
+          defaults: { systemAgent: { agentId: "main" } },
+          entries: { main: {}, openclaw: { name: "OpenClaw" } },
         },
       };
 
@@ -99,7 +109,11 @@ describe("listGatewayAgentsBasic", () => {
 
       expect(
         listGatewayAgentsBasic({
-          agents: { entries: { main: { default: true } } },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {} },
+          },
         }).agents,
       ).toEqual([
         { id: "main", kind: "agent", name: undefined },
@@ -112,7 +126,9 @@ describe("listGatewayAgentsBasic", () => {
     const cfg: OpenClawConfig = {
       session: { mainKey: "main" },
       agents: {
-        list: [{ id: "main", default: true, identity: { name: "小金" } }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { identity: { name: "小金" } } },
       },
     };
 
@@ -125,14 +141,14 @@ describe("listGatewayAgentsBasic", () => {
     const cfg: OpenClawConfig = {
       session: { mainKey: "main" },
       agents: {
-        list: [
-          {
-            id: "main",
-            default: true,
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: {
+          main: {
             name: "Ops",
             identity: { name: "开发助手" },
           },
-        ],
+        },
       },
     };
 
@@ -141,11 +157,13 @@ describe("listGatewayAgentsBasic", () => {
     expect(result.agents).toEqual([{ id: "main", kind: "agent", name: "Ops" }]);
   });
 
-  it("leaves the name unset when neither agents.list[].name nor identity.name is present", () => {
+  it("leaves the name unset when neither agents.entries[id].name nor identity.name is present", () => {
     const cfg: OpenClawConfig = {
       session: { mainKey: "main" },
       agents: {
-        list: [{ id: "main", default: true, identity: {} }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: { identity: {} } },
       },
     };
 

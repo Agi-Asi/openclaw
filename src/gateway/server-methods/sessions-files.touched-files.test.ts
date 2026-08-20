@@ -18,14 +18,14 @@ import {
 const hoisted = vi.hoisted(() => ({
   loadSessionEntry: vi.fn(),
   resolveAgentWorkspaceDir: vi.fn(),
-  resolveDefaultAgentId: vi.fn(),
+  resolveSoleAgentId: vi.fn(),
   readSessionTranscriptVisibleMessageDeltaCore: vi.fn(),
 }));
 
 vi.mock("../../agents/agent-scope.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/agent-scope.js")>()),
   resolveAgentWorkspaceDir: hoisted.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: hoisted.resolveDefaultAgentId,
+  resolveSoleAgentId: hoisted.resolveSoleAgentId,
 }));
 
 vi.mock("../session-utils.js", async () => {
@@ -60,7 +60,7 @@ describe("sessions.files touched-file folds", () => {
     vi.clearAllMocks();
     hoisted.readSessionTranscriptVisibleMessageDeltaCore.mockReset();
     workspaceRoot = createWorkspaceFixture("openclaw-session-touched-files-test-");
-    hoisted.resolveDefaultAgentId.mockReturnValue("main");
+    hoisted.resolveSoleAgentId.mockReturnValue("main");
     hoisted.resolveAgentWorkspaceDir.mockReturnValue(workspaceRoot);
   });
 

@@ -689,7 +689,11 @@ async function prepareUnconfiguredAcpHarnessSession(options?: { withMetadata?: b
   openDirectChatSession();
   const sessionKey = `agent:codex:acp:${randomUUID()}`;
   const config: OpenClawConfig = {
-    agents: { entries: { main: { default: true } } },
+    agents: {
+      ownership: "explicit",
+      defaults: { systemAgent: { agentId: "main" } },
+      entries: { main: {} },
+    },
     acp: { enabled: true, backend: "acpx", allowedAgents: ["codex"] },
   };
   testState.agentsConfig = config.agents;
@@ -916,7 +920,11 @@ describe("gateway server chat", () => {
           store: path.join(sessionDir, "sessions-{agentId}.json"),
         };
         await writeGatewayConfig({
-          agents: { entries: { main: { default: true }, writer: {} } },
+          agents: {
+            ownership: "explicit",
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, writer: {} },
+          },
         });
         await writeSessionStore({
           agentId: "writer",
@@ -924,7 +932,11 @@ describe("gateway server chat", () => {
           entries: { "agent:writer:notes": { sessionId: "sess-writer", updatedAt: Date.now() } },
         });
         const writerConfig = {
-          agents: { entries: { main: { default: true }, writer: {} } },
+          agents: {
+            ownership: "explicit" as const,
+            defaults: { systemAgent: { agentId: "main" } },
+            entries: { main: {}, writer: {} },
+          },
           session: { store: path.join(sessionDir, "sessions-{agentId}.json") },
         };
         const context = createDirectChatContext({
@@ -1326,7 +1338,9 @@ describe("gateway server chat", () => {
     await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
       await writeGatewayConfig({
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             model: {
               primary: "openai/gpt-main",
             },
@@ -1334,7 +1348,7 @@ describe("gateway server chat", () => {
               "openai/gpt-main": {},
             },
           },
-          entries: { main: { default: true }, research: {} },
+          entries: { main: {}, research: {} },
         },
         models: {
           providers: {
@@ -1426,8 +1440,9 @@ describe("gateway server chat", () => {
   test("chat.startup omits model metadata from a fallback owner", async () => {
     const config = {
       agents: {
-        defaults: {},
-        list: [{ id: "main", default: true }, { id: "work" }],
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "main" } },
+        entries: { main: {}, work: {} },
       },
     } as OpenClawConfig;
     const context = createDirectChatContext({
@@ -1931,13 +1946,15 @@ describe("gateway server chat", () => {
     await withGatewayChatHarness(async ({ ws }) => {
       await writeGatewayConfig({
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             model: { primary: "openai/gpt-main" },
             models: {
               "openai/*": {},
             },
           },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
         models: {
           providers: {
@@ -1979,7 +1996,9 @@ describe("gateway server chat", () => {
       });
       const config = {
         agents: {
+          ownership: "explicit" as const,
           defaults: {
+            systemAgent: { agentId: "main" },
             model: {
               primary: "openai/gpt-main",
             },
@@ -1988,7 +2007,7 @@ describe("gateway server chat", () => {
             },
           },
           entries: {
-            main: { default: true },
+            main: {},
             work: {
               model: {
                 primary: "minimax/MiniMax-M2.7-highspeed",
@@ -2100,7 +2119,9 @@ describe("gateway server chat", () => {
     await withGatewayChatHarness(async ({ ws }) => {
       await writeGatewayConfig({
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             model: {
               primary: "openai/gpt-main",
               fallbacks: ["openai/gpt-fallback"],
@@ -2110,7 +2131,7 @@ describe("gateway server chat", () => {
             },
           },
           entries: {
-            main: { default: true },
+            main: {},
             work: {
               model: {
                 primary: "minimax/MiniMax-M2.7-highspeed",
@@ -2168,7 +2189,9 @@ describe("gateway server chat", () => {
     await withGatewayChatHarness(async ({ ws }) => {
       await writeGatewayConfig({
         agents: {
+          ownership: "explicit",
           defaults: {
+            systemAgent: { agentId: "main" },
             model: {
               primary: "openai/gpt-5.6-luna",
             },
@@ -2178,7 +2201,7 @@ describe("gateway server chat", () => {
             },
           },
           entries: {
-            main: { default: true },
+            main: {},
           },
         },
         models: {

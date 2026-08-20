@@ -121,7 +121,7 @@ vi.mock("./runtime.js", () => ({
 
 vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => undefined,
-  resolveDefaultAgentId: () => "default",
+  resolveSoleAgentId: () => "default",
   tryResolveConfiguredAgentWorkspaceDir: () => undefined,
   tryResolveSystemAgentWorkspaceDir: () => undefined,
 }));

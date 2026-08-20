@@ -7,7 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { createWarnLogCapture } from "../logging/test-helpers/warn-log-capture.js";
@@ -494,8 +493,10 @@ describe("resolveEffectiveToolPolicy", () => {
   it("uses the configured default agent policy for an unscoped session alias", () => {
     const cfg = {
       agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "ops" } },
         entries: {
-          ops: { default: true, tools: { deny: ["exec"] } },
+          ops: { tools: { deny: ["exec"] } },
         },
       },
     } satisfies OpenClawConfig;
@@ -506,19 +507,17 @@ describe("resolveEffectiveToolPolicy", () => {
     expect(result.agentPolicy).toEqual({ deny: ["exec"] });
   });
 
-  it("uses the retained legacy owner policy when no session scope is provided", () => {
-    const cfg = retainLegacyDefaultAgentId(
-      {
-        agents: {
-          ownership: "explicit",
-          entries: {
-            ops: { tools: { deny: ["read"] } },
-            research: { tools: { deny: ["exec"] } },
-          },
+  it("uses the configured ambient owner policy when no session scope is provided", () => {
+    const cfg = {
+      agents: {
+        ownership: "explicit",
+        defaults: { systemAgent: { agentId: "research" } },
+        entries: {
+          ops: { tools: { deny: ["read"] } },
+          research: { tools: { deny: ["exec"] } },
         },
       },
-      "research",
-    );
+    } satisfies OpenClawConfig;
 
     const result = resolveEffectiveToolPolicy({ config: cfg });
 

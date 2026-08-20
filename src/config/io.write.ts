@@ -1,7 +1,7 @@
 import type fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { listAgentEntries, tryResolveDefaultAgentId } from "../agents/agent-scope-config.js";
+import { listAgentEntries, tryResolveSoleAgentId } from "../agents/agent-scope-config.js";
 import { resolveCronJobsStorePathFromConfig } from "../cron/store.js";
 import { isVerbose } from "../global-state.js";
 import { isVitestRuntimeEnv } from "../infra/env.js";
@@ -141,11 +141,9 @@ export async function writeConfigFileFromContext(
   const previousEntries = listAgentEntries(snapshot.config);
   const nextEntries = listAgentEntries(nextConfig);
   const nextAgentIds = new Set(nextEntries.map((entry) => normalizeAgentId(entry.id)));
-  const previousSoleAgentId = tryResolveDefaultAgentId(snapshot.config);
+  const previousSoleAgentId = tryResolveSoleAgentId(snapshot.config);
   const entersMultiAgent = previousEntries.length <= 1 && nextEntries.length > 1;
-  const previousSoleRemains = Boolean(
-    previousSoleAgentId && nextAgentIds.has(normalizeAgentId(previousSoleAgentId)),
-  );
+  const previousSoleRemains = Boolean(previousSoleAgentId && nextAgentIds.has(previousSoleAgentId));
   const writesOwnershipTopology =
     !isDeepStrictEqual(previousEntries, nextEntries) ||
     [...(options.explicitSetPaths ?? []), ...unsetPaths].some(
@@ -158,7 +156,10 @@ export async function writeConfigFileFromContext(
     );
   const persistOwnership =
     entersMultiAgent || (retainedLegacyDefaultAgentId !== undefined && writesOwnershipTopology);
-  const keepOwnership = nextEntries.length > 1 && snapshot.config.agents?.ownership === "explicit";
+  const keepOwnership =
+    nextEntries.length > 1 &&
+    snapshot.config.agents?.ownership === "explicit" &&
+    retainedLegacyDefaultAgentId === undefined;
   const stampOwnership =
     (persistOwnership || keepOwnership) && nextConfig.agents?.ownership === undefined;
   if (stampOwnership) {

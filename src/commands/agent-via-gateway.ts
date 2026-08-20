@@ -18,6 +18,7 @@ import {
 import {
   AgentSelectionRequiredError,
   listAgentIds,
+  tryResolveAmbientOwnerAgentId,
   tryResolveSoleAgentId,
 } from "../agents/agent-scope-config.js";
 import { measureAgentStartup } from "../agents/startup-timing.js";
@@ -30,11 +31,6 @@ import {
   readGatewayDispatchConfig,
   readGatewayDispatchConfigWithShellEnvFallback,
 } from "../config/gateway-dispatch-config.js";
-import {
-  inheritLegacyDefaultAgentId,
-  tryGetLegacyDefaultAgentId,
-  tryResolveLegacyCompatibilityAgentId,
-} from "../config/legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "../config/legacy.roster.js";
 import { resolvePersistedSessionStoreOwnerForKey } from "../config/sessions/session-store-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -155,20 +151,14 @@ function usesImplicitRemoteCompatibilityDefault(roster: RemoteGatewayRoster): bo
 }
 
 function resolveImplicitCliAgentId(cfg: OpenClawConfig, remote?: RemoteGatewayRoster): string {
-  const migratedConfig = remote
-    ? cfg
-    : (migratePersistedImplicitMainRoster(cfg).config as OpenClawConfig);
   const selectionCfg = remote
     ? cfg
-    : inheritLegacyDefaultAgentId(
-        tryGetLegacyDefaultAgentId(cfg) ? cfg : migratedConfig,
-        migratedConfig,
-      );
+    : (migratePersistedImplicitMainRoster(cfg).config as OpenClawConfig);
   const selected = remote
     ? remote.selectionRequired
       ? undefined
       : remote.defaultId
-    : tryResolveLegacyCompatibilityAgentId(selectionCfg);
+    : tryResolveAmbientOwnerAgentId(selectionCfg);
   if (selected) {
     return selected;
   }
@@ -642,8 +632,7 @@ async function normalizeSessionKeyOptsForDispatch(
     const implicitAgentSelection = implicitSoleAgent || implicitCompatibilityDefault;
     agentIdRaw = implicitAgentSelection && unscopedSession ? undefined : selectedAgentId;
     if (!remoteGatewayRoster && implicitCompatibilityDefault) {
-      // The retained owner lives on the migrated config sidecar, so carry it past
-      // normalization rather than re-deriving ownership from the raw dispatch config.
+      // Carry the selected owner into embedded dispatch without reselecting it.
       normalizedOpts = {
         ...normalizedOpts,
         localGatewayCompatibilityAgentId: selectedAgentId,

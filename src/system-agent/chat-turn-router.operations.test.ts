@@ -447,7 +447,10 @@ describe("SystemAgentChatEngine operations", () => {
       ...baseConfig,
       agents: {
         ...baseConfig.agents,
-        list: baseConfig.agents.list.map((agent) => ({ ...agent, model: "openai/gpt-5.6-sol" })),
+        entries: {
+          ...baseConfig.agents.entries,
+          main: { ...baseConfig.agents.entries.main, model: "openai/gpt-5.6-sol" },
+        },
       },
     } satisfies OpenClawConfig;
     const verifiedInference = await createAmbientVerifiedBinding(baseConfig);

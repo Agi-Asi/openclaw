@@ -3,8 +3,8 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import {
   AgentSelectionRequiredError,
   listAgentEntries,
-  resolveDefaultAgentId,
-  tryResolveLegacyCompatibilityAgentId,
+  resolveSoleAgentId,
+  tryResolveAmbientOwnerAgentId,
 } from "../agents/agent-scope.js";
 import type { ChatType } from "../channels/chat-type.js";
 import { normalizeChatType } from "../channels/chat-type.js";
@@ -146,7 +146,7 @@ function resolveAgentLookupCache(cfg: OpenClawConfig): AgentLookupCache {
   const next: AgentLookupCache = {
     agentsRef,
     byNormalizedId,
-    fallbackSoleAgentId: tryResolveLegacyCompatibilityAgentId(cfg),
+    fallbackSoleAgentId: tryResolveAmbientOwnerAgentId(cfg),
   };
   agentLookupCacheByCfg.set(cfg, next);
   return next;
@@ -158,7 +158,7 @@ export function pickFirstExistingAgentId(cfg: OpenClawConfig, agentId: string): 
   if (!trimmed) {
     return sanitizeAgentId(
       lookup.fallbackSoleAgentId ??
-        resolveDefaultAgentId(cfg, {
+        resolveSoleAgentId(cfg, {
           surface: "agent lookup",
           hint: "Pass an explicit agent id instead of relying on an implicit route.",
         }),
@@ -817,10 +817,10 @@ export function resolveAgentRoute(input: ResolveAgentRouteInput): ResolvedAgentR
     }
   }
 
-  const unboundAgentId = defaultAgentId || tryResolveLegacyCompatibilityAgentId(input.cfg);
+  const unboundAgentId = defaultAgentId || tryResolveAmbientOwnerAgentId(input.cfg);
   return choose(
     unboundAgentId ??
-      resolveDefaultAgentId(input.cfg, {
+      resolveSoleAgentId(input.cfg, {
         surface: `${channel} account ${accountId} routing`,
         hint: `Add a channel-wide binding for ${channel}:${accountId} or configure a sole agent.`,
       }),
