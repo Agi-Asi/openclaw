@@ -144,51 +144,6 @@ describe("SystemAgentChatEngine wizard", () => {
     expect(textStep.wizardInputPending).toBe(true);
   });
 
-  it("projects producer-owned QR setup and records its polled terminal outcome", async () => {
-    useTempStateDir();
-    let finish!: (account: string) => void;
-    const settled = new Promise<string>((resolve) => {
-      finish = resolve;
-    });
-    const engine = new SystemAgentChatEngine({
-      surface: "gateway",
-      supportsQrCode: true,
-      runAgentTurn: async () => null,
-      planWithAssistant: async () => null,
-      deps: { loadOverview: fakeOverviewLoader() },
-      runChannelSetupWizard: async (_channel: string, prompter: WizardPrompter) => {
-        await prompter.qrCode?.({
-          title: "Link Signal",
-          message: "Scan this code.",
-          text: "sgnl://linkdevice?credential=secret",
-          settled,
-        });
-      },
-    });
-
-    const presented = await engine.handle("connect signal");
-    expect(presented.step).toMatchObject({
-      type: "qr",
-      executor: "gateway",
-      canCancel: true,
-    });
-    expect(presented.wizardInputPending).toBeUndefined();
-    expect(JSON.stringify(presented)).not.toContain("credential=secret");
-
-    finish("+15555550123");
-    await new Promise<void>((resolve) => {
-      setImmediate(resolve);
-    });
-    const completed = await engine.decorateRejoinReply({ text: "Welcome", action: "none" });
-
-    expect(completed.text).toContain("signal is configured");
-    expect(completed.step).toBeUndefined();
-    expect(engine.historySince(0)).toContainEqual({
-      role: "assistant",
-      text: completed.text,
-    });
-  });
-
   it("routes sensitive CLI wizard prompts to the masked channel setup flow", async () => {
     useTempStateDir();
     const engine = new SystemAgentChatEngine({

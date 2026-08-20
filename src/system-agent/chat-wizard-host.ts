@@ -88,6 +88,7 @@ type ActiveWizardBridge = {
 
 const log = createSubsystemLogger("system-agent/chat-wizard-host");
 const WIZARD_CANCEL_HINT = "Say `cancel` to stop this setup.";
+const WIZARD_CANCEL_LOCKED_MESSAGE = "The hosted wizard cannot be cancelled right now.";
 let hostedRuntimePromise: Promise<HostedRuntime> | undefined;
 
 function loadHostedRuntime(): Promise<HostedRuntime> {
@@ -340,7 +341,7 @@ export class ChatWizardHost {
       throw new SystemAgentWizardAnswerError("The hosted wizard cancel targets a stale step.");
     }
     if (!bridge.session.cancel()) {
-      throw new SystemAgentWizardAnswerError("The hosted wizard cannot be cancelled right now.");
+      throw new SystemAgentWizardAnswerError(WIZARD_CANCEL_LOCKED_MESSAGE);
     }
     return { ...(await this.pump()), userHistoryText: "Cancel" };
   }
@@ -351,7 +352,9 @@ export class ChatWizardHost {
       return { text: "", configWritten: false };
     }
     if (/^(cancel|abort|stop|quit|exit)$/i.test(text.trim())) {
-      bridge.session.cancel();
+      if (!bridge.session.cancel()) {
+        return { text: WIZARD_CANCEL_LOCKED_MESSAGE, configWritten: false };
+      }
       return await this.pump();
     }
     const step = bridge.step;
