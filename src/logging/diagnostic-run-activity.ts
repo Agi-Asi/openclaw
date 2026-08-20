@@ -32,6 +32,7 @@ import {
   clearRecoveredOwnerEmbeddedRuns,
   clearRecoveredOwnerMarkers,
   countActiveCoreModelCalls,
+  diagnosticToolKey,
   type DiagnosticRecoveryEmbeddedRun,
   type DiagnosticRecoveryModelCall,
   type DiagnosticRecoveryTool,
@@ -260,18 +261,6 @@ function touchSemanticSessionActivity(
   touchSessionActivity(activity, reason, params.now);
 }
 
-function toolKey(event: {
-  runId?: string;
-  sessionId?: string;
-  sessionKey?: string;
-  toolCallId?: string;
-  toolName?: string;
-}): string {
-  return `${event.runId ?? event.sessionId ?? event.sessionKey ?? "unknown"}:${
-    event.toolCallId ?? event.toolName ?? "unknown"
-  }`;
-}
-
 function modelCallKey(event: { runId?: string; provider?: string; model?: string }): string {
   return `${event.runId ?? "unknown"}:${event.provider ?? "provider"}:${event.model ?? "model"}`;
 }
@@ -282,7 +271,7 @@ function recordToolStarted(event: DiagnosticToolStartedActivityEvent): void {
     return;
   }
   const now = Date.now();
-  activity.activeTools.set(toolKey(event), {
+  activity.activeTools.set(diagnosticToolKey(event), {
     runId: event.runId,
     sessionId: event.sessionId,
     sessionKey: event.sessionKey,
@@ -306,7 +295,7 @@ function recordToolEnded(
   if (!activity) {
     return;
   }
-  activity.activeTools.delete(toolKey(event));
+  activity.activeTools.delete(diagnosticToolKey(event));
   touchSessionActivity(activity, `tool:${event.toolName}:ended`);
 }
 
@@ -421,7 +410,7 @@ function applyRunProgress(params: RunProgressEvent, semantic = false): void {
     return;
   }
   const now = Date.now();
-  const toolProgressKey = params.toolCallId ? toolKey({ ...params, runId }) : undefined;
+  const toolProgressKey = params.toolCallId ? diagnosticToolKey({ ...params, runId }) : undefined;
   recordDiagnosticToolProgress(activity.activeTools, toolProgressKey, params.reason, now);
   // Only an explicit fact from the current owner may clear its recovery evidence.
   if (!semantic || !runId) {

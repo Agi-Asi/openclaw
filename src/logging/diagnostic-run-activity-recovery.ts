@@ -28,6 +28,16 @@ export type DiagnosticRecoveryModelCall = DiagnosticRecoveryMarker & {
   requestTimeoutMs?: number;
 };
 
+export function diagnosticToolKey(event: {
+  runId?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  toolCallId?: string;
+  toolName?: string;
+}): string {
+  return `${event.runId ?? event.sessionId ?? event.sessionKey ?? "unknown"}:${event.toolCallId ?? event.toolName ?? "unknown"}`;
+}
+
 export function recordDiagnosticToolProgress(
   tools: Map<string, DiagnosticRecoveryTool>,
   key: string | undefined,
