@@ -464,6 +464,17 @@ struct RootTabsPresentationTests {
             nextTransportAgentID: "work"))
     }
 
+    @Test func `chat preserves a draft only across same-gateway agent resolution`() {
+        #expect(ChatProTab.composerDraftForReplacement(
+            "  unsent draft  ",
+            currentOwnerID: "gateway-a",
+            nextOwnerID: "gateway-a") == "  unsent draft  ")
+        #expect(ChatProTab.composerDraftForReplacement(
+            "do not leak",
+            currentOwnerID: "gateway-a",
+            nextOwnerID: "gateway-b") == nil)
+    }
+
     @Test func `agent routes can open gateway settings from header pill`() {
         let standalone = AgentProTab()
         let routed = AgentProTab(
