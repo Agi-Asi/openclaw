@@ -1,0 +1,30 @@
+OpenClaw PR #126330 — live agents.list proof (redacted)
+Captured: 2026-08-19 America/Indianapolis
+Gateway build: OpenClaw 2026.8.1 (3dfea8a)
+Command: openclaw --profile pr126366proof gateway call agents.list --json --port 19876
+
+{
+  "defaultId": "main",
+  "ownership": "explicit",
+  "selectionRequired": true,
+  "sessionRoutingContract": "per-sender|main|unowned",
+  "mainKey": "main",
+  "scope": "per-sender",
+  "agents": [
+    {
+      "id": "main",
+      "name": "Main",
+      "workspace": "[REDACTED]/workspace-main",
+      "workspaceGit": true
+    },
+    {
+      "id": "research",
+      "name": "Research",
+      "workspace": "[REDACTED]/workspace-research",
+      "workspaceGit": true
+    }
+  ]
+}
+
+Redactions: absolute local workspace paths; model/thinking capability detail omitted as unrelated.
+Source: live public Gateway RPC response from the rebuilt stacked checkout.
