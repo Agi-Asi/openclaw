@@ -29,6 +29,7 @@ import type {
   SessionResetResult,
   SessionState,
 } from "./session-capability.ts";
+import { createSessionOwnerAssignmentOverlay } from "./session-owner-assignment-overlay.ts";
 import {
   confirmsSessionDeletion,
   requestSessionDelete,
@@ -40,11 +41,6 @@ import {
 type SessionPinFields = { pinned: boolean; pinnedAt: number | undefined };
 
 type ConfirmedArchiveState = Pick<GatewaySessionRow, "archivedAt" | "archivedBy" | "sessionId">;
-type ConfirmedOwnerState = {
-  token: symbol;
-  owner: SessionOwner;
-  sessionId?: string;
-};
 
 type SessionMutationsHost = {
   connection: SessionConnectionOwner;
@@ -67,15 +63,8 @@ export function createSessionMutations(host: SessionMutationsHost) {
     { token: symbol; previous: SessionPinFields; next: SessionPinFields }
   >();
   const confirmedArchives = new Map<string, ConfirmedArchiveState>();
-  const confirmedOwners = new Map<string, ConfirmedOwnerState>();
+  const ownerAssignments = createSessionOwnerAssignmentOverlay();
   const preparedWorkSessionKeys = new Set<string>();
-
-  const ownersMatch = (left: SessionOwner | undefined, right: SessionOwner | undefined) =>
-    left?.actor.type === right?.actor.type &&
-    left?.actor.id === right?.actor.id &&
-    left?.assignedBy?.type === right?.assignedBy?.type &&
-    left?.assignedBy?.id === right?.assignedBy?.id &&
-    left?.assignedAt === right?.assignedAt;
 
   const setModelOverride = (key: string, value: string | null | undefined) => {
     const normalizedKey = key.trim();
@@ -478,7 +467,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       const retireBeforeRevision = Date.now();
       host.retirePullRequestSummary(key);
       confirmedArchives.delete(key.trim());
-      confirmedOwners.delete(key.trim());
+      ownerAssignments.retire(key.trim());
       preparedWorkSessionKeys.delete(key.trim());
       host.publish({
         ...host.readState(),
@@ -564,7 +553,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       for (const key of deleted) {
         host.retirePullRequestSummary(key);
         confirmedArchives.delete(key.trim());
-        confirmedOwners.delete(key.trim());
+        ownerAssignments.retire(key.trim());
         preparedWorkSessionKeys.delete(key.trim());
       }
       host.publish({
@@ -623,23 +612,18 @@ export function createSessionMutations(host: SessionMutationsHost) {
         return null;
       }
       const normalizedKey = result.key.trim();
-      const token = Symbol("session-owner-assignment");
       const publishedRow = host.publishedRow(normalizedKey);
-      confirmedOwners.set(normalizedKey, {
-        token,
-        owner: result.owner,
-        ...(publishedRow?.sessionId ? { sessionId: publishedRow.sessionId } : {}),
-      });
+      const claim = ownerAssignments.confirm(normalizedKey, result.owner, publishedRow?.sessionId);
       patchRowLocal(result.key, { owner: result.owner });
       host.redecorateLists();
       void host.refreshReplacement(options.agentId).then(() => {
-        if (confirmedOwners.get(normalizedKey)?.token !== token) {
+        if (!ownerAssignments.isCurrent(normalizedKey, claim)) {
           return;
         }
         // A replacement that still disagrees is authoritative (for example,
         // another window reassigned the session). Drop the overlay, then load
         // once more without an older request ahead of it.
-        confirmedOwners.delete(normalizedKey);
+        ownerAssignments.retire(normalizedKey);
         void host.refreshReplacement(options.agentId);
       });
       return result.owner;
@@ -714,42 +698,9 @@ export function createSessionMutations(host: SessionMutationsHost) {
       });
       return changed ? { ...result, sessions } : result;
     },
-    applyConfirmedOwners(result: SessionsListResult | null): SessionsListResult | null {
-      if (!result || confirmedOwners.size === 0) {
-        return result;
-      }
-      let changed = result.owners !== undefined;
-      const sessions = result.sessions.map((row) => {
-        const confirmed = confirmedOwners.get(row.key);
-        if (!confirmed) {
-          return row;
-        }
-        if (confirmed.sessionId && row.sessionId && confirmed.sessionId !== row.sessionId) {
-          confirmedOwners.delete(row.key);
-          return row;
-        }
-        if (ownersMatch(row.owner, confirmed.owner)) {
-          return row;
-        }
-        changed = true;
-        return { ...row, owner: confirmed.owner };
-      });
-      return changed ? { ...result, sessions, owners: undefined } : result;
-    },
-    observeCanonicalOwners(result: SessionsListResult | null): void {
-      for (const row of result?.sessions ?? []) {
-        const confirmed = confirmedOwners.get(row.key);
-        if (!confirmed) {
-          continue;
-        }
-        if (
-          (confirmed.sessionId && row.sessionId && confirmed.sessionId !== row.sessionId) ||
-          ownersMatch(row.owner, confirmed.owner)
-        ) {
-          confirmedOwners.delete(row.key);
-        }
-      }
-    },
+    applyConfirmedOwners: (result: SessionsListResult | null) => ownerAssignments.decorate(result),
+    observeCanonicalOwners: (result: SessionsListResult | null) =>
+      ownerAssignments.observeCanonical(result),
     observeArchiveState(key: string, archived: boolean | null, row?: GatewaySessionRow): void {
       const normalizedKey = key.trim();
       if (!normalizedKey || archived === null) {
@@ -796,7 +747,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       // replacement, so it is the one that needs an explicit rollback below.
       pendingPinPatches.clear();
       confirmedArchives.clear();
-      confirmedOwners.clear();
+      ownerAssignments.clear();
       preparedWorkSessionKeys.clear();
       const state = host.readState();
       if (Object.keys(state.modelOverrides).length > 0) {
@@ -807,7 +758,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       pendingModelPatches.clear();
       pendingPinPatches.clear();
       confirmedArchives.clear();
-      confirmedOwners.clear();
+      ownerAssignments.clear();
       preparedWorkSessionKeys.clear();
     },
   };
