@@ -1,3 +1,4 @@
+import { pinExecToolTarget } from "openclaw/plugin-sdk/codex-mcp-projection";
 import type { CodexPluginConfig } from "./config.js";
 import { normalizeCodexDynamicToolName } from "./dynamic-tool-profile.js";
 
@@ -11,14 +12,6 @@ type ExecAliasParams =
 export const CODEX_NODE_EXEC_DYNAMIC_TOOL_NAME = "node_exec";
 export const CODEX_GATEWAY_EXEC_DYNAMIC_TOOL_NAME = "gateway_exec";
 export const CODEX_GATEWAY_PROCESS_DYNAMIC_TOOL_NAME = "gateway_process";
-const CODEX_EXEC_POLICY_PARAMETER_NAMES = new Set(["host", "security", "ask"]);
-const CODEX_NODE_EXEC_PARAMETER_NAMES = new Set([
-  "command",
-  "workdir",
-  "env",
-  "timeoutSeconds",
-  "node",
-]);
 const PROCESS_FOLLOWUP_TEXT =
   "Use process (list/poll/log/write/send-keys/submit/paste/kill/clear/remove) for follow-up.";
 
@@ -51,22 +44,18 @@ export function createExecAliasDynamicTool(
     : gatewayProcessAliasAvailable
       ? "Use gateway_process (list/poll/log/write/send-keys/submit/paste/kill/clear/remove) for follow-up."
       : "Background session follow-up is unavailable because gateway_process is not exposed. Rerun without background=true and set yieldMs high enough to wait for completion.";
+  const pinnedTool = pinExecToolTarget(
+    execTool,
+    nodeAlias
+      ? { host: "node", ...(pinnedNode ? { node: pinnedNode } : {}) }
+      : { host: "gateway", ...(params.ask ? { ask: params.ask } : {}) },
+  );
   return {
-    ...execTool,
+    ...pinnedTool,
     name,
     description,
-    parameters: hideExecDynamicToolParameters(
-      execTool.parameters,
-      !nodeAlias || Boolean(pinnedNode),
-      nodeAlias,
-    ),
     execute: async (toolCallId, args, signal, onUpdate) => {
-      const result = await execTool.execute(
-        toolCallId,
-        pinExecDynamicToolArgs(args, params, pinnedNode),
-        signal,
-        onUpdate,
-      );
+      const result = await pinnedTool.execute(toolCallId, args, signal, onUpdate);
       return {
         ...result,
         content: result.content.map((item) =>
@@ -92,61 +81,3 @@ export function createGatewayProcessAliasDynamicTool(
   };
 }
 
-function pinExecDynamicToolArgs(
-  args: unknown,
-  params: ExecAliasParams,
-  configuredNode?: string,
-): unknown {
-  const source = normalizeExecDynamicToolArgs(args);
-  const { host: _host, security: _security, ask: _ask, node: requestedNode, ...rest } = source;
-  if (params.host === "gateway") {
-    return { ...rest, host: params.host, ...(params.ask ? { ask: params.ask } : {}) };
-  }
-  const nodeArgs = Object.fromEntries(
-    Object.entries(rest).filter(([name]) => CODEX_NODE_EXEC_PARAMETER_NAMES.has(name)),
-  );
-  const node = configuredNode ?? (typeof requestedNode === "string" ? requestedNode.trim() : "");
-  return {
-    ...nodeArgs,
-    host: params.host,
-    ...(node ? { node } : {}),
-  };
-}
-
-function normalizeExecDynamicToolArgs(args: unknown): Record<string, unknown> {
-  return args && typeof args === "object" && !Array.isArray(args)
-    ? (args as Record<string, unknown>)
-    : {};
-}
-
-function hideExecDynamicToolParameters(
-  parameters: OpenClawDynamicTool["parameters"],
-  hideNode: boolean,
-  nodeOnly: boolean,
-) {
-  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
-    return parameters;
-  }
-  const schema = parameters as Record<string, unknown>;
-  const rawProperties = schema.properties;
-  if (!rawProperties || typeof rawProperties !== "object" || Array.isArray(rawProperties)) {
-    return parameters;
-  }
-  const includeParameter = (name: string) =>
-    nodeOnly
-      ? CODEX_NODE_EXEC_PARAMETER_NAMES.has(name) && !(hideNode && name === "node")
-      : !CODEX_EXEC_POLICY_PARAMETER_NAMES.has(normalizeCodexDynamicToolName(name)) &&
-        !(hideNode && normalizeCodexDynamicToolName(name) === "node");
-  const nextProperties = Object.fromEntries(
-    Object.entries(rawProperties).filter(([name]) => includeParameter(name)),
-  );
-  const rawRequired = schema.required;
-  const nextRequired = Array.isArray(rawRequired)
-    ? rawRequired.filter((name) => typeof name !== "string" || includeParameter(name))
-    : rawRequired;
-  return {
-    ...schema,
-    properties: nextProperties,
-    ...(Array.isArray(rawRequired) ? { required: nextRequired } : {}),
-  };
-}
