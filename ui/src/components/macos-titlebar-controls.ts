@@ -24,7 +24,7 @@ class MacosTitlebarControls extends OpenClawLightDomContentsElement {
           ? nothing
           : this.renderButton({
               label: toggleLabel,
-              icon: this.navCollapsed ? icons.panelLeftOpen : icons.panelLeftClose,
+              icon: icons.panelLeft,
               ariaExpanded: !this.navCollapsed,
               onClick: this.onToggleSidebar,
               className: "macos-titlebar-controls__sidebar-toggle",

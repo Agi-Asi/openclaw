@@ -239,6 +239,7 @@ class Tooltip extends OpenClawLitElement {
 
   /** Let a reveal-only trigger open on click instead of dismissing. */
   @property({ type: Boolean, attribute: "open-on-click" }) openOnClick = false;
+  @property({ type: Boolean, attribute: "hover-only" }) hoverOnly = false;
 
   @query("wa-tooltip") private webAwesomeTooltip?: WaTooltip;
 
@@ -452,7 +453,7 @@ class Tooltip extends OpenClawLitElement {
     this.close();
   };
   private readonly handleFocusIn = () => {
-    if (this.tooltipProvider?.focusOpensTooltip() !== false) {
+    if (!this.hoverOnly && this.tooltipProvider?.focusOpensTooltip() !== false) {
       this.show();
     }
   };

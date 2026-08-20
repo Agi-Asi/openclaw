@@ -1,4 +1,4 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { html, nothing } from "lit";
 import type {
   GatewaySessionRow,
   SessionMembersListResult,
@@ -36,13 +36,6 @@ const VISIBILITY_LABEL_KEYS: Record<SessionVisibility, string> = {
   draft: "chat.sessionSharing.draft",
 };
 
-function sharingIcon(visibility: SessionVisibility): TemplateResult {
-  if (visibility === "draft") {
-    return html`<span aria-hidden="true">👻</span>`;
-  }
-  return visibility === "shared" ? icons.users : icons.lock;
-}
-
 export function canManageChatSessionSharing(
   session: Pick<GatewaySessionRow, "sharingRole">,
 ): boolean {
@@ -78,6 +71,7 @@ export function renderChatSessionSharing(props: ChatSessionSharingProps) {
     <wa-dropdown
       class="chat-pane__sharing-menu ${shouldCapMembers ? "chat-pane__sharing-menu--capped" : ""}"
       placement="bottom-end"
+      .distance=${4}
       @wa-show=${() => {
         if (!props.openDisabledReason) {
           props.onOpen();
@@ -114,7 +108,7 @@ export function renderChatSessionSharing(props: ChatSessionSharingProps) {
           visibility: t(VISIBILITY_LABEL_KEYS[visibility]),
         })}
       >
-        ${sharingIcon(visibility)}
+        <span class="chat-pane__sharing-trigger-plus" aria-hidden="true">${icons.settings2}</span>
       </button>
       ${canPublish
         ? html`<wa-dropdown-item

@@ -89,7 +89,7 @@ export type SidebarLifecycleState = HTMLElement & {
   onRetryConnect?: () => void;
   onOpenNewSession?: (agentId: string, target?: { catalogId: string }) => void;
   onOpenPalette?: () => void;
-  onToggleSidebar?: () => void;
+  onToggleSidebar?: (trigger?: HTMLElement) => void;
   variant: "panel" | "drawer";
 };
 

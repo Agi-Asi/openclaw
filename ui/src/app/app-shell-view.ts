@@ -373,10 +373,10 @@ export function renderApplicationShell(host: ShellViewHost) {
       devGitBranch: config.devGitBranch,
       watchUpdateProgress,
       onOpenApprovals: () => host.openApprovals(),
+      onOpenPalette: () => host.openPalette(),
+      onToggleSidebar: (trigger?: HTMLElement) => host.toggleNavigationSurface(trigger),
       onRetryConnect: () => context.gateway.connect(),
       onOpenNewSession: openNewSession,
-      onOpenPalette: () => host.openPalette(),
-      onToggleSidebar: () => host.toggleNavigationSurface(),
       onUpdateSidebarEntries: (entries: string[]) =>
         context.navigation.update({ sidebarEntries: entries }),
       onPairMobile: () => void context.overlays.openDevicePairSetup(),
@@ -494,9 +494,7 @@ export function renderApplicationShell(host: ShellViewHost) {
       ${navCollapsed && !onboarding && !settingsTakeover && !mobileNavLayout
         ? html`
             <div class="shell-chrome-controls">
-              <openclaw-tooltip
-                .content=${`${t(navCollapsed ? "nav.expand" : "nav.collapse")} (⌘B)`}
-              >
+              <openclaw-tooltip .content=${`${t("nav.expand")} (⌘B)`} .hoverOnly=${true}>
                 <button
                   type="button"
                   class="shell-chrome-controls__button shell-chrome-controls__nav-toggle"
@@ -505,9 +503,11 @@ export function renderApplicationShell(host: ShellViewHost) {
                   data-env-avatar=${navCollapsed && config.environment
                     ? config.assistantIdentity.name.charAt(0)
                     : nothing}
-                  @click=${() => host.toggleNavigationSurface()}
+                  @click=${({ currentTarget }: MouseEvent) =>
+                    currentTarget instanceof HTMLElement &&
+                    host.toggleNavigationSurface(currentTarget)}
                 >
-                  ${icons.panelLeftOpen}
+                  ${icons.panelLeft}
                 </button>
               </openclaw-tooltip>
               <span class="shell-chrome-controls__separator" aria-hidden="true"></span>

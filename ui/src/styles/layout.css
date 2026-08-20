@@ -102,11 +102,11 @@
   display: none;
 }
 
-/* Web shell controls mirror the native Mac titlebar strip. On native macOS
-   hosts without the full strip, they sit below the AppKit drag region. */
+/* The collapsed web-shell expand control mirrors its native titlebar peer. On
+   older native macOS hosts, it sits below the AppKit drag region. */
 .shell-chrome-controls {
   position: fixed;
-  top: 10px;
+  top: 8px;
   left: calc(var(--shell-nav-width) + var(--shell-chrome-controls-inset));
   z-index: 45;
   display: flex;
@@ -160,8 +160,8 @@
 }
 
 .shell-chrome-controls__button svg {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -249,11 +249,11 @@ html.openclaw-native-macos:not(.openclaw-native-web-chrome)
 }
 
 /* Newer Mac apps host a native sidebar toggle in the titlebar next to
-   back/forward and add openclaw-native-nav; the in-page nav toggles would
-   duplicate it, so they disappear (⌘B and the accessible titlebar button
-   cover keyboard/screen-reader use). Search stays in the sidebar header:
-   native-nav-only hosts provide native search only while the rail is closed.
-   Older apps only add openclaw-native-macos and keep the web controls. */
+   back/forward and add openclaw-native-nav; the in-page nav toggle would
+   duplicate it, so it disappears (⌘B and the accessible titlebar button
+   cover keyboard/screen-reader use). The expanded sidebar keeps its search
+   action for native-nav-only hosts. Older apps only add
+   openclaw-native-macos and keep the web recovery control. */
 html.openclaw-native-nav .shell-chrome-controls__nav-toggle,
 html.openclaw-native-nav .shell--nav-collapsed .shell-chrome-controls,
 html.openclaw-native-nav .topbar .topbar-nav-toggle {
@@ -266,7 +266,7 @@ html.openclaw-native-nav:not(.openclaw-native-web-chrome)
   left: var(--shell-chrome-controls-inset);
 }
 
-/* Web-chrome hosts provide this entire cluster in the native titlebar. */
+/* Web-chrome hosts provide the recovery control in the native titlebar. */
 html.openclaw-native-web-chrome .shell-chrome-controls {
   display: none;
 }
@@ -276,6 +276,14 @@ html.openclaw-native-web-chrome .shell:not(.shell--mobile-nav) .scope-upgrade-sh
   left: 252px;
   width: 28px;
   height: 28px;
+}
+
+html.openclaw-native-nav .sidebar-brand__collapse,
+html.openclaw-native-web-chrome .sidebar-brand__collapse,
+html.openclaw-native-web-chrome .sidebar-brand__search,
+.shell--mobile-nav .sidebar-brand__collapse,
+.shell--mobile-nav .sidebar-brand__search {
+  display: none;
 }
 
 .macos-titlebar-controls {
@@ -1035,8 +1043,8 @@ openclaw-settings-save-indicator:empty {
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  /* 9px top pad centers the brand row's 30px icons on the app's shared
-     24px chrome centerline (pane-header actions, floating toggles). The
+  /* 8px top pad plus the 32px row and 8px trailing space matches the 48px
+     chat header. The
      macOS app overrides this with its 50px titlebar clearance. */
   padding: 9px var(--sidebar-pad-x) 8px;
   border: none;
@@ -1048,25 +1056,26 @@ openclaw-settings-save-indicator:empty {
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 8px 12px;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 0 8px;
   flex-shrink: 0;
 }
 
 .sidebar-brand__actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0;
   flex: 0 0 auto;
+  margin-inline-start: auto;
 }
 
 .sidebar-brand__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   border-radius: var(--radius-md);
@@ -1094,11 +1103,11 @@ openclaw-settings-save-indicator:empty {
 }
 
 .sidebar-brand__icon svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.7px;
+  stroke-width: 1.5px;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1107,10 +1116,13 @@ openclaw-settings-save-indicator:empty {
 .sidebar-footer-bar__custodian {
   width: 32px;
   height: 32px;
-  color: var(--text);
 }
 
-.sidebar-brand__new-thread svg,
+.sidebar-brand__new-thread svg {
+  width: 20px;
+  height: 20px;
+}
+
 .sidebar-footer-bar__custodian svg {
   width: 18px;
   height: 18px;
@@ -1131,17 +1143,6 @@ openclaw-settings-save-indicator:empty {
   flex: 1;
   flex-direction: column;
   min-height: 0;
-}
-
-html.openclaw-native-nav .sidebar-brand__collapse,
-html.openclaw-native-web-chrome .sidebar-brand__collapse,
-html.openclaw-native-web-chrome .sidebar-brand__search {
-  display: none;
-}
-
-.shell--mobile-nav .sidebar-brand__collapse,
-.shell--mobile-nav .sidebar-brand__search {
-  display: none;
 }
 
 .sidebar-shell__body {
@@ -2472,6 +2473,7 @@ wa-dropdown-item.sidebar-customize-menu__item {
 
 .sidebar-customize-menu__text {
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3077,10 +3079,13 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
 .sidebar-agent-card__main {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1 1 auto;
+  gap: 8px;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
-  padding: 4px 6px;
+  min-height: 32px;
+  padding: 0 4px 0 8px;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -3105,8 +3110,8 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 20px;
+  height: 20px;
   flex: none;
   border-radius: var(--radius-full);
   background: var(--secondary);
@@ -3129,28 +3134,42 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
 
 .sidebar-agent-card__text {
   display: flex;
-  flex-direction: column;
+  flex: 0 1 auto;
   min-width: 0;
-  gap: 1px;
 }
 
 .sidebar-agent-card__name {
   display: flex;
   align-items: center;
   gap: 4px;
-  overflow: hidden;
+  min-width: 0;
   color: var(--text-strong);
-  font-size: var(--control-ui-text-md);
-  font-weight: 650;
+  font-size: calc(14px * var(--control-ui-text-scale));
+  font-weight: 600;
   line-height: 1.2;
-  text-overflow: ellipsis;
+}
+
+.sidebar-agent-card__name-text {
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
+}
+
+.sidebar-agent-card__name-text--overflow {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 18px), transparent);
+}
+
+.sidebar-agent-card__name-text--overflow:dir(rtl) {
+  -webkit-mask-image: linear-gradient(to left, black calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to left, black calc(100% - 18px), transparent);
 }
 
 .sidebar-agent-card__chevron {
   display: inline-flex;
   flex: none;
   color: var(--muted);
+  opacity: 0.72;
 }
 
 .sidebar-agent-card__chevron svg {
@@ -3161,22 +3180,6 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
   stroke-width: 1.5px;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.sidebar-agent-card__subtitle {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-agent-card__subtitle-row {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 5px;
 }
 
 .sidebar-agent-card__menu-unread {

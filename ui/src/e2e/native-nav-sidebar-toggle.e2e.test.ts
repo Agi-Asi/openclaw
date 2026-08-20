@@ -157,8 +157,18 @@ suite.define(() => {
     await expect
       .poll(() => page.locator(".shell-chrome-controls__separator").isVisible())
       .toBe(true);
+    await expand.focus();
+    await page.keyboard.press("Meta+b");
+    await expect.poll(() => collapse.isVisible()).toBe(true);
+    await expect
+      .poll(() => collapse.evaluate((element) => element === document.activeElement))
+      .toBe(true);
+    await collapse.click();
     await expand.click();
     await expect.poll(() => collapse.isVisible()).toBe(true);
+    await expect
+      .poll(() => collapse.evaluate((element) => element === document.activeElement))
+      .toBe(true);
   });
 
   it("keeps pointer-triggered sidebar focus from opening its tooltip", async () => {
@@ -212,10 +222,13 @@ suite.define(() => {
     });
     expect(initialWidth).toBeGreaterThan(0);
 
-    // Expanded native-nav hosts keep search in the sidebar header (no native
-    // search control exists while the rail is open) and hide duplicate collapse.
+    // Expanded native-nav hosts keep search in the sidebar header while both
+    // duplicate in-page collapse controls stay hidden.
     await expect.poll(() => page.locator(".sidebar-brand__search").isVisible()).toBe(true);
     await expect.poll(() => page.locator(".sidebar-brand__collapse").isVisible()).toBe(false);
+    await expect
+      .poll(() => page.locator(".shell-chrome-controls__nav-toggle").isVisible())
+      .toBe(false);
 
     // Collapse through the native titlebar path; the whole web chrome cluster
     // hides (native titlebar provides search and new-thread while collapsed).

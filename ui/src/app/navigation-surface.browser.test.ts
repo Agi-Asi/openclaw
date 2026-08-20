@@ -36,7 +36,7 @@ describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
               type="button"
               aria-label="Expand navigation"
             ></button>
-            <span class="shell-chrome-controls__separator"></span>
+            <span class="shell-chrome-controls__separator" aria-hidden="true"></span>
           </div>
           <main class="content">
             ${renderFloatingUpdateCard({
@@ -76,5 +76,61 @@ describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
     expect(
       cardBounds.left - Math.max(...buttonBounds.map((bounds) => bounds.right)),
     ).toBeGreaterThanOrEqual(8);
+  });
+
+  it("adapts identity chrome to native controls, away presence, and RTL overflow", async () => {
+    await useDesktopViewport();
+    document.documentElement.classList.add("openclaw-native-web-chrome");
+    try {
+      const container = document.createElement("div");
+      document.body.append(container);
+      render(
+        html`
+          <div class="sidebar-brand" style="width: 280px">
+            <div class="sidebar-agent-card">
+              <button class="sidebar-agent-card__main" type="button">
+                <span class="sidebar-agent-card__avatar">A</span>
+                <span class="sidebar-agent-card__text">
+                  <span class="sidebar-agent-card__name">
+                    <span class="sidebar-agent-card__name-text"
+                      >A deliberately long agent name</span
+                    >
+                  </span>
+                </span>
+              </button>
+            </div>
+            <div class="sidebar-brand__actions">
+              <button class="sidebar-brand__icon sidebar-brand__new-thread" type="button"></button>
+              <button class="sidebar-brand__icon sidebar-brand__search" type="button"></button>
+              <button class="sidebar-brand__icon sidebar-brand__collapse" type="button"></button>
+            </div>
+          </div>
+          <span
+            class="sidebar-agent-card__name-text sidebar-agent-card__name-text--overflow"
+            dir="rtl"
+            >اسم وكيل طويل</span
+          >
+          <span class="chat-pane__people">
+            <span
+              class="session-owner-chip session-owner-chip--header session-owner-chip--away"
+            ></span>
+          </span>
+        `,
+        container,
+      );
+
+      const card = container.querySelector<HTMLElement>(".sidebar-agent-card")!;
+      const actions = container.querySelector<HTMLElement>(".sidebar-brand__actions")!;
+      const rtlName = container.querySelector<HTMLElement>(
+        '.sidebar-agent-card__name-text--overflow[dir="rtl"]',
+      )!;
+      const awayOwner = container.querySelector<HTMLElement>(".session-owner-chip--away")!;
+      expect(actions.getBoundingClientRect().left - card.getBoundingClientRect().right).toBe(4);
+      expect(getComputedStyle(rtlName).maskImage).toContain("to left");
+      expect(Number.parseFloat(getComputedStyle(awayOwner).opacity)).toBeLessThan(1);
+      expect(getComputedStyle(awayOwner).filter).not.toBe("none");
+    } finally {
+      document.documentElement.classList.remove("openclaw-native-web-chrome");
+    }
   });
 });

@@ -128,7 +128,6 @@ export function renderAppSidebarBrand(host: AppSidebarRenderHost) {
         .authToken=${avatarAuthToken}
         .avatarAuthReady=${avatarAuthReady}
         .avatarText=${cardAvatarText}
-        .subtitle=${host.agentChipSubtitle(cardAgentId)}
         .environment=${host.sessionDataContext?.config?.current?.environment ?? null}
         .menuOpen=${host.sidebarMenus.agentMenuPosition !== null}
         .menuUnread=${menuUnread}
@@ -179,11 +178,12 @@ export function renderAppSidebarBrand(host: AppSidebarRenderHost) {
             class="sidebar-brand__icon sidebar-brand__collapse"
             type="button"
             ?disabled=${!host.onToggleSidebar}
-            @click=${() => host.onToggleSidebar?.()}
+            @click=${({ currentTarget }: MouseEvent) =>
+              currentTarget instanceof HTMLElement && host.onToggleSidebar?.(currentTarget)}
             aria-label=${t("nav.collapse")}
             aria-expanded="true"
           >
-            ${icons.panelLeftClose}
+            ${icons.panelLeft}
           </button>
         </openclaw-tooltip>
       </div>

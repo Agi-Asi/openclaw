@@ -295,7 +295,7 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
         aria-expanded=${String(sidePanelOpen)}
         @click=${toggleSidePanel}
       >
-        ${sidePanelOpen ? icons.panelRightClose : icons.panelRightOpen}
+        ${icons.panelRight}
       </button>
     </openclaw-tooltip>`;
     const browserPanelAction = sessionWorkspace.onToggleBrowser

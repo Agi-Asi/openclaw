@@ -792,7 +792,14 @@ suite.define(() => {
 
     await currentPage.goto(`${suite.server?.baseUrl ?? ""}chat`);
     await currentPage.getByText("Ready.", { exact: true }).waitFor();
-    await currentPage.locator(".chat-pane__sharing-trigger").click();
+    const sharingTrigger = currentPage.locator(".chat-pane__sharing-trigger");
+    const sharingTarget = await sharingTrigger.evaluate((button) => ({
+      height: button.getBoundingClientRect().height,
+      width: button.getBoundingClientRect().width,
+    }));
+    expect(sharingTarget.height).toBeGreaterThanOrEqual(24);
+    expect(sharingTarget.width).toBeGreaterThanOrEqual(24);
+    await sharingTrigger.click();
     await gateway.waitForRequest("session.members.list");
     const dropdown = currentPage.locator(".chat-pane__sharing-menu");
     await dropdown.locator('wa-dropdown-item[value="member:profile-member-0"]').waitFor();
