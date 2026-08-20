@@ -1694,11 +1694,26 @@ describe("package-mac-app plist stamping", () => {
     expect(variantBlock).toContain("standard | elevation-host");
     expect(variantBlock).toContain("Unknown OPENCLAW_MAC_SIGNING_VARIANT value");
     expect(cuaBlock).toContain("Omitting embedded CUA driver from elevation-host package");
+    expect(cuaBlock).toContain("stage_elevation_node_host_worker");
     expect(cuaBlock).toContain("else");
     expect(cuaBlock).toContain("Staging embedded CUA driver");
     expect(cuaBlock).toContain(
       '"$ROOT_DIR/scripts/stage-cua-driver-macos.sh" "$APP_ROOT/Contents/Resources/cua-driver"',
     );
+  });
+
+  it("binds the elevation node-host worker to the packaged source commit", () => {
+    const packageScript = readFileSync(scriptPath, "utf8");
+    const workerBlock = packageScript.slice(
+      packageScript.indexOf("stage_elevation_node_host_worker()"),
+      packageScript.indexOf("sparkle_canonical_build_from_version()"),
+    );
+
+    expect(workerBlock).toContain("tsdown.mac-node-host-worker.config.ts");
+    expect(workerBlock).toContain('metadata="$(node "$built_worker" --build-metadata)"');
+    expect(workerBlock).toContain(".sourceCommit == $sourceCommit");
+    expect(workerBlock).toContain('shasum -a 256 "$built_worker"');
+    expect(workerBlock).toContain("OpenClawNodeHostWorker");
   });
 
   it("does not mask required Info.plist stamp failures", () => {
