@@ -102,11 +102,18 @@ describe("exact Matrix delivery queue reconciliation", () => {
     },
   );
 
-  it.each(["automatic", "explicit"] as const)(
-    "delivers one normalized attachment with %s exact reconciliation",
-    async (reconciliation) => {
+  it.each([
+    { reconciliation: "automatic", legacyAttachment: "matching" },
+    { reconciliation: "automatic", legacyAttachment: "distinct" },
+    { reconciliation: "explicit", legacyAttachment: "matching" },
+    { reconciliation: "explicit", legacyAttachment: "distinct" },
+  ] as const)(
+    "delivers one attachment with $reconciliation reconciliation and a $legacyAttachment legacy URL",
+    async ({ reconciliation, legacyAttachment }) => {
       process.env.OPENCLAW_STATE_DIR = tmpDir;
       const mediaUrl = "https://example.invalid/image.png";
+      const legacyMediaUrl =
+        legacyAttachment === "distinct" ? "https://example.invalid/obsolete.png" : mediaUrl;
       const sendMedia = vi.fn(async (ctx: ChannelMessageSendMediaContext) => {
         await ctx.onPlatformSendDispatch?.();
         return {
@@ -147,7 +154,7 @@ describe("exact Matrix delivery queue reconciliation", () => {
           cfg: {} as OpenClawConfig,
           channel: "matrix",
           to: "!room:example",
-          payloads: [{ text: "caption", mediaUrl, mediaUrls: [mediaUrl] }],
+          payloads: [{ text: "caption", mediaUrl: legacyMediaUrl, mediaUrls: [mediaUrl] }],
           queuePolicy: "required",
           ...(reconciliation === "explicit" ? { requireUnknownSendReconciliation: true } : {}),
         }),
