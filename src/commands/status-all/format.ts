@@ -529,7 +529,7 @@ export function redactStatusSecrets(text: string): string {
     /(["']?\b(?:access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)\b["']?\s*[:=]\s*)(?:Bearer\s+[^\s]+|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]+)/gi,
     "$1***",
   );
-  out = out.replace(/\bBearer\s+[A-Za-z0-9._-]+\b/g, "Bearer ***");
+  out = out.replace(/\bBearer\s+[^\s]+/g, "Bearer ***");
   out = out.replace(/\bsk-[A-Za-z0-9]{10,}\b/g, "sk-***");
   return out;
 }

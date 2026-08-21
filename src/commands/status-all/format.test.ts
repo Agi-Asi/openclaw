@@ -216,6 +216,9 @@ describe("status-all format", () => {
     expect(redactStatusSecrets("token=Bearer eyJhbGciOi.secret next")).toBe("token=*** next");
     expect(redactStatusSecrets("password=alpha,beta next")).toBe("password=*** next");
     expect(redactStatusSecrets("token=Bearer ~abc+secret/== next")).toBe("token=*** next");
+    expect(redactStatusSecrets("Authorization: Bearer ~abc+secret/== next")).toBe(
+      "Authorization: Bearer *** next",
+    );
   });
 
   it("redacts credential-bearing Gateway URLs from text and JSON status", () => {
