@@ -27,6 +27,16 @@ on:
     - cron: "23 4 * * *"
   workflow_dispatch:
     inputs:
+      source_sha:
+        description: Exact source commit for an artifact-only release repair.
+        required: false
+        default: ""
+        type: string
+      release_artifact_only:
+        description: Generate and upload release locale artifacts without publication.
+        required: false
+        default: false
+        type: boolean
       token_preflight_only:
         description: Verify generated PR App permissions without running locale generation.
         required: false
@@ -49,7 +59,9 @@ jobs:
   resolve-base:
     if: >-
       github.repository == 'openclaw/openclaw' &&
-      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+      (github.event_name != 'workflow_dispatch' ||
+        github.ref == 'refs/heads/main' ||
+        inputs.release_artifact_only)
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.base.outputs.sha }}
@@ -60,11 +72,19 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          RELEASE_ARTIFACT_ONLY: ${{ inputs.release_artifact_only || false }}
+          SOURCE_SHA: ${{ inputs.source_sha || '' }}
           TOKEN_PREFLIGHT_ONLY: ${{ inputs.token_preflight_only || false }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
-          if [[ "${TOKEN_PREFLIGHT_ONLY}" == "true" ]]; then
+          if [[ "${RELEASE_ARTIFACT_ONLY}" == "true" ]]; then
+            if [[ "${SOURCE_SHA}" != "68877c7b633017fe05fd3ed74ba7771172b0be88" ]]; then
+              echo "Artifact generation is bound to candidate 68877c7b633017fe05fd3ed74ba7771172b0be88." >&2
+              exit 1
+            fi
+            sha="${SOURCE_SHA}"
+          elif [[ "${TOKEN_PREFLIGHT_ONLY}" == "true" ]]; then
             sha="${WORKFLOW_SHA}"
           else
             sha="$(
@@ -84,7 +104,12 @@ jobs:
     if: needs.resolve-base.result == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Confirm artifact-only route
+        if: inputs.release_artifact_only
+        run: echo "Generated locale output will be uploaded as an artifact without publication."
+
       - name: Checkout
+        if: ${{ !inputs.release_artifact_only }}
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.resolve-base.outputs.sha }}
@@ -92,6 +117,7 @@ jobs:
           submodules: false
 
       - name: Create generated PR tokens
+        if: ${{ !inputs.release_artifact_only }}
         id: tokens
         uses: ./.github/actions/create-generated-pr-tokens
         with:
@@ -102,6 +128,7 @@ jobs:
           pull-request-contents-permission: write
 
       - name: Verify repository auto-merge setting
+        if: ${{ !inputs.release_artifact_only }}
         env:
           GH_TOKEN: ${{ steps.tokens.outputs.pull-request-token }}
           REPOSITORY_NAME: ${{ github.event.repository.name }}
@@ -171,80 +198,24 @@ jobs:
       - name: Ensure translation provider secrets exist
         env:
           OPENCLAW_DOCS_I18N_OPENAI_API_KEY: ${{ secrets.OPENCLAW_DOCS_I18N_OPENAI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${OPENCLAW_DOCS_I18N_OPENAI_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "Missing OPENCLAW_DOCS_I18N_OPENAI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY secret."
+          if [ -z "${OPENCLAW_DOCS_I18N_OPENAI_API_KEY:-}" ]; then
+            echo "Missing required OPENCLAW_DOCS_I18N_OPENAI_API_KEY secret."
             exit 1
           fi
 
       - name: Refresh control UI locale files
         env:
-          OPENCLAW_DOCS_I18N_OPENAI_API_KEY: ${{ secrets.OPENCLAW_DOCS_I18N_OPENAI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_MODEL: claude-opus-4-8
-          OPENAI_MODEL: ${{ vars.OPENCLAW_CI_OPENAI_MODEL_BARE || 'gpt-5.6-sol' }}
+          OPENAI_API_KEY: ${{ secrets.OPENCLAW_DOCS_I18N_OPENAI_API_KEY }}
+          OPENCLAW_CONTROL_UI_I18N_MODEL: ${{ vars.OPENCLAW_CI_OPENAI_MODEL_BARE || 'gpt-5.6-sol' }}
+          OPENCLAW_CONTROL_UI_I18N_PROVIDER: openai
           OPENCLAW_CONTROL_UI_I18N_THINKING: low
           OPENCLAW_CONTROL_UI_I18N_AUTH_OPTIONAL: "0"
           LOCALE: ${{ matrix.locale }}
         run: |
           set -euo pipefail
-
-          run_refresh() {
-            local provider="$1"
-            local model="$2"
-            local openai_api_key="${3-}"
-            if [ "$provider" = "openai" ]; then
-              OPENAI_API_KEY="$openai_api_key" \
-                OPENCLAW_CONTROL_UI_I18N_PROVIDER="$provider" \
-                OPENCLAW_CONTROL_UI_I18N_MODEL="$model" \
-                node --import tsx scripts/control-ui-i18n.ts sync --locale "${LOCALE}" --write
-              return
-            fi
-            OPENCLAW_CONTROL_UI_I18N_PROVIDER="$provider" \
-              OPENCLAW_CONTROL_UI_I18N_MODEL="$model" \
-              node --import tsx scripts/control-ui-i18n.ts sync --locale "${LOCALE}" --write
-          }
-
-          run_openai_refresh() {
-            local status=1
-            if [ -n "${OPENCLAW_DOCS_I18N_OPENAI_API_KEY:-}" ]; then
-              set +e
-              run_refresh openai "${OPENAI_MODEL}" "${OPENCLAW_DOCS_I18N_OPENAI_API_KEY}"
-              status="$?"
-              set -e
-              if [ "$status" -eq 0 ]; then
-                return 0
-              fi
-              if [ -z "${OPENAI_API_KEY:-}" ] || [ "${OPENAI_API_KEY}" = "${OPENCLAW_DOCS_I18N_OPENAI_API_KEY}" ]; then
-                return "$status"
-              fi
-              echo "::warning::Docs OpenAI control UI locale refresh key failed for ${LOCALE}; retrying with repository OpenAI key."
-            fi
-            if [ -z "${OPENAI_API_KEY:-}" ]; then
-              return "$status"
-            fi
-            run_refresh openai "${OPENAI_MODEL}" "${OPENAI_API_KEY}"
-          }
-
-          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-            set +e
-            run_refresh anthropic "${ANTHROPIC_MODEL}"
-            status="$?"
-            set -e
-            if [ "$status" -eq 0 ]; then
-              exit 0
-            fi
-            if [ -z "${OPENCLAW_DOCS_I18N_OPENAI_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
-              exit "$status"
-            fi
-            echo "::warning::Anthropic control UI locale refresh failed for ${LOCALE}; retrying with OpenAI."
-          fi
-
-          run_openai_refresh
+          pnpm ui:i18n:sync -- --locale "${LOCALE}"
 
       - name: Prepare locale artifact
         env:
@@ -306,12 +277,45 @@ jobs:
           install-bun: "false"
 
       - name: Finalize control UI generated artifacts
-        run: node --import tsx scripts/control-ui-i18n.ts sync --write
+        run: pnpm ui:i18n:sync
 
       - name: Validate control UI locale refresh
-        run: node --import tsx scripts/control-ui-i18n.ts check
+        run: pnpm ui:i18n:check
+
+      - name: Prepare consolidated release artifact
+        if: inputs.release_artifact_only
+        run: |
+          set -euo pipefail
+          artifact_dir="${RUNNER_TEMP}/control-ui-locale-release"
+          mkdir -p "${artifact_dir}"
+          git add -A -- \
+            ui/src/i18n/.i18n/*.tm.jsonl \
+            ui/src/i18n/.i18n/*.meta.json \
+            ui/src/i18n/.i18n/catalog-fallbacks.json
+          git diff --cached --name-only > "${artifact_dir}/files.txt"
+          if [ "$(wc -l < "${artifact_dir}/files.txt" | tr -d ' ')" != "41" ]; then
+            echo "Expected exactly 41 generated locale files." >&2
+            cat "${artifact_dir}/files.txt" >&2
+            exit 1
+          fi
+          git diff --cached --binary --full-index -- \
+            ui/src/i18n/.i18n/*.tm.jsonl \
+            ui/src/i18n/.i18n/*.meta.json \
+            ui/src/i18n/.i18n/catalog-fallbacks.json \
+            > "${artifact_dir}/control-ui-locales.patch"
+          sha256sum "${artifact_dir}/control-ui-locales.patch" > "${artifact_dir}/SHA256SUMS"
+
+      - name: Upload consolidated release artifact
+        if: inputs.release_artifact_only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: control-ui-locale-release-${{ needs.resolve-base.outputs.sha }}
+          path: ${{ runner.temp }}/control-ui-locale-release
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Open or update generated locale PR
+        if: ${{ !inputs.release_artifact_only }}
         uses: ./.github/actions/publish-generated-pr
         with:
           contents-client-id: Iv23liOECG0slfuhz093
