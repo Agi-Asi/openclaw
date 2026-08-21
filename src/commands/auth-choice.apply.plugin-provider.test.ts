@@ -43,7 +43,7 @@ vi.mock("../plugins/provider-auth-choices.js", () => ({
   resolveManifestProviderAuthChoice,
 }));
 
-const persistAuthProfileBatch = vi.hoisted(() => vi.fn(async () => {}));
+const persistAuthProfileBatch = vi.hoisted(() => vi.fn(async () => ({ rollback() {} })));
 vi.mock("../agents/auth-profiles.js", () => ({
   persistAuthProfileBatch,
 }));

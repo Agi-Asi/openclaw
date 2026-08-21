@@ -111,7 +111,7 @@ describe("runSetupModelAuthStep", () => {
     applyAuthChoice.mockResolvedValueOnce({
       config,
       authProfiles: [],
-      persistAuthProfiles: async () => {},
+      persistAuthProfiles: async () => ({ rollback() {} }),
     });
 
     await runSetupModelAuthStep({
@@ -167,7 +167,7 @@ describe("runSetupModelAuthStep", () => {
     applyAuthChoice.mockResolvedValueOnce({
       config,
       authProfiles: [],
-      persistAuthProfiles: async () => {},
+      persistAuthProfiles: async () => ({ rollback() {} }),
     });
 
     await runSetupModelAuthStep({
@@ -227,7 +227,7 @@ describe("runSetupModelAuthStep", () => {
         },
       },
     ];
-    const persistAuthProfiles = vi.fn(async () => {});
+    const persistAuthProfiles = vi.fn(async () => ({ rollback() {} }));
     promptAuthChoiceGrouped.mockResolvedValueOnce("anthropic-cli");
     applyAuthChoice.mockResolvedValueOnce({
       config,

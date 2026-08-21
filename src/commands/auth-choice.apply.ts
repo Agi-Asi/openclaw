@@ -126,7 +126,7 @@ export async function prepareAuthChoice(
   return {
     config: normalizedParams.config,
     authProfiles: [],
-    persistAuthProfiles: async () => {},
+    persistAuthProfiles: async () => ({ rollback() {} }),
   };
 }
 

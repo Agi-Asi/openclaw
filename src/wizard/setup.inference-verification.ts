@@ -92,7 +92,7 @@ export async function offerLiveModelVerification(params: {
     ({
       config: params.config,
       authProfiles: [],
-      persistAuthProfiles: async () => {},
+      persistAuthProfiles: async () => ({ rollback() {} }),
     } satisfies SetupModelAuthCandidate);
   let shouldPersistCandidate = params.initialCandidate !== undefined;
   while (true) {
@@ -107,8 +107,14 @@ export async function offerLiveModelVerification(params: {
           modelRef: result.modelRef,
         };
       }
-      await candidate.persistAuthProfiles(result.authProfiles);
-      const config = await params.writeConfig(candidate.config);
+      const authPersistence = await candidate.persistAuthProfiles(result.authProfiles);
+      let config: OpenClawConfig;
+      try {
+        config = await params.writeConfig(candidate.config);
+      } catch (error) {
+        authPersistence.rollback();
+        throw error;
+      }
       return {
         config,
         attempted: true,

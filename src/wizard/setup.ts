@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { listAgentEntries } from "../agents/agent-scope-config.js";
+import type { AuthProfilePersistenceReceipt } from "../agents/auth-profiles.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { resolveOnboardingSetupTarget } from "../commands/onboard-agent-target.js";
 import * as firstAgentOnboarding from "../commands/onboard-first-agent.js";
@@ -564,6 +565,7 @@ async function runSetupWizardOnce(
 
   let liveModelVerified = false;
   let setupConfigPersisted = false;
+  let unpublishedAuthPersistence: AuthProfilePersistenceReceipt | undefined;
   // keepExistingModelConfig is latched before auth setup, so this distinguishes
   // a route supplied by the import from one configured normally after the import.
   if (
@@ -604,18 +606,23 @@ async function runSetupWizardOnce(
     } else if (!verification.verified && stagedModelAuth) {
       // Declining an optional probe is not a failed verification; keep the
       // provider/model choice the user just made and persist it once here.
-      await stagedModelAuth.persistAuthProfiles();
+      unpublishedAuthPersistence = await stagedModelAuth.persistAuthProfiles();
     }
   } else if (stagedModelAuth) {
     // Non-interactive setup has no live-verification step by contract.
-    await stagedModelAuth.persistAuthProfiles();
+    unpublishedAuthPersistence = await stagedModelAuth.persistAuthProfiles();
   }
 
   if (!setupConfigPersisted) {
     // Persist gateway/roster decisions only after the interactive verification boundary.
-    nextConfig = await writeSetupConfigFile(nextConfig, {
-      allowConfigSizeDrop: false,
-    });
+    try {
+      nextConfig = await writeSetupConfigFile(nextConfig, {
+        allowConfigSizeDrop: false,
+      });
+    } catch (error) {
+      unpublishedAuthPersistence?.rollback();
+      throw error;
+    }
   }
 
   prompter.disableBackNavigation?.();
