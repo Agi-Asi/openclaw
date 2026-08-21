@@ -64,6 +64,12 @@ type PluginReleasePlanItemWithPackageState = PluginReleasePlanItem & {
   hasTrustedPublisher: boolean;
 };
 
+export type ClawHubPackagePublicationState = {
+  packageExists: boolean;
+  hasTrustedPublisher: boolean;
+  alreadyPublished: boolean;
+};
+
 type ClawHubPublishablePluginPackageFilters = {
   extensionIds?: readonly string[];
   packageNames?: readonly string[];
@@ -489,6 +495,20 @@ async function hasClawHubTrustedPublisher(
   }
 }
 
+export async function resolveClawHubPackagePublicationState(
+  plugin: Pick<PublishablePluginPackage, "packageName" | "version">,
+  options: ClawHubRetryOptions & { registryBaseUrl?: string } = {},
+): Promise<ClawHubPackagePublicationState> {
+  const packageExists = await doesClawHubPackageExist(plugin.packageName, options);
+  const hasTrustedPublisher = packageExists
+    ? await hasClawHubTrustedPublisher(plugin.packageName, options)
+    : false;
+  const alreadyPublished = packageExists
+    ? await isPluginVersionPublishedOnClawHub(plugin.packageName, plugin.version, options)
+    : false;
+  return { packageExists, hasTrustedPublisher, alreadyPublished };
+}
+
 function isOpenClawPluginTrustedPublisher(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -521,6 +541,10 @@ export async function collectPluginClawHubReleasePlan(params?: {
   fetchImpl?: typeof fetch;
   requestTimeoutMs?: number;
   resolveLatestVersion?: NpmLatestVersionResolver;
+  resolvePackageState?: (
+    plugin: Pick<PublishablePluginPackage, "packageName" | "version">,
+    options?: ClawHubRetryOptions & { registryBaseUrl?: string },
+  ) => Promise<ClawHubPackagePublicationState>;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<PluginReleasePlan> {
   const rootDir = params?.rootDir;
@@ -565,13 +589,9 @@ export async function collectPluginClawHubReleasePlan(params?: {
       requestTimeoutMs: params?.requestTimeoutMs,
       sleep: params?.sleep,
     };
-    const packageExists = await doesClawHubPackageExist(plugin.packageName, queryOptions);
-    const hasTrustedPublisher = packageExists
-      ? await hasClawHubTrustedPublisher(plugin.packageName, queryOptions)
-      : false;
-    const alreadyPublished = packageExists
-      ? await isPluginVersionPublishedOnClawHub(plugin.packageName, plugin.version, queryOptions)
-      : false;
+    const { packageExists, hasTrustedPublisher, alreadyPublished } = await (
+      params?.resolvePackageState ?? resolveClawHubPackagePublicationState
+    )(plugin, queryOptions);
 
     return {
       extensionId: plugin.extensionId,
