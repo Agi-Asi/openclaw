@@ -296,7 +296,7 @@ export async function refreshSlashCommands(params: {
 }
 
 export function shouldQueueLocalSlashCommand(name: string): boolean {
-  return !["stop", "export-session", "steer", "redirect", "new"].includes(name);
+  return !["help", "stop", "export-session", "steer", "redirect", "new"].includes(name);
 }
 
 export async function confirmConversationResetForCurrentSession(
@@ -332,6 +332,9 @@ export async function dispatchChatSlashCommand(
   opts: ChatCommandSendOptions,
 ): Promise<ChatCommandDispatchResult> {
   switch (name) {
+    case "help":
+      await host.openCommandHelp?.();
+      return "completed";
     case "stop":
       if (!requireChatSessionAction(host, "abort")) {
         return "failed";

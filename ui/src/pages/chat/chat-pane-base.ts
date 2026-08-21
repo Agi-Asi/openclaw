@@ -35,6 +35,7 @@ import type {
 import type { BoardFace, BoardVisibleChatDock } from "../../lib/board/settings.ts";
 import type { BoardTab } from "../../lib/board/types.ts";
 import { formatUiError } from "../../lib/format-error.ts";
+import type { SlashCommandCategory } from "../../lib/chat/commands.ts";
 import { parseCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import type { SwarmRosterHydrator } from "../../lib/sessions/swarm-roster.ts";
 import { SessionUnreadPatchGuard } from "../../lib/sessions/unread.ts";
@@ -257,6 +258,10 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   } | null = null;
   @litState() protected boardChatDockSize: BoardChatDockSize = boardChatDockLayout.load();
   @litState() protected resetConfirmationOpen = false;
+  @litState() protected commandHelpOpen = false;
+  @litState() protected commandHelpCategory: SlashCommandCategory = "session";
+  @litState() protected commandHelpQuery = "";
+  @litState() protected commandHelpSelectedKey: string | null = null;
   protected deferredSessionHydrationRequestVersion = 0;
   protected sessionCompanionHydrationKey = "";
   protected readonly sessionCompanionThreads = new ChatSessionCompanionThreads(() => {

@@ -213,6 +213,18 @@ describe("handleSendChat browser annotation context", () => {
 });
 
 describe("handleSendChat immediate local commands", () => {
+  it("opens /help without adding a command to the outbox", async () => {
+    const openCommandHelp = vi.fn();
+    const host = makeChatHost({ chatMessage: "/help", openCommandHelp });
+
+    await handleSendChat(host);
+
+    expect(openCommandHelp).toHaveBeenCalledOnce();
+    expect(host.chatMessage).toBe("");
+    expect(host.chatMessages).toStrictEqual([]);
+    expect(host.chatQueue).toStrictEqual([]);
+  });
+
   it.each(["/export-session", "/export"])(
     "preserves staged attachments while %s exports the chat",
     async (command) => {

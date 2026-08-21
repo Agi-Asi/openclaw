@@ -499,14 +499,17 @@ const TIER_ORDER: Record<SlashCommandTier, number> = {
 const NON_MATCHING_COMMAND_RANK = 4;
 
 function getSlashCommandRelevance(command: SlashCommandDef, filter: string): number {
-  const names = [command.name, ...(command.aliases ?? [])].map(normalizeLowercaseStringOrEmpty);
-  if (names.some((name) => name === filter)) {
+  const normalizedFilter = filter.replace(/[\s_-]+/gu, "-");
+  const names = [command.name, ...(command.aliases ?? [])]
+    .map(normalizeLowercaseStringOrEmpty)
+    .map((name) => name.replace(/[\s_-]+/gu, "-"));
+  if (names.some((name) => name === normalizedFilter)) {
     return 0;
   }
-  if (names.some((name) => name.startsWith(filter))) {
+  if (names.some((name) => name.startsWith(normalizedFilter))) {
     return 1;
   }
-  if (names.some((name) => name.includes(filter))) {
+  if (names.some((name) => name.includes(normalizedFilter))) {
     return 2;
   }
   return normalizeLowercaseStringOrEmpty(getSlashCommandDescription(command)).includes(filter)

@@ -16,11 +16,6 @@ import type {
 import type { ApplicationGatewaySnapshot } from "../../app/gateway.ts";
 import { t } from "../../i18n/index.ts";
 import {
-  getSlashCommandCategoryLabel,
-  getSlashCommandDescription,
-  SLASH_COMMANDS,
-} from "../../lib/chat/commands.ts";
-import {
   type ChatModelOverride,
   createChatModelOverride,
   resolvePreferredServerChatModelValue,
@@ -149,8 +144,6 @@ export async function executeSlashCommand(
   context: SlashCommandContext,
 ): Promise<SlashCommandResult> {
   switch (commandName) {
-    case "help":
-      return executeHelp();
     case "new":
       return { content: t("chat.commandResults.startingNewThread"), action: "new-session" };
     case "reset":
@@ -187,25 +180,6 @@ export async function executeSlashCommand(
 }
 
 // ── Command Implementations ──
-
-function executeHelp(): SlashCommandResult {
-  const lines = [`**${t("chat.commandResults.help.availableCommands")}**\n`];
-  let currentCategory = "";
-
-  for (const cmd of SLASH_COMMANDS) {
-    const cat = cmd.category ?? "session";
-    if (cat !== currentCategory) {
-      currentCategory = cat;
-      lines.push(`**${getSlashCommandCategoryLabel(cat)}**`);
-    }
-    const argStr = cmd.args ? ` ${cmd.args}` : "";
-    const local = cmd.executeLocal ? "" : ` *(${t("chat.commandResults.help.agentCommand")})*`;
-    lines.push(`\`/${cmd.name}${argStr}\` — ${getSlashCommandDescription(cmd)}${local}`);
-  }
-
-  lines.push(`\n${t("chat.commandResults.help.openMenu")}`);
-  return { content: lines.join("\n") };
-}
 
 async function executeCompact(
   sessionKey: string,

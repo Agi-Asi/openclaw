@@ -68,6 +68,8 @@ export type ChatHost = ChatInputHistoryState &
     } | null;
     /** Control UI route for /btw and /side; server/TUI command handling remains unchanged. */
     openSessionCompanion?: (question: string) => Promise<void> | void;
+    /** Opens the Control UI command guide without adding a transcript turn. */
+    openCommandHelp?: () => Promise<void> | void;
     /** Handles a recognized catalog action only when this client can complete it. */
     dispatchClientPresentation?: (action: CommandClientPresentationAction) => Promise<boolean>;
   };

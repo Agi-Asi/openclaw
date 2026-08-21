@@ -336,6 +336,17 @@ describe("refreshSlashCommands", () => {
 });
 
 describe("conversation reset confirmation", () => {
+  it("opens /help without requiring a Gateway connection", async () => {
+    const openCommandHelp = vi.fn();
+
+    const result = await dispatchChatSlashCommand({ openCommandHelp } as never, "help", "", {
+      sendResetMessage: vi.fn(),
+    });
+
+    expect(result).toBe("completed");
+    expect(openCommandHelp).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["stop", "chat.abort"],
     ["reset", "chat.send"],

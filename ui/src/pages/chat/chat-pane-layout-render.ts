@@ -5,6 +5,7 @@ import type {
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { isDesktopPanelAvailable } from "../../app/app-shell-chrome.ts";
+import { t } from "../../i18n/index.ts";
 import { ChatPaneBrowserAnnotationRender } from "./chat-pane-browser-annotation-render.ts";
 import {
   availableSidebarSlots,
@@ -25,6 +26,7 @@ import {
   type SessionWorkspaceProps,
 } from "./components/chat-session-workspace.ts";
 import type { SidebarFullMessageLoader } from "./components/chat-sidebar.ts";
+import { renderCommandHelpDialog } from "./components/command-help-dialog.ts";
 import {
   SIDEBAR_NARROW_BREAKPOINT_PX,
   isSidebarSlotVisible,
@@ -170,6 +172,37 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
     return html`${content}${renderChatImageLightbox(
       state.imageLightbox,
       state.handleCloseImage,
-    )}${this.renderResetConfirmation()}`;
+    )}${this.renderResetConfirmation()}${this.commandHelpOpen
+      ? renderCommandHelpDialog({
+          assistantName: state.assistantName,
+          category: this.commandHelpCategory,
+          query: this.commandHelpQuery,
+          selectedKey: this.commandHelpSelectedKey,
+          onCategoryChange: (category) => {
+            this.commandHelpCategory = category;
+            this.commandHelpSelectedKey = null;
+          },
+          onQueryChange: (query) => {
+            this.commandHelpQuery = query;
+            this.commandHelpSelectedKey = null;
+          },
+          onSelect: (command) => {
+            this.commandHelpSelectedKey = command.key;
+          },
+          onAsk: (command) => {
+            state.chatMessage = t("chat.commands.help.askPrompt", { command });
+            this.commandHelpOpen = false;
+            state.requestUpdate?.();
+            requestAnimationFrame(() =>
+              this.querySelector<HTMLTextAreaElement>(
+                ".agent-chat__composer-combobox > textarea",
+              )?.focus({ preventScroll: true }),
+            );
+          },
+          onClose: () => {
+            this.commandHelpOpen = false;
+          },
+        })
+      : nothing}`;
   }
 }

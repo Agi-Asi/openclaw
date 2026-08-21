@@ -55,7 +55,11 @@ import {
 import { applySelectedChatAgent } from "./chat-session.ts";
 import { handlePageGatewayEvent } from "./chat-state-events.ts";
 import { createPageState } from "./chat-state-page.ts";
-import { refreshPageChat, retireChatMetadataRequests } from "./chat-state-refresh.ts";
+import {
+  refreshChatCommands,
+  refreshPageChat,
+  retireChatMetadataRequests,
+} from "./chat-state-refresh.ts";
 import { resetChatViewState } from "./chat-view-state.ts";
 import { dismissConfirmedActionPopovers } from "./components/chat-message.ts";
 import { clearChatModelSearchOnEscape } from "./components/chat-model-picker.ts";
@@ -432,6 +436,15 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
     };
     pageState.refreshSessionPullRequests = (options) => this.refreshSessionPullRequests(options);
     pageState.openSessionCompanion = (question) => this.submitSessionCompanionQuestion(question);
+    pageState.openCommandHelp = async () => {
+      await refreshChatCommands(pageState);
+      if (this.state === pageState) {
+        this.commandHelpCategory = "session";
+        this.commandHelpQuery = "";
+        this.commandHelpSelectedKey = null;
+        this.commandHelpOpen = true;
+      }
+    };
     pageState.retireSessionCompanion = (key, agentId) =>
       this.sessionCompanionThreads.retire(key, agentId);
     this.state = pageState;

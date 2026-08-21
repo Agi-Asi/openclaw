@@ -91,6 +91,12 @@ describe("getSlashCommandCompletions", () => {
     expect(completionNames("pair")).toEqual(["pair", "pair-device", "openclaw"]);
   });
 
+  it("matches command separators as spaces", () => {
+    replaceSlashCommands([slashCommand("pair-device"), slashCommand("unrelated")]);
+
+    expect(completionNames("pair device")).toEqual(["pair-device"]);
+  });
+
   it("ranks exact and prefix alias matches like primary names", () => {
     replaceSlashCommands([
       slashCommand("pair-device", {
