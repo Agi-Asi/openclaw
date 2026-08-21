@@ -137,13 +137,20 @@ class WizardSessionPrompter implements WizardPrompter {
         if (qrExpiresAtMs !== undefined && !Number.isSafeInteger(qrExpiresAtMs)) {
           throw new RangeError("expiresInMs exceeds the supported presentation deadline.");
         }
-        // The producer may settle while PNG rendering awaits. Attach a sink now;
-        // presentQr still observes and normalizes the same eventual outcome.
-        void params.settled.catch(() => undefined);
+        let producerSettled = false;
+        const settled = params.settled.finally(() => {
+          producerSettled = true;
+        });
+        // Rendering can outlive an early producer rejection; presentQr still
+        // observes and normalizes this same eventual outcome.
+        void settled.catch(() => undefined);
         const qrDataUrl = await renderQrPngDataUrlWithinLimit(
           params.text,
           QR_PNG_DATA_URL_MAX_LENGTH,
         );
+        // Let a producer resolved in the renderer's completion turn update the
+        // tracker before presentQr makes the credential-bearing step visible.
+        await Promise.resolve();
         return await this.session.presentQr(
           {
             id: randomUUID(),
@@ -154,7 +161,7 @@ class WizardSessionPrompter implements WizardPrompter {
             ...(qrExpiresAtMs !== undefined ? { qrExpiresAtMs } : {}),
             executor: "gateway",
           },
-          params.settled,
+          { promise: settled, isSettled: () => producerSettled },
         );
       };
     }
@@ -518,11 +525,18 @@ export class WizardSession {
   }
 
   /** @internal Present a QR until its producer settles; clients cannot answer it. */
-  async presentQr<T>(step: WizardQrStepInput, settled: Promise<T>): Promise<T> {
+  async presentQr<T>(
+    step: WizardQrStepInput,
+    settlement: { promise: Promise<T>; isSettled: () => boolean },
+  ): Promise<T> {
     if (this.status !== "running") {
       throw new Error("wizard: session not running");
     }
-    this.pushStep({ ...step, canCancel: !this.cancellationLocked });
+    // A completed producer invalidates its credential-bearing QR. This check
+    // and projection are synchronous so settlement cannot interleave them.
+    if (!settlement.isSettled()) {
+      this.pushStep({ ...step, canCancel: !this.cancellationLocked });
+    }
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
     let rejectCancelled!: (error: Error) => void;
     const cancelled = new Promise<never>((_resolve, reject) => {
@@ -530,7 +544,7 @@ export class WizardSession {
     });
     const onAbort = () => rejectCancelled(new WizardCancelledError());
     this.signal.addEventListener("abort", onAbort, { once: true });
-    const waits: Array<Promise<T>> = [settled, cancelled];
+    const waits: Array<Promise<T>> = [settlement.promise, cancelled];
     const expired = new Error("wizard: QR presentation expired; restart setup to retry");
     if (step.qrExpiresAtMs !== undefined) {
       waits.push(

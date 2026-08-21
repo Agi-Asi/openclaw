@@ -1,6 +1,7 @@
 // Wizard session tests cover session creation and state transitions.
 
 import { describe, expect, test, vi } from "vitest";
+import * as qrImage from "../media/qr-image.js";
 import { DEVICE_CODE_PHISHING_WARNING } from "./prompts.js";
 import type { WizardPrompter } from "./prompts.js";
 import { WizardSession, wizardStepAwaitsInput, type WizardStep } from "./session.js";
@@ -86,6 +87,52 @@ describe("WizardSession", () => {
     expect(account).toBe("+15555550123");
     expect(presented.step.qrDataUrl).toBeUndefined();
     await expect(poll).resolves.toMatchObject({ done: true, status: "done" });
+  });
+
+  test("does not project a QR when its producer settles during rendering", async () => {
+    let releaseRender!: () => void;
+    const renderGate = new Promise<void>((resolve) => {
+      releaseRender = resolve;
+    });
+    let markRenderStarted!: () => void;
+    const renderStarted = new Promise<void>((resolve) => {
+      markRenderStarted = resolve;
+    });
+    const render = vi
+      .spyOn(qrImage, "renderQrPngDataUrlWithinLimit")
+      .mockImplementationOnce(async () => {
+        markRenderStarted();
+        await renderGate;
+        return "data:image/png;base64,cXItcG5n";
+      });
+    try {
+      let finish!: (account: string) => void;
+      const settled = new Promise<string>((resolve) => {
+        finish = resolve;
+      });
+      let account: string | undefined;
+      const session = new WizardSession(
+        async (prompter) => {
+          account = await prompter.qrCode?.({
+            title: "Link device",
+            text: "sgnl://linkdevice?uuid=test",
+            settled,
+          });
+        },
+        { supportsQrCode: true },
+      );
+
+      await renderStarted;
+      const next = session.next({ supportsQrCode: true });
+      finish("+15555550123");
+      await Promise.resolve();
+      releaseRender();
+
+      await expect(next).resolves.toMatchObject({ done: true, status: "done" });
+      expect(account).toBe("+15555550123");
+    } finally {
+      render.mockRestore();
+    }
   });
 
   test("cancels and scrubs a delivered QR without exposing the capability by default", async () => {

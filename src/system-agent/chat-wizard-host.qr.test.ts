@@ -103,4 +103,58 @@ describe("SystemAgentChatEngine QR wizard", () => {
       await engine.dispose();
     }
   });
+
+  it("disposes without waiting for locked post-link finalization", async () => {
+    useTempStateDir();
+    let finishLink!: (account: string) => void;
+    const linked = new Promise<string>((resolve) => {
+      finishLink = resolve;
+    });
+    let releaseFinalization!: () => void;
+    const finalization = new Promise<void>((resolve) => {
+      releaseFinalization = resolve;
+    });
+    let markFinalized!: () => void;
+    const finalized = new Promise<void>((resolve) => {
+      markFinalized = resolve;
+    });
+    const engine = new SystemAgentChatEngine({
+      surface: "gateway",
+      supportsQrCode: true,
+      runAgentTurn: async () => null,
+      planWithAssistant: async () => null,
+      deps: { loadOverview: fakeOverviewLoader() },
+      runChannelSetupWizard: async (_channel: string, prompter: WizardPrompter) => {
+        await prompter.qrCode?.({
+          title: "Link Signal",
+          text: "sgnl://linkdevice?credential=secret",
+          settled: linked,
+        });
+        await finalization;
+        markFinalized();
+      },
+    });
+
+    const presented = await engine.handle("connect signal");
+    expect(presented.step).toMatchObject({ type: "qr" });
+    finishLink("+15555550123");
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+
+    const disposal = engine.dispose();
+    try {
+      const outcome = await Promise.race([
+        disposal.then(() => "disposed" as const),
+        new Promise<"pending">((resolve) => {
+          setImmediate(() => resolve("pending"));
+        }),
+      ]);
+      expect(outcome).toBe("disposed");
+    } finally {
+      releaseFinalization();
+      await disposal;
+      await finalized;
+    }
+  });
 });

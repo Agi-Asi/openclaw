@@ -273,11 +273,11 @@ export class ChatWizardHost {
     return this.bridge?.step?.sensitive === true;
   }
 
-  async dispose(): Promise<void> {
-    const settlement = this.bridge?.session.whenSettled();
+  dispose(): void {
+    // Locked post-commit work may outlive this host. Drop presentation state
+    // immediately so reset and eviction never wait behind provider finalization.
     this.bridge?.session.cancel();
     this.bridge = null;
-    await settlement;
   }
 
   decorateReply(reply: SystemAgentChatReply): SystemAgentChatReply {

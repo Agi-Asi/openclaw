@@ -160,7 +160,7 @@ export class SystemAgentChatEngine {
   }
 
   async dispose(): Promise<void> {
-    await this.wizard.dispose();
+    this.wizard.dispose();
     await cleanupSystemAgentSession(this.agentSession);
   }
 
@@ -301,7 +301,7 @@ export class SystemAgentChatEngine {
     this.router.clearForInferenceLoss();
     delete this.agentSession.cliSession;
     if (cancelWizard) {
-      void this.wizard.dispose();
+      this.wizard.dispose();
     }
     this.history.splice(0);
     throw new SystemAgentInferenceUnavailableError("conversation", failures);
