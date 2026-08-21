@@ -2405,6 +2405,7 @@ describe("codex conversation binding", () => {
         threadId: "thread-old",
         cwd: "/old-repo",
         conversationStartId: "start-old",
+        reasoningEffort: "high",
       },
     });
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -2477,6 +2478,7 @@ describe("codex conversation binding", () => {
       threadId: "thread-target",
       cwd: "/new-repo",
       conversationStartId: "start-new",
+      reasoningEffort: "high",
     });
   });
 
