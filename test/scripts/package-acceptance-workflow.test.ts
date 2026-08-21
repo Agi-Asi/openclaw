@@ -963,6 +963,7 @@ function runOpenClawNpmTrustedRefGuard(overrides: Record<string, string>) {
 type ProtectedPreflightConsumerParams = {
   currentRef: string;
   currentWorkflowSha: string;
+  liveTagSha?: string;
   preflightHeadBranch: string;
   preflightHeadSha: string;
 };
@@ -1036,6 +1037,10 @@ if [[ "$1" == "run" && "$2" == "view" ]]; then
   exit 0
 fi
 if [[ "$1" == "api" ]]; then
+  if [[ "$2" == *"/git/ref/tags/"* ]]; then
+    printf '%s\\n' "$MOCK_REMOTE_TAG_SHA"
+    exit 0
+  fi
   printf '1\\n'
   exit 0
 fi
@@ -1081,6 +1086,7 @@ cat >/dev/null
         workflowName: "OpenClaw NPM Release",
       }),
       MOCK_RELEASE_SHA: "d".repeat(40),
+      MOCK_REMOTE_TAG_SHA: params.liveTagSha ?? params.currentWorkflowSha,
       PATH: `${binDir}:${process.env.PATH}`,
       PREFLIGHT_RUN_ID: "111",
       RELEASE_NPM_DIST_TAG: "beta",
@@ -1595,6 +1601,30 @@ describe("package acceptance workflow", () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("exact protected release-publish tag");
     }
+  });
+
+  it("rejects a protected tooling tag moved after request validation and environment approval", () => {
+    const workflowSha = "a".repeat(40);
+    const workflowTag = `release-publish/${workflowSha.slice(0, 12)}-123`;
+    const protectedRef = `refs/tags/${workflowTag}`;
+    const predecessor = runOpenClawNpmTrustedRefGuard({
+      MOCK_REMOTE_TAG_SHA: workflowSha,
+      WORKFLOW_REF: protectedRef,
+      WORKFLOW_SHA: workflowSha,
+    });
+    expect(predecessor.status, predecessor.stderr).toBe(0);
+
+    const consumer = runOpenClawNpmPreflightConsumerGuard({
+      currentRef: protectedRef,
+      currentWorkflowSha: workflowSha,
+      liveTagSha: "b".repeat(40),
+      preflightHeadBranch: workflowTag,
+      preflightHeadSha: workflowSha,
+    });
+    expect(consumer.status).toBe(1);
+    expect(consumer.stderr).toContain(
+      "Protected release-publish tag moved after npm-release approval",
+    );
   });
 
   it("allows protected SHA-pinned tooling tags to consume token-bootstrap evidence", () => {

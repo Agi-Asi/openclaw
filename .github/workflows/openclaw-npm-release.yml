@@ -1034,8 +1034,23 @@ jobs:
             active_branch_preflight=true
           fi
           protected_release_publish_preflight=false
-          if [[ "$WORKFLOW_REF" =~ ^refs/tags/release-publish/[a-f0-9]{12}-[1-9][0-9]*$ ]]; then
+          if [[ "$WORKFLOW_REF" =~ ^refs/tags/release-publish/([a-f0-9]{12})-[1-9][0-9]*$ ]]; then
+            workflow_sha_prefix="${BASH_REMATCH[1]}"
+            [[ "$WORKFLOW_SHA" =~ ^[a-f0-9]{40}$ && "${WORKFLOW_SHA:0:12}" == "$workflow_sha_prefix" ]] || {
+              echo "Protected release-publish tag does not match the workflow SHA at the npm publish boundary." >&2
+              exit 1
+            }
             workflow_tag="${WORKFLOW_REF#refs/tags/}"
+            # The npm-release environment can wait after request validation.
+            # Re-read the tag here so a later move cannot authorize publication.
+            remote_workflow_sha="$(
+              gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${workflow_tag}" \
+                --jq '.object | select(.type == "commit") | .sha | select(test("^[a-f0-9]{40}$"))'
+            )"
+            [[ "$remote_workflow_sha" == "$WORKFLOW_SHA" ]] || {
+              echo "Protected release-publish tag moved after npm-release approval." >&2
+              exit 1
+            }
             if [[ "$preflight_head_branch" == "$workflow_tag" && "$preflight_head_sha" == "$WORKFLOW_SHA" ]]; then
               protected_release_publish_preflight=true
             fi
