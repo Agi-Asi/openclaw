@@ -16,7 +16,7 @@ import { createWebSearchTool } from "./tools/web-search.js";
 const XAI_KEY = process.env.XAI_API_KEY ?? "";
 const LIVE = isLiveTestEnabled(["XAI_LIVE_TEST"]);
 const XAI_COMPLETE_LIVE_TIMEOUT_MS = 90_000;
-const XAI_TOOL_REQUEST_TIMEOUT_MS = 80_000;
+const XAI_TOOL_REQUEST_TIMEOUT_MS = 60_000;
 const XAI_WEB_SEARCH_LIVE_TIMEOUT_SECONDS = 60;
 const XAI_LIVE_COMPLETION_CASES = [
   { modelId: "grok-4.3", completionReasoning: undefined },
@@ -177,14 +177,16 @@ describeLive("xai live", () => {
         let capturedPayload: Record<string, unknown> | undefined;
         const streamOptions = {
           apiKey: XAI_KEY,
+          firstEventTimeoutMs: XAI_TOOL_REQUEST_TIMEOUT_MS,
           maxTokens: 128,
           reasoning: "low",
-          signal: AbortSignal.timeout(XAI_TOOL_REQUEST_TIMEOUT_MS),
+          timeoutMs: XAI_TOOL_REQUEST_TIMEOUT_MS,
           toolChoice: { type: "function", name: "noop" },
           onPayload: (payload: unknown) => {
             capturedPayload = payload as Record<string, unknown>;
           },
         } satisfies Parameters<typeof agent.streamFn>[2] & {
+          firstEventTimeoutMs: number;
           reasoning: "low";
           toolChoice: { type: "function"; name: string };
         };
@@ -199,24 +201,19 @@ describeLive("xai live", () => {
           streamOptions,
         );
 
-        let doneMessage: AssistantLikeMessage;
-        try {
-          doneMessage = await collectDoneMessage(
-            stream as AsyncIterable<{
-              type: string;
-              message?: AssistantLikeMessage;
-              error?: { errorMessage?: string };
-            }>,
+        const doneMessage = await collectDoneMessage(
+          stream as AsyncIterable<{
+            type: string;
+            message?: AssistantLikeMessage;
+            error?: { errorMessage?: string };
+          }>,
+        ).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `xAI ${modelId} tool stream failed (payloadCaptured=${capturedPayload !== undefined}): ${message}`,
+            { cause: error },
           );
-        } catch (error) {
-          if (streamOptions.signal.aborted) {
-            throw new Error(
-              `xAI ${modelId} tool stream produced no terminal event within ${XAI_TOOL_REQUEST_TIMEOUT_MS}ms (payloadCaptured=${capturedPayload !== undefined})`,
-              { cause: error },
-            );
-          }
-          throw error;
-        }
+        });
         const content = requireLiveValue(doneMessage.content, "done message content");
         expect(Array.isArray(content)).toBe(true);
         expect(content.some((block) => block.type === "toolCall" && block.name === "noop")).toBe(
