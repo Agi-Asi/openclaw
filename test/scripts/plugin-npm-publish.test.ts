@@ -1,6 +1,6 @@
 // Plugin NPM Publish tests cover publish wrapper argument safety.
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -41,6 +41,21 @@ function makePackage(version: string): { packageDir: string; path: string; root:
 }
 
 describe("plugin npm publish wrapper", () => {
+  it("revalidates release tooling after preparation and immediately before npm publish", () => {
+    const source = readFileSync(scriptPath, "utf8");
+    const buildIndex = source.indexOf("build_package_runtime");
+    const identityIndex = source.lastIndexOf("verify_release_tooling_identity");
+    const publishIndex = source.indexOf(
+      'run_with_manifest_overlay "${publish_cmd[@]}"',
+      identityIndex,
+    );
+
+    expect(buildIndex).toBeGreaterThan(-1);
+    expect(identityIndex).toBeGreaterThan(buildIndex);
+    expect(publishIndex).toBeGreaterThan(identityIndex);
+    expect(source.slice(identityIndex, publishIndex)).not.toContain("npm view");
+  });
+
   it("prints help before package or npm checks", () => {
     const result = runPluginPublishWrapper(["--help"]);
 

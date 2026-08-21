@@ -413,7 +413,7 @@ describe("plugin npm extended-stable workflow", () => {
       .split("\n")
       .filter((line) => line.includes('npm publish "$TARBALL_PATH"'));
 
-    expect(gitFetchLines).toHaveLength(6);
+    expect(gitFetchLines).toHaveLength(5);
     expect(
       gitFetchLines.every((line) => line.includes("timeout --signal=TERM --kill-after=10s 120s")),
     ).toBe(true);
@@ -468,18 +468,11 @@ describe("plugin npm extended-stable workflow", () => {
     expect(consume.run).toContain("--connect-timeout 10");
     expect(consume.run).toContain("--max-time 120");
     expect(consume.run).toContain("actions/artifacts/${artifact_id}/zip");
-    expect(consume.run).toContain("sha_pinned_release_publish=false");
-    expect(consume.run).toContain(
-      '[[ "$WORKFLOW_REF" =~ ^refs/tags/release-publish/([a-f0-9]{12})-[1-9][0-9]*$ ]]',
-    );
-    expect(consume.run).toContain(
-      '[[ "$WORKFLOW_SHA" =~ ^[a-f0-9]{40}$ && "${WORKFLOW_SHA:0:12}" == "$workflow_sha_prefix" ]]',
-    );
-    expect(consume.run).toContain("sha_pinned_release_publish=true");
-    expect(consume.run).toContain(
-      '[[ "$WORKFLOW_REF" == "refs/heads/main" || "$sha_pinned_release_publish" == "true" ]]',
-    );
-    expect(consume.run).toContain('git merge-base --is-ancestor "$WORKFLOW_SHA" origin/main');
+    expect(consume.run).toContain("node scripts/release-tooling-identity.mjs verify");
+    expect(consume.run).toContain('--workflow-ref "$WORKFLOW_HEAD_BRANCH"');
+    expect(consume.run).toContain('--workflow-full-ref "$WORKFLOW_REF"');
+    expect(consume.run).toContain('--workflow-sha "$WORKFLOW_SHA"');
+    expect(consume.run).toContain('--release-publish-run-id "$RELEASE_PUBLISH_RUN_ID"');
     expect(
       step(parsed.jobs?.publish_plugins_npm, "Checkout trusted publication tooling").with?.ref,
     ).toBe("${{ github.workflow_sha }}");

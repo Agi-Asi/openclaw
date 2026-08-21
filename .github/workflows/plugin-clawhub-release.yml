@@ -28,6 +28,16 @@ on:
         description: Branch name of the approving OpenClaw Release Publish workflow run
         required: false
         type: string
+      release_publish_full_ref:
+        description: Exact full ref of the approving OpenClaw Release Publish workflow tooling
+        required: false
+        default: ""
+        type: string
+      release_publish_workflow_sha:
+        description: Exact workflow SHA of the approving OpenClaw Release Publish tooling
+        required: false
+        default: ""
+        type: string
       dry_run:
         description: Validate the full ClawHub artifact handoff without publishing.
         required: false
@@ -61,6 +71,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       bootstrap_matrix: ${{ steps.plan.outputs.bootstrap_matrix }}
       missing_trusted_publisher_matrix: ${{ steps.plan.outputs.missing_trusted_publisher_matrix }}
+      trusted_tooling_identity_json: ${{ steps.tooling_identity.outputs.json }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -91,6 +102,55 @@ jobs:
             git checkout --detach "${target_sha}"
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Capture trusted tooling identity
+        id: tooling_identity
+        env:
+          CALLER_FULL_REF: ${{ github.ref }}
+          CALLER_REF: ${{ github.ref_name }}
+          CALLER_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CALLER_RUN_ID: ${{ github.run_id }}
+          CALLER_SHA: ${{ github.sha }}
+          TOOLING_FULL_REF: ${{ inputs.release_publish_full_ref }}
+          TOOLING_REF: ${{ inputs.release_publish_branch }}
+          TOOLING_SHA: ${{ inputs.release_publish_workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TOOLING_FULL_REF}${TOOLING_SHA}" ]]; then
+            echo "json=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ -n "$TOOLING_FULL_REF" && -n "$TOOLING_REF" && -n "$TOOLING_SHA" ]] || {
+            echo "Trusted release tooling ref, full ref, and SHA must be provided together." >&2
+            exit 1
+          }
+          identity="$(
+            jq -cn \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg workflow ".github/workflows/plugin-clawhub-release.yml" \
+              --arg runId "$CALLER_RUN_ID" \
+              --arg runAttempt "$CALLER_RUN_ATTEMPT" \
+              --arg ref "$CALLER_REF" \
+              --arg fullRef "$CALLER_FULL_REF" \
+              --arg sha "$CALLER_SHA" \
+              --arg toolingRef "$TOOLING_REF" \
+              --arg toolingFullRef "$TOOLING_FULL_REF" \
+              --arg toolingSha "$TOOLING_SHA" \
+              '{
+                version: 1,
+                repository: $repository,
+                workflow: $workflow,
+                runId: $runId,
+                runAttempt: $runAttempt,
+                ref: $ref,
+                fullRef: $fullRef,
+                sha: $sha,
+                toolingRef: $toolingRef,
+                toolingFullRef: $toolingFullRef,
+                toolingSha: $toolingSha
+              }'
+          )"
+          echo "json=${identity}" >> "$GITHUB_OUTPUT"
 
       - name: Validate OIDC source matches workflow ref
         env:
@@ -388,7 +448,7 @@ jobs:
     needs:
       [preview_plugins_clawhub, pack_plugins_clawhub_artifacts, approve_plugins_clawhub_release]
     if: always() && github.event_name == 'workflow_dispatch' && needs.preview_plugins_clawhub.outputs.has_candidates == 'true' && needs.pack_plugins_clawhub_artifacts.result == 'success' && (inputs.dry_run == true || needs.approve_plugins_clawhub_release.result == 'success')
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@d8096dfc039e86ab942ddf9ef117d04849fd84c1
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@6dc1e2bd67a90b5e5c54b3a026dbdfe3691f1202
     permissions:
       actions: read
       contents: read
@@ -411,6 +471,7 @@ jobs:
       source_path: ${{ matrix.plugin.packageDir }}
       inspector_artifact_name: ${{ matrix.plugin.artifactName }}-inspector
       publish_json_artifact_name: ${{ matrix.plugin.artifactName }}-publish-json
+      trusted_tooling_identity_json: ${{ needs.preview_plugins_clawhub.outputs.trusted_tooling_identity_json }}
 
   verify_published_clawhub_package:
     needs: [preview_plugins_clawhub, publish_plugins_clawhub]

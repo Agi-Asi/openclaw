@@ -1627,20 +1627,69 @@ describe("package acceptance workflow", () => {
     );
   });
 
-  it("allows protected SHA-pinned tooling tags to consume token-bootstrap evidence", () => {
+  it("uses the canonical tooling identity verifier for token-bootstrap evidence", () => {
     const publishJob = workflowJob(PLUGIN_NPM_RELEASE_WORKFLOW, "publish_plugins_npm");
     const evidenceStep = workflowStep(publishJob, "Consume immutable npm publication evidence");
 
-    expect(evidenceStep.run).toContain("^refs/tags/release-publish/([a-f0-9]{12})-[1-9][0-9]*$");
-    expect(evidenceStep.run).toContain(
-      '[[ "$WORKFLOW_REF" == "refs/heads/main" || "$sha_pinned_release_publish" == "true" ]]',
+    expect(evidenceStep.env?.RELEASE_PUBLISH_RUN_ID).toBe("${{ inputs.release_publish_run_id }}");
+    expect(evidenceStep.run).toContain("node scripts/release-tooling-identity.mjs verify");
+    expect(evidenceStep.run).toContain('--workflow-ref "$WORKFLOW_HEAD_BRANCH"');
+    expect(evidenceStep.run).toContain('--workflow-full-ref "$WORKFLOW_REF"');
+    expect(evidenceStep.run).toContain('--workflow-sha "$WORKFLOW_SHA"');
+    expect(evidenceStep.run).toContain('--release-publish-run-id "$RELEASE_PUBLISH_RUN_ID"');
+    expect(evidenceStep.run).not.toContain("--allow-prevalidated-ref");
+  });
+
+  it("revalidates protected tooling immediately before every core and plugin npm publish", () => {
+    const corePublish = workflowStep(
+      workflowJob(OPENCLAW_NPM_RELEASE_WORKFLOW, "publish_openclaw_npm"),
+      "Publish",
     );
-    expect(evidenceStep.run).toContain(
-      'gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${workflow_tag}"',
+    expect(corePublish.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
+      WORKFLOW_FULL_REF: "${{ github.ref }}",
+      WORKFLOW_REF: "${{ github.ref_name }}",
+      WORKFLOW_SHA: "${{ github.workflow_sha }}",
+    });
+    expect(corePublish.run).toContain(
+      "node trusted-workflow/scripts/release-tooling-identity.mjs verify",
     );
-    expect(evidenceStep.run).toContain('[[ "$remote_workflow_sha" == "$WORKFLOW_SHA" ]]');
-    expect(evidenceStep.run).toContain('if [[ "$WORKFLOW_REF" == "refs/heads/main" ]]; then');
-    expect(evidenceStep.run).toContain('git merge-base --is-ancestor "$WORKFLOW_SHA" origin/main');
+    expect(corePublish.run).toContain("--allow-prevalidated-ref");
+    expect(corePublish.run).toMatch(
+      /verify_release_tooling_identity\s+bash scripts\/openclaw-npm-publish\.sh --publish "\.\/\$\{tarball_path\}"/u,
+    );
+    expect(corePublish.run).toMatch(
+      /verify_release_tooling_identity\s+bash scripts\/openclaw-npm-publish\.sh --publish "\$\{publish_target\}"/u,
+    );
+
+    const pluginPublishJob = workflowJob(PLUGIN_NPM_RELEASE_WORKFLOW, "publish_plugins_npm");
+    const oidcPublish = workflowStep(pluginPublishJob, "Publish with trusted publisher");
+    expect(oidcPublish.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      OPENCLAW_RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
+      OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF: "true",
+      OPENCLAW_RELEASE_TOOLING_FULL_REF: "${{ github.ref }}",
+      OPENCLAW_RELEASE_TOOLING_IDENTITY_REQUIRED: "true",
+      OPENCLAW_RELEASE_TOOLING_REF: "${{ github.ref_name }}",
+      OPENCLAW_RELEASE_TOOLING_REPOSITORY: "${{ github.repository }}",
+      OPENCLAW_RELEASE_TOOLING_SHA: "${{ github.workflow_sha }}",
+    });
+
+    const bootstrapPublish = workflowStep(pluginPublishJob, "Publish approved bootstrap tarball");
+    expect(bootstrapPublish.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
+      WORKFLOW_FULL_REF: "${{ github.ref }}",
+      WORKFLOW_REF: "${{ github.ref_name }}",
+      WORKFLOW_SHA: "${{ github.workflow_sha }}",
+    });
+    const identityIndex =
+      bootstrapPublish.run?.indexOf("node scripts/release-tooling-identity.mjs verify") ?? -1;
+    const publishIndex = bootstrapPublish.run?.indexOf('npm publish "$TARBALL_PATH"') ?? -1;
+    expect(identityIndex).toBeGreaterThan(-1);
+    expect(publishIndex).toBeGreaterThan(identityIndex);
+    expect(bootstrapPublish.run?.slice(identityIndex, publishIndex)).not.toContain("npm view");
   });
 
   it("binds release evidence validation to the exact trusted workflow ref", () => {
@@ -6893,6 +6942,7 @@ describe("package artifact reuse", () => {
       ".github/workflows/plugin-clawhub-new.yml",
       "publish_bootstrap_plugins",
     );
+    const publishOrchestration = workflowStep(releasePublishJob, "Dispatch publish workflows");
     const postpublishEvidence = workflowStep(releasePublishJob, "Upload postpublish evidence");
 
     expect(packageJson.scripts).toMatchObject({
@@ -6919,13 +6969,53 @@ describe("package artifact reuse", () => {
       "approve_plugins_clawhub_release",
     ]);
     expect(clawHubPublish.uses).toBe(
-      "openclaw/clawhub/.github/workflows/package-publish.yml@d8096dfc039e86ab942ddf9ef117d04849fd84c1",
+      "openclaw/clawhub/.github/workflows/package-publish.yml@6dc1e2bd67a90b5e5c54b3a026dbdfe3691f1202",
     );
     expect(clawHubPublish.permissions).toMatchObject({
       actions: "read",
       contents: "read",
       "id-token": "write",
     });
+    expect(clawHubPublish.with?.trusted_tooling_identity_json).toBe(
+      "${{ needs.preview_plugins_clawhub.outputs.trusted_tooling_identity_json }}",
+    );
+    const clawHubPreview = workflowJob(PLUGIN_CLAWHUB_RELEASE_WORKFLOW, "preview_plugins_clawhub");
+    expect(clawHubPreview.outputs?.trusted_tooling_identity_json).toBe(
+      "${{ steps.tooling_identity.outputs.json }}",
+    );
+    const toolingIdentity = workflowStep(clawHubPreview, "Capture trusted tooling identity");
+    expect(toolingIdentity.env).toMatchObject({
+      CALLER_FULL_REF: "${{ github.ref }}",
+      CALLER_REF: "${{ github.ref_name }}",
+      CALLER_RUN_ATTEMPT: "${{ github.run_attempt }}",
+      CALLER_RUN_ID: "${{ github.run_id }}",
+      CALLER_SHA: "${{ github.sha }}",
+      TOOLING_FULL_REF: "${{ inputs.release_publish_full_ref }}",
+      TOOLING_REF: "${{ inputs.release_publish_branch }}",
+      TOOLING_SHA: "${{ inputs.release_publish_workflow_sha }}",
+    });
+    for (const field of [
+      "version: 1",
+      "repository: $repository",
+      "workflow: $workflow",
+      "runId: $runId",
+      "runAttempt: $runAttempt",
+      "ref: $ref",
+      "fullRef: $fullRef",
+      "sha: $sha",
+      "toolingRef: $toolingRef",
+      "toolingFullRef: $toolingFullRef",
+      "toolingSha: $toolingSha",
+    ]) {
+      expect(toolingIdentity.run).toContain(field);
+    }
+    expect(publishOrchestration.env?.PARENT_WORKFLOW_FULL_REF).toBe("${{ github.ref }}");
+    expect(publishOrchestration.run).toContain(
+      '-f release_publish_full_ref="${PARENT_WORKFLOW_FULL_REF}"',
+    );
+    expect(publishOrchestration.run).toContain(
+      '-f release_publish_workflow_sha="${PARENT_WORKFLOW_SHA}"',
+    );
     expect(clawHubBootstrapValidation.environment).toBe("clawhub-plugin-bootstrap");
     expect(clawHubBootstrapPublish.environment).toBe("clawhub-plugin-bootstrap");
 

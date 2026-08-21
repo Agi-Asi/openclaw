@@ -172,6 +172,24 @@ if [[ "${mirror_auth_requirement}" == "required" && -z "${mirror_auth_token}" ]]
   exit 1
 fi
 
+verify_release_tooling_identity() {
+  if [[ "${OPENCLAW_RELEASE_TOOLING_IDENTITY_REQUIRED:-}" != "true" ]]; then
+    return 0
+  fi
+  identity_args=(
+    verify
+    --repository "${OPENCLAW_RELEASE_TOOLING_REPOSITORY:-}"
+    --workflow-ref "${OPENCLAW_RELEASE_TOOLING_REF:-}"
+    --workflow-full-ref "${OPENCLAW_RELEASE_TOOLING_FULL_REF:-}"
+    --workflow-sha "${OPENCLAW_RELEASE_TOOLING_SHA:-}"
+    --release-publish-run-id "${OPENCLAW_RELEASE_PUBLISH_RUN_ID:-}"
+  )
+  if [[ "${OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF:-}" == "true" ]]; then
+    identity_args+=(--allow-prevalidated-ref)
+  fi
+  node "${tooling_root}/scripts/release-tooling-identity.mjs" "${identity_args[@]}"
+}
+
 if [[ "${mode}" == "--pack" || "${mode}" == "--pack-dry-run" ]]; then
   {
     printf 'Publish command:'
@@ -228,6 +246,9 @@ fi
     cleanup_files+=("${publish_userconfig}")
     chmod 0600 "${publish_userconfig}"
     printf '%s\n' "//registry.npmjs.org/:_authToken=${publish_auth_token}" > "${publish_userconfig}"
+  fi
+  verify_release_tooling_identity
+  if [[ -n "${publish_auth_token}" ]]; then
     NPM_CONFIG_USERCONFIG="${publish_userconfig}" run_with_manifest_overlay "${publish_cmd[@]}"
   else
     run_with_manifest_overlay "${publish_cmd[@]}"

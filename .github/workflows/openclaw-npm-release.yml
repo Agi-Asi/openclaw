@@ -1407,11 +1407,25 @@ jobs:
         id: publish
         env:
           BYPASS_EXTENDED_STABLE_GUARD: ${{ inputs.bypass_extended_stable_guard }}
+          GH_TOKEN: ${{ github.token }}
           OPENCLAW_PREPACK_PREPARED: "1"
           OPENCLAW_NPM_PUBLISH_TAG: ${{ inputs.npm_dist_tag }}
           PUBLISH_TARBALL_PATH: ${{ steps.preflight_provenance.outputs.tarball_path }}
+          RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          WORKFLOW_FULL_REF: ${{ github.ref }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
+          verify_release_tooling_identity() {
+            node trusted-workflow/scripts/release-tooling-identity.mjs verify \
+              --repository "$GITHUB_REPOSITORY" \
+              --workflow-ref "$WORKFLOW_REF" \
+              --workflow-full-ref "$WORKFLOW_FULL_REF" \
+              --workflow-sha "$WORKFLOW_SHA" \
+              --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID" \
+              --allow-prevalidated-ref
+          }
           publish_target="${PUBLISH_TARBALL_PATH}"
           if [[ -n "${publish_target}" ]]; then
             publish_target="./${publish_target}"
@@ -1429,11 +1443,13 @@ jobs:
               echo "${package_name}@${package_version} is already published; reusing it."
               return 0
             fi
+            verify_release_tooling_identity
             bash scripts/openclaw-npm-publish.sh --publish "./${tarball_path}"
           }
           while IFS=$'\t' read -r package_name tarball_name; do
             publish_if_missing "$package_name" "preflight-tarball/$tarball_name"
           done < <(jq -r '(.corePackageTarballs // [])[] | [.packageName, .tarballName] | @tsv' preflight-tarball/preflight-manifest.json)
+          verify_release_tooling_identity
           bash scripts/openclaw-npm-publish.sh --publish "${publish_target}"
 
       - name: Verify extended-stable registry readback
