@@ -72,12 +72,31 @@ env:
   NODE_VERSION: "24.x"
 
 jobs:
+  format_diagnostic:
+    if: github.event_name == 'workflow_dispatch' && inputs.dispatch_id == 'pr127343-oxfmt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+        with:
+          cache-mode: restore
+          install-bun: "false"
+      - name: Print canonical formatter diff
+        run: |
+          pnpm format test/scripts/package-acceptance-workflow.test.ts
+          git diff -- test/scripts/package-acceptance-workflow.test.ts
+
   # Preflight: establish routing truth and job matrices once, then let real
   # work fan out from a single source of truth.
   preflight:
     permissions:
       contents: read
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !(github.event_name == 'workflow_dispatch' && inputs.dispatch_id == 'pr127343-oxfmt')
     runs-on: ${{ (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid') && 'ubuntu-24.04' || github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04') }}
     timeout-minutes: 20
     outputs:
