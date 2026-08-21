@@ -156,18 +156,32 @@ describe("plugin npm extended-stable workflow", () => {
     const preview = workflow().jobs?.preview_plugins_npm;
     const previewSteps = preview?.steps ?? [];
     const trusted = step(preview, "Validate ref is on a trusted publish branch");
-    expect(previewSteps.slice(0, 4).map((candidate) => candidate.name)).toEqual([
+    expect(previewSteps.slice(0, 6).map((candidate) => candidate.name)).toEqual([
       "Checkout",
+      "Checkout trusted preflight tooling",
       "Resolve checked-out ref",
+      "Verify trusted preflight tooling identity",
       "Validate ref is on a trusted publish branch",
       "Setup Node environment",
     ]);
     const trustedIndex = previewSteps.indexOf(trusted);
-    expect(trustedIndex).toBe(2);
+    expect(trustedIndex).toBe(4);
     for (const candidate of previewSteps.slice(0, trustedIndex)) {
       expect(candidate.uses?.startsWith("./"), candidate.name).not.toBe(true);
       expect(candidate.run ?? "", candidate.name).not.toMatch(/\b(?:bun|npm|pnpm)\b/u);
     }
+    const toolingIdentity = step(preview, "Verify trusted preflight tooling identity");
+    expect(toolingIdentity.env).toMatchObject({
+      WORKFLOW_FULL_REF: "${{ github.ref }}",
+      WORKFLOW_REF: "${{ github.ref_name }}",
+      WORKFLOW_SHA: "${{ github.workflow_sha }}",
+    });
+    expect(toolingIdentity.run).toContain(
+      "node .release-tooling/scripts/release-tooling-identity.mjs verify",
+    );
+    expect(toolingIdentity.run).toContain('--workflow-ref "$WORKFLOW_REF"');
+    expect(toolingIdentity.run).toContain('--workflow-full-ref "$WORKFLOW_FULL_REF"');
+    expect(toolingIdentity.run).toContain('--workflow-sha "$WORKFLOW_SHA"');
     expect(step(preview, "Setup Node environment").uses).toBe("./.github/actions/setup-node-env");
     expect(trusted.env).toMatchObject({
       PREFLIGHT_ONLY:
@@ -176,6 +190,8 @@ describe("plugin npm extended-stable workflow", () => {
         "${{ github.event_name == 'workflow_dispatch' && inputs.trusted_publisher_preflight || false }}",
       RELEASE_PUBLISH_RUN_ID:
         "${{ github.event_name == 'workflow_dispatch' && inputs.release_publish_run_id || '' }}",
+      RELEASE_PUBLISH_RUN_ATTEMPT:
+        "${{ github.event_name == 'workflow_dispatch' && inputs.release_publish_run_attempt || '' }}",
       SOURCE_REF: "${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}",
       WORKFLOW_REF: "${{ github.ref }}",
       WORKFLOW_SHA: "${{ github.workflow_sha }}",
@@ -184,13 +200,13 @@ describe("plugin npm extended-stable workflow", () => {
       '[[ "${TRUSTED_PUBLISHER_PREFLIGHT}" == "true" && "${PREFLIGHT_ONLY}" != "true" ]]',
     );
     expect(trusted.run).toContain("trusted_publisher_preflight requires preflight_only=true");
-    expect(trusted.run).toContain('[[ "${WORKFLOW_REF}" != "refs/heads/main" ]]');
-    expect(trusted.run).toContain('git merge-base --is-ancestor "${WORKFLOW_SHA}" origin/main');
     expect(trusted.run).toContain('[[ ! "${SOURCE_REF}" =~ ^[0-9a-fA-F]{40}$ ]]');
     expect(trusted.run).toContain(
       '[[ "$(git rev-parse HEAD)" != "$(git rev-parse "${SOURCE_REF}^{commit}")" ]]',
     );
-    expect(trusted.run).toContain("preflight must not include release_publish_run_id");
+    expect(trusted.run).toContain(
+      "Plugin npm preflight must not include a release publish parent run tuple.",
+    );
     const preflightBranchRejection = trusted.run?.indexOf(
       "Plugin npm preflight target must be reachable from main or release/*.",
     );
