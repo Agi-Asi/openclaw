@@ -1315,17 +1315,19 @@ describe("buildOpenClawReleaseClawHubPlan", () => {
       },
     );
 
-    expect(plan.clawHubWorkflowRef).toBe("v2026.4.1-beta.1");
+    expect(plan.clawHubWorkflowRef).toBe(`release-publish/${"d".repeat(12)}-12345`);
     expect(plan.bootstrapWorkflowSha).toBe("d".repeat(40));
     expect(plan.releasePublishBranch).toBe("main");
     expect(plan.normal).toEqual({
       workflow: "plugin-clawhub-release.yml",
-      ref: "v2026.4.1-beta.1",
+      ref: `release-publish/${"d".repeat(12)}-12345`,
       shouldDispatch: true,
       packages: ["@openclaw/demo-plugin"],
       inputs: {
         publish_scope: "selected",
+        ref: "a".repeat(40),
         plugins: "@openclaw/demo-plugin",
+        release_publish_run_attempt: "2",
         release_publish_run_id: "12345",
         release_publish_branch: "main",
       },
@@ -1355,7 +1357,7 @@ describe("buildOpenClawReleaseClawHubPlan", () => {
       missingTrustedPlugins: "@openclaw/demo-three",
     });
     expect(plan.verifier).toEqual({
-      clawHubWorkflowRef: "v2026.4.1-beta.1",
+      clawHubWorkflowRef: `release-publish/${"d".repeat(12)}-12345`,
     });
   });
 
