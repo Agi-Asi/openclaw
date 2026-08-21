@@ -31,7 +31,7 @@ jobs:
       actions: read
       contents: read
       packages: read
-    uses: openclaw/openclaw/.github/workflows/install-smoke-reusable.yml@542ab81906f6f38cddd2529873c6ea7ccc547845
+    uses: openclaw/openclaw/.github/workflows/install-smoke-reusable.yml@3c24a48853d0af3b20c31808d544c9021335a927
     with:
       allow_unreleased_changelog: true
       ref: 542ab81906f6f38cddd2529873c6ea7ccc547845
