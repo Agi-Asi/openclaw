@@ -17,12 +17,31 @@ import {
   validateReleaseExecutionPlanArtifact,
   verifyReleaseStateArtifacts,
 } from "../../scripts/full-release-validation-state.mjs";
+import { encodeFullReleaseValidationLogCheckpoint } from "../../scripts/lib/full-release-validation-log-checkpoint.mjs";
 import { waitForChildClose, waitForFile } from "../helpers/process-wait.js";
 
 const SCRIPT = resolve("scripts/full-release-validation-state.mjs");
 const SHA = "a".repeat(40);
 const TARGET_SHA = "b".repeat(40);
 const TRUSTED_MAIN = { fullRef: "refs/heads/main", ref: "main", sha: SHA };
+
+function writeCheckpointGh(path: string) {
+  writeFileSync(
+    path,
+    `#!/usr/bin/env node
+const runId = process.env.GITHUB_RUN_ID;
+console.log(JSON.stringify({
+  event: "workflow_dispatch",
+  head_sha: process.env.GITHUB_SHA,
+  id: Number(runId),
+  path: ".github/workflows/full-release-validation.yml",
+  run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+  workflow_id: 456,
+}));
+`,
+  );
+  chmodSync(path, 0o755);
+}
 
 function evidenceManifest() {
   return { runAttempt: 1, runId: "99", targetSha: TARGET_SHA };
@@ -640,6 +659,7 @@ describe("collector subprocess", () => {
     const output = join(root, "full-release-execution-plan.json");
     const validator = join(root, "release-evidence-validator.mjs");
     const validatorArgs = join(root, "validator-args.json");
+    writeCheckpointGh(join(root, "gh"));
     writeFileSync(
       validator,
       `import { writeFileSync } from "node:fs";
@@ -707,6 +727,7 @@ console.log(JSON.stringify({
         GITHUB_RUN_ID: "77",
         GITHUB_SHA: SHA,
         OPENCLAW_RELEASE_CI_SUMMARY_VALIDATOR: validator,
+        PATH: `${root}:${process.env.PATH}`,
         RELEASE_PROFILE: "stable",
         RERUN_GROUP: "all",
         TARGET_SHA,
@@ -764,6 +785,7 @@ console.log(JSON.stringify({
       gh,
       `#!/bin/sh
 case "$*" in
+  *"/actions/runs/77") printf '%s\\n' '{"id":77,"event":"workflow_dispatch","path":".github/workflows/full-release-validation.yml","head_sha":"${SHA}","run_attempt":2,"workflow_id":456}'; exit 0 ;;
   *"/jobs?"*) exit 0 ;;
 esac
 printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/ci.yml@refs/heads/release-ci/tooling","display_title":"CI full-release-validation-77-1-ci","head_branch":"release-ci/tooling","head_sha":"${SHA}","run_attempt":1,"status":"completed","conclusion":"success","created_at":"2026-08-21T00:00:00Z","updated_at":"2026-08-21T00:01:00Z","html_url":"https://example.invalid/runs/101"}'
@@ -928,6 +950,7 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
     const output = join(root, "full-release-execution-plan.json");
     const decisionOutput = join(root, "full-release-decision.json");
     const validator = join(root, "release-evidence-validator.mjs");
+    writeCheckpointGh(join(root, "gh"));
     writeFileSync(
       validator,
       'console.error("sealed reuse selection rejected"); process.exit(1);\n',
@@ -960,6 +983,7 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
       GITHUB_RUN_ID: "77",
       GITHUB_SHA: SHA,
       OPENCLAW_RELEASE_CI_SUMMARY_VALIDATOR: validator,
+      PATH: `${root}:${process.env.PATH}`,
       RELEASE_PROFILE: "stable",
       RERUN_GROUP: "all",
       TARGET_SHA,
@@ -998,18 +1022,56 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
 
   it("adopts the immutable attempt-one plan on an attempt-two collector retry", () => {
     const root = mkdtempSync(join(tmpdir(), "frv-plan-restore-"));
+    const gh = join(root, "gh");
+    const log = join(root, "checkpoint.log");
     const output = join(root, "full-release-execution-plan.json");
     const sealed = executionPlan({ rerunGroup: "ci" });
-    writeFileSync(output, JSON.stringify(sealed));
+    writeFileSync(
+      log,
+      encodeFullReleaseValidationLogCheckpoint({
+        kind: "plan",
+        payload: sealed,
+        provenance: {
+          runAttempt: 1,
+          runId: "77",
+          targetSha: TARGET_SHA,
+          workflowId: 456,
+          workflowPath: ".github/workflows/full-release-validation.yml",
+          workflowSha: SHA,
+        },
+      }).join("\n"),
+    );
+    writeFileSync(
+      gh,
+      `#!/usr/bin/env node
+import { readFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const endpoint = args.find((arg) => arg.includes("/actions/")) ?? "";
+if (endpoint.endsWith("/actions/runs/77")) {
+  console.log(JSON.stringify({id: 77, event: "workflow_dispatch", run_attempt: 2, head_sha: process.env.GITHUB_SHA, workflow_id: 456, path: ".github/workflows/full-release-validation.yml"}));
+} else if (endpoint.includes("/attempts/1/jobs")) {
+  console.log(JSON.stringify({id: 999, name: "Seal release execution plan", run_id: 77, run_attempt: 1, head_sha: process.env.GITHUB_SHA, workflow_name: "Full Release Validation", status: "completed", conclusion: "success"}));
+} else if (endpoint.includes("/actions/jobs/999/logs")) {
+  process.stdout.write(readFileSync(process.env.FRV_CHECKPOINT_LOG, "utf8"));
+} else {
+  console.error("unexpected gh call: " + args.join(" "));
+  process.exit(2);
+}
+`,
+    );
+    chmodSync(gh, 0o755);
     const result = spawnSync(process.execPath, [SCRIPT, "plan"], {
       env: {
         ...process.env,
+        FRV_CHECKPOINT_LOG: log,
         FULL_RELEASE_EXECUTION_PLAN_PATH: output,
         FULL_RELEASE_RESTORE_PLAN: "true",
         GITHUB_REF_NAME: "release-ci/tooling",
+        GITHUB_REPOSITORY: "openclaw/openclaw",
         GITHUB_RUN_ATTEMPT: "2",
         GITHUB_RUN_ID: "77",
         GITHUB_SHA: SHA,
+        PATH: `${root}:${process.env.PATH}`,
         RELEASE_PROFILE: "stable",
         RERUN_GROUP: "ci",
         TARGET_SHA,

@@ -25,6 +25,10 @@ import {
   validateReleaseExecutionPlanArtifact,
   verifyReleaseStateArtifacts,
 } from "./full-release-validation-policy.mjs";
+import {
+  encodeFullReleaseValidationLogCheckpoint,
+  recoverFullReleaseValidationLogCheckpoint,
+} from "./lib/full-release-validation-log-checkpoint.mjs";
 
 export * from "./full-release-validation-policy.mjs";
 
@@ -124,6 +128,60 @@ async function githubJobs(runId, signal) {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+async function githubAttemptJobs(runId, runAttempt, signal) {
+  return (
+    await runGh(
+      [
+        "api",
+        "--paginate",
+        `repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
+        "--jq",
+        ".jobs[] | @json",
+      ],
+      { signal },
+    )
+  )
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function githubJobLog(jobId, signal) {
+  return runGh(["api", `repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/${jobId}/logs`], {
+    signal,
+  });
+}
+
+async function checkpointProvenance(signal) {
+  const runId = requiredString(process.env.GITHUB_RUN_ID, "parent run ID");
+  const runAttempt = positiveInteger(process.env.GITHUB_RUN_ATTEMPT, "parent run attempt");
+  const run = await githubJson(`actions/runs/${runId}`, signal);
+  const workflowPath = stringValue(run.path).split("@", 1)[0];
+  if (
+    String(run.id) !== runId ||
+    Number(run.run_attempt) !== runAttempt ||
+    run.event !== "workflow_dispatch" ||
+    run.head_sha !== process.env.GITHUB_SHA ||
+    workflowPath !== ".github/workflows/full-release-validation.yml"
+  ) {
+    throw new Error("checkpoint parent run binding is invalid");
+  }
+  return {
+    runAttempt,
+    runId,
+    targetSha: requiredString(process.env.TARGET_SHA, "target SHA"),
+    workflowId: positiveInteger(run.workflow_id, "checkpoint workflow ID"),
+    workflowPath,
+    workflowSha: requiredString(run.head_sha, "checkpoint workflow SHA"),
+  };
+}
+
+function emitCheckpoint(kind, payload, provenance) {
+  for (const line of encodeFullReleaseValidationLogCheckpoint({ kind, payload, provenance })) {
+    console.log(line);
+  }
 }
 
 function issue(kind, child, message, extra = {}) {
@@ -476,13 +534,21 @@ async function planMode() {
   );
   const expected = planExpected();
   const currentAttempt = positiveInteger(process.env.GITHUB_RUN_ATTEMPT, "parent run attempt");
+  const abortController = new AbortController();
 
   if (process.env.FULL_RELEASE_RESTORE_PLAN === "true") {
-    const restored = validateReleaseExecutionPlanArtifact(
-      readArtifact(outputPath, "execution plan"),
-      expected,
-    );
+    const provenance = await checkpointProvenance(abortController.signal);
+    const recovered = await recoverFullReleaseValidationLogCheckpoint({
+      currentAttempt,
+      expected: provenance,
+      kind: "plan",
+      listJobsForAttempt: (attempt) =>
+        githubAttemptJobs(provenance.runId, attempt, abortController.signal),
+      readJobLog: (jobId) => githubJobLog(jobId, abortController.signal),
+    });
+    const restored = validateReleaseExecutionPlanArtifact(recovered.payload, expected);
     writeExecutionPlan(outputPath, restored);
+    emitCheckpoint("plan", restored, provenance);
     return;
   }
   if (currentAttempt !== 1) {
@@ -491,7 +557,6 @@ async function planMode() {
 
   const planInputs = parsePlanInputs(process.env.FULL_RELEASE_PLAN_INPUTS_JSON);
   const built = buildReleaseExecutionPlan(planInputs);
-  const abortController = new AbortController();
   let finished = false;
   let plan = buildReleaseExecutionPlanArtifact({
     children: built.children,
@@ -548,6 +613,10 @@ async function planMode() {
     trustedWorkflow: trustedWorkflowFromInputs(planInputs),
   });
   writeExecutionPlan(outputPath, plan);
+  validateReleaseExecutionPlanArtifact(plan, expected);
+  if (expected.targetSha) {
+    emitCheckpoint("plan", plan, await checkpointProvenance(abortController.signal));
+  }
   finished = true;
   if ((reuse.blockers?.length ?? 0) > 0 || (reuse.errors?.length ?? 0) > 0) {
     throw new Error("release execution plan could not bind reusable evidence");
@@ -742,6 +811,9 @@ async function collectMode(mode) {
           (decision.state !== "qualifying" && decision.activeRunIds.length === 0);
     if (done) {
       const payload = writePayload(decision, { cancelledRunIds, requested: false });
+      if (expected.targetSha) {
+        emitCheckpoint(mode, payload, await checkpointProvenance(abortController.signal));
+      }
       finished = true;
       process.exitCode =
         payload.state === "passed" ? 0 : payload.state === "orchestration_error" ? 2 : 1;

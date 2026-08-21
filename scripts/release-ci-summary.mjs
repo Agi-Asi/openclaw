@@ -17,6 +17,7 @@ import {
   validateReleaseExecutionPlanArtifact,
   validateReleaseStateArtifact,
 } from "./full-release-validation-policy.mjs";
+import { readFullReleaseValidationLogCheckpointFromGitHub } from "./lib/full-release-validation-log-checkpoint.mjs";
 import { execGhRead, plainGhEnv, resolvePlainGhBin } from "./lib/plain-gh.mjs";
 
 const DEFAULT_REPO = process.env.OPENCLAW_RELEASE_REPO || "openclaw/openclaw";
@@ -2032,6 +2033,46 @@ export function tryReadReleaseDecisionArtifact(
   }
 }
 
+export function tryReadReleaseDecisionCheckpoint(parent, runId, repository) {
+  const parentRest = githubRestJson(`actions/runs/${runId}`, repository);
+  const rawPlan = tryDownloadExecutionPlan(runId, repository);
+  if (!rawPlan) {
+    return undefined;
+  }
+  const plan = validateReleaseExecutionPlanArtifact(rawPlan, {
+    maxParentRunAttempt: parent.attempt,
+    parentRunId: String(runId),
+    workflowRef: parentRest.head_branch,
+    workflowSha: parentRest.head_sha,
+  });
+  const checkpoint = readFullReleaseValidationLogCheckpointFromGitHub({
+    getJobLog: (jobId) => parentJobLog(jobId, repository),
+    getJobs: () =>
+      githubRestJson(
+        `actions/runs/${runId}/attempts/${parent.attempt}/jobs?per_page=100`,
+        repository,
+      ).jobs ?? [],
+    getRun: () => parentRest,
+    kind: "decision",
+    runAttempt: parent.attempt,
+    runId: String(runId),
+    targetSha: plan.targetSha,
+    workflowSha: parent.headSha,
+  });
+  if (!checkpoint) {
+    return undefined;
+  }
+  return validateReleaseStateArtifact(
+    checkpoint.payload,
+    {
+      parentRunAttempt: parent.attempt,
+      parentRunId: String(runId),
+      workflowSha: parent.headSha,
+    },
+    "decision",
+  );
+}
+
 function releaseDecisionBlockedDuringDrain(parent, runId, repository) {
   const jobs = parent.jobs ?? [];
   const decision = jobs.find((job) => job.name === "Release Decision");
@@ -2044,7 +2085,10 @@ function releaseDecisionBlockedDuringDrain(parent, runId, repository) {
   ) {
     return undefined;
   }
-  return tryReadReleaseDecisionArtifact(parent, runId, repository);
+  return (
+    tryReadReleaseDecisionArtifact(parent, runId, repository) ??
+    tryReadReleaseDecisionCheckpoint(parent, runId, repository)
+  );
 }
 
 function summarizeReleaseCiRun(options) {

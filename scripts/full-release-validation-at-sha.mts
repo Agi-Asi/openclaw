@@ -16,6 +16,7 @@ import {
   formatReleaseStateOutcome,
   validateReleaseStateArtifact,
 } from "./full-release-validation-policy.mjs";
+import { readFullReleaseValidationLogCheckpointFromGitHub } from "./lib/full-release-validation-log-checkpoint.mjs";
 import { execGhRead } from "./lib/plain-gh.mjs";
 
 const WORKFLOW = "full-release-validation.yml";
@@ -677,7 +678,66 @@ export function tryReadReleaseDecision(
   }
 }
 
-function waitForWorkflowRun(parentRunId: string, workflowSha: string) {
+export function tryReadReleaseDecisionCheckpoint(
+  parentRunId: string,
+  parentRunAttempt: number,
+  workflowSha: string,
+  targetSha: string,
+  runStatusImpl: (
+    command: string,
+    args: string[],
+    options?: CommandOptions,
+  ) => CommandStatus = runStatus,
+) {
+  const read = (args: string[]) => {
+    const result = runStatusImpl("gh", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeoutMs: GH_READ_TIMEOUT_MS,
+    });
+    if (result.status !== 0) {
+      throw new Error(stringValue(result.stderr, "GitHub API read failed"));
+    }
+    return stringValue(result.stdout);
+  };
+  try {
+    const checkpoint = readFullReleaseValidationLogCheckpointFromGitHub({
+      getJobLog: (jobId) =>
+        read(["api", `repos/openclaw/openclaw/actions/jobs/${String(jobId)}/logs`]),
+      getJobs: () =>
+        JSON.parse(
+          read([
+            "api",
+            `repos/openclaw/openclaw/actions/runs/${parentRunId}/attempts/${parentRunAttempt}/jobs?per_page=100`,
+          ]),
+        ).jobs,
+      getRun: () =>
+        JSON.parse(read(["api", `repos/openclaw/openclaw/actions/runs/${parentRunId}`])),
+      kind: "decision",
+      runAttempt: parentRunAttempt,
+      runId: parentRunId,
+      targetSha,
+      workflowSha,
+    });
+    if (!checkpoint) {
+      return undefined;
+    }
+    return validateReleaseDecisionPayload(checkpoint.payload, {
+      parentRunAttempt,
+      parentRunId,
+      workflowSha,
+    });
+  } catch (error) {
+    if (classifyReleaseGhTransportError(error) === "transient") {
+      console.warn(
+        `Release Decision checkpoint unavailable this poll; retrying: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function waitForWorkflowRun(parentRunId: string, workflowSha: string, targetSha: string) {
   let lastSummary = "";
   let consecutiveErrors = 0;
   const startedAt = Date.now();
@@ -704,12 +764,19 @@ function waitForWorkflowRun(parentRunId: string, workflowSha: string) {
       console.log(`Parent run status: ${summary}`);
       lastSummary = summary;
     }
-    if (suite) {
-      const releaseDecision = tryReadReleaseDecision(
-        parentRunId,
-        requiredPositiveInteger(suite.run_attempt, "parent run attempt"),
-        workflowSha,
-      );
+    if (suite && suite.status !== "completed") {
+      const releaseDecision =
+        tryReadReleaseDecision(
+          parentRunId,
+          requiredPositiveInteger(suite.run_attempt, "parent run attempt"),
+          workflowSha,
+        ) ??
+        tryReadReleaseDecisionCheckpoint(
+          parentRunId,
+          requiredPositiveInteger(suite.run_attempt, "parent run attempt"),
+          workflowSha,
+          targetSha,
+        );
       if (releaseDecision && releaseDecisionStopsForeground(releaseDecision.state)) {
         throw new Error(
           `${formatReleaseStateOutcome(releaseDecision)}\nhttps://github.com/openclaw/openclaw/actions/runs/${parentRunId}`,
@@ -995,7 +1062,7 @@ function main() {
     }
 
     console.log(`Parent run: https://github.com/openclaw/openclaw/actions/runs/${parentRunId}`);
-    const completedRun = waitForWorkflowRun(parentRunId, workflowSha);
+    const completedRun = waitForWorkflowRun(parentRunId, workflowSha, targetSha);
     parentConclusion = stringValue(completedRun.conclusion);
     if (parentConclusion !== "success") {
       throw new Error(

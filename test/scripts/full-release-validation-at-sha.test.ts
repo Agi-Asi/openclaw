@@ -16,10 +16,12 @@ import {
   resolveRemoteTargetRefSha,
   shouldDeleteTemporaryWorkflowRef,
   tryReadReleaseDecision,
+  tryReadReleaseDecisionCheckpoint,
   validateReleaseDecisionPayload,
   verifyTargetRef,
   verifyTrustedWorkflowRef,
 } from "../../scripts/full-release-validation-at-sha.mts";
+import { encodeFullReleaseValidationLogCheckpoint } from "../../scripts/lib/full-release-validation-log-checkpoint.mjs";
 
 const SCRIPT_PATH = resolve("scripts/full-release-validation-at-sha.mjs");
 const CURRENT_WORKFLOW_SOURCE = readFileSync(
@@ -642,6 +644,77 @@ describe("full-release-validation-at-sha", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("reads a provenance-bound Release Decision from the exact producer log", () => {
+    const workflowSha = "a".repeat(40);
+    const targetSha = "b".repeat(40);
+    const payload = {
+      activeRunIds: ["101"],
+      blockers: [{ child: "normalCi", job: "test", runId: "101" }],
+      cancellation: { cancelledRunIds: [], requested: false },
+      children: {},
+      errors: [],
+      executionPlanSha256: "c".repeat(64),
+      kind: "openclaw.full-release-decision",
+      mode: "decision",
+      parentRunAttempt: 2,
+      parentRunId: "123",
+      releaseProfile: "stable",
+      rerunGroup: "ci",
+      sourceParentRunAttempt: 1,
+      state: "blocked_diagnostics_running",
+      targetSha,
+      version: 2,
+      workflowRef: "main",
+      workflowSha,
+    };
+    const log = encodeFullReleaseValidationLogCheckpoint({
+      kind: "decision",
+      payload,
+      provenance: {
+        runAttempt: 2,
+        runId: "123",
+        targetSha,
+        workflowId: 456,
+        workflowPath: ".github/workflows/full-release-validation.yml",
+        workflowSha,
+      },
+    }).join("\n");
+    const runStatusImpl = (_command: string, args: string[]) => {
+      const endpoint = args.at(-1) ?? "";
+      const stdout = endpoint.endsWith("/actions/runs/123")
+        ? JSON.stringify({
+            event: "workflow_dispatch",
+            head_sha: workflowSha,
+            id: 123,
+            path: ".github/workflows/full-release-validation.yml",
+            run_attempt: 2,
+            workflow_id: 456,
+          })
+        : endpoint.includes("/attempts/2/jobs")
+          ? JSON.stringify({
+              jobs: [
+                {
+                  conclusion: "failure",
+                  head_sha: workflowSha,
+                  id: 7,
+                  name: "Release Decision",
+                  run_attempt: 2,
+                  run_id: 123,
+                  status: "completed",
+                  workflow_name: "Full Release Validation",
+                },
+              ],
+            })
+          : endpoint.endsWith("/actions/jobs/7/logs")
+            ? log
+            : "";
+      return { signal: null, status: 0, stderr: "", stdout };
+    };
+    expect(
+      tryReadReleaseDecisionCheckpoint("123", 2, workflowSha, targetSha, runStatusImpl),
+    ).toMatchObject(payload);
   });
 
   it("bounds GitHub reads without applying a timeout to workflow dispatch", () => {
