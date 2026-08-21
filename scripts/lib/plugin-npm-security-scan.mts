@@ -72,7 +72,7 @@ const COMMON_REVIEWED_CRITICAL_FINDING_COUNTS = new Map<string, number>([
 
 const REVIEWED_RELEASE_LAYOUTS = Object.freeze([
   {
-    id: "beta3",
+    id: "frozen-legacy",
     findings: new Map<string, number>([
       ["@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/http.ts", 1],
       ["@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/processes.ts", 1],
@@ -382,19 +382,12 @@ function expectedRequiredFindingsForPackage(
   );
 }
 
-export async function runPluginNpmSecurityScan(params: {
-  candidateDir: string;
-  toolingDir: string;
-}): Promise<PluginNpmSecurityScanReport> {
-  const candidateDir = realpathSync(params.candidateDir);
-  const toolingDir = realpathSync(params.toolingDir);
-  const [candidateSha, toolingSha, packages] = await Promise.all([
-    gitOutput(candidateDir, ["rev-parse", "HEAD"]),
-    gitOutput(toolingDir, ["rev-parse", "HEAD"]),
-    listPublishablePluginPackages(candidateDir),
-  ]);
-
-  const packageResults = await Promise.all(packages.map(scanPublishablePluginPackage));
+export function buildPluginNpmSecurityScanReport(params: {
+  candidateSha: string;
+  packageResults: ScanPackageResult[];
+  toolingSha: string;
+}): PluginNpmSecurityScanReport {
+  const { candidateSha, packageResults, toolingSha } = params;
   const allReviewedFindings = packageResults.flatMap((result) => result.reviewedCriticalFindings);
   const layout = resolveReviewedSourceLayout(allReviewedFindings);
   const errors: string[] = [];
@@ -402,11 +395,11 @@ export async function runPluginNpmSecurityScan(params: {
   if (!layout) {
     errors.push("Reviewed critical findings do not match exactly one supported release layout.");
   }
-  if (packages.length === 0) {
+  if (packageResults.length === 0) {
     errors.push("No publishable npm plugins were found in the candidate checkout.");
   }
 
-  const publishablePackageNames = new Set(packages.map((plugin) => plugin.packageName));
+  const publishablePackageNames = new Set(packageResults.map((result) => result.packageName));
   const requiredFindingCounts = new Map<string, number>([
     ...COMMON_REVIEWED_CRITICAL_FINDING_COUNTS,
     ...(layout?.findings ?? []),
@@ -461,4 +454,19 @@ export async function runPluginNpmSecurityScan(params: {
     },
     toolingSha,
   };
+}
+
+export async function runPluginNpmSecurityScan(params: {
+  candidateDir: string;
+  toolingDir: string;
+}): Promise<PluginNpmSecurityScanReport> {
+  const candidateDir = realpathSync(params.candidateDir);
+  const toolingDir = realpathSync(params.toolingDir);
+  const [candidateSha, toolingSha, packages] = await Promise.all([
+    gitOutput(candidateDir, ["rev-parse", "HEAD"]),
+    gitOutput(toolingDir, ["rev-parse", "HEAD"]),
+    listPublishablePluginPackages(candidateDir),
+  ]);
+  const packageResults = await Promise.all(packages.map(scanPublishablePluginPackage));
+  return buildPluginNpmSecurityScanReport({ candidateSha, packageResults, toolingSha });
 }

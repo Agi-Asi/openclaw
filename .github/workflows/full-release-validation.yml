@@ -332,7 +332,6 @@ jobs:
             fi
             if [[ "$RERUN_GROUP" == "all" || "$RERUN_GROUP" == "plugin-prerelease" ]]; then
               echo "- Plugin prerelease: \`Plugin Prerelease\` with \`target_ref=${TARGET_SHA}\`"
-              echo "- Plugin prerelease Node exclusions: \`${plugin_prerelease_node_exclusions}\`"
             else
               echo "- Plugin prerelease: skipped by rerun group"
             fi

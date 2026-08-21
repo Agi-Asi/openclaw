@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertCompleteScannerSummary,
+  buildPluginNpmSecurityScanReport,
   collectNpmPackedFiles,
   resolveReviewedSourceLayout,
   runPluginNpmSecurityScan,
@@ -13,12 +14,12 @@ import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 describe("scripts/lib/plugin-npm-security-scan.mts", () => {
-  it("accepts only the complete current and beta3 source layouts", () => {
+  it("accepts only the complete current and frozen-legacy source layouts", () => {
     const current = [
       "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/sandbox-child.ts",
       "@openclaw/codex:dangerous-exec:src/app-server/transport-process-containment.ts",
     ];
-    const beta3 = [
+    const frozenLegacy = [
       "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/http.ts",
       "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/processes.ts",
       "@openclaw/codex:dangerous-exec:src/node-cli-sessions.ts",
@@ -26,9 +27,9 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     ];
 
     expect(resolveReviewedSourceLayout(current)?.id).toBe("current");
-    expect(resolveReviewedSourceLayout(beta3)?.id).toBe("beta3");
-    expect(resolveReviewedSourceLayout(beta3.slice(0, -1))).toBeUndefined();
-    expect(resolveReviewedSourceLayout([...current, beta3[0]!])).toBeUndefined();
+    expect(resolveReviewedSourceLayout(frozenLegacy)?.id).toBe("frozen-legacy");
+    expect(resolveReviewedSourceLayout(frozenLegacy.slice(0, -1))).toBeUndefined();
+    expect(resolveReviewedSourceLayout([...current, frozenLegacy[0]!])).toBeUndefined();
     expect(resolveReviewedSourceLayout([...current, current[0]!])).toBeUndefined();
   });
 
@@ -97,5 +98,19 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     });
     expect(report.summary.packageCount).toBe(report.packages.length);
     expect(report.summary.packageCount).toBeGreaterThan(0);
+
+    const packageResults = structuredClone(report.packages);
+    packageResults[0]!.unexpectedCriticalFindings.push(
+      `${packageResults[0]!.packageName}:dangerous-exec:src/candidate-owned-scanner.ts:1:exec`,
+    );
+    const rejectedReport = buildPluginNpmSecurityScanReport({
+      candidateSha: report.candidateSha,
+      packageResults,
+      toolingSha: report.toolingSha,
+    });
+    expect(rejectedReport.status).toBe("fail");
+    expect(rejectedReport.errors).toContainEqual(
+      expect.stringContaining("unexpected critical findings"),
+    );
   }, 120_000);
 });

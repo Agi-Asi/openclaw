@@ -326,6 +326,9 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(runSecurityScan?.run).toContain(
       "node --import tsx scripts/plugin-npm-security-scan.mts",
     );
+    expect(runSecurityScan?.run).not.toContain(
+      ".release-candidate/scripts/plugin-npm-security-scan.mts",
+    );
     expect(runSecurityScan?.run).toContain("--candidate-root .release-candidate");
     expect(runSecurityScan?.run).toContain('--candidate-sha "$CANDIDATE_SHA"');
     expect(uploadReport).toMatchObject({
@@ -341,6 +344,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(pluginSource).not.toContain("npm-install-security-scan.release.test.ts");
     expect(pluginSource).not.toContain("node_test_exclude_patterns_json");
     expect(releaseSource).not.toContain("plugin_prerelease_node_exclude_patterns_json");
+    expect(releaseSource).not.toContain("Plugin prerelease Node exclusions");
     expect(pluginDispatch?.run).not.toContain("node_test_exclude_patterns_json");
   });
 
