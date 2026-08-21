@@ -85,14 +85,12 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
   });
   const routeReplyTo = replyRoute.to;
   const deliveryChannel = shouldRouteToOriginating ? routeReplyChannel : currentSurface;
-  const shouldPrepareRoutedReplyDelivery = shouldRouteToOriginating && Boolean(routeReplyChannel);
   const replyContextAccountId = routeReplyChannel
     ? resolveReplyDeliveryAccountId(cfg, routeReplyChannel, replyRoute.accountId)
     : undefined;
-  const routedReplyAccountId = shouldPrepareRoutedReplyDelivery ? replyContextAccountId : undefined;
-  const routedReplyDelivery = shouldPrepareRoutedReplyDelivery
+  const routedReplyDelivery = routeReplyChannel
     ? createReplyDeliveryContext(
-        resolveReplyToMode(cfg, routeReplyChannel, routedReplyAccountId, replyRoute.chatType),
+        resolveReplyToMode(cfg, routeReplyChannel, replyContextAccountId, replyRoute.chatType),
         replyRoute.chatType,
       )
     : undefined;
@@ -171,7 +169,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       policySessionKey:
         options?.sessionKey ?? resolveCommandTurnTargetSessionKey(ctx) ?? ctx.SessionKey,
       policyConversationType: resolveRoutedPolicyConversationType(ctx),
-      accountId: routedReplyAccountId,
+      accountId: replyContextAccountId,
       requesterSenderId: ctx.SenderId,
       requesterSenderName: ctx.SenderName,
       requesterSenderUsername: ctx.SenderUsername,

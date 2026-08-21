@@ -368,10 +368,14 @@ describe("dispatchReplyFromConfig", () => {
     );
   });
 
-  it("waits for same-channel stable block custody with the post-TTS payload", async () => {
+  it("keeps same-channel stable block delivery on the resolved source account", async () => {
     setNoAbort();
     mocks.routeReply.mockClear();
-    installThreadingTestPlugin({ id: "telegram" });
+    installThreadingTestPlugin({
+      id: "telegram",
+      defaultAccountId: "default",
+      resolveReplyToMode: ({ accountId }) => (accountId === "work" ? "off" : "all"),
+    });
     sessionStoreMocks.currentEntry = { ttsAuto: "always" };
     const dispatcher = createDispatcher();
     const deliveryIntentId = "block-reply:v1:codex-app-server:thread-1:turn-1:item-same";
@@ -417,6 +421,7 @@ describe("dispatchReplyFromConfig", () => {
       ctx: buildTestCtx({
         Provider: "telegram",
         Surface: "telegram",
+        AccountId: "work",
         OriginatingChannel: "telegram",
         OriginatingTo: "telegram:999",
       }),
@@ -433,6 +438,8 @@ describe("dispatchReplyFromConfig", () => {
           mediaUrl: "https://example.com/block-tts.opus",
           audioAsVoice: true,
         }),
+        accountId: "work",
+        replyDelivery: { chatType: "direct", replyToMode: "off" },
         replyKind: "block",
         deliveryIntentId,
       }),
