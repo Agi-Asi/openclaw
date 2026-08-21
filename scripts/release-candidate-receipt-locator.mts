@@ -271,7 +271,7 @@ async function pollUntil<T>(
     }
     await sleep(Math.min(POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())));
   }
-  fail(timeoutMessage);
+  return fail(timeoutMessage);
 }
 
 async function retryOperation<T>(
