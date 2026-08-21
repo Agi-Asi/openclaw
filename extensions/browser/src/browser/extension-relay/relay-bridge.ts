@@ -567,6 +567,17 @@ export class ExtensionRelayBridge {
         client.socket.send(frame);
       }
     }
+    if (method === "Target.detachedFromTarget") {
+      const detachedSessionId =
+        params && typeof params === "object" && "sessionId" in params
+          ? params.sessionId
+          : undefined;
+      if (typeof detachedSessionId === "string" && this.childSessions.delete(detachedSessionId)) {
+        for (const client of this.clients) {
+          client.announcedSessions.delete(detachedSessionId);
+        }
+      }
+    }
     if (!childSessionId) {
       // Page-scoped CDP sessions multiplex the same chrome.debugger root.
       // Mirror root events so Runtime/Page/Network listeners observe the

@@ -672,6 +672,62 @@ describe("ExtensionRelayBridge", () => {
     expect(response?.error).toBeTruthy();
   });
 
+  it("retires a detached child session without retiring its source session", async () => {
+    const bridge = new ExtensionRelayBridge();
+    const { socket: extSocket, handlers } = wireExtension(bridge);
+    sendHello(handlers);
+
+    const client = new FakeSocket();
+    const cdp = bridge.attachCdpClientSocket(client);
+    cdp.onMessage(
+      JSON.stringify({ id: 1, method: "Target.setAutoAttach", params: { autoAttach: true } }),
+    );
+    await flush();
+    const attached = client.frames().find((frame) => frame.method === "Target.attachedToTarget");
+    const rootSessionId = (attached?.params as { sessionId?: string } | undefined)?.sessionId;
+    expect(typeof rootSessionId).toBe("string");
+
+    handlers.onMessage(
+      JSON.stringify({
+        type: "cdpEvent",
+        tabId: 1,
+        sessionId: rootSessionId,
+        method: "Target.attachedToTarget",
+        params: { sessionId: "child-abc", targetInfo: { type: "worker" } },
+      }),
+    );
+    handlers.onMessage(
+      JSON.stringify({
+        type: "cdpEvent",
+        tabId: 1,
+        sessionId: rootSessionId,
+        method: "Target.detachedFromTarget",
+        params: { sessionId: "child-abc", targetId: "worker-abc" },
+      }),
+    );
+    await flush();
+
+    expect(client.frames()).toContainEqual({
+      sessionId: rootSessionId,
+      method: "Target.detachedFromTarget",
+      params: { sessionId: "child-abc", targetId: "worker-abc" },
+    });
+    cdp.onMessage(JSON.stringify({ id: 2, sessionId: "child-abc", method: "Runtime.enable" }));
+    cdp.onMessage(JSON.stringify({ id: 3, sessionId: rootSessionId, method: "Runtime.enable" }));
+    await flush();
+
+    expect(client.frames().find((frame) => frame.id === 2)).toMatchObject({
+      sessionId: "child-abc",
+      error: { code: -32001, message: "Session not found: child-abc" },
+    });
+    expect(client.frames().find((frame) => frame.id === 3)?.result).toMatchObject({ ok: true });
+    expect(
+      extSocket
+        .frames()
+        .filter((frame) => frame.type === "cdp" && frame.method === "Runtime.enable"),
+    ).toEqual([expect.objectContaining({ tabId: 1 })]);
+  });
+
   it("requires a hello frame before other extension messages", () => {
     const bridge = new ExtensionRelayBridge();
     const socket = new FakeSocket();
