@@ -353,15 +353,17 @@ export async function buildOpenClawReleaseClawHubPlan(
 
   return {
     bootstrapWorkflowSha,
-    clawHubWorkflowRef: releaseTag,
+    clawHubWorkflowRef: bootstrapWorkflowRef,
     releasePublishBranch,
     normal: createDispatchTarget({
       workflow: "plugin-clawhub-release.yml",
-      ref: releaseTag,
+      ref: bootstrapWorkflowRef,
       packages: normalPackages,
       releasePublishRunId,
       releasePublishBranch,
+      releasePublishRunAttempt,
       includePublishScope: true,
+      targetRef: releaseSha,
     }),
     bootstrap: createDispatchTarget({
       workflow: "plugin-clawhub-new.yml",
@@ -384,7 +386,7 @@ export async function buildOpenClawReleaseClawHubPlan(
       missingTrustedPlugins: joinPackageNames(missingTrustedPlugins),
     },
     verifier: {
-      clawHubWorkflowRef: releaseTag,
+      clawHubWorkflowRef: bootstrapWorkflowRef,
     },
   };
 }

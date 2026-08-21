@@ -2,17 +2,17 @@
 
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isRecord } from "./lib/record-shared.mjs";
 
 const SHA_PATTERN = /^[a-f0-9]{40}$/u;
 const RELEASE_PUBLISH_REF_PATTERN = /^release-publish\/([a-f0-9]{12})-([1-9][0-9]*)$/u;
+const RELEASE_CI_REF_PATTERN = /^release-ci\/([a-f0-9]{12})-([1-9][0-9]*)$/u;
+const DIRECT_WORKFLOW_REF_PATTERN =
+  /^(?:main|release\/[0-9]{4}\.(?:[1-9]|1[0-2])\.[1-9][0-9]*|extended-stable\/[0-9]{4}\.(?:[1-9]|1[0-2])\.33|tideclaw\/alpha\/[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}Z)$/u;
 const GH_COMMAND_TIMEOUT_MS = 60_000;
 
 function fail(message) {
   throw new Error(message);
-}
-
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function requiredString(value, label) {
@@ -38,13 +38,86 @@ function requireRepository(value) {
   return repository;
 }
 
-function classifyIdentity({
-  allowPrevalidatedRef,
-  releasePublishRunId,
+function parseIdentityJson(value) {
+  const raw = requiredString(value, "requested release tooling identity");
+  let identity;
+  try {
+    identity = JSON.parse(raw);
+  } catch (error) {
+    throw new Error("requested release tooling identity must be valid JSON.", { cause: error });
+  }
+  if (!isRecord(identity)) {
+    fail("requested release tooling identity must be a JSON object.");
+  }
+  return {
+    fullRef: requiredString(identity.fullRef, "requested release tooling full ref"),
+    ref: requiredString(identity.ref, "requested release tooling ref"),
+    sha: requiredSha(identity.sha, "requested release tooling SHA"),
+  };
+}
+
+export function resolveReleaseToolingIdentity({
+  requestedIdentityJson = "",
+  workflowContract,
   workflowFullRef,
   workflowRef,
   workflowSha,
 }) {
+  const contract = requiredString(workflowContract, "release tooling contract");
+  if (!/^[1-9][0-9]*$/u.test(contract)) {
+    fail("release tooling contract must be a positive integer.");
+  }
+  const ref = requiredString(workflowRef, "workflow ref");
+  const fullRef = requiredString(workflowFullRef, "workflow full ref");
+  const sha = requiredSha(workflowSha, "workflow SHA");
+  const directRoute = fullRef === `refs/heads/${ref}` && DIRECT_WORKFLOW_REF_PATTERN.test(ref);
+  const releaseCiMatch = fullRef === `refs/heads/${ref}` ? RELEASE_CI_REF_PATTERN.exec(ref) : null;
+  const protectedTagMatch =
+    fullRef === `refs/tags/${ref}` ? RELEASE_PUBLISH_REF_PATTERN.exec(ref) : null;
+
+  if (releaseCiMatch && releaseCiMatch[1] !== sha.slice(0, 12)) {
+    fail("release-ci workflow ref does not match the workflow SHA.");
+  }
+  if (protectedTagMatch && protectedTagMatch[1] !== sha.slice(0, 12)) {
+    fail("protected workflow ref does not match the workflow SHA.");
+  }
+  if (!directRoute && !releaseCiMatch && !protectedTagMatch) {
+    fail("workflow ref is not a trusted direct, release-ci, or protected-tag route.");
+  }
+
+  const requested = requestedIdentityJson.trim()
+    ? parseIdentityJson(requestedIdentityJson)
+    : undefined;
+  if (!requested) {
+    if (contract !== "1" && contract !== "2") {
+      fail(`release tooling contract ${contract} requires explicit trusted workflow identity.`);
+    }
+    if (!directRoute) {
+      fail("release-ci and protected-tag workflows require explicit trusted workflow identity.");
+    }
+    return { fullRef, ref, sha };
+  }
+
+  if (directRoute || protectedTagMatch) {
+    if (requested.ref !== ref || requested.fullRef !== fullRef || requested.sha !== sha) {
+      fail("direct workflow identity must match the executing workflow ref and SHA.");
+    }
+    return requested;
+  }
+
+  const requestedProtectedTag = RELEASE_PUBLISH_REF_PATTERN.test(requested.ref);
+  const requestedMain = requested.ref === "main" && requested.fullRef === "refs/heads/main";
+  if (
+    requested.sha !== sha ||
+    (!requestedMain &&
+      (!requestedProtectedTag || requested.fullRef !== `refs/tags/${requested.ref}`))
+  ) {
+    fail("release-ci workflow identity must be trusted main or an exact protected tag.");
+  }
+  return requested;
+}
+
+function classifyIdentity({ allowPrevalidatedRef, workflowFullRef, workflowRef, workflowSha }) {
   const ref = requiredString(workflowRef, "release tooling ref");
   const fullRef = requiredString(workflowFullRef, "release tooling full ref");
   const sha = requiredSha(workflowSha, "release tooling SHA");
@@ -57,11 +130,7 @@ function classifyIdentity({
     if (sha.slice(0, 12) !== protectedMatch[1]) {
       fail("protected release tooling tag SHA prefix does not match the workflow SHA.");
     }
-    const runId = requiredString(releasePublishRunId, "release publish run id");
-    if (!/^[1-9][0-9]*$/u.test(runId) || runId !== protectedMatch[2]) {
-      fail("protected release tooling tag run does not match the release publish run id.");
-    }
-    return { fullRef, ref, releasePublishRunId: runId, route: "protected-tag", sha };
+    return { fullRef, ref, route: "protected-tag", sha };
   }
 
   if (
@@ -89,8 +158,8 @@ function classifyIdentity({
 
 export function validateReleaseToolingIdentity({
   allowPrevalidatedRef = false,
+  branchRef,
   mainComparisonStatus,
-  releasePublishRunId,
   tagRef,
   workflowFullRef,
   workflowRef,
@@ -98,7 +167,6 @@ export function validateReleaseToolingIdentity({
 }) {
   const identity = classifyIdentity({
     allowPrevalidatedRef,
-    releasePublishRunId,
     workflowFullRef,
     workflowRef,
     workflowSha,
@@ -116,15 +184,63 @@ export function validateReleaseToolingIdentity({
         "protected release tooling tag is missing, moved, annotated, or bound to the wrong SHA.",
       );
     }
+  } else if (identity.route === "main") {
+    if (mainComparisonStatus !== "ahead" && mainComparisonStatus !== "identical") {
+      fail("main release tooling SHA is not reachable from current main.");
+    }
   } else if (
-    identity.route === "main" &&
-    mainComparisonStatus !== "ahead" &&
-    mainComparisonStatus !== "identical"
+    !isRecord(branchRef) ||
+    branchRef.ref !== identity.fullRef ||
+    !isRecord(branchRef.object) ||
+    branchRef.object.type !== "commit" ||
+    branchRef.object.sha !== identity.sha
   ) {
-    fail("main release tooling SHA is not reachable from current main.");
+    fail("prevalidated release tooling branch is missing or moved from the workflow SHA.");
   }
 
   return identity;
+}
+
+export function validateReleasePublishParentRun({
+  identity,
+  releasePublishRunAttempt,
+  releasePublishRunId,
+  repository,
+  run,
+}) {
+  const runId = requiredString(releasePublishRunId, "release publish run id");
+  const runAttempt = requiredString(releasePublishRunAttempt, "release publish run attempt");
+  if (!/^[1-9][0-9]*$/u.test(runId) || !/^[1-9][0-9]*$/u.test(runAttempt)) {
+    fail("release publish run id and attempt must be positive integers.");
+  }
+  const normalizedRepository = requireRepository(repository);
+  const [workflowPath, workflowFullRef] = String(run?.path ?? "").split("@", 2);
+  const expected = {
+    event: "workflow_dispatch",
+    headBranch: identity.ref,
+    headSha: identity.sha,
+    repository: normalizedRepository,
+    runAttempt: Number(runAttempt),
+    runId: Number(runId),
+    workflowPath: ".github/workflows/openclaw-release-publish.yml",
+  };
+  const actual = {
+    event: run?.event,
+    headBranch: run?.head_branch,
+    headSha: run?.head_sha,
+    repository: run?.repository?.full_name,
+    runAttempt: run?.run_attempt,
+    runId: run?.id,
+    workflowPath,
+  };
+  for (const key of Object.keys(expected)) {
+    if (actual[key] !== expected[key]) {
+      fail(`release publish parent run ${key} does not match the trusted tooling identity.`);
+    }
+  }
+  if (workflowFullRef && workflowFullRef !== identity.fullRef) {
+    fail("release publish parent run workflow full ref does not match trusted tooling.");
+  }
 }
 
 function parseJson(raw, label) {
@@ -147,6 +263,7 @@ function runReleaseToolingGh(args) {
 
 export function verifyReleaseToolingIdentity({
   allowPrevalidatedRef = false,
+  releasePublishRunAttempt,
   releasePublishRunId,
   repository,
   runGh = runReleaseToolingGh,
@@ -157,7 +274,6 @@ export function verifyReleaseToolingIdentity({
   const normalizedRepository = requireRepository(repository);
   const identity = classifyIdentity({
     allowPrevalidatedRef,
-    releasePublishRunId,
     workflowFullRef,
     workflowRef,
     workflowSha,
@@ -178,14 +294,21 @@ export function verifyReleaseToolingIdentity({
     } catch (error) {
       throw new Error("protected release tooling tag is missing or unreadable.", { cause: error });
     }
-    return validateReleaseToolingIdentity({
+    const validated = validateReleaseToolingIdentity({
       allowPrevalidatedRef,
-      releasePublishRunId,
       tagRef,
       workflowFullRef,
       workflowRef,
       workflowSha,
     });
+    validateParentRunIfRequested({
+      identity: validated,
+      releasePublishRunAttempt,
+      releasePublishRunId,
+      repository: normalizedRepository,
+      runGh,
+    });
+    return validated;
   }
 
   if (identity.route === "main") {
@@ -203,30 +326,103 @@ export function verifyReleaseToolingIdentity({
     } catch (error) {
       throw new Error("main release tooling ancestry could not be verified.", { cause: error });
     }
-    return validateReleaseToolingIdentity({
+    const validated = validateReleaseToolingIdentity({
       allowPrevalidatedRef,
       mainComparisonStatus: isRecord(comparison) ? comparison.status : undefined,
-      releasePublishRunId,
       workflowFullRef,
       workflowRef,
       workflowSha,
     });
+    validateParentRunIfRequested({
+      identity: validated,
+      releasePublishRunAttempt,
+      releasePublishRunId,
+      repository: normalizedRepository,
+      runGh,
+    });
+    return validated;
   }
 
-  return identity;
+  let branchRef;
+  try {
+    branchRef = parseJson(
+      runGh([
+        "api",
+        `repos/${normalizedRepository}/git/ref/heads/${identity.ref}`,
+        "--method",
+        "GET",
+      ]),
+      "prevalidated release tooling branch",
+    );
+  } catch (error) {
+    throw new Error("prevalidated release tooling branch is missing or unreadable.", {
+      cause: error,
+    });
+  }
+  const validated = validateReleaseToolingIdentity({
+    allowPrevalidatedRef,
+    branchRef,
+    workflowFullRef,
+    workflowRef,
+    workflowSha,
+  });
+  validateParentRunIfRequested({
+    identity: validated,
+    releasePublishRunAttempt,
+    releasePublishRunId,
+    repository: normalizedRepository,
+    runGh,
+  });
+  return validated;
+}
+
+function validateParentRunIfRequested({
+  identity,
+  releasePublishRunAttempt,
+  releasePublishRunId,
+  repository,
+  runGh,
+}) {
+  if (!releasePublishRunId && !releasePublishRunAttempt) {
+    return;
+  }
+  if (!releasePublishRunId || !releasePublishRunAttempt) {
+    fail("release publish run id and attempt must be provided together.");
+  }
+  let run;
+  try {
+    run = parseJson(
+      runGh(["api", `repos/${repository}/actions/runs/${releasePublishRunId}`, "--method", "GET"]),
+      "release publish parent run",
+    );
+  } catch (error) {
+    throw new Error("release publish parent run is missing or unreadable.", { cause: error });
+  }
+  validateReleasePublishParentRun({
+    identity,
+    releasePublishRunAttempt,
+    releasePublishRunId,
+    repository,
+    run,
+  });
 }
 
 function parseArgs(argv) {
   const options = {
     allowPrevalidatedRef: false,
+    command: "",
+    releasePublishRunAttempt: "",
     releasePublishRunId: "",
     repository: "",
+    requestedIdentityJson: "",
+    workflowContract: "",
     workflowFullRef: "",
     workflowRef: "",
     workflowSha: "",
   };
-  if (argv.shift() !== "verify") {
-    fail("usage: release-tooling-identity.mjs verify [options]");
+  options.command = argv.shift() ?? "";
+  if (options.command !== "verify" && options.command !== "resolve") {
+    fail("usage: release-tooling-identity.mjs <verify|resolve> [options]");
   }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -237,8 +433,14 @@ function parseArgs(argv) {
     const value = argv[(index += 1)] ?? "";
     if (arg === "--release-publish-run-id") {
       options.releasePublishRunId = value;
+    } else if (arg === "--release-publish-run-attempt") {
+      options.releasePublishRunAttempt = value;
     } else if (arg === "--repository") {
       options.repository = value;
+    } else if (arg === "--requested-identity-json") {
+      options.requestedIdentityJson = value;
+    } else if (arg === "--workflow-contract") {
+      options.workflowContract = value;
     } else if (arg === "--workflow-full-ref") {
       options.workflowFullRef = value;
     } else if (arg === "--workflow-ref") {
@@ -253,7 +455,23 @@ function parseArgs(argv) {
 }
 
 function main(argv = process.argv.slice(2)) {
-  const identity = verifyReleaseToolingIdentity(parseArgs([...argv]));
+  const options = parseArgs([...argv]);
+  let identity;
+  if (options.command === "resolve") {
+    identity = resolveReleaseToolingIdentity(options);
+    const protectedMatch = RELEASE_PUBLISH_REF_PATTERN.exec(identity.ref);
+    verifyReleaseToolingIdentity({
+      allowPrevalidatedRef: identity.ref !== "main" && !protectedMatch,
+      releasePublishRunAttempt: options.releasePublishRunAttempt,
+      releasePublishRunId: options.releasePublishRunId,
+      repository: options.repository,
+      workflowFullRef: identity.fullRef,
+      workflowRef: identity.ref,
+      workflowSha: identity.sha,
+    });
+  } else {
+    identity = verifyReleaseToolingIdentity(options);
+  }
   process.stdout.write(`${JSON.stringify(identity)}\n`);
 }
 

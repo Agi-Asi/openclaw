@@ -15,7 +15,8 @@ on:
         type: string
       trusted_workflow_json:
         description: Trusted release tooling identity JSON
-        required: true
+        required: false
+        default: ""
         type: string
       target_context_ref:
         description: Optional canonical release branch or tag context for an exact-SHA target
@@ -175,6 +176,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      trusted_workflow_json: ${{ steps.tooling_identity.outputs.json }}
     steps:
       - name: Checkout trusted workflow helper
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -184,6 +186,28 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           submodules: false
+
+      - name: Resolve trusted workflow identity
+        id: tooling_identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_IDENTITY_JSON: ${{ inputs.trusted_workflow_json }}
+          WORKFLOW_CONTRACT: ${{ env.RELEASE_ISOLATION_TOOLING_CONTRACT }}
+          WORKFLOW_FULL_REF: ${{ github.ref }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          identity="$(
+            node workflow/scripts/release-tooling-identity.mjs resolve \
+              --repository "$GITHUB_REPOSITORY" \
+              --workflow-contract "$WORKFLOW_CONTRACT" \
+              --workflow-ref "$WORKFLOW_REF" \
+              --workflow-full-ref "$WORKFLOW_FULL_REF" \
+              --workflow-sha "$WORKFLOW_SHA" \
+              --requested-identity-json "$REQUESTED_IDENTITY_JSON"
+          )"
+          echo "json=${identity}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve target SHA
         id: resolve
@@ -433,7 +457,7 @@ jobs:
           SKIP_PACKAGE_TELEGRAM_E2E: ${{ inputs.skip_package_telegram_e2e }}
           ALLOW_UNRELEASED_CHANGELOG: ${{ inputs.allow_unreleased_changelog || (inputs.target_context_ref == '' && (inputs.ref == 'main' || inputs.ref == 'refs/heads/main')) }}
           PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON: ${{ inputs.plugin_prerelease_node_exclude_patterns_json }}
-          TRUSTED_WORKFLOW_JSON: ${{ inputs.trusted_workflow_json }}
+          TRUSTED_WORKFLOW_JSON: ${{ needs.resolve_target.outputs.trusted_workflow_json }}
         run: |
           set -euo pipefail
           # Lane-selection inputs must match the prior run's manifest exactly;

@@ -1632,11 +1632,17 @@ describe("package acceptance workflow", () => {
     const evidenceStep = workflowStep(publishJob, "Consume immutable npm publication evidence");
 
     expect(evidenceStep.env?.RELEASE_PUBLISH_RUN_ID).toBe("${{ inputs.release_publish_run_id }}");
+    expect(evidenceStep.env?.RELEASE_PUBLISH_RUN_ATTEMPT).toBe(
+      "${{ inputs.release_publish_run_attempt }}",
+    );
     expect(evidenceStep.run).toContain("node scripts/release-tooling-identity.mjs verify");
     expect(evidenceStep.run).toContain('--workflow-ref "$WORKFLOW_HEAD_BRANCH"');
     expect(evidenceStep.run).toContain('--workflow-full-ref "$WORKFLOW_REF"');
     expect(evidenceStep.run).toContain('--workflow-sha "$WORKFLOW_SHA"');
     expect(evidenceStep.run).toContain('--release-publish-run-id "$RELEASE_PUBLISH_RUN_ID"');
+    expect(evidenceStep.run).toContain(
+      '--release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"',
+    );
     expect(evidenceStep.run).not.toContain("--allow-prevalidated-ref");
   });
 
@@ -1647,6 +1653,7 @@ describe("package acceptance workflow", () => {
     );
     expect(corePublish.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
       WORKFLOW_FULL_REF: "${{ github.ref }}",
       WORKFLOW_REF: "${{ github.ref_name }}",
@@ -1656,6 +1663,9 @@ describe("package acceptance workflow", () => {
       "node trusted-workflow/scripts/release-tooling-identity.mjs verify",
     );
     expect(corePublish.run).toContain("--allow-prevalidated-ref");
+    expect(corePublish.run).toContain(
+      '--release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"',
+    );
     expect(corePublish.run).toMatch(
       /verify_release_tooling_identity\s+bash scripts\/openclaw-npm-publish\.sh --publish "\.\/\$\{tarball_path\}"/u,
     );
@@ -1667,6 +1677,7 @@ describe("package acceptance workflow", () => {
     const oidcPublish = workflowStep(pluginPublishJob, "Publish with trusted publisher");
     expect(oidcPublish.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
+      OPENCLAW_RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       OPENCLAW_RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
       OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF: "true",
       OPENCLAW_RELEASE_TOOLING_FULL_REF: "${{ github.ref }}",
@@ -1679,6 +1690,7 @@ describe("package acceptance workflow", () => {
     const bootstrapPublish = workflowStep(pluginPublishJob, "Publish approved bootstrap tarball");
     expect(bootstrapPublish.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
       WORKFLOW_FULL_REF: "${{ github.ref }}",
       WORKFLOW_REF: "${{ github.ref_name }}",
@@ -1690,6 +1702,17 @@ describe("package acceptance workflow", () => {
     expect(identityIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(identityIndex);
     expect(bootstrapPublish.run?.slice(identityIndex, publishIndex)).not.toContain("npm view");
+
+    const pluginWrapper = readFileSync("scripts/plugin-npm-publish.sh", "utf8");
+    const distTagIndex = pluginWrapper.indexOf(
+      'npm dist-tag add "${package_name}@${package_version}"',
+    );
+    const distTagIdentityIndex = pluginWrapper.lastIndexOf(
+      "verify_release_tooling_identity",
+      distTagIndex,
+    );
+    expect(distTagIdentityIndex).toBeGreaterThan(-1);
+    expect(distTagIndex).toBeGreaterThan(distTagIdentityIndex);
   });
 
   it("binds release evidence validation to the exact trusted workflow ref", () => {
@@ -5474,6 +5497,7 @@ describe("package artifact reuse", () => {
       resolveTargetJob,
       "Checkout target package manifest",
     );
+    const toolingIdentity = workflowStep(resolveTargetJob, "Resolve trusted workflow identity");
     const releaseInputValidation = workflowStep(resolveTargetJob, "Validate release inputs");
     const evidenceReuseStep = workflowStep(evidenceReuseJob, "Find reusable validation evidence");
     const releaseChecksDispatchStep = workflowStep(
@@ -5490,7 +5514,8 @@ describe("package artifact reuse", () => {
         type: "boolean",
       },
       trusted_workflow_json: {
-        required: true,
+        default: "",
+        required: false,
         type: "string",
       },
     });
@@ -5509,6 +5534,23 @@ describe("package artifact reuse", () => {
     expect(resolveTargetSteps.indexOf(targetManifestCheckout)).toBeLessThan(
       resolveTargetSteps.indexOf(releaseInputValidation),
     );
+    expect(resolveTargetJob.outputs?.trusted_workflow_json).toBe(
+      "${{ steps.tooling_identity.outputs.json }}",
+    );
+    expect(toolingIdentity.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      REQUESTED_IDENTITY_JSON: "${{ inputs.trusted_workflow_json }}",
+      WORKFLOW_CONTRACT: "${{ env.RELEASE_ISOLATION_TOOLING_CONTRACT }}",
+      WORKFLOW_FULL_REF: "${{ github.ref }}",
+      WORKFLOW_REF: "${{ github.ref_name }}",
+      WORKFLOW_SHA: "${{ github.sha }}",
+    });
+    expectTextToIncludeAll(toolingIdentity.run, [
+      "node workflow/scripts/release-tooling-identity.mjs resolve",
+      '--workflow-contract "$WORKFLOW_CONTRACT"',
+      '--requested-identity-json "$REQUESTED_IDENTITY_JSON"',
+      'echo "json=${identity}"',
+    ]);
     expectTextToIncludeAll(releaseInputValidation.run, [
       'target_version="$(jq -er',
       "does not belong to release branch",
@@ -5534,7 +5576,7 @@ describe("package artifact reuse", () => {
       NPM_TELEGRAM_PROVIDER_MODE: "${{ inputs.npm_telegram_provider_mode }}",
       NPM_TELEGRAM_SCENARIO: "${{ inputs.npm_telegram_scenario }}",
       SKIP_PACKAGE_TELEGRAM_E2E: "${{ inputs.skip_package_telegram_e2e }}",
-      TRUSTED_WORKFLOW_JSON: "${{ inputs.trusted_workflow_json }}",
+      TRUSTED_WORKFLOW_JSON: "${{ needs.resolve_target.outputs.trusted_workflow_json }}",
     });
     expectTextToIncludeAll(evidenceReuseStep.run, [
       "npmTelegramPackageSpec: $npmTelegramPackageSpec",
@@ -5549,7 +5591,6 @@ describe("package artifact reuse", () => {
       '--trusted-workflow-full-ref "$trusted_workflow_full_ref"',
       '--trusted-workflow-sha "$trusted_workflow_sha"',
     ]);
-    expect(evidenceReuseStep.run).not.toContain('if [[ -z "$trusted_workflow_json" ]]');
     expect(targetSummaryStep.env).toMatchObject({
       SKIP_PACKAGE_TELEGRAM_E2E: "${{ inputs.skip_package_telegram_e2e }}",
     });
@@ -7016,6 +7057,41 @@ describe("package artifact reuse", () => {
     expect(publishOrchestration.run).toContain(
       '-f release_publish_workflow_sha="${PARENT_WORKFLOW_SHA}"',
     );
+    expect(publishOrchestration.run).toContain(
+      '-f release_publish_run_attempt="${GITHUB_RUN_ATTEMPT}"',
+    );
+    expect(
+      readWorkflow(PLUGIN_CLAWHUB_RELEASE_WORKFLOW).on?.workflow_dispatch?.inputs
+        ?.release_publish_run_attempt,
+    ).toMatchObject({ required: false, type: "string" });
+    const oidcSourceValidation = workflowStep(
+      clawHubPreview,
+      "Validate OIDC source matches workflow ref",
+    );
+    expectTextToIncludeAll(oidcSourceValidation.run, [
+      "Split-ref ClawHub publication requires ref to be the exact candidate SHA.",
+      "Split-ref ClawHub publication tooling identity does not match the executing workflow.",
+      "Split-ref ClawHub publication requires the exact parent run id and attempt.",
+    ]);
+    const clawHubPlanSource = readFileSync("scripts/lib/openclaw-release-clawhub-plan.ts", "utf8");
+    expect(clawHubPlanSource).toContain("clawHubWorkflowRef: bootstrapWorkflowRef");
+    expect(clawHubPlanSource).toMatch(
+      /normal: createDispatchTarget\(\{[\s\S]*?ref: bootstrapWorkflowRef,[\s\S]*?targetRef: releaseSha,/u,
+    );
+    const frozenCandidateWorkflow = parse(
+      execFileSync("git", ["show", "2d25f59b4a5:.github/workflows/plugin-clawhub-release.yml"], {
+        encoding: "utf8",
+      }),
+    ) as Workflow;
+    expect(
+      frozenCandidateWorkflow.on?.workflow_dispatch?.inputs?.release_publish_full_ref,
+    ).toBeUndefined();
+    expect(
+      frozenCandidateWorkflow.on?.workflow_dispatch?.inputs?.release_publish_workflow_sha,
+    ).toBeUndefined();
+    expect(
+      frozenCandidateWorkflow.on?.workflow_dispatch?.inputs?.release_publish_run_attempt,
+    ).toBeUndefined();
     expect(clawHubBootstrapValidation.environment).toBe("clawhub-plugin-bootstrap");
     expect(clawHubBootstrapPublish.environment).toBe("clawhub-plugin-bootstrap");
 

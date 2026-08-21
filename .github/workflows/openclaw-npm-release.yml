@@ -33,6 +33,10 @@ on:
         description: Approved OpenClaw Release Publish workflow run id
         required: false
         type: string
+      release_publish_run_attempt:
+        description: Exact approved OpenClaw Release Publish workflow run attempt
+        required: false
+        type: string
       plugin_npm_run_id:
         description: Successful Plugin NPM Release run id for the exact extended-stable branch and release SHA
         required: false
@@ -865,6 +869,7 @@ jobs:
           FULL_RELEASE_VALIDATION_RUN_ATTEMPT: ${{ inputs.full_release_validation_run_attempt }}
           PLUGIN_NPM_RUN_ID: ${{ inputs.plugin_npm_run_id }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
         run: |
           set -euo pipefail
           if [[ -z "${PREFLIGHT_RUN_ID}" ]]; then
@@ -894,11 +899,18 @@ jobs:
             echo "Workflow-dispatched real publish requires release_publish_run_id from the approved OpenClaw Release Publish workflow." >&2
             exit 1
           fi
+          if [[ -n "${RELEASE_PUBLISH_RUN_ID// }" && ! "${RELEASE_PUBLISH_RUN_ATTEMPT}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "release_publish_run_id requires the exact positive release_publish_run_attempt." >&2
+            exit 1
+          fi
 
       - name: Validate release publish approval run
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
+          EXPECTED_WORKFLOW_FULL_REF: ${{ github.ref }}
+          EXPECTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
           EXPECTED_WORKFLOW_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -915,7 +927,7 @@ jobs:
             direct_recovery=true
             echo "Direct OpenClaw npm recovery with release_publish_run_id; relying on this workflow's npm-release environment approval."
           fi
-          RUN_JSON="$(gh run view "$RELEASE_PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,status,conclusion,url)"
+          RUN_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_PUBLISH_RUN_ID}" --jq '{workflowName: .name, headBranch: .head_branch, headSha: .head_sha, event, status, conclusion, url: .html_url, runAttempt: .run_attempt, repository: .repository.full_name, path}')"
           printf '%s' "$RUN_JSON" | DIRECT_RELEASE_RECOVERY="${direct_recovery}" node scripts/validate-release-publish-approval.mjs
 
   publish_openclaw_npm:
@@ -1411,6 +1423,7 @@ jobs:
           OPENCLAW_PREPACK_PREPARED: "1"
           OPENCLAW_NPM_PUBLISH_TAG: ${{ inputs.npm_dist_tag }}
           PUBLISH_TARBALL_PATH: ${{ steps.preflight_provenance.outputs.tarball_path }}
+          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
           WORKFLOW_FULL_REF: ${{ github.ref }}
           WORKFLOW_REF: ${{ github.ref_name }}
@@ -1424,6 +1437,7 @@ jobs:
               --workflow-full-ref "$WORKFLOW_FULL_REF" \
               --workflow-sha "$WORKFLOW_SHA" \
               --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID" \
+              --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT" \
               --allow-prevalidated-ref
           }
           publish_target="${PUBLISH_TARBALL_PATH}"

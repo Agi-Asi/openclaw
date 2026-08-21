@@ -183,6 +183,7 @@ verify_release_tooling_identity() {
     --workflow-full-ref "${OPENCLAW_RELEASE_TOOLING_FULL_REF:-}"
     --workflow-sha "${OPENCLAW_RELEASE_TOOLING_SHA:-}"
     --release-publish-run-id "${OPENCLAW_RELEASE_PUBLISH_RUN_ID:-}"
+    --release-publish-run-attempt "${OPENCLAW_RELEASE_PUBLISH_RUN_ATTEMPT:-}"
   )
   if [[ "${OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF:-}" == "true" ]]; then
     identity_args+=(--allow-prevalidated-ref)
@@ -264,6 +265,7 @@ fi
     for dist_tag in "${mirror_dist_tags[@]}"; do
       [[ -n "${dist_tag}" ]] || continue
       echo "Mirroring ${package_name}@${package_version} onto dist-tag ${dist_tag}"
+      verify_release_tooling_identity
       if ! NPM_CONFIG_USERCONFIG="${mirror_userconfig}" \
         npm dist-tag add "${package_name}@${package_version}" "${dist_tag}"; then
         if [[ "${mirror_auth_requirement}" == "required" ]]; then

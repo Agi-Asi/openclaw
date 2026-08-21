@@ -24,6 +24,10 @@ on:
         description: Approved OpenClaw Release Publish workflow run id
         required: false
         type: string
+      release_publish_run_attempt:
+        description: Exact approved OpenClaw Release Publish workflow run attempt
+        required: false
+        type: string
       release_publish_branch:
         description: Branch name of the approving OpenClaw Release Publish workflow run
         required: false
@@ -154,7 +158,15 @@ jobs:
 
       - name: Validate OIDC source matches workflow ref
         env:
+          RELEASE_PUBLISH_FULL_REF: ${{ inputs.release_publish_full_ref }}
+          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
+          RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          RELEASE_PUBLISH_TOOLING_REF: ${{ inputs.release_publish_branch }}
+          RELEASE_PUBLISH_TOOLING_SHA: ${{ inputs.release_publish_workflow_sha }}
+          TARGET_REF: ${{ inputs.ref }}
           TARGET_SHA: ${{ steps.ref.outputs.sha }}
+          WORKFLOW_FULL_REF: ${{ github.ref }}
+          WORKFLOW_REF: ${{ github.ref_name }}
           WORKFLOW_SHA: ${{ github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
@@ -164,10 +176,22 @@ jobs:
               echo "Dry-run publish target differs from workflow ref; allowing validation-only dispatch."
               exit 0
             fi
-            echo "Plugin ClawHub OIDC publishes must run from the same ref that is being published." >&2
-            echo "The ref input is only supported for dry_run=true." >&2
-            echo "For real publishes, dispatch this workflow with --ref pointing at the target release tag/ref and omit the ref input." >&2
-            exit 1
+            [[ "$TARGET_REF" =~ ^[a-f0-9]{40}$ && "$TARGET_REF" == "$TARGET_SHA" ]] || {
+              echo "Split-ref ClawHub publication requires ref to be the exact candidate SHA." >&2
+              exit 1
+            }
+            [[ "$RELEASE_PUBLISH_TOOLING_REF" == "$WORKFLOW_REF" &&
+              "$RELEASE_PUBLISH_FULL_REF" == "$WORKFLOW_FULL_REF" &&
+              "$RELEASE_PUBLISH_TOOLING_SHA" == "$WORKFLOW_SHA" ]] || {
+              echo "Split-ref ClawHub publication tooling identity does not match the executing workflow." >&2
+              exit 1
+            }
+            [[ "$RELEASE_PUBLISH_RUN_ID" =~ ^[1-9][0-9]*$ &&
+              "$RELEASE_PUBLISH_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || {
+              echo "Split-ref ClawHub publication requires the exact parent run id and attempt." >&2
+              exit 1
+            }
+            echo "Using trusted workflow tooling with separately bound candidate ${TARGET_SHA}."
           fi
 
       - name: Validate ref is on a trusted publish branch
@@ -345,6 +369,9 @@ jobs:
           ALLOW_COMPLETED_SUCCESSFUL_PARENT: "true"
           GH_TOKEN: ${{ github.token }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
+          EXPECTED_WORKFLOW_FULL_REF: ${{ inputs.release_publish_full_ref || github.ref }}
+          EXPECTED_WORKFLOW_SHA: ${{ inputs.release_publish_workflow_sha || github.sha }}
           EXPECTED_WORKFLOW_BRANCH: ${{ inputs.release_publish_branch || github.ref_name }}
         run: |
           set -euo pipefail
@@ -361,7 +388,7 @@ jobs:
             direct_recovery=true
             echo "Direct Plugin ClawHub Release recovery with release_publish_run_id; relying on this workflow's clawhub-plugin-release environment approval."
           fi
-          RUN_JSON="$(gh run view "$RELEASE_PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,status,conclusion,url)"
+          RUN_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_PUBLISH_RUN_ID}" --jq '{workflowName: .name, headBranch: .head_branch, headSha: .head_sha, event, status, conclusion, url: .html_url, runAttempt: .run_attempt, repository: .repository.full_name, path}')"
           printf '%s' "$RUN_JSON" | DIRECT_RELEASE_RECOVERY="${direct_recovery}" node scripts/validate-release-publish-approval.mjs
 
   pack_plugins_clawhub_artifacts:

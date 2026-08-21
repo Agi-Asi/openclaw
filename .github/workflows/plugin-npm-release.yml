@@ -49,6 +49,10 @@ on:
         description: Approved OpenClaw Release Publish workflow run id
         required: false
         type: string
+      release_publish_run_attempt:
+        description: Exact approved OpenClaw Release Publish workflow run attempt
+        required: false
+        type: string
       preflight_only:
         description: Prepare and verify immutable plugin npm artifacts without publishing
         required: true
@@ -109,6 +113,7 @@ jobs:
           TRUSTED_PUBLISHER_PREFLIGHT: ${{ github.event_name == 'workflow_dispatch' && inputs.trusted_publisher_preflight || false }}
           PUBLISH_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_scope || '' }}
           RELEASE_PLUGINS: ${{ github.event_name == 'workflow_dispatch' && inputs.plugins || '' }}
+          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_publish_run_attempt || '' }}
           RELEASE_PUBLISH_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.release_publish_run_id || '' }}
           SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
           WORKFLOW_REF: ${{ github.ref }}
@@ -128,10 +133,14 @@ jobs:
               echo "Plugin npm preflight requires ref to be the exact 40-character source SHA." >&2
               exit 1
             fi
-            if [[ -n "${RELEASE_PUBLISH_RUN_ID// }" ]]; then
-              echo "Plugin npm preflight must not include release_publish_run_id." >&2
+            if [[ -n "${RELEASE_PUBLISH_RUN_ID// }" || -n "${RELEASE_PUBLISH_RUN_ATTEMPT// }" ]]; then
+              echo "Plugin npm preflight must not include a release publish parent run tuple." >&2
               exit 1
             fi
+          fi
+          if [[ -n "${RELEASE_PUBLISH_RUN_ID// }" && ! "${RELEASE_PUBLISH_RUN_ATTEMPT}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "release_publish_run_id requires the exact positive release_publish_run_attempt." >&2
+            exit 1
           fi
           if [[ "${NPM_DIST_TAG}" == "extended-stable" ]]; then
             if [[ "${PUBLISH_SCOPE}" != "all-publishable" || -n "${RELEASE_PLUGINS// }" ]]; then
@@ -309,6 +318,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
+          EXPECTED_WORKFLOW_FULL_REF: ${{ github.ref }}
+          EXPECTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
           EXPECTED_WORKFLOW_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -325,7 +337,7 @@ jobs:
             direct_recovery=true
             echo "Direct Plugin NPM Release recovery with release_publish_run_id; relying on this workflow's npm-release environment approval."
           fi
-          RUN_JSON="$(gh run view "$RELEASE_PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,status,conclusion,url)"
+          RUN_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_PUBLISH_RUN_ID}" --jq '{workflowName: .name, headBranch: .head_branch, headSha: .head_sha, event, status, conclusion, url: .html_url, runAttempt: .run_attempt, repository: .repository.full_name, path}')"
           printf '%s' "$RUN_JSON" | DIRECT_RELEASE_RECOVERY="${direct_recovery}" node scripts/validate-release-publish-approval.mjs
 
   preview_plugin_pack:
@@ -1105,6 +1117,7 @@ jobs:
           PACKAGE_NAME: ${{ matrix.plugin.packageName }}
           PACKAGE_VERSION: ${{ matrix.plugin.version }}
           PUBLISH_TAG: ${{ matrix.plugin.publishTag }}
+          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
           TARGET_SHA: ${{ needs.preview_plugins_npm.outputs.ref_revision }}
           WORKFLOW_HEAD_BRANCH: ${{ github.ref_name }}
@@ -1169,7 +1182,8 @@ jobs:
               --workflow-ref "$WORKFLOW_HEAD_BRANCH" \
               --workflow-full-ref "$WORKFLOW_REF" \
               --workflow-sha "$WORKFLOW_SHA" \
-              --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID"
+              --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID" \
+              --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"
           fi
           artifact_id="$(jq -er '.id' "$artifact_metadata")"
           artifact_digest="$(jq -er '.digest' "$artifact_metadata")"
@@ -1302,6 +1316,7 @@ jobs:
           OPENCLAW_NPM_PUBLISH_AUTH_MODE: trusted-publisher
           OPENCLAW_PLUGIN_NPM_PUBLISH_TAG: ${{ inputs.npm_dist_tag == 'extended-stable' && inputs.npm_dist_tag || '' }}
           OPENCLAW_RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          OPENCLAW_RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF: "true"
           OPENCLAW_RELEASE_TOOLING_FULL_REF: ${{ github.ref }}
           OPENCLAW_RELEASE_TOOLING_IDENTITY_REQUIRED: "true"
@@ -1374,6 +1389,7 @@ jobs:
           PACKAGE_VERSION: ${{ steps.publication_evidence.outputs.package_version }}
           PUBLISH_TAG: ${{ steps.publication_evidence.outputs.publish_tag }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
+          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           TARBALL_PATH: ${{ steps.publication_evidence.outputs.tarball_path }}
           WORKFLOW_FULL_REF: ${{ github.ref }}
           WORKFLOW_REF: ${{ github.ref_name }}
@@ -1408,7 +1424,8 @@ jobs:
             --workflow-ref "$WORKFLOW_REF" \
             --workflow-full-ref "$WORKFLOW_FULL_REF" \
             --workflow-sha "$WORKFLOW_SHA" \
-            --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID"
+            --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID" \
+            --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"
           HOME="$publish_home" \
             NPM_CONFIG_GLOBALCONFIG=/dev/null \
             NPM_CONFIG_IGNORE_SCRIPTS=true \
