@@ -1,4 +1,5 @@
 name: Full Release Validation
+run-name: Full Release Validation ${{ inputs.expected_sha || inputs.ref }}
 
 on:
   workflow_dispatch:
@@ -991,7 +992,7 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
               dispatch_id="full-release-validation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci"
               dispatch_run_name="CI ${dispatch_id}"
-              args=(-f target_ref="$TARGET_SHA" -f include_android=true -f dispatch_id="$dispatch_id")
+              args=(-f target_ref="$TARGET_SHA" -f include_android=true -f dispatch_id="$dispatch_id" -f full_release_validation_run_id="$GITHUB_RUN_ID" -f full_release_validation_run_attempt="$GITHUB_RUN_ATTEMPT")
               if [[ "$TARGET_REF" =~ ^v[0-9]{4}\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$ ]]; then
                 args+=(-f historical_target_tag="$TARGET_REF")
               elif [[ "$TARGET_CONTEXT_REF" =~ ^v[0-9]{4}\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$ ]]; then

@@ -2771,6 +2771,7 @@ describe("package acceptance workflow", () => {
 
   it("requires full release child workflows to run at the parent workflow SHA", () => {
     const workflow = readFileSync(FULL_RELEASE_VALIDATION_WORKFLOW, "utf8");
+    const parsedWorkflow = readWorkflow(FULL_RELEASE_VALIDATION_WORKFLOW);
     const releaseChecksWorkflow = readFileSync(RELEASE_CHECKS_WORKFLOW, "utf8");
     const performanceJob = workflowStep(
       workflowJob(FULL_RELEASE_VALIDATION_WORKFLOW, "performance"),
@@ -2778,6 +2779,9 @@ describe("package acceptance workflow", () => {
     ).run;
 
     expect(workflow).toContain("TARGET_SHA: ${{ needs.resolve_target.outputs.sha }}");
+    expect(parsedWorkflow["run-name"]).toBe(
+      "Full Release Validation ${{ inputs.expected_sha || inputs.ref }}",
+    );
     expect(workflow).toContain("CHILD_WORKFLOW_REF: ${{ github.ref_name }}");
     expect(workflow).toContain("PARENT_WORKFLOW_SHA: ${{ github.sha }}");
     expect(workflow).toContain("release_package_spec:");
@@ -2807,6 +2811,8 @@ describe("package acceptance workflow", () => {
     );
     expect(workflow).toContain('if [[ "$head_sha" != "$PARENT_WORKFLOW_SHA" ]]; then');
     expect(workflow).toContain('gh workflow run "$workflow" --ref "$CHILD_WORKFLOW_REF" "$@" 2>&1');
+    expect(workflow).toContain('-f full_release_validation_run_id="$GITHUB_RUN_ID"');
+    expect(workflow).toContain('-f full_release_validation_run_attempt="$GITHUB_RUN_ATTEMPT"');
     expect(performanceJob).toContain(
       'dispatch_id="full-release-validation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
     );
@@ -4888,6 +4894,7 @@ describe("package artifact reuse", () => {
     expect(releaseJob.with).toMatchObject({
       expected_sha: "${{ needs.resolve_target.outputs.revision }}",
       fail_fast: "${{ fromJSON(needs.resolve_target.outputs.fail_fast) }}",
+      lock_scope: "matrix",
       run_matrix: true,
     });
     for (const lane of ["mock_parity", "buzz", "telegram", "discord", "whatsapp", "slack"]) {
@@ -4923,6 +4930,11 @@ describe("package artifact reuse", () => {
     expect(qaWorkflow).toContain('if [[ -n "${EXPECTED_SHA}" ]]; then');
     const matrixJob = workflowJob(QA_LIVE_TRANSPORTS_WORKFLOW, "run_live_matrix");
     expect(matrixJob["timeout-minutes"]).toBe(90);
+    expect(matrixJob.concurrency).toEqual({
+      group: "qa-live-matrix-${{ needs.validate_selected_ref.outputs.selected_revision }}",
+      "cancel-in-progress": false,
+      queue: "max",
+    });
     expect(workflowStep(matrixJob, "Run Matrix live lane").run).toContain(
       "--provider-mode mock-openai",
     );
@@ -4962,10 +4974,16 @@ describe("package artifact reuse", () => {
     expect(releaseJob.with).toMatchObject({
       buzz_scenario: "channel-canary,channel-mention-gating",
       expected_sha: "${{ needs.resolve_target.outputs.revision }}",
+      lock_scope: "buzz",
       run_buzz: true,
     });
     const buzzJob = workflowJob(QA_LIVE_TRANSPORTS_WORKFLOW, "run_live_buzz");
     expect(buzzJob.if).toBe("inputs.run_buzz");
+    expect(buzzJob.concurrency).toEqual({
+      group: "qa-live-buzz-shared",
+      "cancel-in-progress": false,
+      queue: "max",
+    });
     const resolveBuzz = workflowStep(buzzJob, "Resolve Buzz QA runner");
     expect(resolveBuzz.run).toContain('runner?.commandName === "buzz"');
     expect(resolveBuzz.run).toContain("selected ref does not declare the Buzz QA runner");

@@ -93,8 +93,8 @@ function evaluateWorkflowExpression(
     repository: string;
     runnerBackend?: "" | "blacksmith" | "github" | "hybrid";
     runAttempt: number;
+    trustedFrvFirstAttempt?: boolean;
     inputs?: {
-      dispatchId?: string;
       releaseGate?: boolean;
     };
   },
@@ -116,7 +116,6 @@ function evaluateWorkflowExpression(
       Array.isArray(haystack)
         ? haystack.includes(needle)
         : String(haystack).includes(String(needle)),
-    endsWith: (value: unknown, suffix: unknown) => String(value).endsWith(String(suffix)),
     fromJSON: (value: string) => JSON.parse(value) as unknown,
     github: {
       event_name: context.eventName,
@@ -133,11 +132,16 @@ function evaluateWorkflowExpression(
           : {},
     },
     inputs: {
-      dispatch_id: context.inputs?.dispatchId ?? "",
       release_gate: context.inputs?.releaseGate ?? false,
     },
     matrix: context.matrix ?? {},
-    startsWith: (value: unknown, prefix: unknown) => String(value).startsWith(String(prefix)),
+    needs: {
+      preflight: {
+        outputs: {
+          trusted_frv_first_attempt: context.trustedFrvFirstAttempt ? "true" : "false",
+        },
+      },
+    },
     vars: {
       OPENCLAW_CI_RUNNER_BACKEND: context.runnerBackend ?? "",
     },
@@ -1422,13 +1426,19 @@ describe("ci workflow guards", () => {
 
     expect(workflow.concurrency).toEqual({
       group:
-        "qa-lab-${{ github.event_name == 'workflow_call' && inputs.run_buzz && !inputs.run_matrix && 'buzz' || github.event_name == 'workflow_call' && inputs.run_matrix && !inputs.run_buzz && 'matrix' || 'all' }}-${{ github.event_name != 'schedule' && inputs.ref || github.sha }}",
+        "qa-lab-${{ inputs.lock_scope || 'all' }}-${{ github.event_name != 'schedule' && inputs.ref || github.sha }}",
+      "cancel-in-progress": false,
+      queue: "max",
+    });
+    expect(workflow.jobs.run_live_matrix.concurrency).toEqual({
+      group: "qa-live-matrix-${{ needs.validate_selected_ref.outputs.selected_revision }}",
       "cancel-in-progress": false,
       queue: "max",
     });
     expect(workflow.jobs.run_live_buzz.concurrency).toEqual({
       group: "qa-live-buzz-shared",
       "cancel-in-progress": false,
+      queue: "max",
     });
   });
 
@@ -1728,7 +1738,7 @@ NODE
     expect(changedScopeStep.run).toContain(
       'node scripts/ci-changed-scope.mjs --base "$BASE" --head "$HEAD_SHA"',
     );
-    expect(workflow.jobs.preflight.permissions).toEqual({ contents: "read" });
+    expect(workflow.jobs.preflight.permissions).toEqual({ actions: "read", contents: "read" });
     expect(workflow.jobs.preflight.outputs.run_ios_screenshots).toBe(
       "${{ steps.changed_scope.outputs.run_ios_screenshots }}",
     );
@@ -1761,17 +1771,123 @@ NODE
     }
   });
 
+  it("authenticates the exact Full Release Validation parent before fast routing", () => {
+    const workflow = readCiWorkflow();
+    const validateStep = expectDefined(
+      workflow.jobs.preflight.steps.find(
+        (step: WorkflowStep) => step.name === "Validate Full Release Validation parent",
+      ),
+      "Full Release Validation parent validation",
+    );
+    const targetSha = "a".repeat(40);
+    const workflowSha = "b".repeat(40);
+    const baseRun = {
+      conclusion: null,
+      display_title: `Full Release Validation ${targetSha}`,
+      event: "workflow_dispatch",
+      head_branch: "main",
+      head_sha: workflowSha,
+      id: 32441524595,
+      path: ".github/workflows/full-release-validation.yml",
+      repository: { full_name: "openclaw/openclaw" },
+      run_attempt: 1,
+      status: "in_progress",
+    };
+    const runCase = (options?: {
+      childAttempt?: number;
+      parentAttempt?: number;
+      parentRun?: Record<string, unknown>;
+      provideParent?: boolean;
+    }) => {
+      const root = tempDirs.make("openclaw-frv-parent-");
+      const binDir = path.join(root, "bin");
+      const callsPath = path.join(root, "gh-calls");
+      const outputPath = path.join(root, "github-output");
+      mkdirSync(binDir);
+      writeExecutable(path.join(binDir, "gh"), [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'printf "%s\\n" "$*" >> "$GH_CALLS"',
+        'printf "%s\\n" "$MOCK_GH_RESPONSE"',
+      ]);
+      const provideParent = options?.provideParent ?? true;
+      const parentAttempt = options?.parentAttempt ?? 1;
+      const parentRun = options?.parentRun ?? { ...baseRun, run_attempt: parentAttempt };
+      const result = runWorkflowShellScript(expectDefined(validateStep.run, "validation script"), {
+        cwd: root,
+        env: {
+          ...process.env,
+          GH_CALLS: callsPath,
+          GITHUB_OUTPUT: outputPath,
+          GITHUB_REF_NAME: "main",
+          GITHUB_REPOSITORY: "openclaw/openclaw",
+          GITHUB_RUN_ATTEMPT: String(options?.childAttempt ?? 1),
+          MOCK_GH_RESPONSE: JSON.stringify(parentRun),
+          PARENT_RUN_ATTEMPT: provideParent ? String(parentAttempt) : "",
+          PARENT_RUN_ID: provideParent ? String(baseRun.id) : "",
+          PATH: `${binDir}:${process.env.PATH ?? ""}`,
+          TARGET_REF: targetSha,
+          WORKFLOW_SHA: workflowSha,
+        },
+      });
+      return {
+        calls: existsSync(callsPath) ? readFileSync(callsPath, "utf8") : "",
+        outputs: readWorkflowOutputs(outputPath),
+        result,
+      };
+    };
+
+    expect(workflow.on.workflow_dispatch.inputs.full_release_validation_run_id).toMatchObject({
+      default: "",
+      required: false,
+      type: "string",
+    });
+    expect(workflow.on.workflow_dispatch.inputs.full_release_validation_run_attempt).toMatchObject({
+      default: "",
+      required: false,
+      type: "string",
+    });
+    expect(workflow.jobs.preflight.outputs.trusted_frv_first_attempt).toBe(
+      "${{ steps.frv_parent.outputs.trusted_first_attempt }}",
+    );
+
+    const trusted = runCase();
+    expect(trusted.result.status, trusted.result.stderr).toBe(0);
+    expect(trusted.outputs.trusted_first_attempt).toBe("true");
+    expect(trusted.calls).toContain("repos/openclaw/openclaw/actions/runs/32441524595/attempts/1");
+
+    const generic = runCase({ provideParent: false });
+    expect(generic.result.status, generic.result.stderr).toBe(0);
+    expect(generic.outputs.trusted_first_attempt).toBe("false");
+    expect(generic.calls).toBe("");
+
+    for (const rerun of [runCase({ childAttempt: 2 }), runCase({ parentAttempt: 2 })]) {
+      expect(rerun.result.status, rerun.result.stderr).toBe(0);
+      expect(rerun.outputs.trusted_first_attempt).toBe("false");
+    }
+
+    for (const parentRun of [
+      { ...baseRun, id: baseRun.id + 1 },
+      { ...baseRun, run_attempt: 2 },
+      { ...baseRun, head_sha: "c".repeat(40) },
+      { ...baseRun, display_title: "Full Release Validation main" },
+      { ...baseRun, path: ".github/workflows/ci.yml" },
+      { ...baseRun, status: "completed", conclusion: "success" },
+    ]) {
+      const rejected = runCase({ parentRun });
+      expect(rejected.result.status, JSON.stringify(parentRun)).toBe(1);
+      expect(rejected.outputs.trusted_first_attempt).toBe("false");
+    }
+  });
+
   it("routes only trusted first-attempt Full Release Validation iOS to Blacksmith", () => {
     const runsOn = readCiWorkflow().jobs["ios-build"]["runs-on"];
-    const frvInputs = {
-      dispatchId: "full-release-validation-32441524595-1-ci",
-      releaseGate: false,
-    };
     const canonicalDispatch = {
       eventName: "workflow_dispatch",
-      inputs: frvInputs,
+      inputs: { releaseGate: false },
       repository: "openclaw/openclaw",
       runAttempt: 1,
+      trustedFrvFirstAttempt: true,
     } as const;
 
     expect(evaluateWorkflowExpression(runsOn, canonicalDispatch)).toBe(
@@ -1792,13 +1908,13 @@ NODE
     expect(
       evaluateWorkflowExpression(runsOn, {
         ...canonicalDispatch,
-        inputs: { dispatchId: "", releaseGate: false },
+        trustedFrvFirstAttempt: false,
       }),
     ).toBe("macos-26");
     expect(
       evaluateWorkflowExpression(runsOn, {
         ...canonicalDispatch,
-        inputs: { ...frvInputs, releaseGate: true },
+        inputs: { releaseGate: true },
       }),
     ).toBe("macos-26");
     expect(

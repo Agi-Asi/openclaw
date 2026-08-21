@@ -33,6 +33,16 @@ on:
         required: false
         default: ""
         type: string
+      full_release_validation_run_id:
+        description: Optional authenticated Full Release Validation parent run ID
+        required: false
+        default: ""
+        type: string
+      full_release_validation_run_attempt:
+        description: Optional authenticated Full Release Validation parent run attempt
+        required: false
+        default: ""
+        type: string
       historical_target_tag:
         description: Semver release tag authorizing compatibility fallbacks for its exact commit
         required: false
@@ -76,6 +86,7 @@ jobs:
   # work fan out from a single source of truth.
   preflight:
     permissions:
+      actions: read
       contents: read
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ${{ (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid') && 'ubuntu-24.04' || github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04') }}
@@ -132,11 +143,70 @@ jobs:
       run_openclawkit_tests: ${{ steps.manifest.outputs.run_openclawkit_tests }}
       run_ios_build: ${{ steps.manifest.outputs.run_ios_build }}
       run_ios_screenshots: ${{ steps.changed_scope.outputs.run_ios_screenshots }}
+      trusted_frv_first_attempt: ${{ steps.frv_parent.outputs.trusted_first_attempt }}
       run_android_job: ${{ steps.manifest.outputs.run_android_job }}
       use_compatible_android_ci: ${{ steps.manifest.outputs.use_compatible_android_ci }}
       run_protocol_event_coverage: ${{ steps.manifest.outputs.run_protocol_event_coverage }}
       android_matrix: ${{ steps.manifest.outputs.android_matrix }}
     steps:
+      - name: Validate Full Release Validation parent
+        id: frv_parent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARENT_RUN_ATTEMPT: ${{ inputs.full_release_validation_run_attempt }}
+          PARENT_RUN_ID: ${{ inputs.full_release_validation_run_id }}
+          TARGET_REF: ${{ inputs.target_ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "trusted_first_attempt=false" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$PARENT_RUN_ID" && -z "$PARENT_RUN_ATTEMPT" ]]; then
+            exit 0
+          fi
+          if [[ ! "$PARENT_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$PARENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Full Release Validation parent run ID and attempt must be positive integers." >&2
+            exit 1
+          fi
+          if [[ ! "$TARGET_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Full Release Validation parent routing requires an exact target SHA." >&2
+            exit 1
+          fi
+
+          parent_run="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${PARENT_RUN_ID}/attempts/${PARENT_RUN_ATTEMPT}"
+          )"
+          expected_title="Full Release Validation ${TARGET_REF}"
+          if ! jq -e \
+            --arg branch "$GITHUB_REF_NAME" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$WORKFLOW_SHA" \
+            --arg title "$expected_title" \
+            --argjson attempt "$PARENT_RUN_ATTEMPT" \
+            --argjson run_id "$PARENT_RUN_ID" \
+            '
+              .id == $run_id
+              and .run_attempt == $attempt
+              and .event == "workflow_dispatch"
+              and .path == ".github/workflows/full-release-validation.yml"
+              and .head_sha == $sha
+              and .head_branch == $branch
+              and .repository.full_name == $repository
+              and .display_title == $title
+              and .status == "in_progress"
+              and .conclusion == null
+            ' <<< "$parent_run" >/dev/null; then
+            echo "::error::Full Release Validation parent identity did not match this CI target and workflow." >&2
+            jq '{id, run_attempt, event, path, head_sha, head_branch, repository: .repository.full_name, display_title, status, conclusion}' \
+              <<< "$parent_run" >&2 || true
+            exit 1
+          fi
+
+          if [[ "$PARENT_RUN_ATTEMPT" == "1" && "$GITHUB_RUN_ATTEMPT" == "1" ]]; then
+            echo "trusted_first_attempt=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate release-gate dispatch
         if: github.event_name == 'workflow_dispatch' && inputs.release_gate
         env:
@@ -3688,9 +3758,9 @@ jobs:
     name: "ios-build"
     needs: [preflight]
     if: needs.preflight.outputs.run_ios_build == 'true'
-    # The FRV child is a trusted exact-SHA dispatch with an identity-bound nonce.
+    # Hosted preflight authenticates the exact parent run before this job routes.
     # Keep ordinary/manual/release-gate runs and every retry on hosted capacity.
-    runs-on: ${{ vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' && 'macos-26' || github.run_attempt > 1 && 'macos-26' || (github.event_name == 'workflow_dispatch' && (inputs.release_gate || !startsWith(inputs.dispatch_id, 'full-release-validation-') || !endsWith(inputs.dispatch_id, '-ci'))) && 'macos-26' || (github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)) && 'blacksmith-12vcpu-macos-26' || 'macos-26') }}
+    runs-on: ${{ vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' && 'macos-26' || github.run_attempt > 1 && 'macos-26' || (github.event_name == 'workflow_dispatch' && (inputs.release_gate || needs.preflight.outputs.trusted_frv_first_attempt != 'true')) && 'macos-26' || (github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)) && 'blacksmith-12vcpu-macos-26' || 'macos-26') }}
     timeout-minutes: 150
     env:
       HISTORICAL_TARGET: ${{ needs.preflight.outputs.compatibility_target }}

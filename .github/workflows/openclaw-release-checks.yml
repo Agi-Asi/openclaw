@@ -2090,6 +2090,7 @@ jobs:
     with:
       ref: ${{ needs.resolve_target.outputs.revision }}
       expected_sha: ${{ needs.resolve_target.outputs.revision }}
+      lock_scope: matrix
       run_matrix: true
       fail_fast: ${{ fromJSON(needs.resolve_target.outputs.fail_fast) }}
     secrets:
@@ -2108,6 +2109,7 @@ jobs:
     with:
       ref: ${{ needs.resolve_target.outputs.revision }}
       expected_sha: ${{ needs.resolve_target.outputs.revision }}
+      lock_scope: buzz
       run_buzz: true
       buzz_scenario: channel-canary,channel-mention-gating
     secrets:
