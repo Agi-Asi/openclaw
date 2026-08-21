@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { resolveBunGlobalInstallOwner } from "./detect-package-manager.js";
 import { formatErrorMessage } from "./errors.js";
 import { pathExists } from "./fs-safe.js";
+import { quiesceLocalTuiProcessesBeforeUpdate } from "./local-tui-processes.js";
 import { readPackageVersion } from "./package-json.js";
 import { movePathWithCopyFallback } from "./replace-file.js";
 import { trimLogTail } from "./restart-sentinel.js";
@@ -886,6 +887,7 @@ export async function runGlobalPackageUpdateSteps(params: {
       return;
     }
     await params.beforeMutation?.();
+    await quiesceLocalTuiProcessesBeforeUpdate();
     mutationPrepared = true;
   };
 
