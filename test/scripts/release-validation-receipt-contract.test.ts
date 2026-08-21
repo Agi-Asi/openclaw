@@ -7,6 +7,7 @@ import {
   createReleasePlanLock,
   releaseCanonicalDigest,
 } from "../../scripts/release-plan-contract.mjs";
+import { authenticateGitHubReleaseValidationArtifact } from "../../scripts/release-validation-github-artifact-authenticator.mjs";
 import {
   canonicalReleaseValidationReceiptJson,
   canonicalReleaseValidationReceiptLocatorJson,
@@ -18,6 +19,7 @@ import {
   validateReleaseValidationExecutionPlanSource,
   validateReleaseValidationReceipt,
   validateReleaseValidationReceiptLocatorForReceipt,
+  validateReleaseValidationReceiptReuseFreshness,
   validateReleaseValidationStateSource,
   verifyReleaseValidationArtifactEvidence,
   verifyReleaseValidationReceipt,
@@ -45,8 +47,48 @@ function addSeconds(value: string, seconds: number): string {
   return new Date(Date.parse(value) + seconds * 1000).toISOString().replace(".000Z", "Z");
 }
 
-function exactBytesDigest(value: string): `sha256:${string}` {
-  return `sha256:${createHash("sha256").update(value, "ascii").digest("hex")}`;
+function exactBytesDigest(value: string | Uint8Array): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function crc32(bytes: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function createZip(name: string, bytes: Buffer): Buffer {
+  const nameBytes = Buffer.from(name, "utf8");
+  const checksum = crc32(bytes);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt32LE(checksum, 14);
+  local.writeUInt32LE(bytes.length, 18);
+  local.writeUInt32LE(bytes.length, 22);
+  local.writeUInt16LE(nameBytes.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(0x0314, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt32LE(checksum, 16);
+  central.writeUInt32LE(bytes.length, 20);
+  central.writeUInt32LE(bytes.length, 24);
+  central.writeUInt16LE(nameBytes.length, 28);
+  central.writeUInt32LE((0o100600 * 0x10000) >>> 0, 38);
+  const centralOffset = local.length + nameBytes.length + bytes.length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + nameBytes.length, 12);
+  end.writeUInt32LE(centralOffset, 16);
+  return Buffer.concat([local, nameBytes, bytes, central, nameBytes, end]);
 }
 
 function job(
@@ -190,6 +232,51 @@ type Fixture = FixtureBase & {
   sourceArtifacts: ReleaseValidationVerifiedArtifactEvidence[];
 };
 
+type RawArtifactEvidence = ReleaseValidationSourceArtifact & {
+  entry_bytes: string;
+};
+
+function githubArtifactAuthenticationParams(evidence: RawArtifactEvidence) {
+  const archiveBytes = createZip(evidence.entry_name, Buffer.from(evidence.entry_bytes, "ascii"));
+  return {
+    evidence: { ...evidence, archive_digest: exactBytesDigest(archiveBytes) },
+    expected: {
+      repository: "openclaw/openclaw",
+      workflowPath: ".github/workflows/full-release-validation.yml",
+      workflowSha: TOOLING_SHA,
+    },
+    artifactMetadata: {
+      id: Number(evidence.artifact_id),
+      name: evidence.artifact_name,
+      digest: exactBytesDigest(archiveBytes),
+      created_at: evidence.created_at,
+      expires_at: evidence.expires_at,
+      expired: false,
+      size_in_bytes: archiveBytes.length,
+      workflow_run: { id: Number(evidence.run_id), head_sha: TOOLING_SHA },
+    },
+    workflowRun: {
+      id: Number(evidence.run_id),
+      run_attempt: evidence.run_attempt,
+      path: ".github/workflows/full-release-validation.yml",
+      head_sha: TOOLING_SHA,
+      repository: { full_name: "openclaw/openclaw" },
+      head_repository: { full_name: "openclaw/openclaw" },
+    },
+    archiveBytes,
+    nowMs: Math.min(
+      Date.parse(evidence.expires_at) - 1,
+      Date.parse(evidence.created_at) + 60 * 60 * 1000,
+    ),
+  };
+}
+
+function authenticateEvidence(
+  evidence: RawArtifactEvidence,
+): ReleaseValidationVerifiedArtifactEvidence {
+  return authenticateGitHubReleaseValidationArtifact(githubArtifactAuthenticationParams(evidence));
+}
+
 function sourceArtifacts(fixture: FixtureBase): ReleaseValidationVerifiedArtifactEvidence[] {
   const coordinates = [
     {
@@ -200,7 +287,6 @@ function sourceArtifacts(fixture: FixtureBase): ReleaseValidationVerifiedArtifac
       run_attempt: fixture.decision.parent_run_attempt,
       content: fixture.decision,
       created_at: addSeconds(fixture.decision.observed_at, 60),
-      archive: "1",
     },
     {
       kind: "diagnostic-drain",
@@ -210,7 +296,6 @@ function sourceArtifacts(fixture: FixtureBase): ReleaseValidationVerifiedArtifac
       run_attempt: fixture.diagnosticDrain.parent_run_attempt,
       content: fixture.diagnosticDrain,
       created_at: addSeconds(fixture.diagnosticDrain.observed_at, 60),
-      archive: "2",
     },
     {
       kind: "execution-plan",
@@ -220,7 +305,6 @@ function sourceArtifacts(fixture: FixtureBase): ReleaseValidationVerifiedArtifac
       run_attempt: fixture.executionPlan.parent_run_attempt,
       content: fixture.executionPlan,
       created_at: addSeconds(fixture.executionPlan.started_at, 60),
-      archive: "3",
     },
     {
       kind: "release-plan-lock",
@@ -230,28 +314,25 @@ function sourceArtifacts(fixture: FixtureBase): ReleaseValidationVerifiedArtifac
       run_attempt: fixture.executionPlan.parent_run_attempt,
       content: fixture.releasePlanLock,
       created_at: addSeconds(fixture.executionPlan.started_at, -60),
-      archive: "4",
     },
   ] as const;
   return coordinates.map((artifact) => {
     const entryBytes = canonicalReleaseJson(artifact.content);
-    return verifyReleaseValidationArtifactEvidence(
-      {
-        kind: artifact.kind,
-        artifact_id: artifact.artifact_id,
-        artifact_name: artifact.artifact_name,
-        entry_name: artifact.entry_name,
-        run_id: PARENT_RUN_ID,
-        run_attempt: artifact.run_attempt,
-        archive_digest:
-          `sha256:${artifact.archive.repeat(64)}` as ReleaseValidationSourceArtifact["archive_digest"],
-        content_digest: exactBytesDigest(entryBytes),
-        created_at: artifact.created_at,
-        url: `${PARENT_RUN_URL}/artifacts/${artifact.artifact_id}`,
-        entry_bytes: entryBytes,
-      },
-      () => true,
-    );
+    const expiresAt = addSeconds(artifact.created_at, 7 * 24 * 60 * 60);
+    return authenticateEvidence({
+      kind: artifact.kind,
+      artifact_id: artifact.artifact_id,
+      artifact_name: artifact.artifact_name,
+      entry_name: artifact.entry_name,
+      run_id: PARENT_RUN_ID,
+      run_attempt: artifact.run_attempt,
+      archive_digest: `sha256:${"0".repeat(64)}`,
+      content_digest: exactBytesDigest(entryBytes),
+      created_at: artifact.created_at,
+      expires_at: expiresAt,
+      url: `${PARENT_RUN_URL}/artifacts/${artifact.artifact_id}`,
+      entry_bytes: entryBytes,
+    });
   });
 }
 
@@ -568,6 +649,65 @@ describe("release validation receipt source sealer", () => {
       "coordinates differ from its source object",
     );
   });
+
+  it("rejects mismatched GitHub metadata, expiry, workflow identity, and archive bytes", () => {
+    const raw = structuredClone(
+      inputFixture().sourceArtifacts[0]!,
+    ) as unknown as RawArtifactEvidence;
+
+    const expired = githubArtifactAuthenticationParams(raw);
+    (expired.artifactMetadata as Record<string, unknown>).expired = true;
+    expect(() => authenticateGitHubReleaseValidationArtifact(expired)).toThrow("metadata differs");
+
+    const wrongCreated = githubArtifactAuthenticationParams(raw);
+    (wrongCreated.artifactMetadata as Record<string, unknown>).created_at = "2026-08-21T10:02:00Z";
+    expect(() => authenticateGitHubReleaseValidationArtifact(wrongCreated)).toThrow(
+      "metadata differs",
+    );
+
+    const wrongWorkflow = githubArtifactAuthenticationParams(raw);
+    (wrongWorkflow.workflowRun as Record<string, unknown>).path = ".github/workflows/ci.yml";
+    expect(() => authenticateGitHubReleaseValidationArtifact(wrongWorkflow)).toThrow(
+      "workflow metadata differs",
+    );
+
+    for (const mutate of [
+      (params: ReturnType<typeof githubArtifactAuthenticationParams>) => {
+        (params.artifactMetadata as Record<string, unknown>).id = 9999;
+      },
+      (params: ReturnType<typeof githubArtifactAuthenticationParams>) => {
+        (params.artifactMetadata as Record<string, unknown>).name = "wrong-name";
+      },
+      (params: ReturnType<typeof githubArtifactAuthenticationParams>) => {
+        (params.artifactMetadata as Record<string, unknown>).digest = `sha256:${"f".repeat(64)}`;
+      },
+      (params: ReturnType<typeof githubArtifactAuthenticationParams>) => {
+        (params.workflowRun as Record<string, unknown>).run_attempt = 99;
+      },
+      (params: ReturnType<typeof githubArtifactAuthenticationParams>) => {
+        (params.workflowRun as Record<string, any>).repository.full_name = "other/repo";
+      },
+    ]) {
+      const mismatched = githubArtifactAuthenticationParams(raw);
+      mutate(mismatched);
+      expect(() => authenticateGitHubReleaseValidationArtifact(mismatched)).toThrow(
+        /metadata differs/,
+      );
+    }
+
+    const unsupportedAuthority = githubArtifactAuthenticationParams(raw);
+    unsupportedAuthority.expected.repository = "other/repo";
+    expect(() => authenticateGitHubReleaseValidationArtifact(unsupportedAuthority)).toThrow(
+      "authority is unsupported",
+    );
+
+    const tamperedArchive = githubArtifactAuthenticationParams(raw);
+    tamperedArchive.archiveBytes = Buffer.from(tamperedArchive.archiveBytes);
+    tamperedArchive.archiveBytes.writeUInt8(tamperedArchive.archiveBytes.readUInt8(40) ^ 1, 40);
+    expect(() => authenticateGitHubReleaseValidationArtifact(tamperedArchive)).toThrow(
+      "archive digest differs",
+    );
+  });
 });
 
 describe("release validation receipt lineage", () => {
@@ -662,6 +802,118 @@ describe("release validation receipt lineage", () => {
         rootReceipt: root,
       }),
     ).toThrow("differs from the supplied parent/root");
+  });
+});
+
+describe("release validation receipt reuse freshness", () => {
+  const sealedAtMs = Date.parse("2026-08-21T10:32:00Z");
+
+  it("selects the intent policy and returns the bounded effective expiry", () => {
+    const receipt = sealReleaseValidationReceipt(inputFixture());
+    expect(
+      validateReleaseValidationReceiptReuseFreshness(receipt, {
+        now_ms: sealedAtMs + 60 * 60 * 1000,
+        max_future_skew_ms: 60_000,
+      }),
+    ).toEqual({
+      intent: "release-beta",
+      age_ms: 60 * 60 * 1000,
+      max_age_ms: 6 * 60 * 60 * 1000,
+      cadence_ms: 6 * 60 * 60 * 1000,
+      expires_at_ms: sealedAtMs + 6 * 60 * 60 * 1000,
+    });
+  });
+
+  it("rejects invalid clocks and evidence beyond the allowed future skew", () => {
+    const receipt = sealReleaseValidationReceipt(inputFixture());
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(structuredClone(receipt), {
+        now_ms: sealedAtMs,
+        max_future_skew_ms: 0,
+      }),
+    ).toThrow("authenticated release validation receipt");
+    for (const nowMs of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      expect(() =>
+        validateReleaseValidationReceiptReuseFreshness(receipt, {
+          now_ms: nowMs,
+          max_future_skew_ms: 60_000,
+        }),
+      ).toThrow("now_ms");
+    }
+    for (const futureSkewMs of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      expect(() =>
+        validateReleaseValidationReceiptReuseFreshness(receipt, {
+          now_ms: sealedAtMs,
+          max_future_skew_ms: futureSkewMs,
+        }),
+      ).toThrow("max_future_skew_ms");
+    }
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(receipt, {
+        now_ms: sealedAtMs - 61_000,
+        max_future_skew_ms: 60_000,
+      }),
+    ).toThrow("future skew");
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(receipt, {
+        now_ms: Number.MAX_SAFE_INTEGER,
+        max_future_skew_ms: 1,
+      }),
+    ).toThrow("future skew");
+  });
+
+  it("expires at the policy window or earlier authenticated artifact expiry", () => {
+    const receipt = sealReleaseValidationReceipt(inputFixture());
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(receipt, {
+        now_ms: sealedAtMs + 6 * 60 * 60 * 1000,
+        max_future_skew_ms: 0,
+      }),
+    ).toThrow("expired");
+
+    const artifactBoundInput = inputFixture();
+    const shortLived = structuredClone(
+      artifactBoundInput.sourceArtifacts[0]!,
+    ) as unknown as RawArtifactEvidence;
+    shortLived.expires_at = addSeconds("2026-08-21T10:32:00Z", 30 * 60);
+    artifactBoundInput.sourceArtifacts[0] = authenticateEvidence(shortLived);
+    const artifactBoundReceipt = sealReleaseValidationReceipt(artifactBoundInput);
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(artifactBoundReceipt, {
+        now_ms: sealedAtMs + 30 * 60 * 1000,
+        max_future_skew_ms: 0,
+      }),
+    ).toThrow("expired");
+  });
+
+  it("uses fixed per-intent policy and rejects caller-supplied policy overrides", () => {
+    const betaReceipt = sealReleaseValidationReceipt(inputFixture());
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(betaReceipt, {
+        now_ms: sealedAtMs + 7 * 60 * 60 * 1000,
+        max_future_skew_ms: 0,
+      }),
+    ).toThrow("expired");
+
+    const dailyReceipt = sealReleaseValidationReceipt(mainDailyInputFixture());
+    expect(
+      validateReleaseValidationReceiptReuseFreshness(dailyReceipt, {
+        now_ms: sealedAtMs + 7 * 60 * 60 * 1000,
+        max_future_skew_ms: 0,
+      }),
+    ).toMatchObject({
+      intent: "main-daily",
+      max_age_ms: 24 * 60 * 60 * 1000,
+      cadence_ms: 24 * 60 * 60 * 1000,
+    });
+
+    expect(() =>
+      validateReleaseValidationReceiptReuseFreshness(betaReceipt, {
+        now_ms: sealedAtMs,
+        max_future_skew_ms: 0,
+        policies: {},
+      } as any),
+    ).toThrow("keys must be exactly");
   });
 });
 

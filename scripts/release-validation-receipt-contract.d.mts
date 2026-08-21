@@ -90,6 +90,7 @@ export type ReleaseValidationSourceArtifact = {
   archive_digest: ReleaseValidationReceiptDigest;
   content_digest: ReleaseValidationReceiptDigest;
   created_at: string;
+  expires_at: string;
   url: string;
 };
 
@@ -213,6 +214,15 @@ export const RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA: "openclaw.release-valida
 export const RELEASE_VALIDATION_POLICY_ID: "openclaw.release-validation-policy.v1";
 export const RELEASE_VALIDATION_RECEIPT_MAX_BYTES: number;
 export const RELEASE_VALIDATION_RECEIPT_LOCATOR_MAX_BYTES: number;
+export const RELEASE_VALIDATION_REUSE_POLICIES: Readonly<
+  Record<
+    ReleaseValidationIntent,
+    Readonly<{
+      max_age_ms: number;
+      cadence_ms: number;
+    }>
+  >
+>;
 export function validateReleaseValidationExecutionPlanSource(
   value: unknown,
 ): ReleaseValidationExecutionPlanSource;
@@ -241,6 +251,19 @@ export function verifyReleaseValidationReceipt(
   receiptValue: unknown,
   input: ReleaseValidationReceiptSealInput,
 ): ReleaseValidationVerifiedReceipt;
+export function validateReleaseValidationReceiptReuseFreshness(
+  receiptValue: ReleaseValidationVerifiedReceipt,
+  options: {
+    now_ms: number;
+    max_future_skew_ms: number;
+  },
+): {
+  intent: ReleaseValidationIntent;
+  age_ms: number;
+  max_age_ms: number;
+  cadence_ms: number;
+  expires_at_ms: number;
+};
 export function canonicalReleaseValidationReceiptJson(value: unknown): string;
 export function releaseValidationReceiptDigest(value: unknown): ReleaseValidationReceiptDigest;
 export function parseReleaseValidationReceiptJson(text: string): ReleaseValidationReceipt;

@@ -19,6 +19,28 @@ export const RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA =
 export const RELEASE_VALIDATION_POLICY_ID = "openclaw.release-validation-policy.v1";
 export const RELEASE_VALIDATION_RECEIPT_MAX_BYTES = 256 * 1024;
 export const RELEASE_VALIDATION_RECEIPT_LOCATOR_MAX_BYTES = 16 * 1024;
+export const RELEASE_VALIDATION_REUSE_POLICIES = Object.freeze({
+  "release-beta": Object.freeze({
+    max_age_ms: 6 * 60 * 60 * 1000,
+    cadence_ms: 6 * 60 * 60 * 1000,
+  }),
+  "release-stable": Object.freeze({
+    max_age_ms: 6 * 60 * 60 * 1000,
+    cadence_ms: 6 * 60 * 60 * 1000,
+  }),
+  "main-daily": Object.freeze({
+    max_age_ms: 24 * 60 * 60 * 1000,
+    cadence_ms: 24 * 60 * 60 * 1000,
+  }),
+  "main-weekly": Object.freeze({
+    max_age_ms: 7 * 24 * 60 * 60 * 1000,
+    cadence_ms: 7 * 24 * 60 * 60 * 1000,
+  }),
+  "diagnostic-full": Object.freeze({
+    max_age_ms: 7 * 24 * 60 * 60 * 1000,
+    cadence_ms: 7 * 24 * 60 * 60 * 1000,
+  }),
+});
 
 const REPOSITORY = "openclaw/openclaw";
 const WORKFLOW_PATH = ".github/workflows/full-release-validation.yml";
@@ -593,6 +615,7 @@ export function verifyReleaseValidationArtifactEvidence(value, authenticate) {
       "archive_digest",
       "content_digest",
       "created_at",
+      "expires_at",
       "url",
       "entry_bytes",
     ],
@@ -617,6 +640,7 @@ export function verifyReleaseValidationArtifactEvidence(value, authenticate) {
     archive_digest: digest(artifact.archive_digest, `${label}.archive_digest`),
     content_digest: digest(artifact.content_digest, `${label}.content_digest`),
     created_at: timestamp(artifact.created_at, `${label}.created_at`),
+    expires_at: timestamp(artifact.expires_at, `${label}.expires_at`),
     url: exactArtifactUrl(artifact.url, parentRunId, artifactId, `${label}.url`),
     entry_bytes: artifact.entry_bytes,
   });
@@ -659,6 +683,7 @@ function validateSourceArtifacts(value, sources) {
           "archive_digest",
           "content_digest",
           "created_at",
+          "expires_at",
           "url",
           "entry_bytes",
         ],
@@ -680,6 +705,7 @@ function validateSourceArtifacts(value, sources) {
         archive_digest: digest(artifact.archive_digest, `${label}.archive_digest`),
         content_digest: digest(artifact.content_digest, `${label}.content_digest`),
         created_at: timestamp(artifact.created_at, `${label}.created_at`),
+        expires_at: timestamp(artifact.expires_at, `${label}.expires_at`),
         url: exactArtifactUrl(artifact.url, parentRunId, artifactId, `${label}.url`),
       };
       if (
@@ -696,6 +722,7 @@ function validateSourceArtifacts(value, sources) {
           ) ||
         result.entry_name !== REQUIRED_ARTIFACTS[kind].entry ||
         result.content_digest !== exactBytesDigest(expectedBytes[kind]) ||
+        Date.parse(result.expires_at) <= Date.parse(result.created_at) ||
         artifact.entry_bytes !== expectedBytes[kind]
       ) {
         fail(`${label} coordinates differ from its source object`);
@@ -873,7 +900,11 @@ export function sealReleaseValidationReceipt(input) {
   });
   const sealedAt = timestamp(input.sealedAt, "release validation receipt sealed_at");
   if (
-    sourceArtifacts.some((artifact) => Date.parse(artifact.created_at) > Date.parse(sealedAt)) ||
+    sourceArtifacts.some(
+      (artifact) =>
+        Date.parse(artifact.created_at) > Date.parse(sealedAt) ||
+        Date.parse(artifact.expires_at) <= Date.parse(sealedAt),
+    ) ||
     Date.parse(diagnosticDrain.observed_at) > Date.parse(sealedAt)
   ) {
     fail("release validation receipt was sealed before its sources completed");
@@ -1092,6 +1123,7 @@ function validateReceiptArtifacts(value, context) {
           "archive_digest",
           "content_digest",
           "created_at",
+          "expires_at",
           "url",
         ],
         label,
@@ -1112,6 +1144,7 @@ function validateReceiptArtifacts(value, context) {
         archive_digest: digest(artifact.archive_digest, `${label}.archive_digest`),
         content_digest: digest(artifact.content_digest, `${label}.content_digest`),
         created_at: timestamp(artifact.created_at, `${label}.created_at`),
+        expires_at: timestamp(artifact.expires_at, `${label}.expires_at`),
         url: exactArtifactUrl(artifact.url, artifactRunId, artifactId, `${label}.url`),
       };
       const required = expected[kind];
@@ -1120,7 +1153,8 @@ function validateReceiptArtifacts(value, context) {
         result.run_attempt !== required.attempt ||
         result.artifact_name !== required.name ||
         result.entry_name !== required.entry ||
-        result.content_digest !== required.digest
+        result.content_digest !== required.digest ||
+        Date.parse(result.expires_at) <= Date.parse(result.created_at)
       ) {
         fail(`${label} coordinates differ from its receipt sources`);
       }
@@ -1148,7 +1182,10 @@ function validateReceiptArtifacts(value, context) {
     Date.parse(byKind["execution-plan"].created_at) < startedAt ||
     Date.parse(byKind["execution-plan"].created_at) > decisionAt ||
     Date.parse(byKind["release-plan-lock"].created_at) > decisionAt ||
-    artifacts.some((artifact) => Date.parse(artifact.created_at) > sealedAt)
+    artifacts.some(
+      (artifact) =>
+        Date.parse(artifact.created_at) > sealedAt || Date.parse(artifact.expires_at) <= sealedAt,
+    )
   ) {
     fail("release validation receipt source artifact timestamps are invalid");
   }
@@ -1405,6 +1442,53 @@ export function verifyReleaseValidationReceipt(receiptValue, input) {
   }
   verifiedReceipts.set(receipt, releaseValidationReceiptDigest(receipt));
   return receipt;
+}
+
+export function validateReleaseValidationReceiptReuseFreshness(receiptValue, optionsValue) {
+  const receipt = authenticatedReceipt(receiptValue, "release validation receipt reuse candidate");
+  const options = object(optionsValue, "release validation receipt reuse options");
+  exactKeys(options, ["now_ms", "max_future_skew_ms"], "release validation receipt reuse options");
+  const nowMs = nonNegativeInteger(options.now_ms, "release validation receipt reuse now_ms");
+  const futureSkewMs = nonNegativeInteger(
+    options.max_future_skew_ms,
+    "release validation receipt reuse max_future_skew_ms",
+  );
+  const policy = RELEASE_VALIDATION_REUSE_POLICIES[receipt.validation.intent];
+  const maxAgeMs = policy.max_age_ms;
+  const cadenceMs = policy.cadence_ms;
+  const sealedAtMs = Date.parse(receipt.timestamps.sealed_at);
+  const sourceTimes = [
+    receipt.timestamps.started_at,
+    receipt.timestamps.decision_at,
+    receipt.timestamps.drain_completed_at,
+    receipt.timestamps.sealed_at,
+    ...receipt.source_artifacts.map((artifact) => artifact.created_at),
+  ].map(Date.parse);
+  const futureBoundaryMs = nowMs + futureSkewMs;
+  if (
+    !Number.isSafeInteger(futureBoundaryMs) ||
+    sourceTimes.some((value) => value > futureBoundaryMs)
+  ) {
+    fail("release validation receipt reuse evidence is newer than the allowed future skew");
+  }
+  const policyExpiryMs = sealedAtMs + Math.min(maxAgeMs, cadenceMs);
+  if (!Number.isSafeInteger(policyExpiryMs)) {
+    fail("release validation receipt reuse policy expiry exceeds safe integer range");
+  }
+  const artifactExpiryMs = Math.min(
+    ...receipt.source_artifacts.map((artifact) => Date.parse(artifact.expires_at)),
+  );
+  const expiresAtMs = Math.min(policyExpiryMs, artifactExpiryMs);
+  if (nowMs >= expiresAtMs) {
+    fail("release validation receipt reuse evidence is expired");
+  }
+  return {
+    intent: receipt.validation.intent,
+    age_ms: Math.max(0, nowMs - sealedAtMs),
+    max_age_ms: maxAgeMs,
+    cadence_ms: cadenceMs,
+    expires_at_ms: expiresAtMs,
+  };
 }
 
 export function canonicalReleaseValidationReceiptJson(value) {
