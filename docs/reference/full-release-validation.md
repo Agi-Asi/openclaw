@@ -61,9 +61,11 @@ selection. Once release publication binds that Tooling SHA to an exact protected
 lightweight `release-publish/<12sha>-<provenance-run>` tag, the live tag-to-SHA
 mapping remains authoritative even when `main` advances. The suffix records
 tag-creation provenance, not the current parent run id. Publication must re-read
-that exact tag and its immutable parent receipt immediately before every
-privileged mutation; a missing, moved, annotated, or wrong-SHA tag, receipt
-mismatch, or disallowed parent state fails closed.
+that exact tag and revalidate the exact parent run tuple immediately before each
+core or plugin npm publish or dist-tag mutation. A missing, moved, annotated, or
+wrong-SHA tag, parent mismatch, or disallowed parent state fails closed. Other
+privileged writers require their dependent enforcement changes before the
+protected-tag publication route is globally complete.
 
 ## Extended-stable exception
 

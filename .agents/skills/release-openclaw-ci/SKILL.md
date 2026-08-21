@@ -91,11 +91,13 @@ attempt, and phase before watching or recovering Full Release Validation. Keep
 Code SHA and Release SHA separately in the lifecycle ledger. Record the
 immutable Release Publish parent receipt separately from tag provenance.
 
-Immediately before every privileged publication mutation, re-read the exact
-protected lightweight tag and the immutable parent receipt. Reject a missing,
-moved, annotated, or wrong-SHA tag; a repository, workflow, run id, attempt,
-tooling identity, or parent-state mismatch; and any same-name branch. Never
-refresh either identity from current `main`.
+For the core and plugin npm mutations enforced by this foundation, re-read the
+exact protected lightweight tag and revalidate the exact parent run tuple
+immediately before each publish or dist-tag mutation. Reject a missing, moved,
+annotated, or wrong-SHA tag; a repository, workflow, run id, attempt, tooling
+identity, or parent-state mismatch; and any same-name branch. Never refresh
+either identity from current `main`. Treat other privileged writers as blocked
+until their dependent enforcement changes land.
 
 - Conceptual phases map to current inputs as follows:
   - `beta-publish`: `release_profile=beta`, `run_release_soak=false`
