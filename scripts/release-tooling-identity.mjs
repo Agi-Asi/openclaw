@@ -9,6 +9,11 @@ const RELEASE_PUBLISH_REF_PATTERN = /^release-publish\/([a-f0-9]{12})-([1-9][0-9
 const RELEASE_CI_REF_PATTERN = /^release-ci\/([a-f0-9]{12})-([1-9][0-9]*)$/u;
 const DIRECT_WORKFLOW_REF_PATTERN =
   /^(?:main|release\/[0-9]{4}\.(?:[1-9]|1[0-2])\.[1-9][0-9]*|extended-stable\/[0-9]{4}\.(?:[1-9]|1[0-2])\.33|tideclaw\/alpha\/[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}Z)$/u;
+const RELEASE_PUBLISH_PARENT_STATE_POLICIES = new Set([
+  "active",
+  "active-or-success",
+  "manual-recovery",
+]);
 const GH_COMMAND_TIMEOUT_MS = 60_000;
 
 function fail(message) {
@@ -64,8 +69,8 @@ export function resolveReleaseToolingIdentity({
   workflowSha,
 }) {
   const contract = requiredString(workflowContract, "release tooling contract");
-  if (!/^[1-9][0-9]*$/u.test(contract)) {
-    fail("release tooling contract must be a positive integer.");
+  if (contract !== "1" && contract !== "2") {
+    fail(`release tooling contract ${contract} is not supported.`);
   }
   const ref = requiredString(workflowRef, "workflow ref");
   const fullRef = requiredString(workflowFullRef, "workflow full ref");
@@ -203,6 +208,7 @@ export function validateReleaseToolingIdentity({
 
 export function validateReleasePublishParentRun({
   identity,
+  releasePublishParentStatePolicy,
   releasePublishRunAttempt,
   releasePublishRunId,
   repository,
@@ -212,6 +218,13 @@ export function validateReleasePublishParentRun({
   const runAttempt = requiredString(releasePublishRunAttempt, "release publish run attempt");
   if (!/^[1-9][0-9]*$/u.test(runId) || !/^[1-9][0-9]*$/u.test(runAttempt)) {
     fail("release publish run id and attempt must be positive integers.");
+  }
+  const parentStatePolicy = requiredString(
+    releasePublishParentStatePolicy,
+    "release publish parent state policy",
+  );
+  if (!RELEASE_PUBLISH_PARENT_STATE_POLICIES.has(parentStatePolicy)) {
+    fail(`release publish parent state policy ${parentStatePolicy} is not supported.`);
   }
   const normalizedRepository = requireRepository(repository);
   const [workflowPath, workflowFullRef] = String(run?.path ?? "").split("@", 2);
@@ -241,6 +254,18 @@ export function validateReleasePublishParentRun({
   if (workflowFullRef && workflowFullRef !== identity.fullRef) {
     fail("release publish parent run workflow full ref does not match trusted tooling.");
   }
+  const active = run?.status === "in_progress" && !run?.conclusion;
+  const completedSuccess = run?.status === "completed" && run?.conclusion === "success";
+  const completedFailure = run?.status === "completed" && run?.conclusion === "failure";
+  if (
+    !active &&
+    !(parentStatePolicy === "active-or-success" && completedSuccess) &&
+    !(parentStatePolicy === "manual-recovery" && (completedSuccess || completedFailure))
+  ) {
+    fail(
+      `release publish parent run state is not allowed by ${parentStatePolicy}: status=${run?.status ?? "<missing>"} conclusion=${run?.conclusion ?? "<missing>"}.`,
+    );
+  }
 }
 
 function parseJson(raw, label) {
@@ -263,6 +288,7 @@ function runReleaseToolingGh(args) {
 
 export function verifyReleaseToolingIdentity({
   allowPrevalidatedRef = false,
+  releasePublishParentStatePolicy,
   releasePublishRunAttempt,
   releasePublishRunId,
   repository,
@@ -303,6 +329,7 @@ export function verifyReleaseToolingIdentity({
     });
     validateParentRunIfRequested({
       identity: validated,
+      releasePublishParentStatePolicy,
       releasePublishRunAttempt,
       releasePublishRunId,
       repository: normalizedRepository,
@@ -335,6 +362,7 @@ export function verifyReleaseToolingIdentity({
     });
     validateParentRunIfRequested({
       identity: validated,
+      releasePublishParentStatePolicy,
       releasePublishRunAttempt,
       releasePublishRunId,
       repository: normalizedRepository,
@@ -368,6 +396,7 @@ export function verifyReleaseToolingIdentity({
   });
   validateParentRunIfRequested({
     identity: validated,
+    releasePublishParentStatePolicy,
     releasePublishRunAttempt,
     releasePublishRunId,
     repository: normalizedRepository,
@@ -378,16 +407,17 @@ export function verifyReleaseToolingIdentity({
 
 function validateParentRunIfRequested({
   identity,
+  releasePublishParentStatePolicy,
   releasePublishRunAttempt,
   releasePublishRunId,
   repository,
   runGh,
 }) {
-  if (!releasePublishRunId && !releasePublishRunAttempt) {
+  if (!releasePublishRunId && !releasePublishRunAttempt && !releasePublishParentStatePolicy) {
     return;
   }
-  if (!releasePublishRunId || !releasePublishRunAttempt) {
-    fail("release publish run id and attempt must be provided together.");
+  if (!releasePublishRunId || !releasePublishRunAttempt || !releasePublishParentStatePolicy) {
+    fail("release publish run id, attempt, and parent state policy must be provided together.");
   }
   let run;
   try {
@@ -400,6 +430,7 @@ function validateParentRunIfRequested({
   }
   validateReleasePublishParentRun({
     identity,
+    releasePublishParentStatePolicy,
     releasePublishRunAttempt,
     releasePublishRunId,
     repository,
@@ -413,6 +444,7 @@ function parseArgs(argv) {
     command: "",
     releasePublishRunAttempt: "",
     releasePublishRunId: "",
+    releasePublishParentStatePolicy: "",
     repository: "",
     requestedIdentityJson: "",
     workflowContract: "",
@@ -435,6 +467,8 @@ function parseArgs(argv) {
       options.releasePublishRunId = value;
     } else if (arg === "--release-publish-run-attempt") {
       options.releasePublishRunAttempt = value;
+    } else if (arg === "--release-publish-parent-state-policy") {
+      options.releasePublishParentStatePolicy = value;
     } else if (arg === "--repository") {
       options.repository = value;
     } else if (arg === "--requested-identity-json") {
@@ -462,6 +496,7 @@ function main(argv = process.argv.slice(2)) {
     const protectedMatch = RELEASE_PUBLISH_REF_PATTERN.exec(identity.ref);
     verifyReleaseToolingIdentity({
       allowPrevalidatedRef: identity.ref !== "main" && !protectedMatch,
+      releasePublishParentStatePolicy: options.releasePublishParentStatePolicy,
       releasePublishRunAttempt: options.releasePublishRunAttempt,
       releasePublishRunId: options.releasePublishRunId,
       repository: options.repository,

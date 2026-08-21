@@ -1117,6 +1117,7 @@ jobs:
           PACKAGE_NAME: ${{ matrix.plugin.packageName }}
           PACKAGE_VERSION: ${{ matrix.plugin.version }}
           PUBLISH_TAG: ${{ matrix.plugin.publishTag }}
+          RELEASE_PUBLISH_PARENT_STATE_POLICY: ${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}
           RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
           TARGET_SHA: ${{ needs.preview_plugins_npm.outputs.ref_revision }}
@@ -1183,7 +1184,8 @@ jobs:
               --workflow-full-ref "$WORKFLOW_REF" \
               --workflow-sha "$WORKFLOW_SHA" \
               --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID" \
-              --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"
+              --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT" \
+              --release-publish-parent-state-policy "$RELEASE_PUBLISH_PARENT_STATE_POLICY"
           fi
           artifact_id="$(jq -er '.id' "$artifact_metadata")"
           artifact_digest="$(jq -er '.digest' "$artifact_metadata")"
@@ -1317,6 +1319,7 @@ jobs:
           OPENCLAW_PLUGIN_NPM_PUBLISH_TAG: ${{ inputs.npm_dist_tag == 'extended-stable' && inputs.npm_dist_tag || '' }}
           OPENCLAW_RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
           OPENCLAW_RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
+          OPENCLAW_RELEASE_PUBLISH_PARENT_STATE_POLICY: ${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}
           OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF: "true"
           OPENCLAW_RELEASE_TOOLING_FULL_REF: ${{ github.ref }}
           OPENCLAW_RELEASE_TOOLING_IDENTITY_REQUIRED: "true"
@@ -1388,6 +1391,7 @@ jobs:
           PACKAGE_NAME: ${{ steps.publication_evidence.outputs.package_name }}
           PACKAGE_VERSION: ${{ steps.publication_evidence.outputs.package_version }}
           PUBLISH_TAG: ${{ steps.publication_evidence.outputs.publish_tag }}
+          RELEASE_PUBLISH_PARENT_STATE_POLICY: ${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
           RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           TARBALL_PATH: ${{ steps.publication_evidence.outputs.tarball_path }}
@@ -1425,7 +1429,8 @@ jobs:
             --workflow-full-ref "$WORKFLOW_FULL_REF" \
             --workflow-sha "$WORKFLOW_SHA" \
             --release-publish-run-id "$RELEASE_PUBLISH_RUN_ID" \
-            --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"
+            --release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT" \
+            --release-publish-parent-state-policy "$RELEASE_PUBLISH_PARENT_STATE_POLICY"
           HOME="$publish_home" \
             NPM_CONFIG_GLOBALCONFIG=/dev/null \
             NPM_CONFIG_IGNORE_SCRIPTS=true \

@@ -1221,7 +1221,7 @@ export function fullReleaseTrustedWorkflowFields({
   if (contract === "1") {
     return {};
   }
-  if (contract !== "2" && contract !== "3") {
+  if (contract !== "2") {
     throw new Error(
       "Full Release Validation does not declare a supported release tooling contract",
     );

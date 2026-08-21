@@ -1635,6 +1635,9 @@ describe("package acceptance workflow", () => {
     expect(evidenceStep.env?.RELEASE_PUBLISH_RUN_ATTEMPT).toBe(
       "${{ inputs.release_publish_run_attempt }}",
     );
+    expect(evidenceStep.env?.RELEASE_PUBLISH_PARENT_STATE_POLICY).toBe(
+      "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}",
+    );
     expect(evidenceStep.run).toContain("node scripts/release-tooling-identity.mjs verify");
     expect(evidenceStep.run).toContain('--workflow-ref "$WORKFLOW_HEAD_BRANCH"');
     expect(evidenceStep.run).toContain('--workflow-full-ref "$WORKFLOW_REF"');
@@ -1642,6 +1645,9 @@ describe("package acceptance workflow", () => {
     expect(evidenceStep.run).toContain('--release-publish-run-id "$RELEASE_PUBLISH_RUN_ID"');
     expect(evidenceStep.run).toContain(
       '--release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"',
+    );
+    expect(evidenceStep.run).toContain(
+      '--release-publish-parent-state-policy "$RELEASE_PUBLISH_PARENT_STATE_POLICY"',
     );
     expect(evidenceStep.run).not.toContain("--allow-prevalidated-ref");
   });
@@ -1653,6 +1659,8 @@ describe("package acceptance workflow", () => {
     );
     expect(corePublish.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_PARENT_STATE_POLICY:
+        "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}",
       RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
       WORKFLOW_FULL_REF: "${{ github.ref }}",
@@ -1665,6 +1673,9 @@ describe("package acceptance workflow", () => {
     expect(corePublish.run).toContain("--allow-prevalidated-ref");
     expect(corePublish.run).toContain(
       '--release-publish-run-attempt "$RELEASE_PUBLISH_RUN_ATTEMPT"',
+    );
+    expect(corePublish.run).toContain(
+      '--release-publish-parent-state-policy "$RELEASE_PUBLISH_PARENT_STATE_POLICY"',
     );
     expect(corePublish.run).toMatch(
       /verify_release_tooling_identity\s+bash scripts\/openclaw-npm-publish\.sh --publish "\.\/\$\{tarball_path\}"/u,
@@ -1679,6 +1690,8 @@ describe("package acceptance workflow", () => {
       GH_TOKEN: "${{ github.token }}",
       OPENCLAW_RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       OPENCLAW_RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
+      OPENCLAW_RELEASE_PUBLISH_PARENT_STATE_POLICY:
+        "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}",
       OPENCLAW_RELEASE_TOOLING_ALLOW_PREVALIDATED_REF: "true",
       OPENCLAW_RELEASE_TOOLING_FULL_REF: "${{ github.ref }}",
       OPENCLAW_RELEASE_TOOLING_IDENTITY_REQUIRED: "true",
@@ -1690,6 +1703,8 @@ describe("package acceptance workflow", () => {
     const bootstrapPublish = workflowStep(pluginPublishJob, "Publish approved bootstrap tarball");
     expect(bootstrapPublish.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_PARENT_STATE_POLICY:
+        "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}",
       RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
       WORKFLOW_FULL_REF: "${{ github.ref }}",
@@ -1702,8 +1717,14 @@ describe("package acceptance workflow", () => {
     expect(identityIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(identityIndex);
     expect(bootstrapPublish.run?.slice(identityIndex, publishIndex)).not.toContain("npm view");
+    expect(bootstrapPublish.run).toContain(
+      '--release-publish-parent-state-policy "$RELEASE_PUBLISH_PARENT_STATE_POLICY"',
+    );
 
     const pluginWrapper = readFileSync("scripts/plugin-npm-publish.sh", "utf8");
+    expect(pluginWrapper).toContain(
+      '--release-publish-parent-state-policy "${OPENCLAW_RELEASE_PUBLISH_PARENT_STATE_POLICY:-}"',
+    );
     const distTagIndex = pluginWrapper.indexOf(
       'npm dist-tag add "${package_name}@${package_version}"',
     );
@@ -1803,6 +1824,35 @@ describe("package acceptance workflow", () => {
       "plugin-clawhub-release.yml: detached; approval and publish not awaited",
       "plugin-clawhub-new.yml: detached; approvals and bootstrap not awaited",
     ]);
+  });
+
+  it("binds normal ClawHub dispatch, approval, and waiting to tooling SHA", () => {
+    const publishRun =
+      workflowStep(workflowJob(RELEASE_PUBLISH_WORKFLOW, "publish"), "Dispatch publish workflows")
+        .run ?? "";
+    const waitForRun = shellFunctionSource(publishRun, "wait_for_run");
+    const appendClawHubArgs = shellFunctionSource(publishRun, "append_clawhub_dispatch_args");
+    const normalDispatch = publishRun.match(
+      /plugin_clawhub_run_id="\$\(dispatch_workflow_at_ref[\s\S]*?\)"\n/u,
+    )?.[0];
+
+    expect(normalDispatch).toContain('"${PARENT_WORKFLOW_SHA}"');
+    expect(normalDispatch).not.toContain('"${TARGET_SHA}"');
+    expect(publishRun).toContain(
+      'wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${PARENT_WORKFLOW_SHA}"',
+    );
+    expect(publishRun).not.toContain(
+      'wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${TARGET_SHA}"',
+    );
+    expect(waitForRun).toContain(
+      'approve_pending_deployments "${workflow}" "${run_id}" "${expected_sha}"',
+    );
+    expect(appendClawHubArgs).toContain(
+      "'.[$target].inputs | to_entries[] | [.key, .value] | @tsv'",
+    );
+    expect(readFileSync("scripts/lib/openclaw-release-clawhub-plan.ts", "utf8")).toMatch(
+      /normal: createDispatchTarget\(\{[\s\S]*?ref: bootstrapWorkflowRef,[\s\S]*?targetRef: releaseSha,/u,
+    );
   });
 
   it("compares dependency evidence zip contents independently of archive timestamps", () => {

@@ -1373,7 +1373,7 @@ describe("release candidate checklist", () => {
     ).toThrow("refusing to guess from recent workflow_dispatch runs");
   });
 
-  it("keeps contract 1 callers compatible and sends identity for contracts 2 and 3", () => {
+  it("keeps contract 1 callers compatible and sends identity for contract 2", () => {
     const workflowSha = "a".repeat(40);
     const source = (contract: string, declareIdentity: boolean) => `env:
   RELEASE_ISOLATION_TOOLING_CONTRACT: "${contract}"
@@ -1390,18 +1390,16 @@ ${declareIdentity ? "      trusted_workflow_json: {}\n" : ""}`;
         workflowSource: source("1", false),
       }),
     ).toEqual({});
-    for (const contract of ["2", "3"]) {
-      const fields = fullReleaseTrustedWorkflowFields({
-        workflowRef: "main",
-        workflowSha,
-        workflowSource: source(contract, true),
-      });
-      expect(JSON.parse(fields.trusted_workflow_json ?? "{}")).toEqual({
-        ref: "main",
-        fullRef: "refs/heads/main",
-        sha: workflowSha,
-      });
-    }
+    const fields = fullReleaseTrustedWorkflowFields({
+      workflowRef: "main",
+      workflowSha,
+      workflowSource: source("2", true),
+    });
+    expect(JSON.parse(fields.trusted_workflow_json ?? "{}")).toEqual({
+      ref: "main",
+      fullRef: "refs/heads/main",
+      sha: workflowSha,
+    });
     expect(() =>
       fullReleaseTrustedWorkflowFields({
         workflowRef: "main",
@@ -1409,13 +1407,15 @@ ${declareIdentity ? "      trusted_workflow_json: {}\n" : ""}`;
         workflowSource: source("2", false),
       }),
     ).toThrow("contract 2 requires trusted_workflow_json");
-    expect(() =>
-      fullReleaseTrustedWorkflowFields({
-        workflowRef: "main",
-        workflowSha,
-        workflowSource: source("4", true),
-      }),
-    ).toThrow("supported release tooling contract");
+    for (const contract of ["3", "4"]) {
+      expect(() =>
+        fullReleaseTrustedWorkflowFields({
+          workflowRef: "main",
+          workflowSha,
+          workflowSource: source(contract, true),
+        }),
+      ).toThrow("supported release tooling contract");
+    }
   });
 
   it("threads the selected tooling identity into direct full validation dispatch", () => {

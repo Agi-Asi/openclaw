@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   resolveReleaseToolingIdentity,
+  validateReleasePublishParentRun,
   validateReleaseToolingIdentity,
   verifyReleaseToolingIdentity,
 } from "../../scripts/release-tooling-identity.mjs";
@@ -41,8 +42,23 @@ describe("release tooling identity", () => {
     ).toEqual({ fullRef, ref, sha: SHA });
   });
 
+  it("rejects unsupported contract 3 even with explicit identity", () => {
+    expect(() =>
+      resolveReleaseToolingIdentity({
+        requestedIdentityJson: JSON.stringify({
+          ref: "main",
+          fullRef: "refs/heads/main",
+          sha: SHA,
+        }),
+        workflowContract: "3",
+        workflowFullRef: "refs/heads/main",
+        workflowRef: "main",
+        workflowSha: SHA,
+      }),
+    ).toThrow("release tooling contract 3 is not supported");
+  });
+
   it.each([
-    ["future contract", { workflowContract: "3", workflowFullRef: "refs/heads/main" }],
     [
       "release-ci ref",
       {
@@ -97,7 +113,7 @@ describe("release tooling identity", () => {
           fullRef: "refs/heads/main",
           sha: OTHER_SHA,
         }),
-        workflowContract: "3",
+        workflowContract: "2",
         workflowFullRef: "refs/heads/main",
         workflowRef: "main",
         workflowSha: SHA,
@@ -264,12 +280,15 @@ describe("release tooling identity", () => {
         event: "workflow_dispatch",
         head_branch: REF,
         head_sha: SHA,
+        status: "in_progress",
+        conclusion: null,
       });
     });
 
     expect(
       verifyReleaseToolingIdentity({
         ...protectedIdentity(),
+        releasePublishParentStatePolicy: "active",
         releasePublishRunAttempt: PARENT_RUN_ATTEMPT,
         releasePublishRunId: PARENT_RUN_ID,
         runGh,
@@ -282,5 +301,61 @@ describe("release tooling identity", () => {
       "--method",
       "GET",
     ]);
+  });
+
+  it.each([
+    ["active", "in_progress", null, true],
+    ["active", "completed", "success", false],
+    ["active-or-success", "in_progress", null, true],
+    ["active-or-success", "completed", "success", true],
+    ["active-or-success", "completed", "failure", false],
+    ["manual-recovery", "in_progress", null, true],
+    ["manual-recovery", "completed", "success", true],
+    ["manual-recovery", "completed", "failure", true],
+    ["manual-recovery", "completed", "cancelled", false],
+  ] as const)(
+    "enforces parent state policy %s for %s/%s",
+    (releasePublishParentStatePolicy, status, conclusion, accepted) => {
+      const validate = () =>
+        validateReleasePublishParentRun({
+          identity: { ref: REF, fullRef: FULL_REF, sha: SHA },
+          releasePublishParentStatePolicy,
+          releasePublishRunAttempt: PARENT_RUN_ATTEMPT,
+          releasePublishRunId: PARENT_RUN_ID,
+          repository: "openclaw/openclaw",
+          run: {
+            id: Number(PARENT_RUN_ID),
+            run_attempt: Number(PARENT_RUN_ATTEMPT),
+            repository: { full_name: "openclaw/openclaw" },
+            path: `.github/workflows/openclaw-release-publish.yml@${FULL_REF}`,
+            event: "workflow_dispatch",
+            head_branch: REF,
+            head_sha: SHA,
+            status,
+            conclusion,
+          },
+        });
+
+      if (accepted) {
+        expect(validate).not.toThrow();
+      } else {
+        expect(validate).toThrow(`state is not allowed by ${releasePublishParentStatePolicy}`);
+      }
+    },
+  );
+
+  it("requires the parent state policy with the exact parent run tuple", () => {
+    expect(() =>
+      verifyReleaseToolingIdentity({
+        ...protectedIdentity(),
+        releasePublishRunAttempt: PARENT_RUN_ATTEMPT,
+        releasePublishRunId: PARENT_RUN_ID,
+        runGh: () =>
+          JSON.stringify({
+            ref: FULL_REF,
+            object: { sha: SHA, type: "commit" },
+          }),
+      }),
+    ).toThrow("run id, attempt, and parent state policy must be provided together");
   });
 });
