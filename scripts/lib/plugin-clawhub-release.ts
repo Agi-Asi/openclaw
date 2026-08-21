@@ -54,6 +54,7 @@ type ClawHubTrustedPublisherDetail = {
 };
 
 type ClawHubTrustedPublisherConfig = {
+  provider?: unknown;
   repository?: unknown;
   workflowFilename?: unknown;
   environment?: unknown;
@@ -109,6 +110,7 @@ function getRegistryBaseUrl(explicit?: string) {
 type ClawHubRequestOptions = {
   fetchImpl?: typeof fetch;
   requestTimeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 type ClawHubRetryOptions = ClawHubRequestOptions & {
@@ -138,6 +140,9 @@ async function fetchClawHubRequest(
     }, timeoutMs);
     timeout.unref?.();
   });
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
 
   try {
     const response = await Promise.race([
@@ -146,14 +151,14 @@ async function fetchClawHubRequest(
         headers: {
           Accept: "application/json",
         },
-        signal: controller.signal,
+        signal,
       }),
       timeoutPromise,
     ]);
     return {
       clearTimeout: () => clearTimeout(timeout),
       response,
-      signal: controller.signal,
+      signal,
       timeoutPromise,
     };
   } catch (error) {
@@ -175,6 +180,7 @@ async function fetchClawHubRead(
       fetchClawHubRequest(url, {
         fetchImpl: options.fetchImpl,
         requestTimeoutMs: options.requestTimeoutMs,
+        signal: options.signal,
       }),
     {
       disposeRetry: async (request) => {
@@ -182,6 +188,7 @@ async function fetchClawHubRead(
         request.clearTimeout();
       },
       retryRateLimit: true,
+      signal: options.signal,
       sleep: options.sleep,
     },
   );
@@ -399,6 +406,7 @@ async function isPluginVersionPublishedOnClawHub(
   const request = await fetchClawHubRead(url, {
     fetchImpl: options.fetchImpl,
     requestTimeoutMs: options.requestTimeoutMs,
+    signal: options.signal,
     sleep: options.sleep,
   });
   const { response } = request;
@@ -432,6 +440,7 @@ async function doesClawHubPackageExist(
   const request = await fetchClawHubRead(url, {
     fetchImpl: options.fetchImpl,
     requestTimeoutMs: options.requestTimeoutMs,
+    signal: options.signal,
     sleep: options.sleep,
   });
   const { response } = request;
@@ -515,6 +524,7 @@ function isOpenClawPluginTrustedPublisher(value: unknown): boolean {
   }
   const trustedPublisher = value as ClawHubTrustedPublisherConfig;
   return (
+    trustedPublisher.provider === "github-actions" &&
     trustedPublisher.repository === OPENCLAW_PLUGIN_CLAWHUB_REPOSITORY &&
     trustedPublisher.workflowFilename === OPENCLAW_PLUGIN_CLAWHUB_WORKFLOW_FILENAME &&
     trustedPublisher.environment == null

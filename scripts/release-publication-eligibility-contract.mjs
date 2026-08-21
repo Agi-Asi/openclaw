@@ -3,18 +3,21 @@ import { parseDocument } from "yaml";
 import { isRecord } from "./lib/record-shared.mjs";
 import { validateReleasePlanLock } from "./release-plan-contract.mjs";
 
-export const RELEASE_PUBLICATION_ELIGIBILITY_SCHEMA = "openclaw.release-publication-eligibility.v1";
+const RELEASE_PUBLICATION_ELIGIBILITY_SCHEMA = "openclaw.release-publication-eligibility.v1";
 export const RELEASE_PUBLICATION_ELIGIBILITY_CANONICALIZATION =
   "ascii-sorted-compact-json-trailing-newline-v1";
 export const RELEASE_PUBLICATION_ELIGIBILITY_MAX_AGE_MS = 5 * 60_000;
-export const RELEASE_PUBLICATION_ELIGIBILITY_MAX_BYTES = 512 * 1024;
+const RELEASE_PUBLICATION_ELIGIBILITY_MAX_BYTES = 512 * 1024;
+export const RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE = "validation-start-only";
 export const RELEASE_PUBLICATION_NPM_REGISTRY = "https://registry.npmjs.org";
 export const RELEASE_PUBLICATION_CLAWHUB_REGISTRY = "https://clawhub.ai";
 
 const ASCII_PATTERN = /^[\x20-\x7e]+$/u;
+const DECIMAL_ID_PATTERN = /^[1-9][0-9]*$/u;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
-const PLAN_ACTIONS = new Set(["publish", "skip-published"]);
+const SHA_PATTERN = /^[a-f0-9]{40}$/u;
+const PLAN_STATUSES = new Set(["vacant", "already-published"]);
 const compareAscii = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 function fail(message) {
@@ -46,6 +49,27 @@ function digest(value, label) {
 function boolean(value, label) {
   if (typeof value !== "boolean") {
     fail(`${label} must be boolean`);
+  }
+  return value;
+}
+
+function positiveInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    fail(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function decimalId(value, label) {
+  if (typeof value !== "string" || !DECIMAL_ID_PATTERN.test(value)) {
+    fail(`${label} must be a canonical positive decimal string`);
+  }
+  return value;
+}
+
+function sha(value, label) {
+  if (typeof value !== "string" || !SHA_PATTERN.test(value)) {
+    fail(`${label} must be a lowercase 40-character commit SHA`);
   }
   return value;
 }
@@ -104,17 +128,30 @@ function validateSortedUniquePackages(value, label, validateEntry) {
 }
 
 function validateLatestDependencies(value) {
-  return validateSortedUniquePackages(
-    value,
-    "publication eligibility observations.latest_dependencies",
-    (entry, label) => {
-      exactKeys(entry, ["name", "version"], label);
-      return {
-        name: asciiString(entry.name, `${label}.name`),
-        version: asciiString(entry.version, `${label}.version`),
-      };
-    },
-  );
+  const label = "publication eligibility observations.latest_dependencies";
+  if (!Array.isArray(value)) {
+    fail(`${label} must be an array`);
+  }
+  const dependencies = value.map((entry, index) => {
+    const entryLabel = `${label}[${index}]`;
+    if (!isRecord(entry)) {
+      fail(`${entryLabel} must be an object`);
+    }
+    exactKeys(entry, ["name", "required_version", "observed_version"], entryLabel);
+    return {
+      name: asciiString(entry.name, `${entryLabel}.name`),
+      required_version: asciiString(entry.required_version, `${entryLabel}.required_version`),
+      observed_version: asciiString(entry.observed_version, `${entryLabel}.observed_version`),
+    };
+  });
+  const names = dependencies.map((entry) => entry.name);
+  if (
+    new Set(names).size !== names.length ||
+    names.some((entry, index) => index > 0 && compareAscii(names[index - 1], entry) >= 0)
+  ) {
+    fail(`${label} must contain unique names in ascending ASCII order`);
+  }
+  return dependencies;
 }
 
 function validateNpmObservations(value) {
@@ -164,15 +201,15 @@ function validateClawHubObservations(value) {
 
 function validatePlan(value, label) {
   return validateSortedUniquePackages(value, label, (entry, entryLabel) => {
-    exactKeys(entry, ["name", "version", "action"], entryLabel);
-    const action = asciiString(entry.action, `${entryLabel}.action`);
-    if (!PLAN_ACTIONS.has(action)) {
-      fail(`${entryLabel}.action must be publish or skip-published`);
+    exactKeys(entry, ["name", "version", "status"], entryLabel);
+    const status = asciiString(entry.status, `${entryLabel}.status`);
+    if (!PLAN_STATUSES.has(status)) {
+      fail(`${entryLabel}.status must be vacant or already-published`);
     }
     return {
       name: asciiString(entry.name, `${entryLabel}.name`),
       version: asciiString(entry.version, `${entryLabel}.version`),
-      action,
+      status,
     };
   });
 }
@@ -187,6 +224,54 @@ function assertSamePackages(actual, expected, label) {
   }
 }
 
+function validateProvenance(value) {
+  if (!isRecord(value)) {
+    fail("publication eligibility provenance must be an object");
+  }
+  exactKeys(
+    value,
+    [
+      "repository",
+      "workflow_path",
+      "workflow_ref",
+      "workflow_sha",
+      "run_id",
+      "run_attempt",
+      "job",
+      "artifact_id",
+      "artifact_digest",
+    ],
+    "publication eligibility provenance",
+  );
+  const workflowRef = asciiString(
+    value.workflow_ref,
+    "publication eligibility provenance.workflow_ref",
+  );
+  if (!/^refs\/(?:heads|tags)\/[A-Za-z0-9._/-]+$/u.test(workflowRef)) {
+    fail("publication eligibility provenance.workflow_ref must be a qualified branch or tag ref");
+  }
+  return {
+    repository: asciiString(value.repository, "publication eligibility provenance.repository"),
+    workflow_path: asciiString(
+      value.workflow_path,
+      "publication eligibility provenance.workflow_path",
+    ),
+    workflow_ref: workflowRef,
+    workflow_sha: sha(value.workflow_sha, "publication eligibility provenance.workflow_sha"),
+    run_id: decimalId(value.run_id, "publication eligibility provenance.run_id"),
+    run_attempt: positiveInteger(
+      value.run_attempt,
+      "publication eligibility provenance.run_attempt",
+    ),
+    job: asciiString(value.job, "publication eligibility provenance.job"),
+    artifact_id: decimalId(value.artifact_id, "publication eligibility provenance.artifact_id"),
+    artifact_digest: digest(
+      value.artifact_digest,
+      "publication eligibility provenance.artifact_digest",
+    ),
+  };
+}
+
 function validateReceiptBody(value) {
   if (!isRecord(value)) {
     fail("publication eligibility receipt body must be an object");
@@ -195,11 +280,14 @@ function validateReceiptBody(value) {
     value,
     [
       "schema",
+      "evidence_scope",
+      "publication_authorized",
       "release_plan_digest",
       "started_at",
       "completed_at",
       "expires_at",
       "registries",
+      "provenance",
       "observations",
       "plans",
     ],
@@ -207,6 +295,14 @@ function validateReceiptBody(value) {
   );
   if (value.schema !== RELEASE_PUBLICATION_ELIGIBILITY_SCHEMA) {
     fail(`publication eligibility schema must be ${RELEASE_PUBLICATION_ELIGIBILITY_SCHEMA}`);
+  }
+  if (value.evidence_scope !== RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE) {
+    fail(
+      `publication eligibility evidence_scope must be ${RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE}`,
+    );
+  }
+  if (value.publication_authorized !== false) {
+    fail("publication eligibility receipts never authorize publication");
   }
   const startedAt = timestamp(value.started_at, "publication eligibility started_at");
   const completedAt = timestamp(value.completed_at, "publication eligibility completed_at");
@@ -269,19 +365,21 @@ function validateReceiptBody(value) {
     "ClawHub publication plan",
   );
   for (const [index, plan] of plans.npm.entries()) {
-    const expectedAction = observations.npm[index].published ? "skip-published" : "publish";
-    if (plan.action !== expectedAction) {
-      fail(`npm publication action drifted for ${plan.name}@${plan.version}`);
+    const expectedStatus = observations.npm[index].published ? "already-published" : "vacant";
+    if (plan.status !== expectedStatus) {
+      fail(`npm publication status drifted for ${plan.name}@${plan.version}`);
     }
   }
   for (const [index, plan] of plans.clawhub.entries()) {
-    const expectedAction = observations.clawhub[index].published ? "skip-published" : "publish";
-    if (plan.action !== expectedAction) {
-      fail(`ClawHub publication action drifted for ${plan.name}@${plan.version}`);
+    const expectedStatus = observations.clawhub[index].published ? "already-published" : "vacant";
+    if (plan.status !== expectedStatus) {
+      fail(`ClawHub publication status drifted for ${plan.name}@${plan.version}`);
     }
   }
   return {
     schema: RELEASE_PUBLICATION_ELIGIBILITY_SCHEMA,
+    evidence_scope: RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE,
+    publication_authorized: false,
     release_plan_digest: digest(
       value.release_plan_digest,
       "publication eligibility release_plan_digest",
@@ -293,6 +391,7 @@ function validateReceiptBody(value) {
       clawhub: RELEASE_PUBLICATION_CLAWHUB_REGISTRY,
       npm: RELEASE_PUBLICATION_NPM_REGISTRY,
     },
+    provenance: validateProvenance(value.provenance),
     observations,
     plans,
   };
@@ -307,7 +406,7 @@ export function createReleasePublicationEligibilityReceipt(value) {
   return { ...body, digest: receiptBodyDigest(body) };
 }
 
-export function validateReleasePublicationEligibilityReceipt(value) {
+function validateReleasePublicationEligibilityReceipt(value) {
   if (!isRecord(value)) {
     fail("publication eligibility receipt must be an object");
   }
@@ -315,11 +414,14 @@ export function validateReleasePublicationEligibilityReceipt(value) {
     value,
     [
       "schema",
+      "evidence_scope",
+      "publication_authorized",
       "release_plan_digest",
       "started_at",
       "completed_at",
       "expires_at",
       "registries",
+      "provenance",
       "observations",
       "plans",
       "digest",
@@ -385,12 +487,28 @@ export function parseReleasePublicationEligibilityReceiptJson(text) {
 export function verifyReleasePublicationEligibilityReceipt(
   value,
   releasePlanLock,
+  expectedProvenance,
   nowMs = Date.now(),
 ) {
+  if (!Number.isFinite(nowMs) || !Number.isInteger(nowMs)) {
+    fail("publication eligibility verification time must be a finite integer");
+  }
   const receipt = validateReleasePublicationEligibilityReceipt(value);
   const lock = validateReleasePlanLock(releasePlanLock);
   if (receipt.release_plan_digest !== lock.digest) {
     fail("publication eligibility receipt is bound to a different ReleasePlan digest");
+  }
+  const provenance = validateProvenance(expectedProvenance);
+  if (canonicalAsciiJson(receipt.provenance) !== canonicalAsciiJson(provenance)) {
+    fail("publication eligibility receipt provenance does not match the expected GitHub run");
+  }
+  if (
+    provenance.repository !== lock.plan.tooling.repository ||
+    provenance.workflow_path !== lock.plan.tooling.workflow_path ||
+    provenance.workflow_ref !== lock.plan.tooling.ref ||
+    provenance.workflow_sha !== lock.plan.tooling.sha
+  ) {
+    fail("publication eligibility provenance does not match ReleasePlan tooling");
   }
   const expectedNpm = lock.plan.inventory.packages
     .filter((entry) => entry.targets.includes("npm"))
