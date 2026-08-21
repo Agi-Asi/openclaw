@@ -5,7 +5,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ModelsProbeResult } from "../../api/types.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
-import type { DefaultModelSelection, ModelProviderLogoutTarget } from "./data.ts";
+import type { DefaultModelSelection } from "./data.ts";
 import { EMPTY_MODEL_PROVIDERS_DATA, type ModelProvidersData } from "./load.ts";
 import type { ModelProvidersRouteData } from "./route.ts";
 import "./model-providers-page.ts";
@@ -22,12 +22,13 @@ type ModelProvidersPageTestElement = HTMLElement & {
   defaultsDraft: DefaultModelSelection | null;
   keyDraft: string;
   keyEditorProvider: string | null;
-  logout: (cardId: string, targets: ModelProviderLogoutTarget[]) => Promise<void>;
-  messages: Record<string, { kind: "success" | "error"; text: string; warning?: string }>;
-  pendingLogoutProvider: string | null;
+  messages: Record<
+    string,
+    { kind: "success" | "warning" | "error"; text: string; warning?: string }
+  >;
   probe: (cardId: string, providers: string[]) => Promise<void>;
   probeResults: Record<string, ModelsProbeResult>;
-  refresh: (opts: { force: boolean }) => Promise<void>;
+  refresh: (opts: { force: boolean; requireApplied?: boolean }) => Promise<void>;
   routeData: ModelProvidersRouteData | undefined;
   saveDefaultModels: () => Promise<void>;
   saveKey: (provider: string, configKey: string) => Promise<void>;
@@ -667,78 +668,6 @@ describe("ModelProvidersPage agent scope", () => {
     expect(page.addProviderId).toBe("anthropic");
     expect(page.addProviderKey).toBe("shared-provider-key");
     expect(page.messages.add).toBeUndefined();
-  });
-
-  it("stops queued agent-scoped logouts after the selected agent changes", async () => {
-    const { agentSelection, context, notifySelection, request } = createHarness("main");
-    const page = appendPage(context);
-    await waitForFast(() => expect(page.data?.config).toEqual({}));
-    request.mockClear();
-    const firstLogout = deferred<unknown>();
-    request.mockImplementationOnce(async () => firstLogout.promise);
-
-    const loggingOut = page.logout("openai", [
-      { provider: "openai", profileIds: ["openai:first"] },
-      { provider: "alias", profileIds: ["openai:second"] },
-    ]);
-    await vi.waitFor(() =>
-      expect(request).toHaveBeenCalledWith("models.authLogout", {
-        provider: "openai",
-        profileIds: ["openai:first"],
-        agentId: "main",
-      }),
-    );
-    agentSelection.state.selectedId = "writer";
-    agentSelection.state.scopeId = "writer";
-    notifySelection();
-    await vi.waitFor(() => expect(page.selectedAgentId).toBe("writer"));
-    agentSelection.state.selectedId = "main";
-    agentSelection.state.scopeId = "main";
-    notifySelection();
-    await vi.waitFor(() => expect(page.selectedAgentId).toBe("main"));
-    firstLogout.resolve({});
-    await loggingOut;
-
-    expect(request.mock.calls.filter(([method]) => method === "models.authLogout")).toHaveLength(1);
-  });
-
-  it("stops queued agent-scoped logouts when route data changes the selected agent", async () => {
-    const { agentSelection, context, request, snapshot } = createHarness("main");
-    const page = appendPage(context);
-    await waitForFast(() => expect(page.data?.config).toEqual({}));
-    request.mockClear();
-    const firstLogout = deferred<unknown>();
-    request.mockImplementationOnce(async () => firstLogout.promise);
-
-    const loggingOut = page.logout("openai", [
-      { provider: "openai", profileIds: ["openai:first"] },
-      { provider: "alias", profileIds: ["openai:second"] },
-    ]);
-    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
-    page.pendingLogoutProvider = "openai";
-    page.messages = { openai: { kind: "error", text: "Previous agent failure" } };
-    page.probeResults = {
-      openai: { provider: "openai", status: "ok", results: [] },
-    };
-    agentSelection.state.selectedId = "writer";
-    agentSelection.state.scopeId = "writer";
-    page.routeData = {
-      gateway: context.gateway,
-      gatewaySnapshot: snapshot,
-      data: { ...EMPTY_MODEL_PROVIDERS_DATA, config: {}, updatedAt: 1 },
-      client: snapshot.client,
-      agentId: "writer",
-    };
-    await page.updateComplete;
-    expect(page.selectedAgentId).toBe("writer");
-    expect(page.busy).toEqual({});
-    expect(page.pendingLogoutProvider).toBeNull();
-    expect(page.messages).toEqual({});
-    expect(page.probeResults).toEqual({});
-    firstLogout.resolve({});
-    await loggingOut;
-
-    expect(request.mock.calls.filter(([method]) => method === "models.authLogout")).toHaveLength(1);
   });
 
   it("reloads credential status when the agent selector changes", async () => {

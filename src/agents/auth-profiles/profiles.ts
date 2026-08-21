@@ -4,15 +4,21 @@
  * records through locked or immediate store writes.
  */
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
+import type { Result } from "@openclaw/normalization-core/result";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { resolveProviderIdForAuth } from "../provider-auth-aliases.js";
+import {
+  type ProviderAuthAliasLookupParams,
+  resolveProviderIdForAuth,
+} from "../provider-auth-aliases.js";
 import { normalizeAuthProfileCredential } from "./credential-normalize.js";
+import type { ExternalCliAuthDiscovery } from "./external-cli-discovery.js";
 import { dedupeProfileIds, listProfilesForProvider } from "./profile-list.js";
 import {
   ensureAuthProfileStoreForLocalUpdate,
   resolvePersistedAuthProfileOwnerAgentDir,
   saveAuthProfileStore,
+  updateAuthProfileStoresWithLocks,
   updateAuthProfileStoreWithLock,
 } from "./store.js";
 import type { AuthProfileCredential, AuthProfileStore, ProfileUsageStats } from "./types.js";
@@ -28,19 +34,21 @@ const authProfileProfilesLog = createSubsystemLogger("agent/embedded");
 function listProviderAuthStateEntries<T>(
   entries: Record<string, T> | undefined,
   provider: string,
+  authAliasLookupParams?: ProviderAuthAliasLookupParams,
 ): Array<[string, T]> {
-  const canonicalProvider = resolveProviderIdForAuth(provider);
+  const canonicalProvider = resolveProviderIdForAuth(provider, authAliasLookupParams);
   return Object.entries(entries ?? {})
-    .filter(([key]) => resolveProviderIdForAuth(key) === canonicalProvider)
+    .filter(([key]) => resolveProviderIdForAuth(key, authAliasLookupParams) === canonicalProvider)
     .toSorted(([left], [right]) => left.localeCompare(right));
 }
 
 function readProviderAuthState<T>(
   entries: Record<string, T> | undefined,
   provider: string,
+  authAliasLookupParams?: ProviderAuthAliasLookupParams,
 ): T | undefined {
-  const canonicalProvider = resolveProviderIdForAuth(provider);
-  const matches = listProviderAuthStateEntries(entries, canonicalProvider);
+  const canonicalProvider = resolveProviderIdForAuth(provider, authAliasLookupParams);
+  const matches = listProviderAuthStateEntries(entries, canonicalProvider, authAliasLookupParams);
   return (
     matches.find(([key]) => normalizeProviderId(key) === canonicalProvider)?.[1] ?? matches[0]?.[1]
   );
@@ -50,16 +58,40 @@ function replaceProviderAuthState<T>(
   entries: Record<string, T> | undefined,
   provider: string,
   value?: T,
+  authAliasLookupParams?: ProviderAuthAliasLookupParams,
 ): Record<string, T> | undefined {
-  const canonicalProvider = resolveProviderIdForAuth(provider);
+  const canonicalProvider = resolveProviderIdForAuth(provider, authAliasLookupParams);
   const next = Object.fromEntries(
     Object.entries(entries ?? {}).filter(
-      ([key]) => resolveProviderIdForAuth(key) !== canonicalProvider,
+      ([key]) => resolveProviderIdForAuth(key, authAliasLookupParams) !== canonicalProvider,
     ),
-  ) as Record<string, T>;
+  );
   if (value !== undefined) {
     next[canonicalProvider] = value;
   }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function readExactProviderAuthState<T>(
+  entries: Record<string, T> | undefined,
+  provider: string,
+): T | undefined {
+  const normalizedProvider = normalizeProviderId(provider);
+  return Object.entries(entries ?? {}).find(
+    ([key]) => normalizeProviderId(key) === normalizedProvider,
+  )?.[1];
+}
+
+function removeExactProviderAuthState<T>(
+  entries: Record<string, T> | undefined,
+  provider: string,
+): Record<string, T> | undefined {
+  const normalizedProvider = normalizeProviderId(provider);
+  const next = Object.fromEntries(
+    Object.entries(entries ?? {}).filter(
+      ([key]) => normalizeProviderId(key) !== normalizedProvider,
+    ),
+  );
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
@@ -101,14 +133,36 @@ export async function setAuthProfileOrder(params: {
   agentDir?: string;
   provider: string;
   order?: string[] | null;
-}): Promise<AuthProfileStore | null> {
-  const providerKey = resolveProviderIdForAuth(params.provider);
+  expectedOrder?: string[] | null;
+  expectedOrderProvider?: string;
+  expectedProviderProfileIds?: string[];
+  externalCli?: ExternalCliAuthDiscovery;
+  authAliasLookupParams?: ProviderAuthAliasLookupParams;
+}): Promise<Result<AuthProfileStore, "conflict" | "store-update-failed">> {
+  const providerKey = resolveProviderIdForAuth(params.provider, params.authAliasLookupParams);
+  const expectedOrderProviderKey = normalizeProviderId(
+    params.expectedOrderProvider ?? params.provider,
+  );
+  const expectedOrderProviderProvided = Object.hasOwn(params, "expectedOrderProvider");
+  const expectedOrderUsesCanonicalProvider = expectedOrderProviderKey === providerKey;
   const sanitized =
     params.order && Array.isArray(params.order) ? normalizeStringEntries(params.order) : [];
   const deduped = dedupeProfileIds(sanitized);
+  const expectedOrderProvided = Object.hasOwn(params, "expectedOrder");
+  const expectedOrder =
+    params.expectedOrder === null
+      ? null
+      : dedupeProfileIds(normalizeStringEntries(params.expectedOrder));
+  const expectedProviderProfileIds = params.expectedProviderProfileIds
+    ? dedupeProfileIds(normalizeStringEntries(params.expectedProviderProfileIds)).toSorted()
+    : undefined;
+  let orderChanged = false;
+  let profileMembershipChanged = false;
 
-  return await updateAuthProfileStoreWithLock({
+  const updated = await updateAuthProfileStoreWithLock({
     agentDir: params.agentDir,
+    lockInheritedProfileMembership: expectedProviderProfileIds !== undefined,
+    effectiveExternalCli: params.externalCli,
     // Preserve requested IDs that the agent inherits (not owns) so the local
     // save path does not prune them from the order. Without this, a secondary
     // agent's `models auth order set --agent` accepts an inherited profile ID
@@ -118,18 +172,78 @@ export async function setAuthProfileOrder(params: {
     // promoteAuthProfileInOrder preservation contract; the clear-order path
     // (deduped.length === 0) must not preserve anything.
     ...(deduped.length > 0 ? { saveOptions: { preserveOrderProfileIds: deduped } } : {}),
-    updater: (store) => {
-      if (deduped.length === 0) {
-        if (listProviderAuthStateEntries(store.order, providerKey).length === 0) {
+    updater: (store, effectiveStore = store) => {
+      if (expectedProviderProfileIds) {
+        const currentProviderProfileIds = listProfilesForProvider(
+          effectiveStore,
+          providerKey,
+          params.authAliasLookupParams,
+        ).toSorted();
+        const exactMembershipChanged =
+          currentProviderProfileIds.length !== expectedProviderProfileIds.length ||
+          currentProviderProfileIds.some(
+            (profileId, index) => profileId !== expectedProviderProfileIds[index],
+          );
+        // The membership check shares the credential-store lock with the order
+        // write. Otherwise a stale reorder can exclude a new login or restore a
+        // profile removed while the request was in flight.
+        if (exactMembershipChanged) {
+          profileMembershipChanged = true;
           return false;
         }
-        store.order = replaceProviderAuthState(store.order, providerKey);
+      }
+      // An explicit provider names the exact key the caller observed. When it
+      // is omitted, preserve the normal alias-aware provider lookup.
+      const readExpectedOrder = (candidate: AuthProfileStore) =>
+        (expectedOrderProviderProvided
+          ? readExactProviderAuthState(candidate.order, expectedOrderProviderKey)
+          : readProviderAuthState(candidate.order, providerKey, params.authAliasLookupParams)) ??
+        null;
+      const localOrder = readExpectedOrder(store);
+      const currentOrder = localOrder ?? readExpectedOrder(effectiveStore);
+      // Compare beneath the same store lock as the write. Otherwise a login
+      // promotion can be overwritten by an order built from an older snapshot.
+      if (
+        expectedOrderProvided &&
+        (currentOrder === null || expectedOrder === null
+          ? currentOrder !== expectedOrder
+          : currentOrder.length !== expectedOrder.length ||
+            currentOrder.some((profileId, index) => profileId !== expectedOrder[index]))
+      ) {
+        orderChanged = true;
+        return false;
+      }
+      if (deduped.length === 0) {
+        if (
+          listProviderAuthStateEntries(store.order, providerKey, params.authAliasLookupParams)
+            .length === 0
+        ) {
+          return false;
+        }
+        store.order = replaceProviderAuthState(
+          store.order,
+          providerKey,
+          undefined,
+          params.authAliasLookupParams,
+        );
         return true;
       }
-      store.order = replaceProviderAuthState(store.order, providerKey, deduped);
+      if (!expectedOrderUsesCanonicalProvider) {
+        store.order = removeExactProviderAuthState(store.order, expectedOrderProviderKey);
+      }
+      store.order = replaceProviderAuthState(
+        store.order,
+        providerKey,
+        deduped,
+        params.authAliasLookupParams,
+      );
       return true;
     },
   });
+  if (orderChanged || profileMembershipChanged) {
+    return { ok: false, error: "conflict" };
+  }
+  return updated ? { ok: true, value: updated } : { ok: false, error: "store-update-failed" };
 }
 
 /** Promotes one auth profile to the front of a provider order. */
@@ -198,16 +312,58 @@ export function upsertAuthProfile(params: {
   store.profiles[params.profileId] = credential;
   saveAuthProfileStore(store, params.agentDir, {
     filterExternalAuthProfiles: false,
-    sharedStoreWrite: true,
     syncExternalCli: false,
   });
 }
 
-/** Removes auth profiles and related state for a provider, optionally narrowed to exact IDs. */
+/** Removes all auth profiles and related state for a provider. */
+function removeProviderAuthProfilesFromStore(
+  store: AuthProfileStore,
+  provider: string,
+  authAliasLookupParams?: ProviderAuthAliasLookupParams,
+): boolean {
+  const providerKey = resolveProviderIdForAuth(provider, authAliasLookupParams);
+  const profileIds = listProfilesForProvider(store, provider, authAliasLookupParams);
+  let changed = false;
+  for (const profileId of profileIds) {
+    if (store.profiles[profileId]) {
+      delete store.profiles[profileId];
+      changed = true;
+    }
+    if (store.usageStats?.[profileId]) {
+      delete store.usageStats[profileId];
+      changed = true;
+    }
+  }
+  if (listProviderAuthStateEntries(store.order, providerKey, authAliasLookupParams).length > 0) {
+    store.order = replaceProviderAuthState(
+      store.order,
+      providerKey,
+      undefined,
+      authAliasLookupParams,
+    );
+    changed = true;
+  }
+  if (listProviderAuthStateEntries(store.lastGood, providerKey, authAliasLookupParams).length > 0) {
+    store.lastGood = replaceProviderAuthState(
+      store.lastGood,
+      providerKey,
+      undefined,
+      authAliasLookupParams,
+    );
+    changed = true;
+  }
+  if (store.usageStats && Object.keys(store.usageStats).length === 0) {
+    store.usageStats = undefined;
+  }
+  return changed;
+}
+
 export async function removeProviderAuthProfilesWithLock(params: {
   provider: string;
   agentDir?: string;
   profileIds?: readonly string[];
+  authAliasLookupParams?: ProviderAuthAliasLookupParams;
 }): Promise<AuthProfileStore | null> {
   if (params.profileIds) {
     return await removeAuthProfilesWithLock({
@@ -215,39 +371,59 @@ export async function removeProviderAuthProfilesWithLock(params: {
       profileIds: params.profileIds,
     });
   }
-  const providerKey = resolveProviderIdForAuth(params.provider);
   return await updateAuthProfileStoreWithLock({
     agentDir: params.agentDir,
-    updater: (store) => {
-      const profileIds = listProfilesForProvider(store, params.provider);
-      let changed = false;
-      for (const profileId of profileIds) {
-        if (store.profiles[profileId]) {
-          delete store.profiles[profileId];
-          changed = true;
-        }
-        if (store.usageStats?.[profileId]) {
-          delete store.usageStats[profileId];
-          changed = true;
-        }
-      }
-      if (listProviderAuthStateEntries(store.order, providerKey).length > 0) {
-        store.order = replaceProviderAuthState(store.order, providerKey);
-        changed = true;
-      }
-      if (listProviderAuthStateEntries(store.lastGood, providerKey).length > 0) {
-        store.lastGood = replaceProviderAuthState(store.lastGood, providerKey);
-        changed = true;
-      }
-      if (store.usageStats && Object.keys(store.usageStats).length === 0) {
-        store.usageStats = undefined;
-      }
-      return changed;
-    },
+    updater: (store) =>
+      removeProviderAuthProfilesFromStore(store, params.provider, params.authAliasLookupParams),
   });
 }
 
 /** Removes selected auth profiles and every state pointer that references them. */
+function removeAuthProfilesFromStore(
+  store: AuthProfileStore,
+  profileIds: ReadonlySet<string>,
+): boolean {
+  let changed = false;
+  for (const profileId of profileIds) {
+    if (store.profiles[profileId]) {
+      delete store.profiles[profileId];
+      changed = true;
+    }
+    if (store.usageStats?.[profileId]) {
+      delete store.usageStats[profileId];
+      changed = true;
+    }
+  }
+  for (const [provider, order] of Object.entries(store.order ?? {})) {
+    const next = order.filter((profileId) => !profileIds.has(profileId));
+    if (next.length === order.length) {
+      continue;
+    }
+    changed = true;
+    if (next.length > 0) {
+      store.order![provider] = next;
+    } else {
+      delete store.order![provider];
+    }
+  }
+  for (const [provider, profileId] of Object.entries(store.lastGood ?? {})) {
+    if (profileIds.has(profileId)) {
+      delete store.lastGood![provider];
+      changed = true;
+    }
+  }
+  if (store.order && Object.keys(store.order).length === 0) {
+    store.order = undefined;
+  }
+  if (store.lastGood && Object.keys(store.lastGood).length === 0) {
+    store.lastGood = undefined;
+  }
+  if (store.usageStats && Object.keys(store.usageStats).length === 0) {
+    store.usageStats = undefined;
+  }
+  return changed;
+}
+
 export async function removeAuthProfilesWithLock(params: {
   profileIds: readonly string[];
   agentDir?: string;
@@ -255,47 +431,7 @@ export async function removeAuthProfilesWithLock(params: {
   const profileIds = new Set(dedupeProfileIds([...params.profileIds]));
   return await updateAuthProfileStoreWithLock({
     agentDir: params.agentDir,
-    updater: (store) => {
-      let changed = false;
-      for (const profileId of profileIds) {
-        if (store.profiles[profileId]) {
-          delete store.profiles[profileId];
-          changed = true;
-        }
-        if (store.usageStats?.[profileId]) {
-          delete store.usageStats[profileId];
-          changed = true;
-        }
-      }
-      for (const [provider, order] of Object.entries(store.order ?? {})) {
-        const next = order.filter((profileId) => !profileIds.has(profileId));
-        if (next.length === order.length) {
-          continue;
-        }
-        changed = true;
-        if (next.length > 0) {
-          store.order![provider] = next;
-        } else {
-          delete store.order![provider];
-        }
-      }
-      for (const [provider, profileId] of Object.entries(store.lastGood ?? {})) {
-        if (profileIds.has(profileId)) {
-          delete store.lastGood![provider];
-          changed = true;
-        }
-      }
-      if (store.order && Object.keys(store.order).length === 0) {
-        store.order = undefined;
-      }
-      if (store.lastGood && Object.keys(store.lastGood).length === 0) {
-        store.lastGood = undefined;
-      }
-      if (store.usageStats && Object.keys(store.usageStats).length === 0) {
-        store.usageStats = undefined;
-      }
-      return changed;
-    },
+    updater: (store) => removeAuthProfilesFromStore(store, profileIds),
   });
 }
 
@@ -308,9 +444,7 @@ export async function removeAuthProfilesAcrossOwnerStores(params: {
   agentDir: string;
   profileIds: readonly string[];
 }): Promise<boolean> {
-  const profilesByOwner = new Map<string | undefined, Set<string>>([
-    [params.agentDir, new Set(params.profileIds)],
-  ]);
+  const profilesByOwner = new Map<string | undefined, Set<string>>();
   for (const profileId of params.profileIds) {
     const ownerAgentDir = resolvePersistedAuthProfileOwnerAgentDir({
       agentDir: params.agentDir,
@@ -320,16 +454,42 @@ export async function removeAuthProfilesAcrossOwnerStores(params: {
     ownerProfiles.add(profileId);
     profilesByOwner.set(ownerAgentDir, ownerProfiles);
   }
-  for (const [ownerAgentDir, profileIds] of profilesByOwner) {
-    const updatedStore = await removeAuthProfilesWithLock({
-      profileIds: [...profileIds],
-      agentDir: ownerAgentDir,
-    });
-    if (!updatedStore) {
-      return false;
-    }
+  const requesterProfiles = profilesByOwner.get(params.agentDir) ?? new Set<string>();
+  for (const profileId of params.profileIds) {
+    requesterProfiles.add(profileId);
   }
-  return true;
+  profilesByOwner.set(params.agentDir, requesterProfiles);
+  return updateAuthProfileStoresWithLocks({
+    updates: [...profilesByOwner].map(([agentDir, profileIds], index) => ({
+      agentDir,
+      lockPriority: index,
+      updater: (store) => removeAuthProfilesFromStore(store, profileIds),
+    })),
+  });
+}
+
+/** Removes a provider from every store that owns one of its selected profiles. */
+export function removeProviderAuthProfilesAcrossOwnerStores(params: {
+  provider: string;
+  agentDir: string;
+  profileIds: readonly string[];
+  authAliasLookupParams?: ProviderAuthAliasLookupParams;
+}): boolean {
+  const ownerAgentDirs = new Set<string | undefined>();
+  for (const profileId of params.profileIds) {
+    ownerAgentDirs.add(
+      resolvePersistedAuthProfileOwnerAgentDir({ agentDir: params.agentDir, profileId }),
+    );
+  }
+  ownerAgentDirs.add(params.agentDir);
+  return updateAuthProfileStoresWithLocks({
+    updates: [...ownerAgentDirs].map((agentDir, index) => ({
+      agentDir,
+      lockPriority: index,
+      updater: (store) =>
+        removeProviderAuthProfilesFromStore(store, params.provider, params.authAliasLookupParams),
+    })),
+  });
 }
 
 /** Clear the last-good profile pointer for a provider under the store lock. */

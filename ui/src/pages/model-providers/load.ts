@@ -29,6 +29,7 @@ export const MODEL_PROVIDERS_COST_DAYS = 30;
 export type ModelProvidersData = {
   authStatus: ModelAuthStatusResult | null;
   models: ModelCatalogEntry[] | null;
+  catalogModels: ModelCatalogEntry[] | null;
   providerOutcomes: ModelCatalogProviderOutcome[];
   catalogError: string | null;
   config: Record<string, unknown> | null;
@@ -39,12 +40,14 @@ export type ModelProvidersData = {
 };
 
 type ModelProvidersCatalogResult = {
+  models?: ModelCatalogEntry[];
   providerOutcomes?: ModelCatalogProviderOutcome[];
 };
 
 export const EMPTY_MODEL_PROVIDERS_DATA: ModelProvidersData = {
   authStatus: null,
   models: null,
+  catalogModels: null,
   providerOutcomes: [],
   catalogError: null,
   config: null,
@@ -122,6 +125,7 @@ export async function loadModelProvidersData(
     authStatus:
       authStatus.ok && Array.isArray(authStatus.result?.providers) ? authStatus.result : null,
     models,
+    catalogModels: catalogResult.ok ? (catalogResult.result?.models ?? null) : null,
     providerOutcomes: catalogResult.ok ? (catalogResult.result?.providerOutcomes ?? []) : [],
     catalogError: catalogResult.ok ? null : errorMessage(catalogResult.error),
     config,

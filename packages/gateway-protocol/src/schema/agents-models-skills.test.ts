@@ -7,6 +7,8 @@ import {
   AgentsListResultSchema,
   AgentsUpdateParamsSchema,
   ModelsAuthLogoutParamsSchema,
+  ModelsAuthOrderSetParamsSchema,
+  ModelsAuthCooldownClearParamsSchema,
   ModelsAuthStatusParamsSchema,
   ModelsListParamsSchema,
   ModelsListResultSchema,
@@ -257,6 +259,23 @@ describe("Models auth params schemas", () => {
       { provider: "openai", agentId: "" },
     );
     expectRejected(ModelsAuthLogoutParamsSchema, { provider: "openai", profileIds: [] });
+    expectAccepted(ModelsAuthOrderSetParamsSchema, {
+      provider: "openai",
+      profileIds: ["openai:primary", "openai:backup"],
+      expectedProfileIds: ["openai:backup", "openai:primary"],
+      expectedProfileMembership: ["openai:primary", "openai:backup"],
+      agentId: "main",
+    });
+    expectAccepted(ModelsAuthOrderSetParamsSchema, {
+      provider: "openai",
+      profileIds: ["openai:primary", "openai:backup"],
+      expectedProfileIds: null,
+    });
+    expectRejected(ModelsAuthOrderSetParamsSchema, { provider: "openai", profileIds: [] });
+    expectAccepted(ModelsAuthCooldownClearParamsSchema, {
+      provider: "openai",
+      profileId: "openai:primary",
+    });
   });
 });
 

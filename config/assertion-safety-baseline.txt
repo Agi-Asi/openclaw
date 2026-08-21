@@ -1712,7 +1712,6 @@ src/agents/auth-profiles/oauth.ts	2
 src/agents/auth-profiles/persisted.ts	10
 src/agents/auth-profiles/policy.ts	1
 src/agents/auth-profiles/portability.ts	1
-src/agents/auth-profiles/profiles.ts	1
 src/agents/auth-profiles/repair.ts	1
 src/agents/auth-profiles/runtime-external-profile-references.ts	2
 src/agents/auth-profiles/runtime-snapshots.ts	1

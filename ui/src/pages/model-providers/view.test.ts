@@ -14,8 +14,13 @@ function card(overrides: Partial<ModelProviderCard> = {}): ModelProviderCard {
     id: "openai",
     displayName: "OpenAI",
     profiles: [],
+    profileProviderIds: {},
+    profileAuthProviderIds: {},
+    profileOwnerProfileIds: {},
+    profileOrder: [],
+    profileOrders: {},
+    profileOrderProviders: {},
     credentialProviderIds: ["openai"],
-    logoutTargets: [],
     hasConfigApiKey: false,
     modelCount: 1,
     availableModelCount: 1,
@@ -30,10 +35,8 @@ function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelProviders
     loading: false,
     refreshing: false,
     error: null,
-    providerUsageFailed: false,
     updatedAt: 1,
     costDays: 30,
-    credentialAgentLabel: "Writer",
     cards: [card()],
     configuredModels: [{ id: "openai/gpt-5", provider: "openai", name: "GPT-5", available: true }],
     defaultModels: { primary: "openai/gpt-5", fallbacks: [], utilityModel: null },
@@ -43,17 +46,16 @@ function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelProviders
     fastMode: false,
     fastModeOverridden: true,
     configBusy: false,
-    quickAddSupported: true,
     unconfiguredProviders: [{ id: "anthropic", displayName: "Anthropic" }],
     canMutate: true,
     mutationBlockedReason: null,
     probeAvailable: true,
+    profileCanMutate: true,
     busy: {},
     messages: {},
     probeResults: {},
     keyEditorProvider: null,
     keyDraft: "",
-    pendingLogoutProvider: null,
     addProviderOpen: false,
     addProviderId: "",
     addProviderKey: "",
@@ -64,9 +66,9 @@ function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelProviders
     onSaveKey: () => undefined,
     onRemoveKey: () => undefined,
     onProbe: () => undefined,
-    onRequestLogout: () => undefined,
-    onCancelLogout: () => undefined,
-    onLogout: () => undefined,
+    onLogoutProfile: () => undefined,
+    onProfileOrderChange: () => undefined,
+    onClearProfileCooldown: () => undefined,
     onAddProviderToggle: () => undefined,
     onAddProviderIdChange: () => undefined,
     onAddProviderKeyChange: () => undefined,
@@ -119,30 +121,8 @@ function selectSegment(group: SegmentedGroup, value: string) {
 }
 
 describe("renderModelProviders", () => {
-  it("surfaces a provider-usage failure on the provider list", () => {
-    const container = document.createElement("div");
-    render(renderModelProviders(props({ providerUsageFailed: true })), container);
-
-    expect(container.textContent).toContain(
-      "Provider usage is unavailable; the last request failed. Refresh to retry.",
-    );
-  });
-
   beforeEach(async () => {
     await i18n.setLocale("en");
-  });
-
-  it("hides quick API-key setup when provider capabilities are unavailable", () => {
-    const container = mount(
-      props({
-        configuredModels: [],
-        quickAddSupported: false,
-        unconfiguredProviders: [],
-      }),
-    );
-
-    expect(text(container)).not.toContain("Add provider");
-    expect(container.querySelector('[data-model-readiness="model-required"]')).not.toBeNull();
   });
 
   afterEach(() => {
@@ -150,6 +130,7 @@ describe("renderModelProviders", () => {
       render(nothing, container);
     }
     document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
   it("renders model behavior next to default models and emits canonical values", () => {
@@ -315,7 +296,7 @@ describe("renderModelProviders", () => {
     expect([...groups].every((group) => group.disabled)).toBe(true);
   });
 
-  it("locks provider and default-model mutations while shared config work is pending", () => {
+  it("keeps profile mutations available while shared config work locks config controls", () => {
     const container = mount(
       props({
         configBusy: true,
@@ -333,7 +314,15 @@ describe("renderModelProviders", () => {
           card({
             hasConfigApiKey: true,
             apiKey: { source: "config" },
-            logoutTargets: [{ provider: "openai", profileIds: ["openai:oauth"] }],
+            profiles: [
+              {
+                profileId: "openai:oauth",
+                type: "oauth",
+                status: "ok",
+                logoutSupported: true,
+              },
+            ],
+            profileProviderIds: { "openai:oauth": "openai" },
           }),
         ],
         keyEditorProvider: "openai",
@@ -363,7 +352,10 @@ describe("renderModelProviders", () => {
     ).toBe(true);
     expect(button(provider!, "Replace key")?.disabled).toBe(true);
     expect(button(provider!, "Remove key")?.disabled).toBe(true);
-    expect(button(provider!, "Log out")?.disabled).toBe(true);
+    expect(
+      provider?.querySelector<HTMLButtonElement>('button[aria-label="Log out openai:oauth"]')
+        ?.disabled,
+    ).toBe(false);
 
     const addForm = container.querySelector(".model-providers__add-form");
     expect(
@@ -503,7 +495,7 @@ describe("renderModelProviders", () => {
     expect(container.querySelector('[data-provider-id="openai"]')).toBeNull();
   });
 
-  it("renders credential provenance and probe results", () => {
+  it("renders probe results without a redundant credential summary", () => {
     const container = mount(
       props({
         probeResults: {
@@ -524,9 +516,8 @@ describe("renderModelProviders", () => {
       }),
     );
     const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(provider)).toContain("Credentials for Writer");
+    expect(text(provider)).not.toContain("Credentials for");
     expect(text(provider)).toContain("Global usage and cost");
-    expect(text(provider)).toContain("API key from environment (OPENAI_API_KEY)");
     expect(text(provider)).toContain("Connected");
     expect(text(provider)).toContain("145 ms");
     expect(text(provider)).toContain("Default profile");
@@ -552,14 +543,12 @@ describe("renderModelProviders", () => {
 
     const readiness = container.querySelector('[data-model-readiness="model-required"]');
     expect(text(readiness)).toContain("Connect a verified AI model");
-    expect(text(readiness)).toContain("Model required");
-    expect(text(readiness)).toContain("Connect a verified AI model");
+    expect(text(readiness)).toContain("No models available");
+    expect(text(readiness)).toContain("Choose another provider");
     expect(container.querySelector(".model-providers__defaults")).toBeNull();
-    expect(text(container.querySelector('[data-provider-id="openai"]'))).toContain(
-      "Credentials configured",
-    );
+    expect(text(container.querySelector('[data-provider-id="openai"]'))).toContain("Signed in");
 
-    button(readiness!, "Connect a verified AI model")?.click();
+    button(readiness!, "Choose another provider")?.click();
     expect(onOpenModelSetup).toHaveBeenCalledOnce();
   });
 
@@ -597,7 +586,7 @@ describe("renderModelProviders", () => {
     );
 
     const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(provider)).toContain("Credentials configured");
+    expect(text(provider)).toContain("API key");
     expect(text(provider)).not.toContain("Ready");
   });
 
@@ -659,7 +648,7 @@ describe("renderModelProviders", () => {
     );
 
     const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(provider)).toContain("Credentials for Writer");
+    expect(text(provider)).not.toContain("Credentials for");
     expect(text(provider)).toContain("Global usage and cost");
     expect(text(provider)).toContain("Global session spend · 30d");
   });
@@ -688,7 +677,7 @@ describe("renderModelProviders", () => {
     }
   });
 
-  it("does not invent config key provenance when auth status is unavailable", () => {
+  it("keeps configured key actions available when auth status is unavailable", () => {
     const container = mount(
       props({
         cards: [card({ apiKey: undefined, hasConfigApiKey: true })],
@@ -696,42 +685,12 @@ describe("renderModelProviders", () => {
     );
 
     const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(provider)).not.toContain("API key set in config");
-    expect(text(provider)).toContain("Not configured");
-  });
-
-  it("renders mixed credential probes as connected with warnings", () => {
-    const container = mount(
-      props({
-        probeResults: {
-          openai: {
-            provider: "openai",
-            status: "ok",
-            latencyMs: 145,
-            results: [
-              {
-                label: "Configured credential · openai/gpt-5.6-sol",
-                status: "unknown",
-                error:
-                  "The configured credential could not be resolved. Update or remove it, then retry.",
-              },
-              {
-                profileId: "openai:default",
-                label: "Profile Default · openai/gpt-5.6-sol",
-                status: "ok",
-                latencyMs: 145,
-              },
-            ],
-          },
-        },
-      }),
+    expect(button(provider!, "Replace key")).toBeDefined();
+    expect(button(provider!, "Remove key")).toBeDefined();
+    expect(text(provider?.querySelector(".model-providers__credential-source") ?? null)).toBe(
+      "API key in config",
     );
-
-    const probe = container.querySelector(".model-providers__probe--warning");
-    expect(text(probe)).toContain("Connected with warnings");
-    expect(text(probe)).toContain("Configured credential · openai/gpt-5.6-sol");
-    expect(text(probe)).toContain("Profile Default · openai/gpt-5.6-sol");
-    expect(text(probe)).toContain("Update or remove it, then retry");
+    expect(text(provider)).not.toContain("Credentials for");
   });
 
   it("renders categorized probe errors", () => {
@@ -788,7 +747,7 @@ describe("renderModelProviders", () => {
     );
 
     const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(provider)).toContain("Credentials configured");
+    expect(text(provider)).toContain("Signed in");
     expect(text(provider)).toContain("No models available");
     expect(text(provider)).not.toContain("Connection failed");
   });
@@ -877,14 +836,14 @@ describe("renderModelProviders", () => {
     expect(onProbe).toHaveBeenCalledWith("openai", ["anthropic", "claude-cli"]);
   });
 
-  it("shows logout confirmation only for OAuth or token profiles", () => {
-    const onLogout = vi.fn();
+  it("targets logout to the selected saved profile", () => {
+    const onLogoutProfile = vi.fn();
     const container = mount(
       props({
         cards: [
           card({
             credentialProviderIds: ["openai", "openai-codex"],
-            logoutTargets: [{ provider: "openai-codex", profileIds: ["openai:oauth"] }],
+            profileProviderIds: { "openai:oauth": "openai-codex" },
             profiles: [
               {
                 profileId: "openai:oauth",
@@ -895,17 +854,23 @@ describe("renderModelProviders", () => {
             ],
           }),
         ],
-        pendingLogoutProvider: "openai",
-        onLogout,
+        onLogoutProfile,
       }),
     );
-    expect(text(container.querySelector(".model-providers__confirm"))).toContain(
-      "Log out of OpenAI?",
+    const logout = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Log out openai:oauth"]',
     );
-    container.querySelector<HTMLButtonElement>(".model-providers__confirm .btn.danger")?.click();
-    expect(onLogout).toHaveBeenCalledWith("openai", [
-      { provider: "openai-codex", profileIds: ["openai:oauth"] },
-    ]);
+    expect(logout?.textContent?.trim()).toBe("");
+    expect(logout?.querySelector("svg")).not.toBeNull();
+    expect(logout?.title).toBe("Log out openai:oauth");
+    logout?.click();
+    expect(onLogoutProfile).toHaveBeenCalledWith(
+      "openai",
+      "openai-codex",
+      "openai-codex",
+      "openai:oauth",
+      "openai:oauth",
+    );
   });
 
   it("uses the original config key for credential mutations", () => {
