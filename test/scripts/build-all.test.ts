@@ -433,6 +433,7 @@ describe("resolveBuildAllSteps", () => {
   it("uses a runtime artifact plus plugin SDK export profile for ci artifacts", () => {
     expect(resolveBuildAllSteps("ciArtifacts").map((step) => step.label)).toEqual([
       "plugins:assets:build",
+      "tsdown-ai",
       "tsdown",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",
@@ -450,14 +451,19 @@ describe("resolveBuildAllSteps", () => {
 
   it("skips bundled tsdown declarations for runtime-only profiles", () => {
     for (const profile of [
+      "ciArtifacts",
       "gatewayWatch",
       "qaRuntime",
       "sourcePerformance",
       "cliStartup",
     ] as const) {
       const tsdown = resolveBuildAllSteps(profile).find((step) => step.label === "tsdown");
+      const tsdownAi = resolveBuildAllSteps(profile).find((step) => step.label === "tsdown-ai");
       if (!tsdown) {
         throw new Error(`Missing ${profile} tsdown step`);
+      }
+      if (!tsdownAi) {
+        throw new Error(`Missing ${profile} tsdown-ai step`);
       }
 
       expect(
@@ -467,6 +473,12 @@ describe("resolveBuildAllSteps", () => {
       });
       expect(
         resolveBuildAllStep(tsdown, { env: { OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "0" } }).options.env,
+      ).toMatchObject({
+        OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+      });
+      expect(
+        resolveBuildAllStep(tsdownAi, { env: { OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "0" } }).options
+          .env,
       ).toMatchObject({
         OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
       });
@@ -565,6 +577,7 @@ describe("resolveBuildAllSteps", () => {
 
   it("uses a minimal built runtime profile for gateway watch regression", () => {
     expect(resolveBuildAllSteps("gatewayWatch").map((step) => step.label)).toEqual([
+      "tsdown-ai",
       "tsdown",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",
@@ -577,6 +590,7 @@ describe("resolveBuildAllSteps", () => {
   it("uses a QA runtime profile with generated plugin assets but no startup metadata", () => {
     expect(resolveBuildAllSteps("qaRuntime").map((step) => step.label)).toEqual([
       "plugins:assets:build",
+      "tsdown-ai",
       "tsdown",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",
@@ -590,6 +604,7 @@ describe("resolveBuildAllSteps", () => {
   it("uses a source performance profile with QA assets and immutable build provenance", () => {
     expect(resolveBuildAllSteps("sourcePerformance").map((step) => step.label)).toEqual([
       "plugins:assets:build",
+      "tsdown-ai",
       "tsdown",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",
@@ -604,6 +619,7 @@ describe("resolveBuildAllSteps", () => {
 
   it("uses a CLI startup profile without generated plugin assets", () => {
     expect(resolveBuildAllSteps("cliStartup").map((step) => step.label)).toEqual([
+      "tsdown-ai",
       "tsdown",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",

@@ -308,6 +308,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
   ],
   ciArtifacts: [
     "plugins:assets:build",
+    "tsdown-ai",
     "tsdown",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
@@ -322,6 +323,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "write-cli-startup-metadata",
   ],
   gatewayWatch: [
+    "tsdown-ai",
     "tsdown",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
@@ -331,6 +333,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
   ],
   qaRuntime: [
     "plugins:assets:build",
+    "tsdown-ai",
     "tsdown",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
@@ -341,6 +344,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
   ],
   sourcePerformance: [
     "plugins:assets:build",
+    "tsdown-ai",
     "tsdown",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
@@ -352,6 +356,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "write-cli-startup-metadata",
   ],
   cliStartup: [
+    "tsdown-ai",
     "tsdown",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
@@ -369,6 +374,9 @@ export const BUILD_ALL_PROFILE_STEP_ENV: Record<string, Record<string, NodeJS.Pr
     },
   },
   ciArtifacts: {
+    "tsdown-ai": {
+      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+    },
     tsdown: {
       // Global declaration emission is ~95% of the tsdown wall clock and PR
       // CI's dist consumers are runtime JS only; the plugin-sdk gate below
@@ -382,6 +390,9 @@ export const BUILD_ALL_PROFILE_STEP_ENV: Record<string, Record<string, NodeJS.Pr
     },
   },
   gatewayWatch: {
+    "tsdown-ai": {
+      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+    },
     tsdown: {
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
     },
@@ -390,17 +401,26 @@ export const BUILD_ALL_PROFILE_STEP_ENV: Record<string, Record<string, NodeJS.Pr
     },
   },
   qaRuntime: {
+    "tsdown-ai": {
+      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+    },
     tsdown: {
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
     },
   },
   sourcePerformance: {
+    "tsdown-ai": {
+      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+    },
     tsdown: {
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
       OPENCLAW_PRESERVE_CLI_STARTUP_METADATA: "1",
     },
   },
   cliStartup: {
+    "tsdown-ai": {
+      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+    },
     tsdown: {
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
       OPENCLAW_PRESERVE_CLI_STARTUP_METADATA: "1",
