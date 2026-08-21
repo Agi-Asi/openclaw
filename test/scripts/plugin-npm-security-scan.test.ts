@@ -255,7 +255,7 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     const packageDir = tempDirs.make("openclaw-plugin-packlist-helper-package-");
     const timeoutHelper = join(root, "timeout.mjs");
     const failedHelper = join(root, "failed.mjs");
-    writeFileSync(timeoutHelper, "await new Promise(() => {});\n", "utf8");
+    writeFileSync(timeoutHelper, "setInterval(() => {}, 1_000);\n", "utf8");
     writeFileSync(failedHelper, "process.exit(7);\n", "utf8");
 
     await expect(
