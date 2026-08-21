@@ -7478,7 +7478,7 @@ exit 64
       "approve_plugins_clawhub_release",
     ]);
     expect(clawHubPublish.uses).toBe(
-      "openclaw/clawhub/.github/workflows/package-publish.yml@4bc87f53c8a6eb75317d83aec835b58aa892d11a",
+      "openclaw/clawhub/.github/workflows/package-publish.yml@845c6d3bdb1a36573d8d28be2a8fb85a3c476720",
     );
     expect(clawHubPublish.permissions).toMatchObject({
       actions: "read",
