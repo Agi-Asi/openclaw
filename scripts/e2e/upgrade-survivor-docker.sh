@@ -503,6 +503,10 @@ node scripts/e2e/lib/upgrade-survivor/assertions.mjs seed
 openclaw_e2e_install_package "$OPENCLAW_UPGRADE_SURVIVOR_ARTIFACT_ROOT/install.log" "upgrade survivor package" "$npm_config_prefix"
 command -v openclaw >/dev/null
 package_version="$(node -p "JSON.parse(require(\"node:fs\").readFileSync(process.argv[1] + \"/lib/node_modules/openclaw/package.json\", \"utf8\")).version" "$npm_config_prefix")"
+candidate_version="$(
+  tar -xOf "${OPENCLAW_CURRENT_PACKAGE_TGZ:?missing OPENCLAW_CURRENT_PACKAGE_TGZ}" package/package.json |
+    node -e "let raw=[]; process.stdin.on(\"data\", (chunk) => raw.push(chunk)); process.stdin.on(\"end\", () => process.stdout.write(JSON.parse(Buffer.concat(raw)).version));"
+)"
 OPENCLAW_PACKAGE_ACCEPTANCE_LEGACY_COMPAT="$(
   node scripts/e2e/lib/package-compat.mjs "$package_version"
 )"
@@ -540,8 +544,11 @@ if [ "$update_status" -ne 0 ]; then
   exit "$update_status"
 fi
 if [ -n "${OPENCLAW_CLAWHUB_URL:-}" ]; then
+  clawhub_security_mode="$(
+    node scripts/e2e/lib/package-compat.mjs --clawhub-release-security-mode "$candidate_version"
+  )"
   node "$OPENCLAW_UPGRADE_SURVIVOR_CLAWHUB_FIXTURE_SERVER" \
-    assert-prepublish-requests "$OPENCLAW_CLAWHUB_URL" "@openclaw/whatsapp" "$package_version"
+    assert-prepublish-requests "$OPENCLAW_CLAWHUB_URL" "@openclaw/whatsapp" "$candidate_version" "$clawhub_security_mode"
 fi
 
 if [ "$UPDATE_RESTART_MODE" = "auto-auth" ]; then
