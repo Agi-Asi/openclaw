@@ -15,6 +15,7 @@ import {
   chatItemStartsUserTurn,
   safeNormalizeMessage,
 } from "./chat-turn-boundary.ts";
+import { indexTurnContinuations } from "./stream-causal-boundary.ts";
 
 export function isKeyedAssistantStreamFallbackMessage(message: unknown): boolean {
   const record = asRecord(message);
@@ -85,12 +86,18 @@ export function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup>
       currentGroup?.role === "assistant" &&
       isKeyedAssistantStreamFallbackMessage(currentGroup.messages[0]?.message) !==
         isKeyedAssistantStreamFallbackMessage(item.message);
+    const splitsRuntimeActivity =
+      role === "assistant" &&
+      currentGroup?.role === "assistant" &&
+      isContextCompactionActivity(currentGroup.messages[0]?.message) !==
+        isContextCompactionActivity(item.message);
 
     if (
       !currentGroup ||
       startsProjectedTurn ||
       currentGroup.role !== role ||
       splitsAssistantCommentary ||
+      splitsRuntimeActivity ||
       (shouldSplitBySender &&
         (currentGroup.senderLabel !== senderLabel ||
           senderIdentityKey(currentGroup.sender) !== senderIdentityKey(sender)))
@@ -541,8 +548,13 @@ export function assistantGroupCanOwnActiveRunStatus(group: MessageGroup): boolea
   return (
     group.role.toLowerCase() === "assistant" &&
     !assistantGroupIsForwardedBoundary(group) &&
+    !group.messages.every(({ message }) => isContextCompactionActivity(message)) &&
     groupHasVisibleReplyContent(group)
   );
+}
+
+function isContextCompactionActivity(message: unknown): boolean {
+  return asRecord(asRecord(message)?.["__openclaw"])?.runtimeActivityKind === "context_compaction";
 }
 
 // History carries no final-vs-commentary marker (commentary exists only as
@@ -551,6 +563,19 @@ export function assistantGroupCanOwnActiveRunStatus(group: MessageGroup): boolea
 // merely collapse less; the visible reply is never folded away.
 function isFinalReplyGroup(item: TurnRenderItem): boolean {
   return item.kind === "group" && !item.isStreaming && assistantGroupCanOwnActiveRunStatus(item);
+}
+
+function turnUserMessages(turn: TurnRenderItem[]): unknown[] {
+  const boundary = turn[0];
+  if (!boundary || boundary.kind === "stream-run") {
+    return [];
+  }
+  if (boundary.kind === "group") {
+    return boundary.role.toLowerCase() === "user"
+      ? boundary.messages.map(({ message }) => message)
+      : [];
+  }
+  return boundary.kind === "message" && chatItemStartsUserTurn(boundary) ? [boundary.message] : [];
 }
 
 /**
@@ -590,13 +615,52 @@ export function collapseCompletedTurnWork(
     turns.push(currentTurn);
   }
 
+  const { continuationTurnIndexes, precedingContinuationTurnIndexes } = indexTurnContinuations(
+    turns,
+    turnUserMessages,
+  );
+  const finalReplyIndexes = turns.map((turn, turnIndex) => {
+    if (continuationTurnIndexes.has(turnIndex)) {
+      return -1;
+    }
+    for (let index = turn.length - 1; index >= 0; index -= 1) {
+      const candidate = turn[index];
+      if (candidate && isFinalReplyGroup(candidate)) {
+        return index;
+      }
+    }
+    return -1;
+  });
+  const terminalReplies = finalReplyIndexes.map((index, turnIndex) =>
+    index >= 0 ? (turns[turnIndex]?.[index] as MessageGroup) : undefined,
+  );
+  for (let turnIndex = turns.length - 2; turnIndex >= 0; turnIndex -= 1) {
+    const continuationTurnIndex = continuationTurnIndexes.get(turnIndex);
+    if (!terminalReplies[turnIndex] && continuationTurnIndex !== undefined) {
+      terminalReplies[turnIndex] = terminalReplies[continuationTurnIndex];
+    }
+  }
+  const liveTurnIndexes = new Set<number>();
+  if (opts.runWorking) {
+    let liveTurnIndex = turns.length - 1;
+    liveTurnIndexes.add(liveTurnIndex);
+    for (;;) {
+      const precedingTurnIndex = precedingContinuationTurnIndexes.get(liveTurnIndex);
+      if (precedingTurnIndex === undefined) {
+        break;
+      }
+      liveTurnIndex = precedingTurnIndex;
+      liveTurnIndexes.add(liveTurnIndex);
+    }
+  }
+
   const result: Array<TurnRenderItem | WorkGroupRenderItem> = [];
   for (const [turnIndex, turn] of turns.entries()) {
     // In-flight content (stream runs, streaming groups) marks the turn live.
     // While the run works, the trailing turn also stays expanded so activity
     // is watchable until the terminal rebuild collapses it.
     const isLive =
-      (opts.runWorking && turnIndex === turns.length - 1) ||
+      liveTurnIndexes.has(turnIndex) ||
       turn.some(
         (item) => item.kind === "stream-run" || (item.kind === "group" && item.isStreaming),
       );
@@ -604,21 +668,15 @@ export function collapseCompletedTurnWork(
       result.push(...turn);
       continue;
     }
-    let finalReplyIndex = -1;
-    for (let index = turn.length - 1; index >= 0; index -= 1) {
-      const candidate = turn[index];
-      if (candidate && isFinalReplyGroup(candidate)) {
-        finalReplyIndex = index;
-        break;
-      }
-    }
+    const finalReplyIndex = finalReplyIndexes[turnIndex] ?? -1;
+    const terminalReply = terminalReplies[turnIndex];
     // Without a final reply, the tool rows are the turn's only visible result.
     // Keep them exposed instead of replacing the result with an opaque rollup.
-    if (finalReplyIndex === -1) {
+    if (!terminalReply) {
       result.push(...turn);
       continue;
     }
-    const segmentEnd = finalReplyIndex - 1;
+    const segmentEnd = finalReplyIndex >= 0 ? finalReplyIndex - 1 : turn.length - 1;
     let segmentStart = segmentEnd + 1;
     for (let index = segmentEnd; index >= 0; index -= 1) {
       const candidate = turn[index];
@@ -642,14 +700,16 @@ export function collapseCompletedTurnWork(
         ? boundary.timestamp
         : null;
     const startTimestamp = boundaryTimestamp == null ? firstGroup.timestamp : boundaryTimestamp;
-    const finalReply = turn[finalReplyIndex] as MessageGroup;
-    const endTimestamp = finalReply.timestamp;
+    const endTimestamp = terminalReply.timestamp;
     const durationMs = endTimestamp > startTimestamp ? endTimestamp - startTimestamp : null;
+    const continuationBoundary = turns[continuationTurnIndexes.get(turnIndex) ?? -1]?.[0];
     result.push(...turn.slice(0, segmentStart));
     result.push({
       kind: "work-group",
       // The final reply survives older-history prepends; the first work row does not.
-      key: `work:${finalReply.key}`,
+      key: `work:${
+        finalReplyIndex >= 0 || !continuationBoundary ? terminalReply.key : continuationBoundary.key
+      }`,
       groups,
       durationMs,
     });

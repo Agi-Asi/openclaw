@@ -231,7 +231,6 @@ const CODEX_FULL_CONTEXT_STANDARD_WINDOW = 272_000;
 const observedCodexThreadIds = new Map<string, string>();
 const observedCodexClientIds = new Map<string, string>();
 const observedCodexThreadActions = new Map<string, string>();
-const nativeSettingsSessionKeys = new Set<string>();
 
 type GuardianPluginApprovalDecision = "allow-once" | "allow-always" | "deny";
 type CodexHarnessThinkingLevel =
@@ -277,11 +276,11 @@ function resolveCodexHarnessThinkingLevel(raw: string | undefined): CodexHarness
   return normalized as CodexHarnessThinkingLevel;
 }
 
-function resolveCodexHarnessExpectedEffort(modelId: string): string | null {
+function resolveCodexHarnessExpectedRequestEffort(modelId: string): string | null {
   const configured = process.env.OPENCLAW_LIVE_CODEX_HARNESS_EXPECTED_EFFORT;
   if (configured?.trim()) {
     const expected = resolveCodexHarnessThinkingLevel(configured);
-    return expected === "off" ? null : expected;
+    return expected === "off" ? null : expected === "ultra" ? "max" : expected;
   }
   const supported = CODEX_HARNESS_SUPPORTED_EFFORTS.get(modelId);
   if (!supported) {
@@ -290,14 +289,14 @@ function resolveCodexHarnessExpectedEffort(modelId: string): string | null {
   if (CODEX_HARNESS_THINKING === "off") {
     return null;
   }
-  // Independent oracle for the pinned Codex model catalog. Lower requested
-  // levels choose the nearest advertised effort; Ultra remains explicit.
+  // Codex preserves Ultra in config but intentionally sends Max to the model.
+  // Compare the request-facing lifecycle event to that wire contract.
   const candidates =
     CODEX_HARNESS_THINKING === "ultra"
       ? supported
       : supported.filter((effort) => effort !== "ultra");
   const requestedRank = CODEX_HARNESS_REASONING_EFFORTS.indexOf(CODEX_HARNESS_THINKING);
-  return (
+  const configuredEffort =
     candidates.find(
       (effort) =>
         CODEX_HARNESS_REASONING_EFFORTS.indexOf(
@@ -305,12 +304,22 @@ function resolveCodexHarnessExpectedEffort(modelId: string): string | null {
         ) >= requestedRank,
     ) ??
     candidates.at(-1) ??
-    null
-  );
+    null;
+  return configuredEffort === "ultra" ? "max" : configuredEffort;
 }
 
 function resolveCodexHarnessExpectedNativeEffort(modelId: string): string | null {
-  return CODEX_HARNESS_THINKING === "off" ? "none" : resolveCodexHarnessExpectedEffort(modelId);
+  const configured = process.env.OPENCLAW_LIVE_CODEX_HARNESS_EXPECTED_EFFORT;
+  if (configured?.trim()) {
+    const expected = resolveCodexHarnessThinkingLevel(configured);
+    return expected === "off" ? "none" : expected;
+  }
+  const requestEffort = resolveCodexHarnessExpectedRequestEffort(modelId);
+  return CODEX_HARNESS_THINKING === "off"
+    ? "none"
+    : CODEX_HARNESS_THINKING === "ultra" && requestEffort === "max"
+      ? "ultra"
+      : requestEffort;
 }
 
 function logCodexLiveStep(step: string, details?: Record<string, unknown>): void {
@@ -851,11 +860,7 @@ function recordCodexAttemptIdentity(params: {
   expect(turnStarting?.data).toMatchObject({ model: expectedModel });
   const actualEffort = turnStarting?.data?.effort;
   const actualCollaborationEffort = turnStarting?.data?.collaborationEffort;
-  // Codex persists accepted turn settings on the thread. Subsequent calls that omit overrides
-  // must preserve and report the effective native setting.
-  const expectedEffort = nativeSettingsSessionKeys.has(params.sessionKey)
-    ? null
-    : resolveCodexHarnessExpectedEffort(expectedModel);
+  const expectedEffort = resolveCodexHarnessExpectedRequestEffort(expectedModel);
   expect(actualEffort ?? null).toBe(expectedEffort);
   expect(actualCollaborationEffort ?? null).toBe(actualEffort ?? null);
   if (CODEX_HARNESS_FULL_CONTEXT) {
@@ -870,9 +875,9 @@ function recordCodexAttemptIdentity(params: {
     typeof threadId === "string" && threadId.trim().length > 0,
     `expected Codex thread_ready identity for ${params.sessionKey}; events=${JSON.stringify(events)}`,
   ).toBe(true);
-  if (nativeSettingsSessionKeys.has(params.sessionKey)) {
-    // Supervised turns omit turn-level overrides, so the thread response must
-    // immediately report the target effort prepared on start or resume.
+  if (observedCodexThreadIds.get(params.sessionKey) === threadId) {
+    // Codex persists the accepted turn setting on the thread. Preparing that
+    // same thread again must report the authoritative native setting.
     expect(threadReady?.data?.reasoningEffort ?? null).toBe(
       resolveCodexHarnessExpectedNativeEffort(expectedModel),
     );
@@ -2045,8 +2050,6 @@ async function verifyCodexNativeSubagentBridgeProbe(params: {
       text,
     )}; events=${JSON.stringify(events)}; tasks=${JSON.stringify(codexNativeTasks)}`,
   ).toBeDefined();
-  nativeSettingsSessionKeys.add(params.sessionKey);
-
   function listCodexNativeTasks() {
     return listTaskRecords().filter(
       (entry) => entry.runtime === "subagent" && entry.taskKind === "codex-native",
@@ -2166,7 +2169,6 @@ describeLive("gateway live (Codex harness)", () => {
       observedCodexThreadIds.clear();
       observedCodexClientIds.clear();
       observedCodexThreadActions.clear();
-      nativeSettingsSessionKeys.clear();
 
       try {
         server = await startGatewayServer(port, {
@@ -2280,7 +2282,6 @@ describeLive("gateway live (Codex harness)", () => {
                 command: "/new",
                 expectedText: "New session started.",
               });
-              nativeSettingsSessionKeys.delete(sessionKey);
               logCodexLiveStep("new-command", { resetText });
               expect(await readCodexHarnessSessionId({ client: activeClient, sessionKey })).toBe(
                 preResetSessionId,

@@ -1282,6 +1282,19 @@ describe("gateway hot reload model state", () => {
     );
   });
 
+  it("keeps the gateway context resolver when hot reload rebuilds cron", async () => {
+    const resolveGatewayContext = vi.fn(() => undefined);
+    const { applyHotReload } = createGatewayReloadHandlers({ resolveGatewayContext });
+
+    await withGatewayRestartSignal(async () => {
+      await applyHotReload(createCronRestartPlan(), { cron: { enabled: true } });
+    });
+
+    expect(hoisted.buildGatewayCronService).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveGatewayContext }),
+    );
+  });
+
   it("completes reload reconciliation when the replacement scheduler is disabled", async () => {
     const rebuiltCronState = {
       cron: { start: vi.fn(async () => {}), stop: vi.fn() },
@@ -5750,26 +5763,38 @@ describe("gateway plugin hot reload handlers", () => {
       stopChannel,
       reloadPlugins,
     });
+    const sourceConfig: OpenClawConfig = {
+      plugins: { enabled: false, allow: ["discord"] },
+    };
 
     try {
-      await applyHotReload(createPluginReloadPlan(), {
-        plugins: {
-          enabled: false,
+      await applyHotReload(
+        createPluginReloadPlan(),
+        {
+          plugins: {
+            enabled: false,
+          },
         },
-      });
+        {
+          sourceConfig,
+          isCurrent: () => true,
+          publish: async (commit) => await commit(),
+        },
+      );
     } finally {
       restoreChannelReloadEnv();
     }
 
     const [reloadParams] = reloadPlugins.mock.calls.at(-1) ?? [];
     const reloadParamsRecord = reloadParams as
-      | { nextConfig?: unknown; changedPaths?: unknown }
+      | { nextConfig?: unknown; sourceConfig?: unknown; changedPaths?: unknown }
       | undefined;
     expect(reloadParamsRecord?.nextConfig).toEqual({
       plugins: {
         enabled: false,
       },
     });
+    expect(reloadParamsRecord?.sourceConfig).toBe(sourceConfig);
     expect(reloadParamsRecord?.changedPaths).toEqual(["plugins.enabled"]);
     expect(stopChannel).toHaveBeenCalledWith("discord", undefined, { manual: false });
     expect(startChannel).not.toHaveBeenCalled();

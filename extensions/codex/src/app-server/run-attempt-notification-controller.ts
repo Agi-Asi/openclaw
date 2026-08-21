@@ -64,7 +64,7 @@ export function createCodexAttemptNotificationController(
     if (notification.method === "thread/settings/updated" && isRecord(notification.params)) {
       const threadId = notification.params.threadId;
       const settings = notification.params.threadSettings;
-      const reasoningEffort = isRecord(settings) ? settings.reasoningEffort : undefined;
+      const reasoningEffort = isRecord(settings) ? settings.effort : undefined;
       if (
         threadId === resourceState.thread.threadId &&
         (typeof reasoningEffort === "string" || reasoningEffort === null)
@@ -120,7 +120,7 @@ export function createCodexAttemptNotificationController(
     if (notificationState.isCurrentTurnNotification && notification.method === "item/completed") {
       const item = readCodexNotificationItem(notification.params);
       if (item?.type === "userMessage" && typeof item.clientId === "string") {
-        steeringQueue?.confirmConsumed(item.clientId);
+        await steeringQueue?.confirmConsumed(item.clientId);
       }
     }
     if (notificationState.isTurnAbortMarker) {

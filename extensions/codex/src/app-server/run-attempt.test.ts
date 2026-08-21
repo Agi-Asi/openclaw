@@ -429,6 +429,7 @@ async function buildCodexTurnContextForTest(
     sessionKey: params.sessionKey ?? params.sessionId,
     sessionAgentId,
     memoryToolNames,
+    ringZeroActive: false,
   });
   const threadDeveloperInstructions = testing.buildDeveloperInstructions(params, { dynamicTools });
   const openClawPromptContext = buildCodexOpenClawPromptContext({
@@ -2415,6 +2416,10 @@ describe("runCodexAppServerAttempt", () => {
       deny: ["exec", "process", "write", "edit"],
     };
     params.pluginHarnessToolPolicyRestricted = true;
+    const agentsGuidance = "Restricted turns keep workspace AGENTS guidance.";
+    await fs.mkdir(params.workspaceDir, { recursive: true });
+    await fs.writeFile(path.join(params.workspaceDir, "AGENTS.md"), agentsGuidance);
+    setAgentWorkspaceForTest(params, params.workspaceDir);
     const onAgentEvent = vi.fn();
     params.onAgentEvent = onAgentEvent;
     const harness = createStartedThreadHarness(async (method) => {
@@ -2437,6 +2442,7 @@ describe("runCodexAppServerAttempt", () => {
       | {
           dynamicTools?: CodexDynamicToolSpec[];
           environments?: unknown[];
+          developerInstructions?: string;
           config?: Record<string, unknown>;
         }
       | undefined;
@@ -2445,6 +2451,8 @@ describe("runCodexAppServerAttempt", () => {
     );
 
     expect(startParams?.environments).toEqual([]);
+    expect(startParams?.config?.project_doc_max_bytes).toBe(131_072);
+    expect(startParams?.developerInstructions?.split(agentsGuidance)).toHaveLength(2);
     expect(startParams?.config?.["tools.update_plan.enabled"]).toBe(false);
     expect(dynamicToolNames.toSorted()).toEqual(["apply_patch", "progress_card", "read"]);
     const progressCardSpec = flattenSpecsWithNamespace(startParams?.dynamicTools ?? []).find(
@@ -5137,7 +5145,7 @@ describe("runCodexAppServerAttempt", () => {
             method: "thread/settings/updated",
             params: {
               threadId: "thread-existing",
-              threadSettings: { reasoningEffort: "high" },
+              threadSettings: { effort: "high" },
             },
           });
           await harness.completeTurn({ threadId: "thread-existing", turnId: "turn-1" });
@@ -5175,7 +5183,7 @@ describe("runCodexAppServerAttempt", () => {
             method: "thread/settings/updated",
             params: {
               threadId: "thread-existing",
-              threadSettings: { reasoningEffort: "high" },
+              threadSettings: { effort: "high" },
             },
           });
           await harness.completeTurn({ threadId: "thread-existing", turnId: "turn-1" });

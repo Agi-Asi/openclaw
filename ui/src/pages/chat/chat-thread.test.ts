@@ -757,6 +757,35 @@ describe("collapseCompletedTurnWork", () => {
     expect(requireGroup(items[2]).role).toBe("assistant");
   });
 
+  it("keeps durable context compaction inside completed work instead of treating it as the reply", () => {
+    const items = collapsedItems({
+      messages: [
+        userMessage("do it", 1_000),
+        {
+          role: "custom",
+          customType: "openclaw.context-compaction",
+          content: "Context compacted",
+          display: true,
+          excludeFromContext: true,
+          timestamp: 2_000,
+        },
+        assistantMessage("All done.", 3_000),
+      ],
+    });
+
+    expect(items.map((item) => item.kind)).toEqual(["group", "work-group", "group"]);
+    const work = requireWorkGroup(items[1]);
+    expect(work.groups).toHaveLength(1);
+    expect(work.groups[0]?.messages[0]?.message).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "Context compacted" }],
+      __openclaw: { runtimeActivityKind: "context_compaction" },
+    });
+    expect(requireGroup(items[2]).messages[0]?.message).toMatchObject({
+      content: "All done.",
+    });
+  });
+
   it.each([
     {
       role: "assistant",
@@ -836,6 +865,43 @@ describe("collapseCompletedTurnWork", () => {
     );
 
     expect(items.some((item) => item.kind === "work-group")).toBe(false);
+  });
+
+  it("collapses completed pre-steer work before the steering message", () => {
+    const messages = [
+      userMessage("do it", 1_000, {
+        __openclaw: { idempotencyKey: "active-run:user", senderId: "operator" },
+      }),
+      assistantMessage("Checking…", 2_000),
+      toolResult("call-1", 3_000),
+      userMessage("queued follow-up", 3_500, {
+        __openclaw: { idempotencyKey: "queued-run:user", senderId: "peer" },
+      }),
+      userMessage("continue", 4_000, {
+        __openclaw: {
+          idempotencyKey: "steer-run:user",
+          senderId: "operator",
+          steerTargetRunId: "active-run",
+        },
+      }),
+      assistantMessage("All done.", 5_000),
+    ];
+
+    expect(
+      collapsedItems({ messages, runWorking: true }, true).some(
+        (item) => item.kind === "work-group",
+      ),
+    ).toBe(false);
+
+    const completed = collapsedItems({ messages });
+    expect(completed.map((item) => item.kind)).toEqual([
+      "group",
+      "work-group",
+      "group",
+      "group",
+      "group",
+    ]);
+    expect(requireWorkGroup(completed[1]).durationMs).toBe(4_000);
   });
 
   it("keeps reply-less turns expanded after the run finishes", () => {

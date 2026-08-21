@@ -71,7 +71,6 @@ type ThreadRequestContext = {
   bindingIdentity: CodexAppServerBindingIdentity;
   startModelSelection: ReturnType<typeof resolveCodexAppServerThreadModelSelection>;
   startModelProvider?: string;
-  supervisedReasoningEffort?: string;
   userMcpServersConfigPatch?: JsonObject;
   dynamicToolsFingerprint: string;
   dynamicToolsContainDeferred: boolean;
@@ -100,7 +99,10 @@ type ResumeThreadContext = ThreadRequestContext & {
   binding: CodexAppServerThreadBinding;
   clearCurrentBinding: (operation: string) => Promise<void>;
   prebuiltPluginThreadConfig?: CodexPluginThreadConfig;
-  prebuiltFinalConfigPatch?: { configPatch?: JsonObject; nativeHookRelayGeneration?: string };
+  prebuiltFinalConfigPatch?: {
+    configPatch?: JsonObject;
+    nativeHookRelayGeneration?: string;
+  };
 };
 
 type StartThreadContext = ThreadRequestContext & {
@@ -219,7 +221,9 @@ export async function resumeExistingCodexThread(
       }),
     );
     const requestModelProvider =
-      (resumeParams.modelProvider?.trim() && resumeParams.modelProvider) || undefined;
+      typeof resumeParams.modelProvider === "string" && resumeParams.modelProvider.trim()
+        ? resumeParams.modelProvider
+        : undefined;
     // Keep ownership accounting atomic with the resume request: a
     // pre-aborted request retains no subscription, so it must not reserve.
     throwIfAborted();
@@ -504,7 +508,9 @@ export async function startFreshCodexThread(
     }),
   );
   const requestModelProvider =
-    (startParams.modelProvider?.trim() && startParams.modelProvider) || undefined;
+    typeof startParams.modelProvider === "string" && startParams.modelProvider.trim()
+      ? startParams.modelProvider
+      : undefined;
   const threadStartResponse = await lifecycleTiming.measure("thread-start-request", async () => {
     try {
       return await params.client.request("thread/start", startParams, { signal: params.signal });
