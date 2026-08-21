@@ -443,18 +443,20 @@ async function mirror(params: {
           // identity so retries cannot turn a stale idempotency hit into evidence.
           messageToAppend = attachCodexMirrorIdentity(messageToAppend, mirrorIdentity);
         }
-        // SAFETY: provider messages may carry this optional untrusted delivery marker.
-        const asyncDelivery = (
-          message as AgentMessage & { openclawAsyncDelivery?: { itemId?: unknown } }
-        ).openclawAsyncDelivery;
+        const asyncDelivery =
+          "openclawAsyncDelivery" in message &&
+          typeof message.openclawAsyncDelivery === "object" &&
+          message.openclawAsyncDelivery !== null &&
+          "itemId" in message.openclawAsyncDelivery
+            ? message.openclawAsyncDelivery
+            : undefined;
         if (typeof asyncDelivery?.itemId === "string") {
           // Async delivery ownership is provider-authored. Whole-message hooks may
           // rewrite content, but must not turn the durable row into a terminal answer.
           messageToAppend = {
             ...messageToAppend,
             openclawAsyncDelivery: { itemId: asyncDelivery.itemId },
-            // SAFETY: spreading a valid AgentMessage plus additive metadata preserves its discriminated shape.
-          } as AgentMessage;
+          } satisfies AgentMessage & { openclawAsyncDelivery: { itemId: string } };
         }
         messageToAppend = projectAgentHarnessTranscriptMessageForDisplay({
           hidden: (message as { display?: boolean }).display === false,
