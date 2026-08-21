@@ -13,6 +13,7 @@ import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 const execFileAsync = promisify(execFile);
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const laneScript = path.resolve("scripts/e2e/telegram-mantis-lane.ts");
+const linuxIt = process.platform === "linux" ? it : it.skip;
 
 function writeJson(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -343,56 +344,50 @@ describe("Telegram Mantis free-form lane", () => {
     }
   });
 
-  it.runIf(process.platform === "linux")(
-    "updates provider behavior through a private data file",
-    async () => {
-      const harness = await setupHarness();
-      const responseFile = path.join(harness.outputRoot, "response.txt");
-      fs.writeFileSync(responseFile, "stream this response");
-      try {
-        const result = await runLane(harness.env, [
-          "mock",
-          "--lane",
-          "candidate",
-          "--response-file",
-          responseFile,
-          "--chunk-delay-ms",
-          "250",
-        ]);
-        expect(JSON.parse(result.stdout)).toMatchObject({ bytes: 20, chunkDelayMs: 250 });
-        expect(
-          JSON.parse(
-            fs.readFileSync(
-              path.join(path.dirname(harness.outputRoot), "mock-response.json"),
-              "utf8",
-            ),
+  linuxIt("updates provider behavior through a private data file", async () => {
+    const harness = await setupHarness();
+    const responseFile = path.join(harness.outputRoot, "response.txt");
+    fs.writeFileSync(responseFile, "stream this response");
+    try {
+      const result = await runLane(harness.env, [
+        "mock",
+        "--lane",
+        "candidate",
+        "--response-file",
+        responseFile,
+        "--chunk-delay-ms",
+        "250",
+      ]);
+      expect(JSON.parse(result.stdout)).toMatchObject({ bytes: 20, chunkDelayMs: 250 });
+      expect(
+        JSON.parse(
+          fs.readFileSync(
+            path.join(path.dirname(harness.outputRoot), "mock-response.json"),
+            "utf8",
           ),
-        ).toEqual({
-          chunkDelayMs: 250,
-          text: "stream this response",
-        });
-        expect(harness.requests).toEqual([]);
-      } finally {
-        await harness.close();
-      }
-    },
-  );
+        ),
+      ).toEqual({
+        chunkDelayMs: 250,
+        text: "stream this response",
+      });
+      expect(harness.requests).toEqual([]);
+    } finally {
+      await harness.close();
+    }
+  });
 
-  it.runIf(process.platform === "linux")(
-    "serializes commands across both lanes on the shared user session",
-    async () => {
-      const harness = await setupHarness();
-      fs.writeFileSync(path.join(harness.sessionRoot, "harness.lock"), `${process.pid}\n`);
-      try {
-        await expect(runLane(harness.env, ["requests", "--lane", "candidate"])).rejects.toThrow(
-          "shared Telegram harness already has a command in progress",
-        );
-        expect(harness.requests).toEqual([]);
-      } finally {
-        await harness.close();
-      }
-    },
-  );
+  linuxIt("serializes commands across both lanes on the shared user session", async () => {
+    const harness = await setupHarness();
+    fs.writeFileSync(path.join(harness.sessionRoot, "harness.lock"), `${process.pid}\n`);
+    try {
+      await expect(runLane(harness.env, ["requests", "--lane", "candidate"])).rejects.toThrow(
+        "shared Telegram harness already has a command in progress",
+      );
+      expect(harness.requests).toEqual([]);
+    } finally {
+      await harness.close();
+    }
+  });
 
   it("rejects scenario flags that would otherwise be silently ignored", async () => {
     const harness = await setupHarness();
