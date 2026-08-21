@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import type { BundledNodeHostPlugin } from "./mac-node-host-plugin-definitions.js";
 import { createMacNodeHostPluginRegistry } from "./mac-node-host-plugin-runtime.js";
 
-const tempRoots: string[] = [];
+const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 function availableCommands(
   registry: ReturnType<
@@ -35,14 +35,10 @@ function plugin(id: string, command: string, enabledByDefault = true): BundledNo
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  for (const root of tempRoots.splice(0)) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
 });
 
 function useIsolatedState(): void {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-mac-node-host-plugins-"));
-  tempRoots.push(root);
+  const root = tempDirs.make("openclaw-mac-node-host-plugins-");
   const home = path.join(root, "home");
   fs.mkdirSync(home);
   vi.stubEnv("HOME", home);
