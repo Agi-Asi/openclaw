@@ -3583,7 +3583,9 @@ describe("package artifact reuse", () => {
       "OPENCLAW_LIVE_CODEX_HARNESS_MCP_PROBE=0",
       "OPENCLAW_LIVE_CODEX_HARNESS_SUBAGENT_PROBE=0",
       "OPENCLAW_LIVE_CODEX_HARNESS_GUARDIAN_PROBE=0",
+      "timeout --foreground --kill-after=30s 120m",
     ]);
+    expect(oauthSmoke.timeout_minutes).toBe(125);
     for (const [model, thinking] of [
       ["sol", "ultra"],
       ["terra", "ultra"],
