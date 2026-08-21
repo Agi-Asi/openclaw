@@ -15,6 +15,7 @@ import {
   listPublishablePluginPackages,
   type PublishablePluginPackage,
 } from "./lib/plugin-npm-security-scan.mts";
+import { resolveNpmRunner } from "./npm-runner.mts";
 import {
   inspectPackageTarballBytes,
   readBoundedRegularFile,
@@ -156,7 +157,15 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
     throw new Error("Selected plugin package is absent from the trusted package plan.");
   }
 
-  await collectNpmPackedFiles(selected.packageDir, selected.packageName);
+  const testPacklistHelper =
+    process.env.NODE_ENV === "test"
+      ? process.env.OPENCLAW_PLUGIN_SECURITY_TEST_PACKLIST_HELPER
+      : undefined;
+  const expectedPackedFiles = await collectNpmPackedFiles(
+    selected.packageDir,
+    selected.packageName,
+    testPacklistHelper ? { helperPath: testPacklistHelper } : {},
+  );
   if (existsSync(args.outputDir)) {
     if (readdirSync(args.outputDir).length !== 0) {
       throw new Error("Plugin security artifact output directory must be empty.");
@@ -165,30 +174,39 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
     mkdirSync(args.outputDir, { recursive: true });
   }
 
-  const result = spawnSync(
-    "bash",
-    [
-      join(toolingRoot, "scripts/plugin-npm-publish.sh"),
-      "--repo-root",
-      candidateRoot,
-      "--pack",
-      args.packageDir,
-    ],
-    {
-      cwd: toolingRoot,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        OPENCLAW_PLUGIN_NPM_PACK_OUTPUT_DIR: args.outputDir,
-      },
-      killSignal: "SIGKILL",
-      maxBuffer: MAX_PACK_STDOUT_BYTES,
-      stdio: ["ignore", "pipe", "inherit"],
-      timeout: PACK_TIMEOUT_MS,
+  // Qualification keeps the candidate inert. This packs checked-in package input
+  // without release builds, asset hooks, installs, lock generation, or overlays.
+  const npm = resolveNpmRunner({
+    env: {
+      ...process.env,
+      NPM_CONFIG_AUDIT: "false",
+      NPM_CONFIG_FUND: "false",
+      NPM_CONFIG_IGNORE_SCRIPTS: "true",
+      NPM_CONFIG_PROVENANCE: "false",
+      NPM_CONFIG_WORKSPACES: "false",
     },
-  );
+    npmArgs: [
+      "pack",
+      "--json",
+      "--ignore-scripts",
+      "--workspaces=false",
+      "--pack-destination",
+      args.outputDir,
+    ],
+  });
+  const result = spawnSync(npm.command, npm.args, {
+    cwd: selected.packageDir,
+    encoding: "utf8",
+    env: npm.env ?? process.env,
+    killSignal: "SIGKILL",
+    maxBuffer: MAX_PACK_STDOUT_BYTES,
+    shell: npm.shell,
+    stdio: ["ignore", "pipe", "inherit"],
+    timeout: PACK_TIMEOUT_MS,
+    windowsVerbatimArguments: npm.windowsVerbatimArguments,
+  });
   if (result.status !== 0 || result.signal || result.error) {
-    throw new Error(`${selected.packageName}: trusted plugin packaging failed.`);
+    throw new Error(`${selected.packageName}: trusted inert plugin pack failed.`);
   }
   const packEntries = parsePackOutput(result.stdout);
   if (packEntries.length !== 1) {
@@ -210,17 +228,28 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
   const inspection = inspectPackageTarballBytes(tarballBytes, {
     maxArchiveBytes: MAX_TARBALL_BYTES,
   });
+  const packedFiles = inspection.inventory
+    .filter((entry) => entry.type === "file")
+    .map((entry) => {
+      if (!entry.path.startsWith("package/")) {
+        throw new Error(`${selected.packageName}: inert package input escaped package/.`);
+      }
+      return entry.path.slice("package/".length);
+    })
+    .toSorted();
   if (
     inspection.packageManifest.name !== selected.packageName ||
-    inspection.packageManifest.version !== selected.packageVersion
+    inspection.packageManifest.version !== selected.packageVersion ||
+    JSON.stringify(packedFiles) !== JSON.stringify(expectedPackedFiles)
   ) {
-    throw new Error(`${selected.packageName}: prepared tarball identity mismatch.`);
+    throw new Error(`${selected.packageName}: inert package input identity mismatch.`);
   }
   const artifactEntries = readdirSync(args.outputDir);
   if (artifactEntries.length !== 1 || artifactEntries[0] !== tarballName) {
     throw new Error(`${selected.packageName}: packaging produced unexpected artifact files.`);
   }
   const metadata = {
+    artifactKind: "inert-package-input",
     candidateSha: args.candidateSha,
     extensionId: selected.extensionId,
     packageDir: args.packageDir,

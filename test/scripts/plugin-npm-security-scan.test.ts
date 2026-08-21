@@ -95,6 +95,7 @@ function writePluginArtifact(params: {
   writeFileSync(
     join(artifactDir, "plugin-npm-security-artifact.json"),
     `${JSON.stringify({
+      artifactKind: "inert-package-input",
       candidateSha: CANDIDATE_SHA,
       extensionId: params.extensionId,
       packageDir: `extensions/${params.extensionId}`,
@@ -109,6 +110,7 @@ function writePluginArtifact(params: {
   );
   return {
     artifact: {
+      artifactKind: "inert-package-input" as const,
       artifactDir,
       candidateSha: CANDIDATE_SHA,
       extensionId: params.extensionId,
@@ -219,6 +221,109 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     expect(existsSync(replacementMarker)).toBe(false);
     for (const marker of lifecycleMarkers) {
       expect(existsSync(marker)).toBe(false);
+    }
+  });
+
+  it("packs candidate input without running lifecycle or asset build hooks", () => {
+    const candidateRoot = tempDirs.make("openclaw-plugin-security-inert-pack-");
+    const outputDir = tempDirs.make("openclaw-plugin-security-inert-output-");
+    const packageDir = join(candidateRoot, "extensions", "inert");
+    const packlistHelper = join(candidateRoot, "trusted-packlist-helper.mjs");
+    const markers = Object.fromEntries(
+      ["asset", "prepare", "prepack", "postpack"].map((name) => [
+        name,
+        join(candidateRoot, `${name}-ran`),
+      ]),
+    );
+    initGitRepo(candidateRoot);
+    mkdirSync(packageDir, { recursive: true });
+    const markerCommand = (marker: string) =>
+      `node -e "require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')"`;
+    writeFileSync(
+      join(packageDir, "package.json"),
+      `${JSON.stringify({
+        name: "@openclaw/test-inert-pack",
+        openclaw: {
+          assetScripts: { build: markerCommand(markers.asset!) },
+          release: { publishToNpm: true },
+        },
+        scripts: {
+          postpack: markerCommand(markers.postpack!),
+          prepack: markerCommand(markers.prepack!),
+          prepare: markerCommand(markers.prepare!),
+        },
+        version: "1.0.0",
+      })}\n`,
+      "utf8",
+    );
+    writeFileSync(join(packageDir, "index.ts"), "export const inert = true;\n", "utf8");
+    writeFileSync(
+      join(packageDir, "openclaw.plugin.json"),
+      `${JSON.stringify({ id: "inert" })}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      packlistHelper,
+      'process.stdout.write(JSON.stringify(["index.ts", "openclaw.plugin.json", "package.json"]));\n',
+      "utf8",
+    );
+    execFileSync("git", ["-C", candidateRoot, "add", "."]);
+    execFileSync("git", ["-C", candidateRoot, "commit", "--quiet", "-m", "fixture"]);
+    const candidateSha = execFileSync("git", ["-C", candidateRoot, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    const toolingSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/plugin-npm-security-prepare.mts",
+        "prepare",
+        "--candidate-root",
+        candidateRoot,
+        "--candidate-sha",
+        candidateSha,
+        "--extension-id",
+        "inert",
+        "--output-dir",
+        outputDir,
+        "--package-dir",
+        "extensions/inert",
+        "--package-name",
+        "@openclaw/test-inert-pack",
+        "--tooling-sha",
+        toolingSha,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          NODE_ENV: "test",
+          OPENCLAW_PLUGIN_SECURITY_TEST_PACKLIST_HELPER: packlistHelper,
+        },
+      },
+    );
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    for (const marker of Object.values(markers)) {
+      expect(existsSync(marker)).toBe(false);
+    }
+    const metadata = JSON.parse(
+      readFileSync(join(outputDir, "plugin-npm-security-artifact.json"), "utf8"),
+    ) as { artifactKind?: unknown; tarballName?: unknown };
+    expect(metadata.artifactKind).toBe("inert-package-input");
+    expect(typeof metadata.tarballName).toBe("string");
+    const staged = stageScannerRelevantPluginTarballFiles(
+      join(outputDir, String(metadata.tarballName)),
+    );
+    try {
+      expect(staged.packedFiles).toContain("index.ts");
+      expect(staged.packedFiles.some((file) => file.startsWith("dist/"))).toBe(false);
+    } finally {
+      rmSync(staged.stageDir, { force: true, recursive: true });
     }
   });
 
@@ -351,7 +456,7 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     expect(normalizePackedFindingPath("dist/service-malware.js")).toBe("dist/service-malware.js");
   });
 
-  it("finds malicious final-artifact code, ignores candidate scanner replacements, and fails slow", async () => {
+  it("finds malicious packed input code, ignores candidate scanner replacements, and fails slow", async () => {
     const marker = join(tempDirs.make("openclaw-plugin-npm-security-marker-"), "ran");
     const malicious = writePluginArtifact({
       extensionId: "malicious",

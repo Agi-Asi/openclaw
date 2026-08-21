@@ -51,6 +51,7 @@ export type ScanPackageResult = {
 };
 
 type PluginNpmSecurityArtifact = PublishablePluginPackage & {
+  artifactKind: "inert-package-input";
   artifactDir: string;
   candidateSha: string;
   tarballPath: string;
@@ -561,6 +562,7 @@ function readPluginSecurityArtifact(
   }
   const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
   const expectedKeys = [
+    "artifactKind",
     "candidateSha",
     "extensionId",
     "packageDir",
@@ -572,6 +574,7 @@ function readPluginSecurityArtifact(
     "toolingSha",
   ];
   if (
+    metadata.artifactKind !== "inert-package-input" ||
     metadata.schemaVersion !== 1 ||
     JSON.stringify(Object.keys(metadata).toSorted()) !== JSON.stringify(expectedKeys)
   ) {
@@ -624,6 +627,7 @@ function readPluginSecurityArtifact(
     throw new Error(`${packageName}: plugin tarball is outside the byte limit.`);
   }
   return {
+    artifactKind: "inert-package-input",
     artifactDir,
     candidateSha: expectedCandidateSha,
     extensionId,
@@ -783,7 +787,7 @@ async function scanPublishablePluginArtifact(
       staged.inspection.packageManifest.version !== plugin.packageVersion ||
       staged.inspection.tarballSha256 !== plugin.tarballSha256
     ) {
-      throw new Error(`${plugin.packageName}: immutable plugin tarball identity mismatch.`);
+      throw new Error(`${plugin.packageName}: inert package input identity mismatch.`);
     }
     for (const packedFile of staged.packedFiles) {
       expectedReviewedCriticalFindings.push(
