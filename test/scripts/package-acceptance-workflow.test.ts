@@ -54,6 +54,10 @@ const ANDROID_RELEASE_WORKFLOW = ".github/workflows/android-release.yml";
 const STABLE_MAIN_CLOSEOUT_WORKFLOW = ".github/workflows/openclaw-stable-main-closeout.yml";
 const WINDOWS_NODE_RELEASE_WORKFLOW = ".github/workflows/windows-node-release.yml";
 const FULL_RELEASE_VALIDATION_WORKFLOW = ".github/workflows/full-release-validation.yml";
+const ACTIONS_CACHE_RESTORE_V5 =
+  "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae";
+const ACTIONS_CACHE_SAVE_V5 =
+  "actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae";
 const CI_WORKFLOW = ".github/workflows/ci.yml";
 const PERFORMANCE_WORKFLOW = ".github/workflows/openclaw-performance.yml";
 const FULL_RELEASE_CHILD_DISPATCHES = [
@@ -2967,6 +2971,14 @@ describe("package acceptance workflow", () => {
     const decisionUpload = workflowStep(decision, "Upload release decision");
     const drainUpload = workflowStep(drain, "Upload diagnostic drain manifest");
     const planStep = workflowStep(executionPlan, "Seal immutable release execution plan");
+    const planRestore = workflowStep(
+      executionPlan,
+      "Restore immutable release execution plan for parent rerun",
+    );
+    const planPreserve = workflowStep(
+      executionPlan,
+      "Preserve immutable release execution plan for parent reruns",
+    );
     const planUpload = workflowStep(executionPlan, "Upload immutable release execution plan");
     const manifestStep = workflowStep(summary, "Write release validation manifest");
     const selectState = workflowStep(summary, "Select newest compatible release state artifacts");
@@ -2999,7 +3011,14 @@ describe("package acceptance workflow", () => {
     expect(planStep.run).not.toContain("EVIDENCE_MANIFEST");
     expect(planStep.run).toContain('--arg evidenceRunId "$EVIDENCE_RUN_ID"');
     expect(planStep.run).toContain('--argjson trustedWorkflow "$TRUSTED_WORKFLOW_JSON"');
-    expect(planUpload.if).toBe("${{ always() && github.run_attempt == 1 }}");
+    expect(planRestore.uses).toBe(ACTIONS_CACHE_RESTORE_V5);
+    expect(planRestore.with).toMatchObject({
+      "fail-on-cache-miss": true,
+      key: "full-release-execution-plan-v1-${{ github.run_id }}",
+    });
+    expect(planPreserve.uses).toBe(ACTIONS_CACHE_SAVE_V5);
+    expect(planPreserve.with?.key).toBe("full-release-execution-plan-v1-${{ github.run_id }}");
+    expect(planUpload.if).toBe("always()");
     expect(planUpload.with?.name).toBe("full-release-execution-plan-${{ github.run_id }}");
     expect(manifestStep.env).not.toHaveProperty("EVIDENCE_MANIFEST");
     expect(manifestStep.run).toContain(
