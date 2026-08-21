@@ -1,6 +1,5 @@
 import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
-  readCodexSupportedReasoningEfforts,
   resolveCodexAppServerReasoningEffort,
   type CodexReasoningEffort,
 } from "./reasoning-effort.js";
@@ -147,16 +146,4 @@ export function resolveReasoningEffort(
     modelId,
     supportedReasoningEfforts,
   });
-}
-
-/** Resolve effort from the selected catalog row carried by an attempt. */
-export function resolveAttemptReasoningEffort(
-  params: EmbeddedRunAttemptParams,
-  modelId: string,
-): CodexReasoningEffort | null {
-  return resolveReasoningEffort(
-    params.thinkLevel,
-    modelId,
-    readCodexSupportedReasoningEfforts(params.model?.compat),
-  );
 }

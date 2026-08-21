@@ -206,22 +206,20 @@ export function buildThreadStartParams(
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     serviceName: "OpenClaw",
     ...(ringZeroActive ? { baseInstructions: CODEX_RING_ZERO_BASE_INSTRUCTIONS } : {}),
-    config: {
-      ...buildCodexRuntimeThreadConfigForRun(params, options.config, {
-        nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-        nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
-        nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-        directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
-        webSearchAllowed: options.webSearchAllowed,
-        appServer: options.appServer,
-        hostSystemAgentActive: options.hostSystemAgentActive,
-        restrictedToolSurfaceInheritedMcpServerNames:
-          options.restrictedToolSurfaceInheritedMcpServerNames,
-        shellEnvironment: options.shellEnvironment,
-        disableLoginShell: options.disableLoginShell,
-      }),
-      ...(options.reasoningEffort && { model_reasoning_effort: options.reasoningEffort }),
-    },
+    config: buildCodexRuntimeThreadConfigForRun(params, options.config, {
+      nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+      nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
+      nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
+      webSearchAllowed: options.webSearchAllowed,
+      appServer: options.appServer,
+      hostSystemAgentActive: options.hostSystemAgentActive,
+      restrictedToolSurfaceInheritedMcpServerNames:
+        options.restrictedToolSurfaceInheritedMcpServerNames,
+      shellEnvironment: options.shellEnvironment,
+      disableLoginShell: options.disableLoginShell,
+      reasoningEffort: options.reasoningEffort,
+    }),
     ...resolveCodexThreadEnvironmentSelection(options),
     developerInstructions:
       options.developerInstructions ??
@@ -256,6 +254,7 @@ export function buildThreadResumeParams(
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
     disableLoginShell?: boolean;
+    reasoningEffort?: string | null;
     preserveNativeModel?: boolean;
   },
 ): CodexThreadResumeParams {
@@ -482,6 +481,7 @@ export function buildCodexRuntimeThreadConfigForRun(
       params.authoredContextTokenCap === undefined
         ? undefined
         : { model_context_window: params.authoredContextTokenCap },
+      options.reasoningEffort ? { model_reasoning_effort: options.reasoningEffort } : undefined,
     ) ?? baseConfig;
   const contextConfig =
     params.bootstrapContextMode !== "lightweight"
@@ -719,12 +719,11 @@ function hasNonEmptyJsonValue(value: JsonValue): boolean {
   return true;
 }
 
-export function resolveCodexThreadApprovalsReviewer(
+export const resolveCodexThreadApprovalsReviewer = (
   appServer: CodexAppServerRuntimeOptions,
   config?: JsonObject,
-): CodexAppServerRuntimeOptions["approvalsReviewer"] {
-  return config?.approvals_reviewer === "user" ? "user" : appServer.approvalsReviewer;
-}
+): CodexAppServerRuntimeOptions["approvalsReviewer"] =>
+  config?.approvals_reviewer === "user" ? "user" : appServer.approvalsReviewer;
 
 export function codexThreadSandboxOrPermissions(
   appServer: Pick<CodexAppServerRuntimeOptions, "networkProxy" | "sandbox">,
