@@ -425,6 +425,7 @@ export function buildCodexRuntimeThreadConfigForRun(
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
     disableLoginShell?: boolean;
+    reasoningEffort?: string | null;
   } = {},
 ): JsonObject {
   const ringZeroActive =
@@ -725,14 +726,10 @@ export const resolveCodexThreadApprovalsReviewer = (
 ): CodexAppServerRuntimeOptions["approvalsReviewer"] =>
   config?.approvals_reviewer === "user" ? "user" : appServer.approvalsReviewer;
 
-export function codexThreadSandboxOrPermissions(
+export const codexThreadSandboxOrPermissions = (
   appServer: Pick<CodexAppServerRuntimeOptions, "networkProxy" | "sandbox">,
-): Pick<CodexThreadStartParams, "sandbox"> {
-  if (appServer.networkProxy) {
-    return {};
-  }
-  return { sandbox: appServer.sandbox };
-}
+): Pick<CodexThreadStartParams, "sandbox"> =>
+  appServer.networkProxy ? {} : { sandbox: appServer.sandbox };
 
 function resolveCodexThreadEnvironmentSelection(options: {
   nativeCodeModeEnabled?: boolean;
