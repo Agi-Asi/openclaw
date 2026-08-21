@@ -1031,7 +1031,10 @@ async function runBoundTurn(params: {
           clientId: client.getInstanceId(),
           cwd: response.thread.cwd ?? binding.cwd,
           model: response.model ?? modelSelection?.model ?? binding.model,
-          reasoningEffort: response.reasoningEffort,
+          reasoningEffort: resolveCodexBindingReasoningEffort(
+            response.reasoningEffort,
+            binding.reasoningEffort,
+          ),
           modelProvider: normalizeCodexAppServerBindingModelProvider({
             authProfileId: binding.authProfileId,
             modelProvider:
