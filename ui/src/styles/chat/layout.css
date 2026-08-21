@@ -4817,25 +4817,65 @@ button.chat-pr__diff {
 }
 
 .slash-menu {
+  --slash-menu-max-height: min(42vh, 336px);
+
   position: absolute;
-  bottom: 100%;
+  bottom: calc(100% + 10px);
   left: 0;
   right: 0;
-  max-height: 288px;
+  max-height: var(--slash-menu-max-height);
   overflow: hidden;
-  background: var(--bg-elevated);
-  border: 1px solid var(--overlay-border);
-  border-radius: var(--menu-radius);
-  box-shadow: var(--overlay-shadow);
+  background: var(--chat-composer-surface);
+  border: 1px solid var(--chat-composer-hairline);
   z-index: 30;
-  margin-bottom: 4px;
+}
+
+.agent-chat__input > .slash-menu {
+  border-radius: calc(20px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
 }
 
 .slash-menu__scroll {
   box-sizing: border-box;
-  max-height: inherit;
+  max-height: calc(var(--slash-menu-max-height) - 12px);
+  margin: 6px;
   overflow-y: auto;
-  padding: var(--menu-padding);
+  padding-right: 2px;
+  scrollbar-color: color-mix(in srgb, var(--text-strong) 24%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.slash-menu__scroll[data-scrollable="true"] {
+  padding-right: 6px;
+}
+
+.slash-menu__scroll[data-scrollable="true"][data-at-start="true"][data-at-end="false"] {
+  mask-image: linear-gradient(to bottom, black 0, black calc(100% - 10px), transparent);
+}
+
+.slash-menu__scroll[data-scrollable="true"][data-at-start="false"][data-at-end="false"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 10px,
+    black calc(100% - 10px),
+    transparent
+  );
+}
+
+.slash-menu__scroll[data-scrollable="true"][data-at-start="false"][data-at-end="true"] {
+  mask-image: linear-gradient(to bottom, transparent, black 10px, black 100%);
+}
+
+.slash-menu__scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.slash-menu__scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-strong) 24%, transparent);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 
 .slash-menu-group + .slash-menu-group {
@@ -4852,14 +4892,15 @@ button.chat-pr__diff {
   color: var(--muted);
 }
 
-.slash-menu-item {
+.slash-menu .slash-menu-item {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   align-items: center;
-  column-gap: 16px;
-  min-height: var(--menu-item-height);
+  column-gap: 12px;
+  min-height: 34px;
   padding: 0 8px;
-  border-radius: var(--menu-item-radius);
+  border-radius: calc(11px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
   transition: background var(--duration-fast) ease;
 }
 
@@ -4873,30 +4914,22 @@ button.chat-pr__diff {
   display: flex;
   align-items: center;
   min-width: 0;
-}
-
-.slash-menu-leading {
-  gap: 8px;
-}
-
-.slash-menu-trailing {
-  justify-content: flex-end;
-  gap: 8px;
+  gap: 7px;
 }
 
 .slash-menu-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--chat-composer-secondary);
 }
 
 .slash-menu-icon svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -4910,8 +4943,8 @@ button.chat-pr__diff {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--control-ui-text-sm);
-  font-weight: 500;
-  color: var(--text);
+  font-weight: 550;
+  color: var(--text-strong);
   white-space: nowrap;
 }
 
@@ -4920,8 +4953,8 @@ button.chat-pr__diff {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--control-ui-text-xs);
-  /* Full-opacity --muted keeps slash-arg hints at WCAG AA on dark surfaces. */
-  color: var(--muted);
+  color: var(--chat-composer-tertiary);
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -4935,12 +4968,14 @@ button.chat-pr__diff {
   color: var(--muted);
 }
 
-.slash-menu-badge {
-  font-size: var(--control-ui-text-xs);
-  font-weight: 500;
-  color: var(--muted);
-  white-space: nowrap;
-  flex-shrink: 0;
+@media (max-width: 640px) {
+  .slash-menu-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .slash-menu-desc {
+    display: none;
+  }
 }
 
 .chat-attachments-preview {

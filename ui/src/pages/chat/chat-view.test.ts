@@ -3563,6 +3563,29 @@ describe("chat slash menu accessibility", () => {
     expect(onSlashIntent).toHaveBeenCalledOnce();
   });
 
+  it("shows skills after commands in the slash picker and highlights typed prefixes", () => {
+    replaceSkillCommands({
+      key: "status_report",
+      skillDisplayName: "Status Report",
+      description: "Prepare a detailed status report.",
+    });
+    const { container } = createReactiveDraftHarness();
+
+    inputDraftAtEnd(container, "/sta");
+
+    const options = Array.from(container.querySelectorAll<HTMLElement>("[role='option']"));
+    const skillHeader = container.querySelector(
+      ".slash-menu-group--skills .slash-menu-group__label",
+    );
+    expect(options.length).toBeGreaterThan(1);
+    expect(options[0]?.textContent).toContain("/status");
+    expect(options.at(-1)?.textContent).toContain("/status_report");
+    expect(skillHeader?.textContent).toBe("Skills");
+    expect(options[0]?.querySelector("mark")?.textContent).toBe("sta");
+    expect(options[0]?.querySelector(".slash-menu-scope")).toBeNull();
+    expect(options.at(-1)?.querySelector(".slash-menu-scope")).toBeNull();
+  });
+
   it("fills a selected $ skill without submitting the surrounding prompt", async () => {
     replaceSkillCommands({
       key: "prose_writer",

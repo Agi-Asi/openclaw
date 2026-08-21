@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { ref } from "lit/directives/ref.js";
 import { icons, type IconName } from "../../../components/icons.ts";
 import { t } from "../../../i18n/index.ts";
 import {
@@ -201,6 +202,22 @@ function slashOptionIdSegment(value: string): string {
   );
 }
 
+export function syncComposerMenuScroll(element: Element | undefined): void {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  const sync = () => {
+    const scrollable = element.scrollHeight > element.clientHeight + 1;
+    element.dataset.scrollable = String(scrollable);
+    element.dataset.atStart = String(!scrollable || element.scrollTop <= 1);
+    element.dataset.atEnd = String(
+      !scrollable || element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+    );
+  };
+  sync();
+  requestAnimationFrame(sync);
+}
+
 function getSlashCommandOptionId(paneId: string, cmd: SlashCommandDef): string {
   return paneDomId(paneId, `slash-option-command-${slashOptionIdSegment(cmd.name)}`);
 }
@@ -259,6 +276,51 @@ function renderSlashIcon(name: string) {
   return icons[name as IconName] ?? icons.terminal;
 }
 
+function renderMatchedName(name: string, query: string): TemplateResult {
+  const matchLength = name.toLowerCase().startsWith(query.toLowerCase()) ? query.length : 0;
+  if (matchLength === 0) {
+    return html`${name}`;
+  }
+  return html`<mark>${name.slice(0, matchLength)}</mark>${name.slice(matchLength)}`;
+}
+
+function renderSlashCommandOption(params: {
+  cmd: SlashCommandDef;
+  index: number;
+  query: string;
+  requestUpdate: () => void;
+  props: ChatComposerProps;
+  state: ChatComposerState;
+}): TemplateResult {
+  const { cmd, index, query, requestUpdate, props, state } = params;
+  return html`
+    <div
+      id=${getSlashCommandOptionId(props.paneId, cmd)}
+      class="slash-menu-item ${index === state.slashMenuIndex ? "slash-menu-item--active" : ""}"
+      role="option"
+      aria-selected=${index === state.slashMenuIndex}
+      @mousedown=${(event: MouseEvent) => event.preventDefault()}
+      @click=${() => selectSlashCommand(cmd, props, requestUpdate)}
+      @mouseenter=${() => {
+        state.slashMenuIndex = index;
+        requestUpdate();
+      }}
+    >
+      <span class="slash-menu-leading">
+        <span class="slash-menu-icon"
+          >${cmd.icon ? renderSlashIcon(cmd.icon) : icons.terminal}</span
+        >
+        <span class="slash-menu-name"
+          >/${renderMatchedName(cmd.name, query)}${cmd.args
+            ? html`<span class="slash-menu-args"> ${cmd.args}</span>`
+            : nothing}</span
+        >
+      </span>
+      <span class="slash-menu-desc">${getSlashCommandDescription(cmd)}</span>
+    </div>
+  `;
+}
+
 export function renderSlashMenu(
   requestUpdate: () => void,
   props: ChatComposerProps,
@@ -282,7 +344,11 @@ export function renderSlashMenu(
         role="listbox"
         aria-label=${t("chat.commands.arguments")}
       >
-        <div class="slash-menu__scroll">
+        <div
+          class="slash-menu__scroll"
+          ${ref(syncComposerMenuScroll)}
+          @scroll=${(event: Event) => syncComposerMenuScroll(event.currentTarget as Element)}
+        >
           <div class="slash-menu-group">
             <div class="slash-menu-group__label">
               /${state.slashMenuCommand.name} ${getSlashCommandDescription(state.slashMenuCommand)}
@@ -310,9 +376,7 @@ export function renderSlashMenu(
                     >
                     <span class="slash-menu-name">${arg}</span>
                   </span>
-                  <span class="slash-menu-trailing">
-                    <span class="slash-menu-desc">/${state.slashMenuCommand?.name} ${arg}</span>
-                  </span>
+                  <span class="slash-menu-desc">/${state.slashMenuCommand?.name} ${arg}</span>
                 </div>
               `,
             )}
@@ -326,65 +390,65 @@ export function renderSlashMenu(
     return nothing;
   }
 
-  const groups: Array<[SlashCommandCategory, Array<{ cmd: SlashCommandDef; globalIdx: number }>]> =
-    [];
-  for (const [globalIdx, cmd] of state.slashMenuItems.entries()) {
-    const category = cmd.category ?? "session";
+  const query = draft.slice(1);
+  const commands = state.slashMenuItems.filter((command) => command.source !== "skill");
+  const skills = state.slashMenuItems.filter((command) => command.source === "skill");
+  const commandGroups: Array<
+    [SlashCommandCategory, Array<{ command: SlashCommandDef; index: number }>]
+  > = [];
+  for (const [index, command] of commands.entries()) {
+    const category = command.category ?? "session";
     const group =
-      draft === "/" ? groups.find(([groupCategory]) => groupCategory === category) : groups.at(-1);
+      draft === "/"
+        ? commandGroups.find(([groupCategory]) => groupCategory === category)
+        : commandGroups.at(-1);
     if (group?.[0] === category) {
-      group[1].push({ cmd, globalIdx });
+      group[1].push({ command, index });
     } else {
-      groups.push([category, [{ cmd, globalIdx }]]);
+      commandGroups.push([category, [{ command, index }]]);
     }
   }
-
-  const sections = groups.map(
-    ([category, entries]) => html`
-      <div class="slash-menu-group">
-        <div class="slash-menu-group__label">${getSlashCommandCategoryLabel(category)}</div>
-        ${entries.map(
-          ({ cmd, globalIdx }) => html`
-            <div
-              id=${getSlashCommandOptionId(props.paneId, cmd)}
-              class="slash-menu-item ${globalIdx === state.slashMenuIndex
-                ? "slash-menu-item--active"
-                : ""}"
-              role="option"
-              aria-selected=${globalIdx === state.slashMenuIndex}
-              @click=${() => selectSlashCommand(cmd, props, requestUpdate)}
-              @mouseenter=${() => {
-                state.slashMenuIndex = globalIdx;
-                requestUpdate();
-              }}
-            >
-              <span class="slash-menu-leading">
-                <span class="slash-menu-icon"
-                  >${cmd.icon ? renderSlashIcon(cmd.icon) : nothing}</span
-                >
-                <span class="slash-menu-name">/${cmd.name}</span>
-                ${cmd.args ? html`<span class="slash-menu-args">${cmd.args}</span>` : nothing}
-              </span>
-              <span class="slash-menu-trailing">
-                <span class="slash-menu-desc">${getSlashCommandDescription(cmd)}</span>
-                ${cmd.argOptions?.length
-                  ? html`<span class="slash-menu-badge"
-                      >${t("chat.commands.optionCount", {
-                        count: String(cmd.argOptions.length),
-                      })}</span
-                    >`
-                  : nothing}
-              </span>
-            </div>
-          `,
-        )}
-      </div>
-    `,
-  );
+  const renderEntries = (entries: SlashCommandDef[], offset: number) =>
+    entries.map((cmd, index) =>
+      renderSlashCommandOption({
+        cmd,
+        index: offset + index,
+        query,
+        requestUpdate,
+        props,
+        state,
+      }),
+    );
 
   return html`
     <div id=${listboxId} class="slash-menu" role="listbox" aria-label=${t("chat.commands.menu")}>
-      <div class="slash-menu__scroll">${sections}</div>
+      <div
+        class="slash-menu__scroll"
+        ${ref(syncComposerMenuScroll)}
+        @scroll=${(event: Event) => syncComposerMenuScroll(event.currentTarget as Element)}
+      >
+        ${commandGroups.map(
+          ([category, entries]) => html`<div class="slash-menu-group">
+            <div class="slash-menu-group__label">${getSlashCommandCategoryLabel(category)}</div>
+            ${entries.map(({ command, index }) =>
+              renderSlashCommandOption({
+                cmd: command,
+                index,
+                query,
+                requestUpdate,
+                props,
+                state,
+              }),
+            )}
+          </div>`,
+        )}
+        ${skills.length > 0
+          ? html`<div class="slash-menu-group slash-menu-group--skills">
+              <div class="slash-menu-group__label">${t("chat.skills.label")}</div>
+              ${renderEntries(skills, commands.length)}
+            </div>`
+          : nothing}
+      </div>
     </div>
   `;
 }
