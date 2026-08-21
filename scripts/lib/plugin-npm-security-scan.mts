@@ -546,9 +546,21 @@ export type PluginNpmSecurityArtifactDownloadPlan = {
     name: string;
     sizeInBytes: number;
   }>;
+  candidateSha: string;
+  errors: string[];
   expectedArtifactCount: number;
+  rejectedPackageNames: string[];
   totalBytes: number;
 };
+
+function pluginSecurityArtifactDownloadError(
+  packageName: string,
+  reason: "aggregate-byte-limit" | "artifact-byte-limit",
+): string {
+  return reason === "artifact-byte-limit"
+    ? `${packageName}: plugin security artifact exceeds the pre-download byte limit.`
+    : `${packageName}: aggregate pre-download byte limit exceeded.`;
+}
 
 export function planPluginNpmSecurityArtifactDownloads(params: {
   artifactPages: unknown;
@@ -564,6 +576,12 @@ export function planPluginNpmSecurityArtifactDownloads(params: {
       artifactDirectoryName(params.candidateSha, plugin.extensionId),
     ),
   );
+  const expectedPackagesByArtifactName = new Map(
+    expectedPackages.map((plugin) => [
+      artifactDirectoryName(params.candidateSha, plugin.extensionId),
+      plugin,
+    ]),
+  );
   const expectedPrefix = `${PLUGIN_SECURITY_ARTIFACT_PREFIX}${params.candidateSha}-`;
   if (
     !Array.isArray(params.artifactPages) ||
@@ -573,10 +591,9 @@ export function planPluginNpmSecurityArtifactDownloads(params: {
     throw new Error("Plugin security artifact metadata pages are invalid.");
   }
 
-  const artifacts: PluginNpmSecurityArtifactDownloadPlan["artifacts"] = [];
+  const candidates: PluginNpmSecurityArtifactDownloadPlan["artifacts"] = [];
   const seenIds = new Set<number>();
   const seenNames = new Set<string>();
-  let totalBytes = 0;
   for (const page of params.artifactPages) {
     if (!isRecord(page) || !Array.isArray(page.artifacts) || page.artifacts.length > 100) {
       throw new Error("Plugin security artifact metadata page is invalid.");
@@ -607,19 +624,9 @@ export function planPluginNpmSecurityArtifactDownloads(params: {
       if (seenIds.has(id) || seenNames.has(entry.name)) {
         throw new Error("Plugin security artifact metadata contains a duplicate package.");
       }
-      if (sizeInBytes > MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES) {
-        throw new Error("Plugin security artifact exceeds the pre-download byte limit.");
-      }
-      totalBytes += sizeInBytes;
-      if (
-        !Number.isSafeInteger(totalBytes) ||
-        totalBytes > MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES
-      ) {
-        throw new Error("Plugin security artifacts exceed the aggregate pre-download byte limit.");
-      }
       seenIds.add(id);
       seenNames.add(entry.name);
-      artifacts.push({
+      candidates.push({
         digest: entry.digest,
         id,
         name: entry.name,
@@ -627,13 +634,106 @@ export function planPluginNpmSecurityArtifactDownloads(params: {
       });
     }
   }
-  if (artifacts.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
+  if (candidates.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
     throw new Error("Plugin security artifact metadata exceeds the package-count limit.");
   }
+  const artifacts: PluginNpmSecurityArtifactDownloadPlan["artifacts"] = [];
+  const errors: string[] = [];
+  const rejectedPackageNames: string[] = [];
+  let totalBytes = 0;
+  for (const artifact of candidates.toSorted((left, right) =>
+    compareCodeUnits(left.name, right.name),
+  )) {
+    const expectedPackage = expectedPackagesByArtifactName.get(artifact.name);
+    if (!expectedPackage) {
+      throw new Error("Plugin security artifact metadata contains an unexpected package.");
+    }
+    if (artifact.sizeInBytes > MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES) {
+      errors.push(
+        pluginSecurityArtifactDownloadError(expectedPackage.packageName, "artifact-byte-limit"),
+      );
+      rejectedPackageNames.push(expectedPackage.packageName);
+      continue;
+    }
+    const nextTotalBytes = totalBytes + artifact.sizeInBytes;
+    if (
+      !Number.isSafeInteger(nextTotalBytes) ||
+      nextTotalBytes > MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES
+    ) {
+      errors.push(
+        pluginSecurityArtifactDownloadError(expectedPackage.packageName, "aggregate-byte-limit"),
+      );
+      rejectedPackageNames.push(expectedPackage.packageName);
+      continue;
+    }
+    totalBytes = nextTotalBytes;
+    artifacts.push(artifact);
+  }
   return {
-    artifacts: artifacts.toSorted((left, right) => compareCodeUnits(left.name, right.name)),
+    artifacts,
+    candidateSha: params.candidateSha,
+    errors: sortStrings(errors),
     expectedArtifactCount: expectedPackages.length,
+    rejectedPackageNames: sortStrings(rejectedPackageNames),
     totalBytes,
+  };
+}
+
+export function parsePluginNpmSecurityArtifactDownloadRejections(params: {
+  candidateSha: string;
+  expectedPackages: unknown;
+  plan: unknown;
+}): { errors: string[]; rejectedPackageNames: string[] } {
+  const expectedPackages = parseExpectedPackages(params.expectedPackages);
+  if (!isRecord(params.plan)) {
+    throw new Error("Plugin security artifact download plan is invalid.");
+  }
+  const expectedKeys = [
+    "artifacts",
+    "candidateSha",
+    "errors",
+    "expectedArtifactCount",
+    "rejectedPackageNames",
+    "totalBytes",
+  ];
+  if (
+    JSON.stringify(Object.keys(params.plan).toSorted()) !== JSON.stringify(expectedKeys) ||
+    params.plan.candidateSha !== params.candidateSha ||
+    params.plan.expectedArtifactCount !== expectedPackages.length ||
+    !Array.isArray(params.plan.errors) ||
+    !Array.isArray(params.plan.rejectedPackageNames)
+  ) {
+    throw new Error("Plugin security artifact download plan identity is invalid.");
+  }
+  const errors = params.plan.errors;
+  const rejectedPackageNames = params.plan.rejectedPackageNames;
+  if (
+    errors.length > expectedPackages.length ||
+    rejectedPackageNames.length !== errors.length ||
+    errors.some((error) => typeof error !== "string") ||
+    rejectedPackageNames.some((packageName) => typeof packageName !== "string") ||
+    JSON.stringify(sortStrings(errors as string[])) !== JSON.stringify(errors) ||
+    JSON.stringify(sortStrings(rejectedPackageNames as string[])) !==
+      JSON.stringify(rejectedPackageNames) ||
+    new Set(rejectedPackageNames).size !== rejectedPackageNames.length
+  ) {
+    throw new Error("Plugin security artifact download plan rejections are invalid.");
+  }
+  const expectedNames = new Set(expectedPackages.map((plugin) => plugin.packageName));
+  for (let index = 0; index < rejectedPackageNames.length; index += 1) {
+    const packageName = rejectedPackageNames[index] as string;
+    const error = errors[index] as string;
+    if (
+      !expectedNames.has(packageName) ||
+      (error !== pluginSecurityArtifactDownloadError(packageName, "artifact-byte-limit") &&
+        error !== pluginSecurityArtifactDownloadError(packageName, "aggregate-byte-limit"))
+    ) {
+      throw new Error("Plugin security artifact download plan rejection is invalid.");
+    }
+  }
+  return {
+    errors: errors as string[],
+    rejectedPackageNames: rejectedPackageNames as string[],
   };
 }
 
@@ -663,9 +763,18 @@ export function loadPluginNpmSecurityArtifacts(params: {
   candidateSha: string;
   expectedPackages: unknown;
   limits?: PluginNpmSecurityArtifactLimits;
+  rejectedPackageNames?: readonly string[];
   toolingSha: string;
 }): PluginNpmSecurityArtifactLoadResult {
   const expectedPackages = parseExpectedPackages(params.expectedPackages);
+  const expectedPackageNames = new Set(expectedPackages.map((plugin) => plugin.packageName));
+  const rejectedPackageNames = new Set(params.rejectedPackageNames ?? []);
+  if (
+    rejectedPackageNames.size !== (params.rejectedPackageNames?.length ?? 0) ||
+    [...rejectedPackageNames].some((packageName) => !expectedPackageNames.has(packageName))
+  ) {
+    throw new Error("Plugin security rejected package inventory is invalid.");
+  }
   const rootStat = lstatSync(params.artifactRoot);
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
     throw new Error("Plugin security artifact root is not a real directory.");
@@ -708,7 +817,11 @@ export function loadPluginNpmSecurityArtifacts(params: {
     const entryName = artifactDirectoryName(params.candidateSha, expectedPackage.extensionId);
     const entry = entriesByName.get(entryName);
     if (!entry) {
-      ingestionErrors.push(`${expectedPackage.packageName}: plugin security artifact is missing.`);
+      if (!rejectedPackageNames.has(expectedPackage.packageName)) {
+        ingestionErrors.push(
+          `${expectedPackage.packageName}: plugin security artifact is missing.`,
+        );
+      }
       continue;
     }
     if (!entry.isDirectory() || entry.isSymbolicLink()) {
@@ -1084,6 +1197,8 @@ export async function runPluginNpmSecurityScan(params: {
   candidateSha: string;
   expectedPackages: unknown;
   limits?: PluginNpmSecurityArtifactLimits;
+  preDownloadErrors?: readonly string[];
+  preDownloadRejectedPackageNames?: readonly string[];
   toolingDir: string;
   toolingSha: string;
 }): Promise<PluginNpmSecurityScanReport> {
@@ -1097,6 +1212,7 @@ export async function runPluginNpmSecurityScan(params: {
     candidateSha: params.candidateSha,
     expectedPackages: params.expectedPackages,
     limits: params.limits,
+    rejectedPackageNames: params.preDownloadRejectedPackageNames,
     toolingSha,
   });
   const { packageResults, scanErrors } = await scanPublishablePluginPackages(loaded.artifacts);
@@ -1104,7 +1220,7 @@ export async function runPluginNpmSecurityScan(params: {
     buildPluginNpmSecurityScanReport({
       candidateSha: params.candidateSha,
       packageResults,
-      scanErrors: [...loaded.ingestionErrors, ...scanErrors],
+      scanErrors: [...(params.preDownloadErrors ?? []), ...loaded.ingestionErrors, ...scanErrors],
       toolingSha,
     }),
   );

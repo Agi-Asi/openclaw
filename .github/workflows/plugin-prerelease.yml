@@ -492,6 +492,7 @@ jobs:
           report="$RUNNER_TEMP/plugin-npm-security-scan.json"
           mkdir -p "$RUNNER_TEMP/plugin-npm-security-packages"
           node scripts/plugin-npm-security-scan-runner.mjs \
+            --artifact-plan "$RUNNER_TEMP/plugin-npm-security-artifact-download-plan.json" \
             --artifact-root "$RUNNER_TEMP/plugin-npm-security-packages" \
             --candidate-sha "$CANDIDATE_SHA" \
             --expected-packages-json "$EXPECTED_PACKAGES_JSON" \

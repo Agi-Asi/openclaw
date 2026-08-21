@@ -71,7 +71,7 @@ function main(argv = process.argv.slice(2)): number {
   });
   writePlan(args.outputPath, plan);
   console.log(
-    `Plugin security artifact download plan: ${plan.artifacts.length}/${plan.expectedArtifactCount} artifacts, ${plan.totalBytes} bytes.`,
+    `Plugin security artifact download plan: ${plan.artifacts.length}/${plan.expectedArtifactCount} accepted, ${plan.rejectedPackageNames.length} rejected, ${plan.totalBytes} bytes.`,
   );
   return 0;
 }

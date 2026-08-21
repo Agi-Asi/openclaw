@@ -367,6 +367,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       "pnpm install --frozen-lockfile --prefer-offline --ignore-scripts",
     );
     expect(runSecurityScan?.run).toContain("node scripts/plugin-npm-security-scan-runner.mjs");
+    expect(runSecurityScan?.run).toContain("--artifact-plan");
     expect(runSecurityScan?.run).toContain("--artifact-root");
     expect(runSecurityScan?.run).not.toContain("--candidate-root");
     expect(runSecurityScan?.run).toContain('--candidate-sha "$CANDIDATE_SHA"');
@@ -458,7 +459,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(pluginDispatch?.run).not.toContain("node_test_exclude_patterns_json");
   });
 
-  it("rejects oversized plugin security artifacts before the workflow download action", () => {
+  it("omits oversized plugin security artifacts without hiding valid siblings", () => {
     const candidateSha = "1".repeat(40);
     const packageEntry = (index: number) => {
       const id = `plugin-${String(index).padStart(3, "0")}`;
@@ -481,37 +482,47 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       size_in_bytes: sizeInBytes,
     });
 
-    const onePackage = [packageEntry(0)];
-    expect(() =>
-      planPluginNpmSecurityArtifactDownloads({
-        artifactPages: [
-          {
-            artifacts: [
-              artifactEntry(onePackage[0]!, 0, MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES + 1),
-            ],
-          },
-        ],
-        candidateSha,
-        expectedPackages: onePackage,
-      }),
-    ).toThrow("pre-download byte limit");
+    const mixedPackages = [packageEntry(0), packageEntry(1)];
+    const mixedPlan = planPluginNpmSecurityArtifactDownloads({
+      artifactPages: [
+        {
+          artifacts: [
+            artifactEntry(mixedPackages[1]!, 1, MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES + 1),
+            artifactEntry(mixedPackages[0]!, 0, 1024),
+          ],
+        },
+      ],
+      candidateSha,
+      expectedPackages: mixedPackages,
+    });
+    expect(mixedPlan.artifacts.map((artifact) => artifact.name)).toEqual([
+      `plugin-npm-security-package-${candidateSha}-plugin-000`,
+    ]);
+    expect(mixedPlan.rejectedPackageNames).toEqual(["@openclaw/plugin-001"]);
+    expect(mixedPlan.errors).toEqual([
+      "@openclaw/plugin-001: plugin security artifact exceeds the pre-download byte limit.",
+    ]);
+    expect(mixedPlan.totalBytes).toBe(1024);
 
     const aggregatePackages = Array.from({ length: 5 }, (_, index) => packageEntry(index));
     const aggregateArtifactBytes =
       Math.floor(MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES / aggregatePackages.length) + 1;
-    expect(() =>
-      planPluginNpmSecurityArtifactDownloads({
-        artifactPages: [
-          {
-            artifacts: aggregatePackages.map((plugin, index) =>
-              artifactEntry(plugin, index, aggregateArtifactBytes),
-            ),
-          },
-        ],
-        candidateSha,
-        expectedPackages: aggregatePackages,
-      }),
-    ).toThrow("aggregate pre-download byte limit");
+    const aggregatePlan = planPluginNpmSecurityArtifactDownloads({
+      artifactPages: [
+        {
+          artifacts: aggregatePackages
+            .map((plugin, index) => artifactEntry(plugin, index, aggregateArtifactBytes))
+            .toReversed(),
+        },
+      ],
+      candidateSha,
+      expectedPackages: aggregatePackages,
+    });
+    expect(aggregatePlan.artifacts).toHaveLength(4);
+    expect(aggregatePlan.rejectedPackageNames).toEqual(["@openclaw/plugin-004"]);
+    expect(aggregatePlan.errors).toEqual([
+      "@openclaw/plugin-004: aggregate pre-download byte limit exceeded.",
+    ]);
 
     expect(() =>
       planPluginNpmSecurityArtifactDownloads({

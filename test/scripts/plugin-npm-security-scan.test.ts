@@ -510,6 +510,50 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     ]);
   });
 
+  it("retains valid package reports when a sibling is rejected before download", async () => {
+    const artifactRoot = tempDirs.make("openclaw-plugin-npm-security-pre-download-");
+    const valid = writePluginArtifact({
+      artifactRoot,
+      extensionId: "valid",
+      files: { "index.js": "export const value = 1;\n" },
+      packageName: "@openclaw/test-valid",
+    });
+    const rejectedPackage = {
+      extensionId: "oversized",
+      packageDir: "extensions/oversized",
+      packageName: "@openclaw/test-oversized",
+      packageVersion: "1.0.0",
+    } satisfies PublishablePluginPackage;
+    const preDownloadError =
+      "@openclaw/test-oversized: plugin security artifact exceeds the pre-download byte limit.";
+    const loaded = loadPluginNpmSecurityArtifacts({
+      artifactRoot,
+      candidateSha: CANDIDATE_SHA,
+      expectedPackages: [rejectedPackage, valid.expectedPackage].toSorted((left, right) =>
+        left.packageName.localeCompare(right.packageName),
+      ),
+      rejectedPackageNames: [rejectedPackage.packageName],
+      toolingSha: TOOLING_SHA,
+    });
+
+    expect(loaded.ingestionErrors).toEqual([]);
+    expect(loaded.artifacts.map((artifact) => artifact.packageName)).toEqual([
+      valid.expectedPackage.packageName,
+    ]);
+    const scanned = await scanPublishablePluginPackages(loaded.artifacts);
+    const report = buildPluginNpmSecurityScanReport({
+      candidateSha: CANDIDATE_SHA,
+      packageResults: scanned.packageResults,
+      scanErrors: [preDownloadError, ...scanned.scanErrors],
+      toolingSha: TOOLING_SHA,
+    });
+    expect(report.packages.map((plugin) => plugin.packageName)).toEqual([
+      valid.expectedPackage.packageName,
+    ]);
+    expect(report.errors).toContain(preDownloadError);
+    expect(report.errors.join("\n")).not.toContain("plugin security artifact is missing");
+  });
+
   it("bounds aggregate compressed and expanded artifact bytes deterministically", () => {
     const artifactRoot = tempDirs.make("openclaw-plugin-npm-security-aggregate-");
     const alpha = writePluginArtifact({
@@ -584,7 +628,7 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
         buildPluginNpmSecurityScanReport({
           candidateSha: CANDIDATE_SHA,
           maxTotalFindings: 50,
-          packageResults: structuredClone(packageResults).reverse(),
+          packageResults: structuredClone(packageResults).toReversed(),
           toolingSha: TOOLING_SHA,
         }),
       ),
