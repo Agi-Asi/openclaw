@@ -359,13 +359,13 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Setup candidate package build environment
+      - name: Setup trusted inert pack environment
         uses: ./.github/actions/setup-node-env
         with:
           node-version: "24.x"
           install-bun: "false"
 
-      - name: Build publication-equivalent plugin artifact
+      - name: Pack supplemental inert plugin input
         env:
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.checkout_revision }}
           EXTENSION_ID: ${{ matrix.extension_id }}
@@ -385,7 +385,7 @@ jobs:
             --package-name "$PACKAGE_NAME" \
             --tooling-sha "$TOOLING_SHA"
 
-      - name: Upload publication-equivalent plugin artifact
+      - name: Upload supplemental inert plugin input
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: plugin-npm-security-package-${{ needs.resolve-candidate.outputs.checkout_revision }}-${{ matrix.extension_id }}
@@ -426,14 +426,14 @@ jobs:
       - name: Install trusted scanner dependencies
         run: pnpm install --frozen-lockfile --prefer-offline --ignore-scripts
 
-      - name: Download publication-equivalent plugin artifacts
+      - name: Download supplemental inert plugin inputs
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: plugin-npm-security-package-${{ needs.resolve-candidate.outputs.checkout_revision }}-*
           path: ${{ runner.temp }}/plugin-npm-security-packages
 
-      - name: Scan publication-equivalent plugin artifacts
+      - name: Scan supplemental inert plugin inputs
         env:
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.checkout_revision }}
           EXPECTED_PACKAGES_JSON: ${{ needs.plugin-npm-security-plan.outputs.packages_json }}

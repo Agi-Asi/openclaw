@@ -48,12 +48,11 @@ export type ScanPackageResult = {
 };
 
 type PluginNpmSecurityArtifact = PublishablePluginPackage & {
-  artifactKind: "publication-equivalent-plugin-tarball";
+  artifactKind: "supplemental-inert-package-input";
   artifactDir: string;
   candidateSha: string;
   compressedBytes: number;
   expandedBytes: number;
-  packOwner: "scripts/plugin-npm-publish.sh";
   tarballPath: string;
   tarballSha256: string;
   toolingSha: string;
@@ -64,6 +63,7 @@ export type PluginNpmSecurityScanReport = {
   errors: string[];
   layout: string | null;
   packages: ScanPackageResult[];
+  scanScope: "supplemental-inert-package-input";
   schemaVersion: 1;
   status: "pass" | "fail";
   summary: {
@@ -421,7 +421,6 @@ function readPluginSecurityArtifact(
     "artifactKind",
     "candidateSha",
     "extensionId",
-    "packOwner",
     "packageDir",
     "packageName",
     "packageVersion",
@@ -431,8 +430,7 @@ function readPluginSecurityArtifact(
     "toolingSha",
   ];
   if (
-    metadata.artifactKind !== "publication-equivalent-plugin-tarball" ||
-    metadata.packOwner !== "scripts/plugin-npm-publish.sh" ||
+    metadata.artifactKind !== "supplemental-inert-package-input" ||
     metadata.schemaVersion !== 1 ||
     JSON.stringify(Object.keys(metadata).toSorted()) !== JSON.stringify(expectedKeys)
   ) {
@@ -509,13 +507,12 @@ function readPluginSecurityArtifact(
     throw new Error("Plugin security artifact tarball identity is invalid.");
   }
   return {
-    artifactKind: "publication-equivalent-plugin-tarball",
+    artifactKind: "supplemental-inert-package-input",
     artifactDir,
     candidateSha: expectedCandidateSha,
     compressedBytes: tarballStat.size,
     expandedBytes: inspection.totalFileBytes,
     extensionId,
-    packOwner: "scripts/plugin-npm-publish.sh",
     packageDir,
     packageName,
     packageVersion,
@@ -912,6 +909,7 @@ export function buildPluginNpmSecurityScanReport(params: {
     errors: sortStrings(errors),
     layout: layout?.id ?? null,
     packages: sortedPackages,
+    scanScope: "supplemental-inert-package-input",
     schemaVersion: 1,
     status: errors.length === 0 ? "pass" : "fail",
     summary: {
@@ -937,6 +935,7 @@ export function constrainPluginNpmSecurityScanReport(
     errors: ["Plugin npm security scan report exceeded the byte limit."],
     layout: null,
     packages: [],
+    scanScope: "supplemental-inert-package-input",
     schemaVersion: 1,
     status: "fail",
     summary: report.summary,

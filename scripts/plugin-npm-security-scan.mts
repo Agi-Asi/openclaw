@@ -95,6 +95,7 @@ function failureReport(args: ParsedArgs, message: string): PluginNpmSecurityScan
     errors: [message],
     layout: null,
     packages: [],
+    scanScope: "supplemental-inert-package-input",
     schemaVersion: 1,
     status: "fail",
     summary: {

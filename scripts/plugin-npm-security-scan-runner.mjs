@@ -106,6 +106,7 @@ function compactFailureReport(args, category) {
     errors: [`Plugin npm security scanner ${category}.`],
     layout: null,
     packages: [],
+    scanScope: "supplemental-inert-package-input",
     schemaVersion: 1,
     status: "fail",
     summary: {
@@ -140,6 +141,7 @@ function existingReportStatus(args) {
       report?.candidateSha === args.candidateSha &&
       Array.isArray(report?.errors) &&
       Array.isArray(report?.packages) &&
+      report?.scanScope === "supplemental-inert-package-input" &&
       (report?.status === "pass" || report?.status === "fail") &&
       typeof report?.summary === "object" &&
       report?.toolingSha === args.toolingSha &&

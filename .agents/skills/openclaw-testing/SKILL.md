@@ -340,11 +340,12 @@ lanes are intentionally reserved for the separate `Plugin Prerelease` child so
 PRs, main pushes, and ad hoc broad CI checks do not spend Docker/package time or
 all-plugin runtime time on release-only product coverage.
 
-`Plugin Prerelease` may execute candidate code only in secretless packaging
-jobs. The trusted scanner treats uploaded immutable tarballs as inert data and
-scans the exact post-build bytes; publication must consume those verified bytes
-or require an identical digest. Artifact ingestion stays fail-slow so one
-malformed package records its own error without hiding other package reports.
+`Plugin Prerelease` performs a supplemental scan of checked-in npm package input
+as inert data; it never runs candidate lifecycle, asset, build, install, or
+replacement scanner code. This scan does not approve post-build or publication
+bytes. The publication workflow must independently scan its exact final artifact
+and publish the same digest. Ingestion stays fail-slow so one malformed package
+cannot hide other package reports.
 
 Use one operator, one transition-only watcher, and at most one investigator for
 the current failed surface. Parent timeout or cancellation leaves adopted exact

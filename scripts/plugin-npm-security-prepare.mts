@@ -7,6 +7,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveNpmJsonEntries } from "./lib/npm-json-output.mts";
@@ -15,6 +16,7 @@ import {
   resolveCandidatePluginPackageDir,
   type PublishablePluginPackage,
 } from "./lib/plugin-npm-security-scan.mts";
+import { resolveNpmRunner } from "./npm-runner.mts";
 import {
   inspectPackageTarballBytes,
   readBoundedRegularFile,
@@ -164,32 +166,45 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
     mkdirSync(args.outputDir, { recursive: true });
   }
 
-  // This unprivileged job is the only candidate-code execution boundary. It
-  // uses the same pack owner as publication so the trusted scanner sees built,
-  // overlaid, dependency-complete package bytes without executing candidate code.
-  const publishScript =
-    process.env.NODE_ENV === "test" && process.env.OPENCLAW_PLUGIN_SECURITY_TEST_PUBLISH_SCRIPT
-      ? process.env.OPENCLAW_PLUGIN_SECURITY_TEST_PUBLISH_SCRIPT
-      : join(toolingRoot, "scripts", "plugin-npm-publish.sh");
-  const result = spawnSync(
-    "bash",
-    [publishScript, "--repo-root", candidateRoot, "--pack", args.packageDir],
-    {
-      cwd: toolingRoot,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        OPENCLAW_PLUGIN_NPM_PACK_OUTPUT_DIR: args.outputDir,
-      },
-      killSignal: "SIGKILL",
-      maxBuffer: MAX_PACK_STDOUT_BYTES,
-      shell: false,
-      stdio: ["ignore", "pipe", "inherit"],
-      timeout: PACK_TIMEOUT_MS,
+  // Supplemental qualification keeps candidate code inert. Publication builds
+  // and scans its final artifact separately before any registry mutation.
+  const npm = resolveNpmRunner({
+    env: {
+      CI: "1",
+      HOME: tmpdir(),
+      NODE_OPTIONS: "--max-old-space-size=512",
+      NPM_CONFIG_AUDIT: "false",
+      NPM_CONFIG_FUND: "false",
+      NPM_CONFIG_GLOBALCONFIG: "/dev/null",
+      NPM_CONFIG_IGNORE_SCRIPTS: "true",
+      NPM_CONFIG_PROVENANCE: "false",
+      NPM_CONFIG_USERCONFIG: join(tmpdir(), "openclaw-plugin-security-empty-npmrc"),
+      NPM_CONFIG_WORKSPACES: "false",
+      PATH: process.env.PATH,
+      TMPDIR: tmpdir(),
     },
-  );
+    npmArgs: [
+      "pack",
+      "--json",
+      "--ignore-scripts",
+      "--workspaces=false",
+      "--pack-destination",
+      args.outputDir,
+    ],
+  });
+  const result = spawnSync(npm.command, npm.args, {
+    cwd: selected.packageDir,
+    encoding: "utf8",
+    env: npm.env,
+    killSignal: "SIGKILL",
+    maxBuffer: MAX_PACK_STDOUT_BYTES,
+    shell: npm.shell,
+    stdio: ["ignore", "pipe", "inherit"],
+    timeout: PACK_TIMEOUT_MS,
+    windowsVerbatimArguments: npm.windowsVerbatimArguments,
+  });
   if (result.status !== 0 || result.signal || result.error) {
-    throw new Error(`${selected.packageName}: publication-equivalent plugin pack failed.`);
+    throw new Error(`${selected.packageName}: trusted inert plugin pack failed.`);
   }
   const packEntries = parsePackOutput(result.stdout);
   if (packEntries.length !== 1) {
@@ -215,17 +230,16 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
     inspection.packageManifest.name !== selected.packageName ||
     inspection.packageManifest.version !== selected.packageVersion
   ) {
-    throw new Error(`${selected.packageName}: publication-equivalent package identity mismatch.`);
+    throw new Error(`${selected.packageName}: inert package input identity mismatch.`);
   }
   const artifactEntries = readdirSync(args.outputDir);
   if (artifactEntries.length !== 1 || artifactEntries[0] !== tarballName) {
     throw new Error(`${selected.packageName}: packaging produced unexpected artifact files.`);
   }
   const metadata = {
-    artifactKind: "publication-equivalent-plugin-tarball",
+    artifactKind: "supplemental-inert-package-input",
     candidateSha: args.candidateSha,
     extensionId: selected.extensionId,
-    packOwner: "scripts/plugin-npm-publish.sh",
     packageDir: args.packageDir,
     packageName: selected.packageName,
     packageVersion: selected.packageVersion,
