@@ -7,7 +7,7 @@ import {
   buildPluginNpmSecurityScanReport,
   collectNpmPackedFiles,
   normalizePackedFindingPath,
-  parseNpmPackFiles,
+  parsePacklistFiles,
   resolveReviewedSourceLayout,
   runPluginNpmSecurityScan,
   scanPublishablePluginPackages,
@@ -44,7 +44,10 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
 
   it("collects candidate package files without running lifecycle scripts", async () => {
     const packageDir = tempDirs.make("openclaw-plugin-npm-security-pack-");
-    const lifecycleMarker = join(packageDir, "prepack-ran");
+    const replacementMarker = join(packageDir, "replacement-helper-ran");
+    const lifecycleMarkers = ["prepare", "prepack", "postpack"].map((name) =>
+      join(packageDir, `${name}-ran`),
+    );
     writeFileSync(
       join(packageDir, "package.json"),
       `${JSON.stringify(
@@ -52,8 +55,14 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
           name: "@openclaw/test-inert-package",
           version: "1.0.0",
           scripts: {
+            prepare: `node -e "require('node:fs').writeFileSync(${JSON.stringify(
+              lifecycleMarkers[0],
+            )}, 'ran')"`,
             prepack: `node -e "require('node:fs').writeFileSync(${JSON.stringify(
-              lifecycleMarker,
+              lifecycleMarkers[1],
+            )}, 'ran')"`,
+            postpack: `node -e "require('node:fs').writeFileSync(${JSON.stringify(
+              lifecycleMarkers[2],
             )}, 'ran')"`,
           },
         },
@@ -63,43 +72,78 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
       "utf8",
     );
     writeFileSync(join(packageDir, "index.js"), "export const value = 1;\n", "utf8");
+    writeFileSync(
+      join(packageDir, "plugin-npm-pack-files.mjs"),
+      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(
+        replacementMarker,
+      )}, "ran");\n`,
+      "utf8",
+    );
 
     const packedFiles = await collectNpmPackedFiles(packageDir, "@openclaw/test-inert-package");
 
     expect(packedFiles).toContain("index.js");
     expect(packedFiles).toContain("package.json");
-    expect(existsSync(lifecycleMarker)).toBe(false);
+    expect(existsSync(replacementMarker)).toBe(false);
+    for (const marker of lifecycleMarkers) {
+      expect(existsSync(marker)).toBe(false);
+    }
   });
 
-  it("rejects malformed and duplicate npm pack file entries", () => {
+  it("rejects malformed, unsafe, duplicate, and excessive packlist entries", () => {
     for (const malformed of [
       null,
       {},
-      { path: 1, size: 1 },
-      { path: "", size: 1 },
-      { path: "index.js", size: -1 },
+      1,
+      "",
+      "/absolute.js",
+      "dir\\file.js",
+      "../escape.js",
+      ".hidden.js",
+      "node_modules/dependency.js",
+      "a".repeat(4097),
     ]) {
       expect(() =>
-        parseNpmPackFiles(
-          JSON.stringify([{ files: [{ path: "valid.js", size: 1 }, malformed] }]),
-          "@openclaw/test",
-        ),
-      ).toThrow(/entry 1 (?:has an invalid (?:path|size)|is malformed)/u);
+        parsePacklistFiles(JSON.stringify(["valid.js", malformed]), "@openclaw/test"),
+      ).toThrow("entry 1 has an invalid path");
     }
     expect(() =>
-      parseNpmPackFiles(
-        JSON.stringify([
-          {
-            files: [
-              { path: "index.js", size: 1 },
-              { path: "index.js", size: 1 },
-            ],
-          },
-        ]),
+      parsePacklistFiles(JSON.stringify(["index.js", "index.js"]), "@openclaw/test"),
+    ).toThrow("duplicate path");
+    expect(() =>
+      parsePacklistFiles(
+        JSON.stringify(Array.from({ length: 50_001 }, (_, index) => `file-${index}.js`)),
         "@openclaw/test",
       ),
-    ).toThrow("duplicate path");
+    ).toThrow("file-count limit");
   });
+
+  it("fails closed when the trusted packlist helper exceeds process limits", async () => {
+    const root = tempDirs.make("openclaw-plugin-packlist-helper-limits-");
+    const packageDir = tempDirs.make("openclaw-plugin-packlist-helper-package-");
+    const timeoutHelper = join(root, "timeout.mjs");
+    const oomHelper = join(root, "oom.mjs");
+    writeFileSync(timeoutHelper, "await new Promise(() => {});\n", "utf8");
+    writeFileSync(
+      oomHelper,
+      "const values = [];\nwhile (true) values.push(new Array(100000).fill(Math.random()));\n",
+      "utf8",
+    );
+
+    await expect(
+      collectNpmPackedFiles(packageDir, "@openclaw/test-timeout", {
+        helperPath: timeoutHelper,
+        timeoutMs: 25,
+      }),
+    ).rejects.toThrow("trusted packlist helper exceeded its resource limits");
+    await expect(
+      collectNpmPackedFiles(packageDir, "@openclaw/test-oom", {
+        helperPath: oomHelper,
+        maxOldSpaceMb: 16,
+        timeoutMs: 10_000,
+      }),
+    ).rejects.toThrow("trusted packlist helper exceeded its resource limits");
+  }, 15_000);
 
   it("fails closed on truncated scans and packed-file path escapes", () => {
     expect(() => assertCompleteScannerSummary("@openclaw/test", { truncated: true })).toThrow(

@@ -10,23 +10,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { resolveNpmJsonEntries } from "../../src/infra/npm-registry-spec.js";
 import {
   isScannable,
   scanDirectoryWithSummary,
   type SkillScanFinding,
 } from "../../src/skills/security/scanner.js";
 import { runTasksWithConcurrency } from "../../src/utils/run-with-concurrency.js";
-
-type NpmPackFile = {
-  path?: unknown;
-  size?: unknown;
-};
-
-type NpmPackResult = {
-  files?: unknown;
-};
 
 type PublishablePluginPackage = {
   packageDir: string;
@@ -63,15 +54,18 @@ export type PluginNpmSecurityScanReport = {
 };
 
 const execFileAsync = promisify(execFile);
-const MAX_PACKED_FILES_PER_PACKAGE = 20_000;
+const MAX_PACKED_FILES_PER_PACKAGE = 50_000;
 const MAX_PACKED_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_PACKED_TOTAL_BYTES_PER_PACKAGE = 256 * 1024 * 1024;
 const MAX_SCANNABLE_FILES_PER_PACKAGE = 10_000;
 const MAX_SCANNABLE_FILE_BYTES = 1024 * 1024;
 const MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE = 64 * 1024 * 1024;
-const NPM_PACK_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
-const NPM_PACK_TIMEOUT_MS = 60_000;
+const MAX_PACKED_PATH_BYTES = 4096;
+const PACKLIST_HELPER_MAX_BUFFER_BYTES = 8 * 1024 * 1024;
+const PACKLIST_HELPER_MAX_OLD_SPACE_MB = 256;
+const PACKLIST_HELPER_TIMEOUT_MS = 60_000;
 const PACKAGE_SCAN_CONCURRENCY = 4;
+const PACKLIST_HELPER_PATH = fileURLToPath(new URL("./plugin-npm-pack-files.mjs", import.meta.url));
 const DEFAULT_SCANNER_INPUT_LIMITS = {
   maxPackedFileBytes: MAX_PACKED_FILE_BYTES,
   maxPackedFiles: MAX_PACKED_FILES_PER_PACKAGE,
@@ -166,93 +160,69 @@ export function resolveReviewedSourceLayout(
   );
 }
 
-export function parseNpmPackFiles(raw: string, packageName: string): string[] {
+export function parsePacklistFiles(raw: string, packageName: string): string[] {
   const parsed = JSON.parse(raw) as unknown;
-  const entries = resolveNpmJsonEntries(parsed);
-  if (entries.length !== 1) {
-    throw new Error(`${packageName}: npm pack --dry-run did not return one package result.`);
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${packageName}: packlist helper did not return a files list.`);
   }
 
-  const result = entries[0] as NpmPackResult;
-  if (!Array.isArray(result.files)) {
-    throw new Error(`${packageName}: npm pack --dry-run did not return a files list.`);
-  }
-
-  if (result.files.length > MAX_PACKED_FILES_PER_PACKAGE) {
-    throw new Error(`${packageName}: npm pack files exceed the file-count limit.`);
+  if (parsed.length > MAX_PACKED_FILES_PER_PACKAGE) {
+    throw new Error(`${packageName}: packlist exceeds the file-count limit.`);
   }
 
   const packedPaths: string[] = [];
   const seenPaths = new Set<string>();
-  let totalBytes = 0;
-  for (const [index, entry] of result.files.entries()) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      throw new Error(`${packageName}: npm pack file entry ${index} is malformed.`);
+  for (const [index, packedPath] of parsed.entries()) {
+    if (
+      typeof packedPath !== "string" ||
+      !isSafePackedPath(packedPath) ||
+      Buffer.byteLength(packedPath, "utf8") > MAX_PACKED_PATH_BYTES
+    ) {
+      throw new Error(`${packageName}: packlist entry ${index} has an invalid path.`);
     }
-    const { path, size } = entry as NpmPackFile;
-    if (typeof path !== "string" || !path) {
-      throw new Error(`${packageName}: npm pack file entry ${index} has an invalid path.`);
+    if (seenPaths.has(packedPath)) {
+      throw new Error(`${packageName}: packlist returned a duplicate path: ${packedPath}`);
     }
-    if (!Number.isSafeInteger(size) || (size as number) < 0) {
-      throw new Error(`${packageName}: npm pack file entry ${index} has an invalid size.`);
-    }
-    if (seenPaths.has(path)) {
-      throw new Error(`${packageName}: npm pack returned a duplicate path: ${path}`);
-    }
-    if ((size as number) > MAX_PACKED_FILE_BYTES) {
-      throw new Error(`${packageName}: npm pack file exceeds the per-file byte limit: ${path}`);
-    }
-    seenPaths.add(path);
-    packedPaths.push(path);
-    totalBytes += size as number;
-    if (totalBytes > MAX_PACKED_TOTAL_BYTES_PER_PACKAGE) {
-      throw new Error(`${packageName}: npm pack files exceed the total-byte limit.`);
-    }
+    seenPaths.add(packedPath);
+    packedPaths.push(packedPath);
   }
   return packedPaths.toSorted();
 }
 
+type PacklistHelperLimits = {
+  helperPath?: string;
+  maxBufferBytes?: number;
+  maxOldSpaceMb?: number;
+  timeoutMs?: number;
+};
+
 export async function collectNpmPackedFiles(
   packageDir: string,
   packageName: string,
+  limits: PacklistHelperLimits = {},
 ): Promise<string[]> {
-  const npmArgs = ["pack", "--dry-run", "--json", "--ignore-scripts"];
-  // The release workflow is Linux: cap npm before it can materialize an
-  // attacker-controlled pack. Other hosts retain the Node/output/time caps.
-  const command =
-    process.platform === "linux"
-      ? {
-          args: [
-            "--as=1073741824",
-            "--cpu=60",
-            "--fsize=268435456",
-            "--nofile=256",
-            "--",
-            "npm",
-            ...npmArgs,
-          ],
-          file: "prlimit",
-        }
-      : { args: npmArgs, file: "npm" };
+  const helperPath = limits.helperPath ?? PACKLIST_HELPER_PATH;
+  const maxOldSpaceMb = limits.maxOldSpaceMb ?? PACKLIST_HELPER_MAX_OLD_SPACE_MB;
   try {
-    const { stdout } = await execFileAsync(command.file, command.args, {
-      cwd: packageDir,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        NODE_OPTIONS: "--max-old-space-size=512",
-        npm_config_audit: "false",
-        npm_config_fund: "false",
-        npm_config_ignore_scripts: "true",
-        npm_config_update_notifier: "false",
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [`--max-old-space-size=${maxOldSpaceMb}`, helperPath, packageDir],
+      {
+        cwd: dirname(PACKLIST_HELPER_PATH),
+        encoding: "utf8",
+        env: {
+          CI: "1",
+          HOME: tmpdir(),
+          PATH: process.env.PATH,
+        },
+        killSignal: "SIGKILL",
+        maxBuffer: limits.maxBufferBytes ?? PACKLIST_HELPER_MAX_BUFFER_BYTES,
+        timeout: limits.timeoutMs ?? PACKLIST_HELPER_TIMEOUT_MS,
       },
-      killSignal: "SIGKILL",
-      maxBuffer: NPM_PACK_MAX_BUFFER_BYTES,
-      timeout: NPM_PACK_TIMEOUT_MS,
-    });
-    return parseNpmPackFiles(stdout, packageName);
+    );
+    return parsePacklistFiles(stdout, packageName);
   } catch {
-    throw new Error(`${packageName}: npm pack enumeration failed within its resource limits.`);
+    throw new Error(`${packageName}: trusted packlist helper exceeded its resource limits.`);
   }
 }
 
@@ -300,6 +270,7 @@ function isSafePackedPath(packedPath: string): boolean {
     !packedPath ||
     isAbsolute(packedPath) ||
     packedPath.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(packedPath) ||
     packedPath.split("/").some((segment) => !segment || segment === "." || segment === "..")
   ) {
     return false;
