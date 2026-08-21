@@ -4,6 +4,13 @@ import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import type { OverlayHandle } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+
+const killTreeMocks = vi.hoisted(() => ({ killProcessTree: vi.fn() }));
+
+vi.mock("../process/kill-tree.js", () => ({
+  killProcessTree: killTreeMocks.killProcessTree,
+}));
+
 import { createLocalShellRunner } from "./tui-local-shell.js";
 
 const createSelector = () => {
@@ -49,7 +56,7 @@ function createShellHarness(params?: {
     return lastSelector;
   });
   const spawnCommand = params?.spawnCommand ?? vi.fn();
-  const { runLocalShellLine } = createLocalShellRunner({
+  const { close, runLocalShellLine } = createLocalShellRunner({
     chatLog,
     tui,
     openOverlay,
@@ -67,22 +74,130 @@ function createShellHarness(params?: {
     closeOverlay,
     createSelectorSpy,
     spawnCommand,
+    requestRender: tui.requestRender,
+    close,
     runLocalShellLine,
     getLastSelector: () => lastSelector,
   };
 }
 
 function requireSpawnOptions(spawnCommand: ReturnType<typeof vi.fn>): {
+  detached?: boolean;
   env?: Record<string, string>;
 } {
   const call = spawnCommand.mock.calls[0];
   if (!call) {
     throw new Error("expected spawn command call");
   }
-  return call[1] as { env?: Record<string, string> };
+  return call[1] as { detached?: boolean; env?: Record<string, string> };
+}
+
+function createRunningChild(pid: number) {
+  const child = Object.assign(new EventEmitter(), {
+    exitCode: null,
+    kill: vi.fn(),
+    pid,
+    signalCode: null,
+    stderr: new EventEmitter(),
+    stdout: new EventEmitter(),
+  });
+  return child;
+}
+
+function closeChild(child: ReturnType<typeof createRunningChild>, signal: NodeJS.Signals | null) {
+  Object.assign(child, { exitCode: signal ? null : 0, signalCode: signal });
+  child.emit("close", signal ? null : 0, signal);
 }
 
 describe("createLocalShellRunner", () => {
+  it("exposes a lifecycle close owner", () => {
+    const harness = createShellHarness();
+
+    expect(harness.close).toEqual(expect.any(Function));
+  });
+
+  it("ignores command starts after close", async () => {
+    const harness = createShellHarness();
+    harness.close();
+
+    await harness.runLocalShellLine("!echo late");
+
+    expect(harness.spawnCommand).not.toHaveBeenCalled();
+    expect(harness.openOverlay).not.toHaveBeenCalled();
+  });
+
+  it("retires pending approval without accepting stale selector callbacks", async () => {
+    const harness = createShellHarness();
+    const run = harness.runLocalShellLine("!echo late");
+    const selector = harness.getLastSelector();
+    const messageCount = harness.messages.length;
+    const renderCount = harness.requestRender.mock.calls.length;
+
+    harness.close();
+    await run;
+    selector?.onSelect?.({ value: "yes", label: "Yes" });
+
+    expect(harness.messages).toHaveLength(messageCount);
+    expect(harness.requestRender).toHaveBeenCalledTimes(renderCount);
+    expect(harness.closeOverlay).toHaveBeenCalledOnce();
+    expect(harness.spawnCommand).not.toHaveBeenCalled();
+  });
+
+  it("retires overlapping process groups once", async () => {
+    killTreeMocks.killProcessTree.mockReset();
+    const children = [createRunningChild(201), createRunningChild(202)];
+    const spawnCommand = vi.fn(() => children.shift()!);
+    const harness = createShellHarness({
+      spawnCommand: spawnCommand as unknown as typeof import("node:child_process").spawn,
+    });
+    const first = harness.runLocalShellLine("!first");
+    harness.getLastSelector()?.onSelect?.({ value: "yes", label: "Yes" });
+    await vi.waitFor(() => expect(spawnCommand).toHaveBeenCalledTimes(1));
+    const second = harness.runLocalShellLine("!second");
+    await vi.waitFor(() => expect(spawnCommand).toHaveBeenCalledTimes(2));
+    const [firstChild, secondChild] = spawnCommand.mock.results.map(
+      (result) => result.value as ReturnType<typeof createRunningChild>,
+    );
+    if (!firstChild || !secondChild) {
+      throw new Error("expected two spawned local shell children");
+    }
+
+    harness.close();
+    harness.close();
+    await Promise.all([first, second]);
+
+    const detached = process.platform !== "win32";
+    expect(killTreeMocks.killProcessTree.mock.calls).toEqual([
+      [201, { detached, graceMs: 1_000 }],
+      [202, { detached, graceMs: 1_000 }],
+    ]);
+    closeChild(firstChild, "SIGTERM");
+    closeChild(secondChild, "SIGKILL");
+  });
+
+  it("clears normal completion listeners and never renders output after close", async () => {
+    killTreeMocks.killProcessTree.mockReset();
+    const child = createRunningChild(203);
+    const harness = createShellHarness({
+      spawnCommand: vi.fn(() => child) as unknown as typeof import("node:child_process").spawn,
+    });
+    const run = harness.runLocalShellLine("!quiet");
+    harness.getLastSelector()?.onSelect?.({ value: "yes", label: "Yes" });
+    await vi.waitFor(() => expect(child.listenerCount("close")).toBe(1));
+    const messageCount = harness.messages.length;
+
+    harness.close();
+    child.stdout.emit("data", Buffer.from("late output"));
+    closeChild(child, "SIGTERM");
+    await run;
+
+    expect(harness.messages).toHaveLength(messageCount);
+    expect(child.listenerCount("close")).toBe(0);
+    expect(child.listenerCount("error")).toBe(0);
+    expect(child.stdout.listenerCount("data")).toBe(0);
+    expect(killTreeMocks.killProcessTree).toHaveBeenCalledTimes(1);
+  });
+
   it("logs denial on subsequent ! attempts without re-prompting", async () => {
     const harness = createShellHarness();
 
@@ -274,7 +389,7 @@ describe("createLocalShellRunner", () => {
       stderr,
       on: (event: string, callback: (...args: unknown[]) => void) => {
         if (event === "close") {
-          setImmediate(() => callback(0, null));
+          setTimeout(() => callback(0, null), 200);
         }
       },
     }));

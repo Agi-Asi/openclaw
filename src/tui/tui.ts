@@ -1505,6 +1505,7 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
   const deferredFinish = createDeferredTuiFinish();
   // The backend can own requestExit before the editor/coalescer exists.
   let disposeSubmitBurst = () => {};
+  let closeLocalShell = () => {};
   const forceExit = () => {
     try {
       process.stderr.write("openclaw tui forcing exit\n");
@@ -1520,6 +1521,7 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
     }
     exitRequested = true;
     authChild.close();
+    closeLocalShell();
     // Exit owns the input boundary before transport teardown can race a buffered submit.
     disposeSubmitBurst();
     connectionGeneration += 1;
@@ -1592,12 +1594,16 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
     requestExit,
   });
 
-  const { runLocalShellLine } = createLocalShellRunner({
+  const { close, runLocalShellLine } = createLocalShellRunner({
     chatLog,
     tui,
     openOverlay,
     closeOverlay,
   });
+  closeLocalShell = close;
+  if (exitRequested) {
+    closeLocalShell();
+  }
   updateAutocompleteProvider();
   const notifySubmitError = (action: TuiSubmitAction, error: unknown) => {
     const message = formatTuiErrorMessage(error);

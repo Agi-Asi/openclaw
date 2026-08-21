@@ -1,9 +1,10 @@
 // Launches and manages the local shell process used by TUI local mode.
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import type { Component, OverlayHandle, SelectItem } from "@earendil-works/pi-tui";
 import { sliceUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { tryProcessCwd } from "../infra/safe-cwd.js";
+import { killProcessTree } from "../process/kill-tree.js";
 import { createSearchableSelectList } from "./components/selectors.js";
 import { formatTuiErrorMessage } from "./tui-formatters.js";
 
@@ -29,9 +30,35 @@ type LocalShellDeps = {
   maxOutputChars?: number;
 };
 
+const LOCAL_SHELL_FORCE_EXIT_MS = 1_000;
+
+type ActiveLocalShell = {
+  child: ChildProcess;
+  finishRun: () => void;
+  removeOutputListeners: () => void;
+};
+
+function isChildRunning(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+function stopLocalShell(child: ChildProcess): void {
+  if (child.pid) {
+    killProcessTree(child.pid, {
+      detached: process.platform !== "win32",
+      graceMs: LOCAL_SHELL_FORCE_EXIT_MS,
+    });
+    return;
+  }
+  child.kill("SIGTERM");
+}
+
 export function createLocalShellRunner(deps: LocalShellDeps) {
   let localExecAsked = false;
   let localExecAllowed = false;
+  let closed = false;
+  let pendingApproval: { handle: OverlayHandle; resolve: (allowed: boolean) => void } | null = null;
+  const active = new Set<ActiveLocalShell>();
   const createSelector = deps.createSelector ?? createSearchableSelectList;
   const spawnCommand = deps.spawnCommand ?? spawn;
   const getCwd = deps.getCwd ?? tryProcessCwd;
@@ -61,6 +88,11 @@ export function createLocalShellRunner(deps: LocalShellDeps) {
         2,
       );
       selector.onSelect = (item: SelectItem) => {
+        if (closed) {
+          resolve(false);
+          return;
+        }
+        pendingApproval = null;
         deps.closeOverlay(overlayHandle);
         if (item.value === "yes") {
           localExecAllowed = true;
@@ -73,17 +105,26 @@ export function createLocalShellRunner(deps: LocalShellDeps) {
         deps.tui.requestRender();
       };
       selector.onCancel = () => {
+        if (closed) {
+          resolve(false);
+          return;
+        }
+        pendingApproval = null;
         deps.closeOverlay(overlayHandle);
         deps.chatLog.addSystem("local shell: cancelled");
         deps.tui.requestRender();
         resolve(false);
       };
       const overlayHandle: OverlayHandle = deps.openOverlay(selector);
+      pendingApproval = { handle: overlayHandle, resolve };
       deps.tui.requestRender();
     });
   };
 
   const runLocalShellLine = async (line: string) => {
+    if (closed) {
+      return;
+    }
     const cmd = line.slice(1);
     // NOTE: A lone '!' is handled by the submit handler as a normal message.
     // Keep this guard anyway in case this is called directly.
@@ -98,7 +139,7 @@ export function createLocalShellRunner(deps: LocalShellDeps) {
     }
 
     const allowed = await ensureLocalExecAllowed();
-    if (!allowed) {
+    if (!allowed || closed) {
       return;
     }
 
@@ -125,10 +166,12 @@ export function createLocalShellRunner(deps: LocalShellDeps) {
         // Intentionally a shell: this is an operator-only local TUI feature (prefixed with `!`)
         // and is gated behind an explicit in-session approval prompt.
         shell: true,
+        detached: process.platform !== "win32",
         cwd,
         env: { ...env, OPENCLAW_SHELL: "tui-local" },
       });
 
+      let finishRun = () => {};
       let stdout = "";
       let stderr = "";
       let error: Error | undefined;
@@ -136,16 +179,43 @@ export function createLocalShellRunner(deps: LocalShellDeps) {
       const stderrDecoder = new StringDecoder("utf8");
       // Pipe errors are incidental; close owns completion after any recorded spawn error.
       const ignoreOutputStreamError = () => {};
+      const onStdout = (buf: Buffer) => {
+        stdout = appendWithCap(stdout, stdoutDecoder.write(buf));
+      };
+      const onStderr = (buf: Buffer) => {
+        stderr = appendWithCap(stderr, stderrDecoder.write(buf));
+      };
+      const removeOutputListeners = () => {
+        child.stdout?.removeListener("error", ignoreOutputStreamError);
+        child.stderr?.removeListener("error", ignoreOutputStreamError);
+        child.stdout?.removeListener("data", onStdout);
+        child.stderr?.removeListener("data", onStderr);
+      };
       child.stdout.on("error", ignoreOutputStreamError);
       child.stderr.on("error", ignoreOutputStreamError);
-      child.stdout.on("data", (buf) => {
-        stdout = appendWithCap(stdout, stdoutDecoder.write(buf));
-      });
-      child.stderr.on("data", (buf) => {
-        stderr = appendWithCap(stderr, stderrDecoder.write(buf));
-      });
+      child.stdout.on("data", onStdout);
+      child.stderr.on("data", onStderr);
 
-      child.on("close", (code, signal) => {
+      const owned: ActiveLocalShell = {
+        child,
+        finishRun: () => finishRun(),
+        removeOutputListeners,
+      };
+      active.add(owned);
+
+      const clearOwned = () => {
+        removeOutputListeners();
+        active.delete(owned);
+      };
+
+      const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+        clearOwned();
+        child.removeListener?.("error", onError);
+        child.removeListener?.("close", onClose);
+        if (closed) {
+          finishRun();
+          return;
+        }
         stdout = appendWithCap(stdout, stdoutDecoder.end());
         stderr = appendWithCap(stderr, stderrDecoder.end());
         // Keep the tail (consistent with the streaming appendWithCap above) so a
@@ -164,14 +234,44 @@ export function createLocalShellRunner(deps: LocalShellDeps) {
         const status = error ? `error: ${formatTuiErrorMessage(error)}` : `exit ${code ?? "?"}`;
         deps.chatLog.addSystem(`[local] ${status}${signal ? ` (signal ${signal})` : ""}`);
         deps.tui.requestRender();
-        resolve();
-      });
+        finishRun();
+      };
 
-      child.on("error", (err) => {
+      const onError = (err: Error) => {
         error = err;
-      });
+      };
+      child.on("close", onClose);
+      child.on("error", onError);
+
+      let settled = false;
+      finishRun = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
     });
   };
 
-  return { runLocalShellLine };
+  const close = (): void => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    if (pendingApproval) {
+      deps.closeOverlay(pendingApproval.handle);
+      pendingApproval.resolve(false);
+      pendingApproval = null;
+    }
+    for (const owned of active) {
+      owned.removeOutputListeners();
+      owned.finishRun();
+      if (!isChildRunning(owned.child)) {
+        continue;
+      }
+      stopLocalShell(owned.child);
+    }
+  };
+
+  return { close, runLocalShellLine };
 }
