@@ -2,6 +2,9 @@
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { resolveSandboxConfigForAgent } from "./sandbox/config.js";
+import { resolveSandboxContext } from "./sandbox/context.js";
+import { resolveSandboxRuntimeStatus } from "./sandbox/runtime-status.js";
 import { createRestrictedAgentSandboxConfig } from "./test-helpers/sandbox-agent-config-fixtures.js";
 
 type SpawnCall = {
@@ -37,10 +40,6 @@ vi.mock("../process/exec.js", async (importOriginal) => ({
 vi.mock("../skills/loading/workspace-skill-sync.runtime.js", () => ({
   syncWorkspaceSkills: vi.fn(async () => undefined),
 }));
-
-let resolveSandboxContext: typeof import("./sandbox/context.js").resolveSandboxContext;
-let resolveSandboxConfigForAgent: typeof import("./sandbox/config.js").resolveSandboxConfigForAgent;
-let resolveSandboxRuntimeStatus: typeof import("./sandbox/runtime-status.js").resolveSandboxRuntimeStatus;
 
 async function resolveContext(config: OpenClawConfig, sessionKey: string, workspaceDir: string) {
   // Convenience wrapper keeps session-key specific sandbox context assertions compact.
@@ -108,16 +107,7 @@ function createWorkSetupCommandConfig(scope: "agent" | "shared"): OpenClawConfig
 }
 
 describe("Agent-specific sandbox config", () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    const [configModule, contextModule, runtimeModule] = await Promise.all([
-      import("./sandbox/config.js"),
-      import("./sandbox/context.js"),
-      import("./sandbox/runtime-status.js"),
-    ]);
-    ({ resolveSandboxConfigForAgent } = configModule);
-    ({ resolveSandboxContext } = contextModule);
-    ({ resolveSandboxRuntimeStatus } = runtimeModule);
+  beforeEach(() => {
     spawnCalls.length = 0;
   });
 
