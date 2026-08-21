@@ -49,7 +49,7 @@ export class CustodianQrSession {
     this.clear();
     for (const message of messages) {
       if (message.step?.type === "qr") {
-        delete (message.step as { qrDataUrl?: string }).qrDataUrl;
+        message.step.qrDataUrl = "";
         message.step = null;
       }
     }
@@ -63,7 +63,7 @@ export class CustodianQrSession {
       step.id === pollStepId &&
       active?.step?.id === pollStepId;
     if (active?.step?.type === "qr") {
-      delete (active.step as { qrDataUrl?: string }).qrDataUrl;
+      active.step.qrDataUrl = "";
       active.step = replaces ? step : null;
     }
     return replaces ? step : null;
