@@ -17853,20 +17853,30 @@ public struct ApprovalHistoryResult: Codable, Sendable {
 
 public struct ApprovalResolveParams: Codable, Sendable {
     public let id: String
+    public let instanceid: String?
     public let kind: ApprovalKind
     public let decision: ApprovalDecision
     public let reviewer: [String: AnyCodable]?
 
     public init(
         id: String,
+        instanceid: String? = nil,
         kind: ApprovalKind,
         decision: ApprovalDecision,
         reviewer: [String: AnyCodable]? = nil)
     {
         self.id = id
+        self.instanceid = instanceid
         self.kind = kind
         self.decision = decision
         self.reviewer = reviewer
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case instanceid = "instanceId"
+        case kind
+        case decision
+        case reviewer
     }
 }
 
@@ -18251,17 +18261,26 @@ public struct ExecApprovalRequestParams: Codable, Sendable {
 
 public struct ExecApprovalResolveParams: Codable, Sendable {
     public let id: String
+    public let instanceid: String?
     public let decision: String
     public let reviewer: [String: AnyCodable]?
 
     public init(
         id: String,
+        instanceid: String? = nil,
         decision: String,
         reviewer: [String: AnyCodable]? = nil)
     {
         self.id = id
+        self.instanceid = instanceid
         self.decision = decision
         self.reviewer = reviewer
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case instanceid = "instanceId"
+        case decision
+        case reviewer
     }
 }
 
@@ -18610,17 +18629,26 @@ public struct PluginApprovalRequestParams: Codable, Sendable {
 
 public struct PluginApprovalResolveParams: Codable, Sendable {
     public let id: String
+    public let instanceid: String?
     public let decision: String
     public let reviewer: [String: AnyCodable]?
 
     public init(
         id: String,
+        instanceid: String? = nil,
         decision: String,
         reviewer: [String: AnyCodable]? = nil)
     {
         self.id = id
+        self.instanceid = instanceid
         self.decision = decision
         self.reviewer = reviewer
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case instanceid = "instanceId"
+        case decision
+        case reviewer
     }
 }
 
