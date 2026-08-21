@@ -1,3 +1,4 @@
+import type { Locator } from "playwright";
 import { expect, it } from "vitest";
 import {
   createChatFlowE2eSuite,
@@ -11,6 +12,11 @@ import {
 const suite = createChatFlowE2eSuite();
 
 const QUEUED = ["review the migration", "then update the docs", "finally run the smoke"] as const;
+
+async function openQueuedMessageEditor(row: Locator) {
+  await row.locator(".chat-queue__more").click();
+  await row.locator("wa-dropdown-item[value='edit']").click();
+}
 
 suite.define(() => {
   it("edits a queued message in its row and returns it to its place", async () => {
@@ -48,7 +54,7 @@ suite.define(() => {
 
       await composer.fill("a separate composer draft");
 
-      // Double-click is the shortcut; the pencil on the row is the visible path.
+      // Double-click remains the shortcut; Edit message in overflow is the visible path.
       await page.locator(".chat-queue__item").nth(1).dblclick();
 
       const rowEditor = page.locator(".chat-queue__item").nth(1).locator(".chat-queue__edit-input");
@@ -97,7 +103,7 @@ suite.define(() => {
 
       await composer.fill("a separate composer draft");
       const row = page.locator(".chat-queue__item").nth(1);
-      await row.locator(".chat-queue__edit").click();
+      await openQueuedMessageEditor(row);
       const rowEditor = row.locator(".chat-queue__edit-input");
       await rowEditor.waitFor({ timeout: 10_000 });
       await rowEditor.fill("a replacement the operator abandons");
@@ -137,7 +143,7 @@ suite.define(() => {
       }
 
       const row = page.locator(".chat-queue__item").nth(1);
-      await row.locator(".chat-queue__edit").click();
+      await openQueuedMessageEditor(row);
       const rowEditor = row.locator(".chat-queue__edit-input");
       await rowEditor.waitFor({ timeout: 10_000 });
       await composer.fill("a separate composer send");
@@ -205,9 +211,7 @@ suite.define(() => {
       await page.locator(".agent-chat__offline-hint").waitFor({ timeout: 10_000 });
 
       const editRow = page.locator(".chat-queue__item", { hasText: "edit before send" });
-      const editButton = editRow.locator(".chat-queue__edit");
-      expect(await editButton.isDisabled()).toBe(false);
-      await editButton.click();
+      await openQueuedMessageEditor(editRow);
       // `hasText` stops matching once the row text becomes a textarea value.
       const inlineEditor = page.locator(".chat-queue__edit-input");
       await inlineEditor.waitFor({ timeout: 10_000 });

@@ -167,23 +167,24 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
       })
     : nothing;
 
+  const queue = renderChatQueue({
+    queue: props.queue,
+    canAbort: showAbortableUi,
+    onQueueRetry: props.connected && canCompose ? props.onQueueRetry : undefined,
+    onQueueSteer: props.connected && canCompose ? props.onQueueSteer : undefined,
+    // Reordering is local bookkeeping, so it stays available while offline —
+    // exactly when a queue is long enough to need it.
+    onQueueMove: props.onQueueMove,
+    onQueueEdit: props.queuedEdit?.onEdit,
+    onQueueEditChange: props.queuedEdit?.onEditChange,
+    onQueueEditSubmit: props.queuedEdit?.onEditSubmit,
+    onQueueEditCancel: props.queuedEdit?.onCancel,
+    editingId: props.queuedEdit?.editingId ?? null,
+    editingText: props.queuedEdit?.editingText,
+    onQueueRemove: props.onQueueRemove,
+  });
+
   return html`
-    ${renderChatQueue({
-      queue: props.queue,
-      canAbort: showAbortableUi,
-      onQueueRetry: props.connected && canCompose ? props.onQueueRetry : undefined,
-      onQueueSteer: props.connected && canCompose ? props.onQueueSteer : undefined,
-      // Reordering is local bookkeeping, so it stays available while offline —
-      // exactly when a queue is long enough to need it.
-      onQueueMove: props.onQueueMove,
-      onQueueEdit: props.queuedEdit?.onEdit,
-      onQueueEditChange: props.queuedEdit?.onEditChange,
-      onQueueEditSubmit: props.queuedEdit?.onEditSubmit,
-      onQueueEditCancel: props.queuedEdit?.onCancel,
-      editingId: props.queuedEdit?.editingId ?? null,
-      editingText: props.queuedEdit?.editingText,
-      onQueueRemove: props.onQueueRemove,
-    })}
     ${props.runError
       ? html`
           <div class="chat-run-error" role="alert">
@@ -202,7 +203,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             </div>
           `
         : nothing}
-      ${disabledBanner} ${voiceError}
+      ${disabledBanner} ${voiceError} ${queue}
       ${showComposerInput
         ? html`<div
             class="agent-chat__input ${props.offline ? "agent-chat__input--offline" : ""}"

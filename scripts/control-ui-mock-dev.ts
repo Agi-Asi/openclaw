@@ -79,6 +79,20 @@ const OBSERVER_DEMO_RUN_ID = "mock-session-observer-run";
 const PLAN_DEMO_RUN_ID = "mock-plan-run";
 const CUSTODIAN_CHAT_REPLY_DELAY_MS = 600;
 const CHAT_SEND_REPLY_DELAY_MS = 200;
+const COMPOSER_QUEUE_FIXTURE = [
+  "Audit the composer spacing against the desktop reference.",
+  "Keep the queue attached to the composer in both themes.",
+  "Check the row actions and make sure the drag handle only appears while hovering the message.",
+  "This deliberately longer queued message should wrap onto a second line so the compact row anatomy can be reviewed without clipping or hiding the actual operator text.",
+  "Verify keyboard reordering before the final visual pass.",
+  "Capture the light and dark states for comparison.",
+].map((text, index) => ({
+  id: `mock-composer-queue-${index + 1}`,
+  text,
+  createdAt: Date.parse("2026-05-22T09:00:00.000Z") + index,
+  orderKey: index + 1,
+  kind: "queued" as const,
+}));
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const uiRoot = path.join(repoRoot, "ui");
@@ -2878,9 +2892,32 @@ function createStatefulMockInitScript(): string {
   return `(() => { const __name = (target) => target; (${installControlUiStatefulMocks.toString()})(${CUSTODIAN_CHAT_REPLY_DELAY_MS}, ${CHAT_SEND_REPLY_DELAY_MS}); })();`;
 }
 
+function installComposerQueueFixture(queue: typeof COMPOSER_QUEUE_FIXTURE): void {
+  const install = () => {
+    const pane = document.querySelector("openclaw-chat-pane") as
+      | (HTMLElement & {
+          state?: { chatQueue: typeof queue };
+          requestUpdate?: () => void;
+        })
+      | null;
+    if (!pane?.state) {
+      window.setTimeout(install, 50);
+      return;
+    }
+    pane.state.chatQueue = queue;
+    pane.requestUpdate?.();
+  };
+  install();
+}
+
+function createComposerQueueFixtureScript(): string {
+  return `(() => { const __name = (target) => target; (${installComposerQueueFixture.toString()})(${JSON.stringify(COMPOSER_QUEUE_FIXTURE)}); })();`;
+}
+
 function createMockGatewayPlugin(scenario: ControlUiMockGatewayScenario): Plugin {
   const initScript = escapeScriptContent(createControlUiMockGatewayInitScript(scenario));
   const statefulInitScript = escapeScriptContent(createStatefulMockInitScript());
+  const composerQueueFixtureScript = escapeScriptContent(createComposerQueueFixtureScript());
   const bootstrapBody = JSON.stringify(createControlUiMockBootstrapConfig(scenario));
   return {
     configureServer(server) {
@@ -2898,7 +2935,7 @@ function createMockGatewayPlugin(scenario: ControlUiMockGatewayScenario): Plugin
     transformIndexHtml(html) {
       return html.replace(
         "</head>",
-        `    <script data-openclaw-control-ui-mock-gateway>\n${initScript}\n${statefulInitScript}\n    </script>\n  </head>`,
+        `    <script data-openclaw-control-ui-mock-gateway>\n${composerQueueFixtureScript}\n${initScript}\n${statefulInitScript}\n    </script>\n  </head>`,
       );
     },
   };

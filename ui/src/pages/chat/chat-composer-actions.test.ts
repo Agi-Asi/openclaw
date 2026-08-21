@@ -470,7 +470,7 @@ describe("renderChatComposer controls", () => {
     expect(onAbort).not.toHaveBeenCalled();
   });
 
-  it("renders the queued author's avatar before the turn is submitted", async () => {
+  it("renders the queue glyph before the turn is submitted", async () => {
     const { container } = renderComposer({
       queue: [
         {
@@ -478,15 +478,12 @@ describe("renderChatComposer controls", () => {
           text: "queued during the run",
           createdAt: 4,
           sendState: "waiting-idle",
-          sender: { id: "profile_123", name: "Alice Example" },
         },
       ],
     });
 
     await vi.waitFor(() => {
-      expect(
-        container.querySelector(".chat-queue__item .chat-author-avatar__initials")?.textContent,
-      ).toContain("AE");
+      expect(container.querySelector(".chat-queue__item .chat-queue__icon")).not.toBeNull();
     });
   });
 
@@ -504,8 +501,7 @@ describe("renderChatComposer controls", () => {
     });
     const item = container.querySelector(".chat-queue__item");
     expect(item?.classList.contains("chat-queue__item--reconnect")).toBe(true);
-    expect(item?.querySelector(".chat-queue__dot")).not.toBeNull();
-    expect(item?.querySelector(".chat-queue__icon")).toBeNull();
+    expect(item?.querySelector(".chat-queue__icon")).not.toBeNull();
     expect(item?.querySelector(".chat-queue__error")).toBeNull();
     const badge = item?.querySelector(".chat-queue__badge");
     expect(badge?.textContent?.trim()).toBe("Waiting for reconnect");

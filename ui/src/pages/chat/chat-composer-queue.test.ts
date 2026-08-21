@@ -91,14 +91,14 @@ describe("chat composer queue reordering", () => {
 
     const rows = container.querySelectorAll(".chat-queue__item");
     expect(rows).toHaveLength(2);
-    expect([...rows].map((row) => row.getAttribute("draggable"))).toEqual(["true", "true"]);
     const grips = [...container.querySelectorAll(".chat-queue__grip")];
     expect(grips).toHaveLength(2);
     expect(grips[0]?.tagName).toBe("BUTTON");
     expect(grips[0]?.getAttribute("aria-label")).toBe(t("chat.queue.reorderQueuedMessage"));
     expect(grips[0]?.getAttribute("aria-keyshortcuts")).toBe("ArrowUp ArrowDown");
-    // The row carries no overflow menu: the handle is the whole reorder surface.
-    expect(container.querySelector("wa-dropdown")).toBeNull();
+    expect(grips.map((grip) => grip.getAttribute("draggable"))).toEqual(["true", "true"]);
+    expect([...rows].every((row) => !row.hasAttribute("draggable"))).toBe(true);
+    expect(container.querySelectorAll("wa-dropdown.chat-queue__overflow")).toHaveLength(2);
   });
 
   it.each([
@@ -144,7 +144,7 @@ describe("chat composer queue reordering", () => {
     });
 
     expect(container.querySelector(".chat-queue__grip")).toBeNull();
-    expect(container.querySelector(".chat-queue__item")?.getAttribute("draggable")).toBe("false");
+    expect(container.querySelector(".chat-queue__item")?.hasAttribute("draggable")).toBe(false);
   });
 
   it("reserves the handle column on every row so the pills never shift", () => {
@@ -211,11 +211,6 @@ describe("chat composer queue reordering", () => {
     });
 
     const rows = [...container.querySelectorAll(".chat-queue__item")];
-    expect(rows.map((row) => row.querySelector(".chat-queue__edit") !== null)).toEqual([
-      true,
-      false,
-      true,
-    ]);
     expect(rows[1]?.querySelector(".chat-queue__edit-input")).not.toBeNull();
     expect(rows[1]?.querySelector(".chat-queue__edit-submit")).not.toBeNull();
     expect(rows[1]?.querySelector(".chat-queue__edit-cancel")).not.toBeNull();
@@ -225,13 +220,11 @@ describe("chat composer queue reordering", () => {
       true,
     ]);
 
-    const disabled = (selector: string) =>
-      rows.map((row) => row.querySelector(selector)?.hasAttribute("disabled") ?? false);
-    expect(disabled(".chat-queue__edit")).toEqual([true, false, true]);
-    expect(disabled(".chat-queue__remove")).toEqual([false, false, false]);
-
-    rows[0]?.querySelector<HTMLButtonElement>(".chat-queue__edit")?.click();
-    expect(onQueueEdit).not.toHaveBeenCalled();
+    const editItem = rows[0]?.querySelector("wa-dropdown-item[value='edit']");
+    expect(editItem?.hasAttribute("disabled")).toBe(true);
+    expect(rows[2]?.querySelector("wa-dropdown-item[value='edit']")?.hasAttribute("disabled")).toBe(
+      true,
+    );
 
     rows[2]?.querySelector<HTMLButtonElement>(".chat-queue__remove")?.click();
     expect(onQueueRemove).toHaveBeenCalledWith("c");
@@ -275,7 +268,9 @@ describe("chat composer queue reordering", () => {
     });
 
     const rows = [...container.querySelectorAll(".chat-queue__item")];
-    expect(rows.map((row) => row.getAttribute("draggable"))).toEqual(["false", "true", "true"]);
+    expect(
+      rows.map((row) => row.querySelector(".chat-queue__grip")?.getAttribute("draggable")),
+    ).toEqual(["false", "true", "true"]);
   });
 
   it("offers no move to a row alone between locked rows, and refuses a drop from across one", () => {
@@ -293,12 +288,9 @@ describe("chat composer queue reordering", () => {
 
     const rows = [...container.querySelectorAll(".chat-queue__item")];
     // "a" is a segment of one, so it has nothing to move against.
-    expect(rows.map((row) => row.getAttribute("draggable"))).toEqual([
-      "false",
-      "false",
-      "true",
-      "true",
-    ]);
+    expect(
+      rows.map((row) => row.querySelector(".chat-queue__grip")?.getAttribute("draggable")),
+    ).toEqual(["false", "false", "true", "true"]);
 
     const dataTransfer = {
       types: ["application/x-openclaw-queued-message"],

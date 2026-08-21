@@ -5560,6 +5560,7 @@ export const en: TranslationMap = {
       steer: "Steer",
       steerQueuedMessage: "Steer queued message",
       removeQueuedMessage: "Remove queued message",
+      moreActions: "More queued message actions",
       reorderQueuedMessage: "Reorder queued message with the arrow keys",
       reorderUnavailable: "This message holds its place and cannot be reordered",
       editQueuedMessage: "Edit queued message",

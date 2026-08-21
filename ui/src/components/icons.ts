@@ -288,6 +288,10 @@ export const icons = {
     <path d="M13 6h8" />
     <path d="M13 12h8" />
     <path d="M13 18h8" />`),
+  queueList: strokeIcon(svg` <path d="M4 6h16" />
+    <path d="M8 12h12" />
+    <path d="M8 18h12" />
+    <path d="m4 10 2 2-2 2" />`),
 
   ...toolIcons,
 } as const;

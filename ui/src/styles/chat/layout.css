@@ -2833,6 +2833,11 @@ button.chat-pr__diff {
   --chat-composer-surface: var(--popover);
 }
 
+.chat-queue + .agent-chat__input {
+  border-radius: 0 0 calc(20px * var(--openclaw-corner-radius-scale))
+    calc(20px * var(--openclaw-corner-radius-scale));
+}
+
 .agent-chat__input {
   --chat-box-inset: 8px;
   /* Height of every control on the composer's input row. The row bottom-aligns
