@@ -3560,18 +3560,18 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
     expect(request.mock.calls[1]?.[1]).toMatchObject({
       developerInstructions: agentWorkspaceDeveloperInstructions,
-      config: { model_reasoning_effort: "low" },
     });
+    expect(request.mock.calls[1]?.[1]).not.toHaveProperty("config.model_reasoning_effort");
     expect(resumed).toMatchObject({
       threadId: finalThreadId,
-      reasoningEffort: "low",
+      reasoningEffort: null,
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       lifecycle: { action: "resumed" },
     });
     await expect(testCodexAppServerBindingStore.read(identity)).resolves.toMatchObject({
       appServerRuntimeFingerprint: buildCodexAppServerConnectionFingerprint(commonParams.appServer),
-      reasoningEffort: "low",
+      reasoningEffort: null,
     });
   });
 

@@ -144,7 +144,6 @@ export async function resumeExistingCodexThread(
     bindingIdentity,
     startModelSelection,
     startModelProvider,
-    supervisedReasoningEffort: supervisedEffort,
     userMcpServersConfigPatch,
     dynamicToolsFingerprint,
     dynamicToolsContainDeferred,
@@ -193,9 +192,6 @@ export async function resumeExistingCodexThread(
         userMcpServersConfigPatch,
         pluginAppsConfigPatch,
         finalConfigPatch.configPatch,
-        // Persisted rollouts can omit effort. Only the lifecycle-prepared
-        // supervision fact may restore it; adaptive/off leaves native config untouched.
-        supervisedEffort ? { model_reasoning_effort: supervisedEffort } : undefined,
       ),
       nativeSkillIsolation,
     );

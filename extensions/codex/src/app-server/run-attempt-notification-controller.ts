@@ -69,14 +69,16 @@ export function createCodexAttemptNotificationController(
         threadId === resourceState.thread.threadId &&
         (typeof reasoningEffort === "string" || reasoningEffort === null)
       ) {
-        // Settings updates may arrive before turn/start returns a turn id. Keep the
-        // live fact and its durable owner aligned for the next OpenClaw attempt.
-        resourceState.thread.reasoningEffort = reasoningEffort;
-        await bindingStore.mutate(bindingIdentity, {
+        // Settings updates may arrive before turn/start returns a turn id. The
+        // durable owner fences stale generations before their live fact can move.
+        const updated = await bindingStore.mutate(bindingIdentity, {
           kind: "patch",
           threadId,
           patch: { reasoningEffort },
         });
+        if (updated) {
+          resourceState.thread.reasoningEffort = reasoningEffort;
+        }
       }
     }
     const projector = projectorRef.current;
