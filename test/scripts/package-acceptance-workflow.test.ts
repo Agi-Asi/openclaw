@@ -7060,7 +7060,7 @@ describe("package artifact reuse", () => {
       "approve_plugins_clawhub_release",
     ]);
     expect(clawHubPublish.uses).toBe(
-      "openclaw/clawhub/.github/workflows/package-publish.yml@6dc1e2bd67a90b5e5c54b3a026dbdfe3691f1202",
+      "openclaw/clawhub/.github/workflows/package-publish.yml@a42cd2f73d6afb769b271d463fc111669cb7a499",
     );
     expect(clawHubPublish.permissions).toMatchObject({
       actions: "read",
@@ -7081,12 +7081,16 @@ describe("package artifact reuse", () => {
       CALLER_RUN_ATTEMPT: "${{ github.run_attempt }}",
       CALLER_RUN_ID: "${{ github.run_id }}",
       CALLER_SHA: "${{ github.sha }}",
+      PARENT_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
+      PARENT_RUN_ID: "${{ inputs.release_publish_run_id }}",
+      PARENT_STATE_POLICY:
+        "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active-or-success' || 'recovery-active-or-success-or-failure') || '' }}",
       TOOLING_FULL_REF: "${{ inputs.release_publish_full_ref }}",
       TOOLING_REF: "${{ inputs.release_publish_branch }}",
       TOOLING_SHA: "${{ inputs.release_publish_workflow_sha }}",
     });
     for (const field of [
-      "version: 1",
+      "version: 2",
       "repository: $repository",
       "workflow: $workflow",
       "runId: $runId",
@@ -7097,9 +7101,20 @@ describe("package artifact reuse", () => {
       "toolingRef: $toolingRef",
       "toolingFullRef: $toolingFullRef",
       "toolingSha: $toolingSha",
+      "parentRepository: $parentRepository",
+      "parentWorkflow: $parentWorkflow",
+      "parentRunId: $parentRunId",
+      "parentRunAttempt: $parentRunAttempt",
+      "parentRef: $parentRef",
+      "parentFullRef: $parentFullRef",
+      "parentSha: $parentSha",
+      "parentStatePolicy: $parentStatePolicy",
     ]) {
       expect(toolingIdentity.run).toContain(field);
     }
+    expect(toolingIdentity.run).toContain(
+      "Trusted release parent run id, attempt, and state policy must be provided together.",
+    );
     expect(publishOrchestration.env?.PARENT_WORKFLOW_FULL_REF).toBe("${{ github.ref }}");
     expect(publishOrchestration.run).toContain(
       '-f release_publish_full_ref="${PARENT_WORKFLOW_FULL_REF}"',
