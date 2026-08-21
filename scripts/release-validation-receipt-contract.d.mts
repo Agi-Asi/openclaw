@@ -1,3 +1,4 @@
+import type { ReleasePlanLock } from "./release-plan-contract.mjs";
 import type {
   ReleaseValidationIntent,
   ReleaseValidationProfile,
@@ -5,7 +6,7 @@ import type {
 } from "./release-validation-intent.mjs";
 
 export type ReleaseValidationReceiptDigest = `sha256:${string}`;
-export type ReleaseValidationReceiptRunConclusion =
+export type ReleaseValidationRunConclusion =
   | "action_required"
   | "cancelled"
   | "failure"
@@ -15,14 +16,77 @@ export type ReleaseValidationReceiptRunConclusion =
   | "startup_failure"
   | "success"
   | "timed_out";
+export type ReleaseValidationJobStatus = "completed" | "in_progress" | "queued";
 
-export type ReleaseValidationAttempt = {
-  workflow_path: ".github/workflows/full-release-validation.yml";
-  workflow_name: "Full Release Validation";
-  workflow_ref: string;
-  workflow_sha: string;
+export type ReleaseValidationExecutionGroup = {
+  id: string;
+  mode: "blocking" | "diagnostic";
+  policy: string;
+  workflow_path: string;
   run_id: string;
   run_attempt: number;
+  workflow_sha: string;
+  url: string;
+};
+
+export type ReleaseValidationExecutionPlanSource = {
+  schema: "openclaw.full-release-execution-plan.v1";
+  parent_run_id: string;
+  parent_run_attempt: number;
+  workflow_ref: string;
+  workflow_sha: string;
+  target_sha: string;
+  release_profile: string;
+  rerun_group: string;
+  fail_fast: boolean;
+  started_at: string;
+  groups: ReleaseValidationExecutionGroup[];
+};
+
+export type ReleaseValidationStateJob = {
+  name: string;
+  policy: "advisory" | "blocking";
+  status: ReleaseValidationJobStatus;
+  conclusion: ReleaseValidationRunConclusion | null;
+  started_at: string | null;
+  completed_at: string | null;
+  url: string;
+};
+
+export type ReleaseValidationStateGroup = {
+  id: string;
+  run_id: string;
+  run_attempt: number;
+  status: ReleaseValidationJobStatus;
+  conclusion: ReleaseValidationRunConclusion | null;
+  completed_at: string | null;
+  url: string;
+  jobs: ReleaseValidationStateJob[];
+};
+
+export type ReleaseValidationStateSource = {
+  schema: "openclaw.full-release-decision.v2" | "openclaw.full-release-diagnostic-drain.v2";
+  parent_run_id: string;
+  parent_run_attempt: number;
+  source_parent_run_attempt: number;
+  workflow_ref: string;
+  workflow_sha: string;
+  target_sha: string;
+  execution_plan_digest: ReleaseValidationReceiptDigest;
+  observed_at: string;
+  groups: ReleaseValidationStateGroup[];
+};
+
+export type ReleaseValidationSourceArtifact = {
+  kind: "decision" | "diagnostic-drain" | "execution-plan" | "release-plan-lock";
+  artifact_id: string;
+  artifact_name: string;
+  entry_name: string;
+  run_id: string;
+  run_attempt: number;
+  archive_digest: ReleaseValidationReceiptDigest;
+  content_digest: ReleaseValidationReceiptDigest;
+  created_at: string;
   url: string;
 };
 
@@ -43,10 +107,16 @@ export type ReleaseValidationReceipt = {
   };
   tooling: {
     repository: "openclaw/openclaw";
+    workflow_path: ".github/workflows/full-release-validation.yml";
     ref: string;
     sha: string;
   };
-  attempt: ReleaseValidationAttempt;
+  attempt: {
+    workflow_name: "Full Release Validation";
+    run_id: string;
+    run_attempt: number;
+    url: string;
+  };
   release_plan: {
     schema: "openclaw.release-plan.v1";
     purpose: ReleaseValidationPurpose;
@@ -57,10 +127,11 @@ export type ReleaseValidationReceipt = {
     intent: ReleaseValidationIntent;
     profile: ReleaseValidationProfile;
     soak: boolean;
+    allowed_groups: string[];
+    rerun_group: string;
     policy: {
       id: "openclaw.release-validation-policy.v1";
       fail_fast: boolean;
-      outcome: "blocked" | "orchestration-error" | "passed";
     };
   };
   source_attempts: {
@@ -68,48 +139,20 @@ export type ReleaseValidationReceipt = {
     decision: Required<ReleaseValidationSourceAttempt>;
     diagnostic_drain: Required<ReleaseValidationSourceAttempt>;
   };
-  groups: Array<{
-    id: string;
-    mode: "blocking" | "diagnostic";
-    policy: string;
-  }>;
-  child_runs: Array<{
-    group: string;
-    workflow_path: string;
-    run_id: string;
-    run_attempt: number;
-    workflow_sha: string;
-    conclusion: ReleaseValidationReceiptRunConclusion;
-    url: string;
-  }>;
-  observed_jobs: Array<{
-    group: string;
-    name: string;
-    policy: "advisory" | "blocking";
-    status: "completed";
-    conclusion: ReleaseValidationReceiptRunConclusion;
-    started_at: string | null;
-    completed_at: string | null;
-    url: string;
-  }>;
-  source_artifacts: Array<{
-    kind:
-      | "candidate"
-      | "child-evidence"
-      | "decision"
-      | "diagnostic-drain"
-      | "execution-plan"
-      | "release-plan-lock"
-      | "validation-manifest";
-    artifact_id: string;
-    artifact_name: string;
-    entry_name: string;
-    run_id: string;
-    run_attempt: number;
-    archive_digest: ReleaseValidationReceiptDigest;
-    content_digest: ReleaseValidationReceiptDigest;
-    created_at: string;
-  }>;
+  groups: Array<
+    ReleaseValidationExecutionGroup & {
+      conclusion: ReleaseValidationRunConclusion;
+      completed_at: string;
+      jobs: Array<
+        ReleaseValidationStateJob & {
+          status: "completed";
+          conclusion: ReleaseValidationRunConclusion;
+          completed_at: string;
+        }
+      >;
+    }
+  >;
+  source_artifacts: ReleaseValidationSourceArtifact[];
   timestamps: {
     started_at: string;
     decision_at: string;
@@ -121,6 +164,17 @@ export type ReleaseValidationReceipt = {
     root_receipt_digest: ReleaseValidationReceiptDigest | null;
     parent_receipt_digest: ReleaseValidationReceiptDigest | null;
   };
+};
+
+export type ReleaseValidationReceiptSealInput = {
+  releasePlanLock: ReleasePlanLock;
+  executionPlan: ReleaseValidationExecutionPlanSource;
+  decision: ReleaseValidationStateSource;
+  diagnosticDrain: ReleaseValidationStateSource;
+  sourceArtifacts: ReleaseValidationSourceArtifact[];
+  sealedAt: string;
+  parentReceipt?: ReleaseValidationReceipt;
+  rootReceipt?: ReleaseValidationReceipt;
 };
 
 export type ReleaseValidationReceiptLocator = {
@@ -135,6 +189,7 @@ export type ReleaseValidationReceiptLocator = {
     artifact_name: string;
     entry_name: "release-validation-receipt.json";
     archive_digest: ReleaseValidationReceiptDigest;
+    url: string;
   };
   sealed_at: string;
 };
@@ -144,7 +199,28 @@ export const RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA: "openclaw.release-valida
 export const RELEASE_VALIDATION_POLICY_ID: "openclaw.release-validation-policy.v1";
 export const RELEASE_VALIDATION_RECEIPT_MAX_BYTES: number;
 export const RELEASE_VALIDATION_RECEIPT_LOCATOR_MAX_BYTES: number;
+export function validateReleaseValidationExecutionPlanSource(
+  value: unknown,
+): ReleaseValidationExecutionPlanSource;
+export function validateReleaseValidationStateSource(
+  value: unknown,
+  mode: "decision" | "diagnostic-drain",
+): ReleaseValidationStateSource;
+export function sealReleaseValidationReceipt(
+  input: ReleaseValidationReceiptSealInput,
+): ReleaseValidationReceipt;
 export function validateReleaseValidationReceipt(value: unknown): ReleaseValidationReceipt;
+export function verifyReleaseValidationReceiptLineage(
+  receiptValue: unknown,
+  lineage?: {
+    parentReceipt?: ReleaseValidationReceipt;
+    rootReceipt?: ReleaseValidationReceipt;
+  },
+): ReleaseValidationReceipt["lineage"];
+export function verifyReleaseValidationReceipt(
+  receiptValue: unknown,
+  input: ReleaseValidationReceiptSealInput,
+): ReleaseValidationReceipt;
 export function canonicalReleaseValidationReceiptJson(value: unknown): string;
 export function releaseValidationReceiptDigest(value: unknown): ReleaseValidationReceiptDigest;
 export function parseReleaseValidationReceiptJson(text: string): ReleaseValidationReceipt;

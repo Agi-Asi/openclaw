@@ -3,7 +3,9 @@ import {
   canonicalReleaseJson,
   parseCanonicalReleaseJson,
   releaseCanonicalDigest,
+  releasePlanDigest,
   RELEASE_PLAN_CANONICALIZATION,
+  validateReleasePlanLock,
 } from "./release-plan-contract.mjs";
 import {
   releaseValidationIntentForPurpose,
@@ -20,16 +22,17 @@ export const RELEASE_VALIDATION_RECEIPT_LOCATOR_MAX_BYTES = 16 * 1024;
 const REPOSITORY = "openclaw/openclaw";
 const WORKFLOW_PATH = ".github/workflows/full-release-validation.yml";
 const WORKFLOW_NAME = "Full Release Validation";
+const EXECUTION_PLAN_SCHEMA = "openclaw.full-release-execution-plan.v1";
+const DECISION_SCHEMA = "openclaw.full-release-decision.v2";
+const DRAIN_SCHEMA = "openclaw.full-release-diagnostic-drain.v2";
 const SHA_PATTERN = /^[a-f0-9]{40}$/u;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const ASCII_PATTERN = /^[\x20-\x7e]+$/u;
 const RUN_ID_PATTERN = /^[1-9][0-9]*$/u;
 const REF_PATTERN = /^refs\/(?:heads|tags)\/[A-Za-z0-9._/-]+$/u;
 const TIMESTAMP_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/u;
-const URL_PATTERN =
-  /^https:\/\/github\.com\/openclaw\/openclaw\/actions\/runs\/[1-9][0-9]*(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$/u;
 const GROUP_MODES = new Set(["blocking", "diagnostic"]);
-const POLICY_OUTCOMES = new Set(["blocked", "orchestration-error", "passed"]);
+const JOB_POLICIES = new Set(["advisory", "blocking"]);
 const RUN_CONCLUSIONS = new Set([
   "action_required",
   "cancelled",
@@ -41,20 +44,25 @@ const RUN_CONCLUSIONS = new Set([
   "success",
   "timed_out",
 ]);
-const JOB_POLICIES = new Set(["advisory", "blocking"]);
-const SOURCE_ARTIFACT_KINDS = new Set([
-  "candidate",
-  "child-evidence",
-  "decision",
-  "diagnostic-drain",
-  "execution-plan",
-  "release-plan-lock",
-  "validation-manifest",
-]);
+const SUCCESS_CONCLUSIONS = new Set(["neutral", "skipped", "success"]);
+const JOB_STATUSES = new Set(["completed", "in_progress", "queued"]);
+const REQUIRED_ARTIFACTS = Object.freeze({
+  decision: { entry: "full-release-decision.json" },
+  "diagnostic-drain": { entry: "full-release-diagnostic-manifest.json" },
+  "execution-plan": { entry: "full-release-execution-plan.json" },
+  "release-plan-lock": { entry: "release-plan-lock.json" },
+});
 const compareAscii = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 function fail(message) {
   throw new Error(message);
+}
+
+function object(value, label) {
+  if (!isRecord(value)) {
+    fail(`${label} must be an object`);
+  }
+  return value;
 }
 
 function exactKeys(value, keys, label) {
@@ -65,22 +73,15 @@ function exactKeys(value, keys, label) {
   }
 }
 
-function object(value, label) {
-  if (!isRecord(value)) {
-    fail(`${label} must be an object`);
-  }
-  return value;
-}
-
-function asciiString(value, label) {
+function ascii(value, label) {
   if (typeof value !== "string" || !ASCII_PATTERN.test(value)) {
     fail(`${label} must be a non-empty printable ASCII string`);
   }
   return value;
 }
 
-function enumString(value, allowed, label) {
-  const result = asciiString(value, label);
+function enumValue(value, allowed, label) {
+  const result = ascii(value, label);
   if (!allowed.has(result)) {
     fail(`${label} contains unsupported value: ${result}`);
   }
@@ -88,7 +89,7 @@ function enumString(value, allowed, label) {
 }
 
 function sha(value, label) {
-  const result = asciiString(value, label);
+  const result = ascii(value, label);
   if (!SHA_PATTERN.test(result)) {
     fail(`${label} must be a lowercase 40-character commit SHA`);
   }
@@ -103,7 +104,7 @@ function digest(value, label) {
 }
 
 function runId(value, label) {
-  const result = asciiString(value, label);
+  const result = ascii(value, label);
   if (!RUN_ID_PATTERN.test(result)) {
     fail(`${label} must be a positive integer string`);
   }
@@ -124,13 +125,18 @@ function nonNegativeInteger(value, label) {
   return value;
 }
 
-function timestamp(value, label) {
-  const result = asciiString(value, label);
-  if (!TIMESTAMP_PATTERN.test(result)) {
-    fail(`${label} must use canonical UTC seconds`);
+function booleanValue(value, label) {
+  if (typeof value !== "boolean") {
+    fail(`${label} must be boolean`);
   }
+  return value;
+}
+
+function timestamp(value, label) {
+  const result = ascii(value, label);
   const milliseconds = Date.parse(result);
   if (
+    !TIMESTAMP_PATTERN.test(result) ||
     !Number.isFinite(milliseconds) ||
     new Date(milliseconds).toISOString().replace(".000Z", "Z") !== result
   ) {
@@ -143,16 +149,8 @@ function nullableTimestamp(value, label) {
   return value === null ? null : timestamp(value, label);
 }
 
-function actionUrl(value, label) {
-  const result = asciiString(value, label);
-  if (!URL_PATTERN.test(result)) {
-    fail(`${label} must be an OpenClaw GitHub Actions URL`);
-  }
-  return result;
-}
-
 function qualifiedRef(value, label) {
-  const result = asciiString(value, label);
+  const result = ascii(value, label);
   if (!REF_PATTERN.test(result)) {
     fail(`${label} must be a qualified branch or tag ref`);
   }
@@ -160,527 +158,515 @@ function qualifiedRef(value, label) {
 }
 
 function targetRef(value, targetSha, label) {
-  const result = asciiString(value, label);
+  const result = ascii(value, label);
   if (result !== targetSha && !REF_PATTERN.test(result)) {
     fail(`${label} must be the target SHA or a qualified branch or tag ref`);
   }
   return result;
 }
 
-function boolean(value, label) {
-  if (typeof value !== "boolean") {
-    fail(`${label} must be boolean`);
+function exactRunUrl(value, id, label) {
+  const expected = `https://github.com/${REPOSITORY}/actions/runs/${id}`;
+  if (value !== expected) {
+    fail(`${label} must equal ${expected}`);
+  }
+  return expected;
+}
+
+function exactJobUrl(value, parentRunId, label) {
+  const pattern = new RegExp(
+    `^https://github\\.com/${REPOSITORY}/actions/runs/${parentRunId}/job/([1-9][0-9]*)$`,
+    "u",
+  );
+  if (typeof value !== "string" || !pattern.test(value)) {
+    fail(`${label} must be an exact job URL for run ${parentRunId}`);
   }
   return value;
 }
 
-function nullableDigest(value, label) {
-  return value === null ? null : digest(value, label);
+function exactArtifactUrl(value, parentRunId, artifactId, label) {
+  const expected = `https://github.com/${REPOSITORY}/actions/runs/${parentRunId}/artifacts/${artifactId}`;
+  if (value !== expected) {
+    fail(`${label} must equal ${expected}`);
+  }
+  return expected;
 }
 
-function validateTarget(value) {
-  const target = object(value, "release validation receipt target");
-  exactKeys(target, ["repository", "ref", "sha"], "release validation receipt target");
-  const targetSha = sha(target.sha, "release validation receipt target SHA");
+function sortedUnique(values, label, identity) {
+  const identities = values.map(identity);
+  if (
+    new Set(identities).size !== identities.length ||
+    identities.some((entry, index) => index > 0 && compareAscii(identities[index - 1], entry) >= 0)
+  ) {
+    fail(`${label} must be unique in ascending ASCII order`);
+  }
+  return values;
+}
+
+function validateExecutionGroup(value, index, toolingSha) {
+  const label = `release validation execution plan groups[${index}]`;
+  const group = object(value, label);
+  exactKeys(
+    group,
+    ["id", "mode", "policy", "workflow_path", "run_id", "run_attempt", "workflow_sha", "url"],
+    label,
+  );
   const result = {
-    repository: asciiString(target.repository, "release validation receipt target repository"),
-    ref: targetRef(target.ref, targetSha, "release validation receipt target ref"),
-    sha: targetSha,
+    id: ascii(group.id, `${label}.id`),
+    mode: enumValue(group.mode, GROUP_MODES, `${label}.mode`),
+    policy: ascii(group.policy, `${label}.policy`),
+    workflow_path: ascii(group.workflow_path, `${label}.workflow_path`),
+    run_id: runId(group.run_id, `${label}.run_id`),
+    run_attempt: positiveInteger(group.run_attempt, `${label}.run_attempt`),
+    workflow_sha: sha(group.workflow_sha, `${label}.workflow_sha`),
+    url: "",
   };
-  if (result.repository !== REPOSITORY) {
-    fail(`release validation receipt target repository must be ${REPOSITORY}`);
+  result.url = exactRunUrl(group.url, result.run_id, `${label}.url`);
+  if (result.workflow_sha !== toolingSha) {
+    fail(`${label}.workflow_sha differs from the execution plan tooling`);
   }
   return result;
 }
 
-function validateTooling(value) {
-  const tooling = object(value, "release validation receipt tooling");
-  exactKeys(tooling, ["repository", "ref", "sha"], "release validation receipt tooling");
-  const result = {
-    repository: asciiString(tooling.repository, "release validation receipt tooling repository"),
-    ref: qualifiedRef(tooling.ref, "release validation receipt tooling ref"),
-    sha: sha(tooling.sha, "release validation receipt tooling SHA"),
-  };
-  if (result.repository !== REPOSITORY) {
-    fail(`release validation receipt tooling repository must be ${REPOSITORY}`);
-  }
-  return result;
-}
-
-function validateAttempt(value, tooling) {
-  const attempt = object(value, "release validation receipt attempt");
-  exactKeys(
-    attempt,
-    [
-      "workflow_path",
-      "workflow_name",
-      "workflow_ref",
-      "workflow_sha",
-      "run_id",
-      "run_attempt",
-      "url",
-    ],
-    "release validation receipt attempt",
-  );
-  const result = {
-    workflow_path: asciiString(
-      attempt.workflow_path,
-      "release validation receipt attempt workflow_path",
-    ),
-    workflow_name: asciiString(
-      attempt.workflow_name,
-      "release validation receipt attempt workflow_name",
-    ),
-    workflow_ref: qualifiedRef(
-      attempt.workflow_ref,
-      "release validation receipt attempt workflow_ref",
-    ),
-    workflow_sha: sha(attempt.workflow_sha, "release validation receipt attempt workflow_sha"),
-    run_id: runId(attempt.run_id, "release validation receipt attempt run_id"),
-    run_attempt: positiveInteger(
-      attempt.run_attempt,
-      "release validation receipt attempt run_attempt",
-    ),
-    url: actionUrl(attempt.url, "release validation receipt attempt URL"),
-  };
-  if (result.workflow_path !== WORKFLOW_PATH || result.workflow_name !== WORKFLOW_NAME) {
-    fail("release validation receipt attempt must identify Full Release Validation");
-  }
-  if (!result.url.includes(`/actions/runs/${result.run_id}`)) {
-    fail("release validation receipt attempt URL must bind its run_id");
-  }
-  if (result.workflow_ref !== tooling.ref || result.workflow_sha !== tooling.sha) {
-    fail("release validation receipt attempt workflow identity differs from tooling");
-  }
-  return result;
-}
-
-function validateReleasePlanBinding(value) {
-  const releasePlan = object(value, "release validation receipt release_plan");
-  exactKeys(
-    releasePlan,
-    ["schema", "purpose", "plan_digest", "lock_digest"],
-    "release validation receipt release_plan",
-  );
-  if (releasePlan.schema !== "openclaw.release-plan.v1") {
-    fail("release validation receipt release_plan schema is unsupported");
-  }
-  return {
-    schema: "openclaw.release-plan.v1",
-    purpose: asciiString(releasePlan.purpose, "release validation receipt release_plan purpose"),
-    plan_digest: digest(
-      releasePlan.plan_digest,
-      "release validation receipt release_plan plan_digest",
-    ),
-    lock_digest: digest(
-      releasePlan.lock_digest,
-      "release validation receipt release_plan lock_digest",
-    ),
-  };
-}
-
-function validateValidation(value, purpose) {
-  const validation = object(value, "release validation receipt validation");
-  exactKeys(
-    validation,
-    ["intent", "profile", "soak", "policy"],
-    "release validation receipt validation",
-  );
-  const policy = object(validation.policy, "release validation receipt validation policy");
-  exactKeys(policy, ["id", "fail_fast", "outcome"], "release validation receipt validation policy");
-  const intent = asciiString(validation.intent, "release validation receipt validation intent");
-  releaseValidationIntentForPurpose(purpose, intent);
-  const resolved = resolveReleaseValidationIntent(intent, {
-    profile: asciiString(validation.profile, "release validation receipt validation profile"),
-    soak: boolean(validation.soak, "release validation receipt validation soak"),
-  });
-  const policyId = asciiString(policy.id, "release validation receipt validation policy id");
-  if (policyId !== RELEASE_VALIDATION_POLICY_ID) {
-    fail(`release validation receipt validation policy id must be ${RELEASE_VALIDATION_POLICY_ID}`);
-  }
-  return {
-    intent: resolved.intent,
-    profile: resolved.profile,
-    soak: resolved.soak,
-    policy: {
-      id: policyId,
-      fail_fast: boolean(
-        policy.fail_fast,
-        "release validation receipt validation policy fail_fast",
-      ),
-      outcome: enumString(
-        policy.outcome,
-        POLICY_OUTCOMES,
-        "release validation receipt validation policy outcome",
-      ),
-    },
-  };
-}
-
-function validateSourceAttempt(value, label, withSourceAttempt) {
+export function validateReleaseValidationExecutionPlanSource(value) {
+  const label = "release validation execution plan source";
   const source = object(value, label);
   exactKeys(
     source,
-    withSourceAttempt
-      ? ["schema", "digest", "parent_run_attempt", "source_parent_run_attempt"]
-      : ["schema", "digest", "parent_run_attempt"],
+    [
+      "schema",
+      "parent_run_id",
+      "parent_run_attempt",
+      "workflow_ref",
+      "workflow_sha",
+      "target_sha",
+      "release_profile",
+      "rerun_group",
+      "fail_fast",
+      "started_at",
+      "groups",
+    ],
     label,
   );
+  if (source.schema !== EXECUTION_PLAN_SCHEMA) {
+    fail(`release validation execution plan source schema must be ${EXECUTION_PLAN_SCHEMA}`);
+  }
+  const workflowSha = sha(source.workflow_sha, `${label}.workflow_sha`);
+  if (!Array.isArray(source.groups) || source.groups.length === 0) {
+    fail(`${label}.groups must be a non-empty array`);
+  }
+  const groups = sortedUnique(
+    source.groups.map((group, index) => validateExecutionGroup(group, index, workflowSha)),
+    `${label}.groups`,
+    (group) => group.id,
+  );
+  if (!groups.some((group) => group.mode === "blocking")) {
+    fail(`${label}.groups must contain a blocking group`);
+  }
   return {
-    schema: asciiString(source.schema, `${label} schema`),
-    digest: digest(source.digest, `${label} digest`),
-    parent_run_attempt: positiveInteger(source.parent_run_attempt, `${label} parent_run_attempt`),
-    ...(withSourceAttempt
-      ? {
-          source_parent_run_attempt: positiveInteger(
-            source.source_parent_run_attempt,
-            `${label} source_parent_run_attempt`,
-          ),
-        }
-      : {}),
+    schema: EXECUTION_PLAN_SCHEMA,
+    parent_run_id: runId(source.parent_run_id, `${label}.parent_run_id`),
+    parent_run_attempt: positiveInteger(source.parent_run_attempt, `${label}.parent_run_attempt`),
+    workflow_ref: qualifiedRef(source.workflow_ref, `${label}.workflow_ref`),
+    workflow_sha: workflowSha,
+    target_sha: sha(source.target_sha, `${label}.target_sha`),
+    release_profile: ascii(source.release_profile, `${label}.release_profile`),
+    rerun_group: ascii(source.rerun_group, `${label}.rerun_group`),
+    fail_fast: booleanValue(source.fail_fast, `${label}.fail_fast`),
+    started_at: timestamp(source.started_at, `${label}.started_at`),
+    groups,
   };
 }
 
-function validateSourceAttempts(value, attempt) {
-  const sources = object(value, "release validation receipt source_attempts");
+function validateStateJob(value, stateLabel, groupId, parentRunId, index) {
+  const label = `${stateLabel} groups.${groupId}.jobs[${index}]`;
+  const job = object(value, label);
   exactKeys(
-    sources,
-    ["execution_plan", "decision", "diagnostic_drain"],
-    "release validation receipt source_attempts",
+    job,
+    ["name", "policy", "status", "conclusion", "started_at", "completed_at", "url"],
+    label,
   );
-  const executionPlan = validateSourceAttempt(
-    sources.execution_plan,
-    "release validation receipt source_attempts execution_plan",
-    false,
-  );
-  const decision = validateSourceAttempt(
-    sources.decision,
-    "release validation receipt source_attempts decision",
-    true,
-  );
-  const diagnosticDrain = validateSourceAttempt(
-    sources.diagnostic_drain,
-    "release validation receipt source_attempts diagnostic_drain",
-    true,
-  );
+  const result = {
+    name: ascii(job.name, `${label}.name`),
+    policy: enumValue(job.policy, JOB_POLICIES, `${label}.policy`),
+    status: enumValue(job.status, JOB_STATUSES, `${label}.status`),
+    conclusion:
+      job.conclusion === null
+        ? null
+        : enumValue(job.conclusion, RUN_CONCLUSIONS, `${label}.conclusion`),
+    started_at: nullableTimestamp(job.started_at, `${label}.started_at`),
+    completed_at: nullableTimestamp(job.completed_at, `${label}.completed_at`),
+    url: exactJobUrl(job.url, parentRunId, `${label}.url`),
+  };
   if (
-    executionPlan.schema !== "openclaw.full-release-execution-plan.v1" ||
-    decision.schema !== "openclaw.full-release-decision.v2" ||
-    diagnosticDrain.schema !== "openclaw.full-release-diagnostic-drain.v2"
+    (result.status === "completed" &&
+      (result.conclusion === null || result.completed_at === null)) ||
+    (result.status !== "completed" &&
+      (result.conclusion !== null || result.completed_at !== null)) ||
+    (result.started_at !== null &&
+      result.completed_at !== null &&
+      Date.parse(result.started_at) > Date.parse(result.completed_at))
   ) {
-    fail("release validation receipt source_attempts schema is unsupported");
+    fail(`${label} status, conclusion, or timestamps are inconsistent`);
   }
-  if (
-    decision.source_parent_run_attempt !== executionPlan.parent_run_attempt ||
-    diagnosticDrain.source_parent_run_attempt !== executionPlan.parent_run_attempt
-  ) {
-    fail("release validation receipt state attempts must bind the execution plan attempt");
+  return result;
+}
+
+function validateStateGroup(value, stateLabel, index) {
+  const label = `${stateLabel} groups[${index}]`;
+  const group = object(value, label);
+  exactKeys(
+    group,
+    ["id", "run_id", "run_attempt", "status", "conclusion", "completed_at", "url", "jobs"],
+    label,
+  );
+  const id = ascii(group.id, `${label}.id`);
+  const groupRunId = runId(group.run_id, `${label}.run_id`);
+  if (!Array.isArray(group.jobs) || group.jobs.length === 0) {
+    fail(`${label}.jobs must be a non-empty array`);
   }
+  const jobs = sortedUnique(
+    group.jobs.map((job, jobIndex) => validateStateJob(job, stateLabel, id, groupRunId, jobIndex)),
+    `${label}.jobs`,
+    (job) => job.name,
+  );
+  const result = {
+    id,
+    run_id: groupRunId,
+    run_attempt: positiveInteger(group.run_attempt, `${label}.run_attempt`),
+    status: enumValue(group.status, JOB_STATUSES, `${label}.status`),
+    conclusion:
+      group.conclusion === null
+        ? null
+        : enumValue(group.conclusion, RUN_CONCLUSIONS, `${label}.conclusion`),
+    completed_at: nullableTimestamp(group.completed_at, `${label}.completed_at`),
+    url: exactRunUrl(group.url, groupRunId, `${label}.url`),
+    jobs,
+  };
   if (
-    executionPlan.parent_run_attempt > attempt.run_attempt ||
-    decision.parent_run_attempt > attempt.run_attempt ||
-    diagnosticDrain.parent_run_attempt > attempt.run_attempt
+    (result.status === "completed" &&
+      (result.conclusion === null ||
+        result.completed_at === null ||
+        jobs.some((job) => job.status !== "completed"))) ||
+    (result.status !== "completed" &&
+      (result.conclusion !== null || result.completed_at !== null)) ||
+    (result.completed_at !== null &&
+      jobs.some(
+        (job) =>
+          job.completed_at !== null &&
+          Date.parse(job.completed_at) > Date.parse(result.completed_at),
+      ))
   ) {
-    fail("release validation receipt source attempt cannot exceed the receipt attempt");
+    fail(`${label} status, conclusion, jobs, or timestamps are inconsistent`);
+  }
+  return result;
+}
+
+export function validateReleaseValidationStateSource(value, mode) {
+  if (mode !== "decision" && mode !== "diagnostic-drain") {
+    fail("release validation state source mode is unsupported");
+  }
+  const label = `release validation ${mode} source`;
+  const source = object(value, label);
+  exactKeys(
+    source,
+    [
+      "schema",
+      "parent_run_id",
+      "parent_run_attempt",
+      "source_parent_run_attempt",
+      "workflow_ref",
+      "workflow_sha",
+      "target_sha",
+      "execution_plan_digest",
+      "observed_at",
+      "groups",
+    ],
+    label,
+  );
+  const expectedSchema = mode === "decision" ? DECISION_SCHEMA : DRAIN_SCHEMA;
+  if (source.schema !== expectedSchema) {
+    fail(`${label} schema must be ${expectedSchema}`);
+  }
+  if (!Array.isArray(source.groups) || source.groups.length === 0) {
+    fail(`${label}.groups must be a non-empty array`);
   }
   return {
-    execution_plan: executionPlan,
-    decision,
-    diagnostic_drain: diagnosticDrain,
+    schema: expectedSchema,
+    parent_run_id: runId(source.parent_run_id, `${label}.parent_run_id`),
+    parent_run_attempt: positiveInteger(source.parent_run_attempt, `${label}.parent_run_attempt`),
+    source_parent_run_attempt: positiveInteger(
+      source.source_parent_run_attempt,
+      `${label}.source_parent_run_attempt`,
+    ),
+    workflow_ref: qualifiedRef(source.workflow_ref, `${label}.workflow_ref`),
+    workflow_sha: sha(source.workflow_sha, `${label}.workflow_sha`),
+    target_sha: sha(source.target_sha, `${label}.target_sha`),
+    execution_plan_digest: digest(source.execution_plan_digest, `${label}.execution_plan_digest`),
+    observed_at: timestamp(source.observed_at, `${label}.observed_at`),
+    groups: sortedUnique(
+      source.groups.map((group, index) => validateStateGroup(group, label, index)),
+      `${label}.groups`,
+      (group) => group.id,
+    ),
   };
 }
 
-function validateGroups(value) {
-  if (!Array.isArray(value) || value.length === 0) {
-    fail("release validation receipt groups must be a non-empty array");
-  }
-  const groups = value.map((entry, index) => {
-    const group = object(entry, `release validation receipt groups[${index}]`);
-    exactKeys(group, ["id", "mode", "policy"], `release validation receipt groups[${index}]`);
-    return {
-      id: asciiString(group.id, `release validation receipt groups[${index}].id`),
-      mode: enumString(group.mode, GROUP_MODES, `release validation receipt groups[${index}].mode`),
-      policy: asciiString(group.policy, `release validation receipt groups[${index}].policy`),
-    };
-  });
-  const ids = groups.map((group) => group.id);
+function verifyPlanBinding(lock, executionPlan) {
+  const plan = lock.plan;
   if (
-    new Set(ids).size !== ids.length ||
-    ids.some((id, index) => index > 0 && compareAscii(ids[index - 1], id) >= 0)
+    plan.candidate_sha !== executionPlan.target_sha ||
+    plan.tooling.repository !== REPOSITORY ||
+    plan.tooling.workflow_path !== WORKFLOW_PATH ||
+    plan.tooling.ref !== executionPlan.workflow_ref ||
+    plan.tooling.sha !== executionPlan.workflow_sha ||
+    plan.validation.profile !== executionPlan.release_profile ||
+    !plan.validation.allowed_groups.includes(executionPlan.rerun_group)
   ) {
-    fail("release validation receipt groups must have unique ids in ascending ASCII order");
+    fail("release validation sources differ from the validated ReleasePlan");
   }
-  return groups;
 }
 
-function validateChildRuns(value, groups, tooling) {
-  if (!Array.isArray(value) || value.length === 0) {
-    fail("release validation receipt child_runs must be a non-empty array");
-  }
-  const groupIds = new Set(groups.map((group) => group.id));
-  const children = value.map((entry, index) => {
-    const child = object(entry, `release validation receipt child_runs[${index}]`);
-    exactKeys(
-      child,
-      ["group", "workflow_path", "run_id", "run_attempt", "workflow_sha", "conclusion", "url"],
-      `release validation receipt child_runs[${index}]`,
-    );
-    const result = {
-      group: asciiString(child.group, `release validation receipt child_runs[${index}].group`),
-      workflow_path: asciiString(
-        child.workflow_path,
-        `release validation receipt child_runs[${index}].workflow_path`,
-      ),
-      run_id: runId(child.run_id, `release validation receipt child_runs[${index}].run_id`),
-      run_attempt: positiveInteger(
-        child.run_attempt,
-        `release validation receipt child_runs[${index}].run_attempt`,
-      ),
-      workflow_sha: sha(
-        child.workflow_sha,
-        `release validation receipt child_runs[${index}].workflow_sha`,
-      ),
-      conclusion: enumString(
-        child.conclusion,
-        RUN_CONCLUSIONS,
-        `release validation receipt child_runs[${index}].conclusion`,
-      ),
-      url: actionUrl(child.url, `release validation receipt child_runs[${index}].url`),
-    };
-    if (!groupIds.has(result.group)) {
-      fail(`release validation receipt child_runs[${index}] references an unknown group`);
-    }
-    if (result.workflow_sha !== tooling.sha) {
-      fail(`release validation receipt child_runs[${index}] workflow SHA differs from tooling`);
-    }
-    if (!result.url.includes(`/actions/runs/${result.run_id}`)) {
-      fail(`release validation receipt child_runs[${index}] URL must bind its run_id`);
-    }
-    return result;
-  });
-  const groupNames = children.map((child) => child.group);
+function verifyStateBinding(state, executionPlan, label) {
+  const executionDigest = releaseCanonicalDigest(executionPlan);
   if (
-    new Set(groupNames).size !== groupNames.length ||
-    groupNames.some((group, index) => index > 0 && compareAscii(groupNames[index - 1], group) >= 0)
+    state.parent_run_id !== executionPlan.parent_run_id ||
+    state.source_parent_run_attempt !== executionPlan.parent_run_attempt ||
+    state.workflow_ref !== executionPlan.workflow_ref ||
+    state.workflow_sha !== executionPlan.workflow_sha ||
+    state.target_sha !== executionPlan.target_sha ||
+    state.execution_plan_digest !== executionDigest
   ) {
-    fail("release validation receipt child_runs must have one child per group in ASCII order");
+    fail(`${label} differs from the execution plan`);
   }
-  if (groupNames.length !== groups.length || groupNames.some((group) => !groupIds.has(group))) {
-    fail("release validation receipt child_runs must cover every declared group");
+  const plannedIds = executionPlan.groups.map((group) => group.id);
+  if (
+    state.groups.length !== plannedIds.length ||
+    state.groups.some((group, index) => group.id !== plannedIds[index])
+  ) {
+    fail(`${label} group set differs from the execution plan`);
   }
-  return children;
+  for (const group of state.groups) {
+    const planned = executionPlan.groups.find((entry) => entry.id === group.id);
+    if (
+      group.run_id !== planned.run_id ||
+      group.run_attempt !== planned.run_attempt ||
+      group.url !== planned.url
+    ) {
+      fail(`${label} group tuple differs from the execution plan: ${group.id}`);
+    }
+  }
 }
 
-function validateObservedJobs(value, children) {
-  if (!Array.isArray(value) || value.length === 0) {
-    fail("release validation receipt observed_jobs must be a non-empty array");
+function requireTerminalJob(job, deadline, label) {
+  if (
+    job.status !== "completed" ||
+    job.conclusion === null ||
+    job.completed_at === null ||
+    Date.parse(job.completed_at) > Date.parse(deadline)
+  ) {
+    fail(`${label} was not complete before ${deadline}`);
   }
-  const childByGroup = new Map(children.map((child) => [child.group, child]));
-  const jobs = value.map((entry, index) => {
-    const job = object(entry, `release validation receipt observed_jobs[${index}]`);
-    exactKeys(
-      job,
-      ["group", "name", "policy", "status", "conclusion", "started_at", "completed_at", "url"],
-      `release validation receipt observed_jobs[${index}]`,
-    );
-    const result = {
-      group: asciiString(job.group, `release validation receipt observed_jobs[${index}].group`),
-      name: asciiString(job.name, `release validation receipt observed_jobs[${index}].name`),
-      policy: enumString(
-        job.policy,
-        JOB_POLICIES,
-        `release validation receipt observed_jobs[${index}].policy`,
-      ),
-      status: asciiString(job.status, `release validation receipt observed_jobs[${index}].status`),
-      conclusion: enumString(
-        job.conclusion,
-        RUN_CONCLUSIONS,
-        `release validation receipt observed_jobs[${index}].conclusion`,
-      ),
-      started_at: nullableTimestamp(
-        job.started_at,
-        `release validation receipt observed_jobs[${index}].started_at`,
-      ),
-      completed_at: nullableTimestamp(
-        job.completed_at,
-        `release validation receipt observed_jobs[${index}].completed_at`,
-      ),
-      url: actionUrl(job.url, `release validation receipt observed_jobs[${index}].url`),
-    };
-    const child = childByGroup.get(result.group);
-    if (!child) {
-      fail(`release validation receipt observed_jobs[${index}] references an unknown group`);
-    }
-    if (result.status !== "completed") {
-      fail(`release validation receipt observed_jobs[${index}] must be terminal`);
+}
+
+function verifyDecisionAndDrain(executionPlan, decision, drain) {
+  verifyStateBinding(decision, executionPlan, "release validation decision");
+  verifyStateBinding(drain, executionPlan, "release validation diagnostic drain");
+  if (
+    decision.parent_run_attempt > drain.parent_run_attempt ||
+    Date.parse(executionPlan.started_at) > Date.parse(decision.observed_at) ||
+    Date.parse(decision.observed_at) > Date.parse(drain.observed_at)
+  ) {
+    fail("release validation source attempt or timestamp order is invalid");
+  }
+  for (const planned of executionPlan.groups) {
+    const decisionGroup = decision.groups.find((group) => group.id === planned.id);
+    const drainGroup = drain.groups.find((group) => group.id === planned.id);
+    if (planned.mode === "blocking") {
+      if (
+        decisionGroup.status !== "completed" ||
+        decisionGroup.conclusion === null ||
+        !SUCCESS_CONCLUSIONS.has(decisionGroup.conclusion) ||
+        decisionGroup.completed_at === null ||
+        Date.parse(decisionGroup.completed_at) > Date.parse(decision.observed_at)
+      ) {
+        fail(`blocking group was not complete before Decision: ${planned.id}`);
+      }
+      const blockingJobs = decisionGroup.jobs.filter((job) => job.policy === "blocking");
+      if (blockingJobs.length === 0) {
+        fail(`blocking group omitted blocking jobs: ${planned.id}`);
+      }
+      for (const job of blockingJobs) {
+        requireTerminalJob(job, decision.observed_at, `blocking job ${planned.id}/${job.name}`);
+        if (!SUCCESS_CONCLUSIONS.has(job.conclusion)) {
+          fail(`blocking job failed release policy: ${planned.id}/${job.name}`);
+        }
+      }
+    } else if (
+      decisionGroup.jobs.some((job) => job.policy !== "advisory") ||
+      drainGroup.jobs.some((job) => job.policy !== "advisory")
+    ) {
+      fail(`diagnostic group contains a blocking job: ${planned.id}`);
     }
     if (
-      result.started_at !== null &&
-      result.completed_at !== null &&
-      Date.parse(result.started_at) > Date.parse(result.completed_at)
+      drainGroup.status !== "completed" ||
+      drainGroup.conclusion === null ||
+      drainGroup.completed_at === null ||
+      Date.parse(drainGroup.completed_at) > Date.parse(drain.observed_at)
     ) {
-      fail(`release validation receipt observed_jobs[${index}] timestamps are reversed`);
+      fail(`group was not complete before Diagnostic Drain: ${planned.id}`);
     }
-    if (!result.url.includes(`/actions/runs/${child.run_id}`)) {
-      fail(`release validation receipt observed_jobs[${index}] URL must bind its child run`);
+    for (const job of drainGroup.jobs) {
+      requireTerminalJob(job, drain.observed_at, `drained job ${planned.id}/${job.name}`);
     }
-    return result;
-  });
-  const identities = jobs.map((job) => `${job.group}\0${job.name}`);
-  if (
-    new Set(identities).size !== identities.length ||
-    identities.some(
-      (identity, index) => index > 0 && compareAscii(identities[index - 1], identity) >= 0,
-    )
-  ) {
-    fail("release validation receipt observed_jobs must be unique in group/name ASCII order");
+    if (planned.mode === "blocking") {
+      if (
+        !SUCCESS_CONCLUSIONS.has(drainGroup.conclusion) ||
+        drainGroup.conclusion !== decisionGroup.conclusion
+      ) {
+        fail(`blocking group changed after Decision: ${planned.id}`);
+      }
+      const decisionJobs = decisionGroup.jobs.filter((job) => job.policy === "blocking");
+      const drainJobs = drainGroup.jobs.filter((job) => job.policy === "blocking");
+      if (
+        decisionJobs.length !== drainJobs.length ||
+        decisionJobs.some(
+          (job, index) => canonicalReleaseJson(job) !== canonicalReleaseJson(drainJobs[index]),
+        )
+      ) {
+        const changedJob =
+          decisionJobs.find(
+            (job, index) => canonicalReleaseJson(job) !== canonicalReleaseJson(drainJobs[index]),
+          )?.name ?? "job-set";
+        fail(`blocking job changed after Decision: ${planned.id}/${changedJob}`);
+      }
+      for (const job of drainJobs) {
+        if (!SUCCESS_CONCLUSIONS.has(job.conclusion)) {
+          fail(`blocking job changed after Decision: ${planned.id}/${job.name}`);
+        }
+      }
+    }
   }
-  for (const group of childByGroup.keys()) {
-    if (!jobs.some((job) => job.group === group)) {
-      fail(`release validation receipt observed_jobs omitted group: ${group}`);
-    }
-  }
-  return jobs;
 }
 
-function validateSourceArtifacts(value, attempt, releasePlan, sourceAttempts) {
-  if (!Array.isArray(value) || value.length < 4) {
-    fail("release validation receipt source_artifacts must contain required source artifacts");
+function artifactName(kind, run, executionPlan, decision, drain) {
+  if (kind === "execution-plan") {
+    return `full-release-execution-plan-${run}`;
   }
-  const artifacts = value.map((entry, index) => {
-    const artifact = object(entry, `release validation receipt source_artifacts[${index}]`);
-    exactKeys(
-      artifact,
-      [
-        "kind",
-        "artifact_id",
-        "artifact_name",
-        "entry_name",
-        "run_id",
-        "run_attempt",
-        "archive_digest",
-        "content_digest",
-        "created_at",
-      ],
-      `release validation receipt source_artifacts[${index}]`,
-    );
-    return {
-      kind: enumString(
-        artifact.kind,
-        SOURCE_ARTIFACT_KINDS,
-        `release validation receipt source_artifacts[${index}].kind`,
-      ),
-      artifact_id: runId(
-        artifact.artifact_id,
-        `release validation receipt source_artifacts[${index}].artifact_id`,
-      ),
-      artifact_name: asciiString(
-        artifact.artifact_name,
-        `release validation receipt source_artifacts[${index}].artifact_name`,
-      ),
-      entry_name: asciiString(
-        artifact.entry_name,
-        `release validation receipt source_artifacts[${index}].entry_name`,
-      ),
-      run_id: runId(
-        artifact.run_id,
-        `release validation receipt source_artifacts[${index}].run_id`,
-      ),
-      run_attempt: positiveInteger(
-        artifact.run_attempt,
-        `release validation receipt source_artifacts[${index}].run_attempt`,
-      ),
-      archive_digest: digest(
-        artifact.archive_digest,
-        `release validation receipt source_artifacts[${index}].archive_digest`,
-      ),
-      content_digest: digest(
-        artifact.content_digest,
-        `release validation receipt source_artifacts[${index}].content_digest`,
-      ),
-      created_at: timestamp(
-        artifact.created_at,
-        `release validation receipt source_artifacts[${index}].created_at`,
-      ),
-    };
-  });
-  const identities = artifacts.map((artifact) => `${artifact.kind}\0${artifact.artifact_name}`);
+  if (kind === "decision") {
+    return `full-release-decision-${run}-${decision.parent_run_attempt}`;
+  }
+  if (kind === "diagnostic-drain") {
+    return `full-release-diagnostics-${run}-${drain.parent_run_attempt}`;
+  }
+  return `release-plan-lock-${run}-${executionPlan.parent_run_attempt}`;
+}
+
+function artifactAttempt(kind, executionPlan, decision, drain) {
+  if (kind === "decision") {
+    return decision.parent_run_attempt;
+  }
+  if (kind === "diagnostic-drain") {
+    return drain.parent_run_attempt;
+  }
+  return executionPlan.parent_run_attempt;
+}
+
+function validateSourceArtifacts(value, sources) {
+  if (!Array.isArray(value) || value.length !== 4) {
+    fail("release validation source_artifacts must contain exactly four source artifacts");
+  }
+  const expectedDigests = {
+    decision: releaseCanonicalDigest(sources.decision),
+    "diagnostic-drain": releaseCanonicalDigest(sources.diagnosticDrain),
+    "execution-plan": releaseCanonicalDigest(sources.executionPlan),
+    "release-plan-lock": releaseCanonicalDigest(sources.releasePlanLock),
+  };
+  const artifacts = sortedUnique(
+    value.map((entry, index) => {
+      const label = `release validation source_artifacts[${index}]`;
+      const artifact = object(entry, label);
+      exactKeys(
+        artifact,
+        [
+          "kind",
+          "artifact_id",
+          "artifact_name",
+          "entry_name",
+          "run_id",
+          "run_attempt",
+          "archive_digest",
+          "content_digest",
+          "created_at",
+          "url",
+        ],
+        label,
+      );
+      const kind = ascii(artifact.kind, `${label}.kind`);
+      if (!Object.hasOwn(REQUIRED_ARTIFACTS, kind)) {
+        fail(`${label}.kind is unsupported`);
+      }
+      const artifactId = runId(artifact.artifact_id, `${label}.artifact_id`);
+      const parentRunId = runId(artifact.run_id, `${label}.run_id`);
+      const result = {
+        kind,
+        artifact_id: artifactId,
+        artifact_name: ascii(artifact.artifact_name, `${label}.artifact_name`),
+        entry_name: ascii(artifact.entry_name, `${label}.entry_name`),
+        run_id: parentRunId,
+        run_attempt: positiveInteger(artifact.run_attempt, `${label}.run_attempt`),
+        archive_digest: digest(artifact.archive_digest, `${label}.archive_digest`),
+        content_digest: digest(artifact.content_digest, `${label}.content_digest`),
+        created_at: timestamp(artifact.created_at, `${label}.created_at`),
+        url: exactArtifactUrl(artifact.url, parentRunId, artifactId, `${label}.url`),
+      };
+      if (
+        result.run_id !== sources.executionPlan.parent_run_id ||
+        result.run_attempt !==
+          artifactAttempt(kind, sources.executionPlan, sources.decision, sources.diagnosticDrain) ||
+        result.artifact_name !==
+          artifactName(
+            kind,
+            result.run_id,
+            sources.executionPlan,
+            sources.decision,
+            sources.diagnosticDrain,
+          ) ||
+        result.entry_name !== REQUIRED_ARTIFACTS[kind].entry ||
+        result.content_digest !== expectedDigests[kind]
+      ) {
+        fail(`${label} coordinates differ from its source object`);
+      }
+      return result;
+    }),
+    "release validation source_artifacts",
+    (artifact) => `${artifact.kind}\0${artifact.artifact_name}`,
+  );
+  const ids = artifacts.map((artifact) => artifact.artifact_id);
+  const coordinates = artifacts.map(
+    (artifact) =>
+      `${artifact.run_id}\0${artifact.run_attempt}\0${artifact.artifact_name}\0${artifact.entry_name}`,
+  );
+  if (new Set(ids).size !== ids.length || new Set(coordinates).size !== coordinates.length) {
+    fail("release validation source_artifacts must have unique IDs and coordinates");
+  }
+  const byKind = Object.fromEntries(artifacts.map((artifact) => [artifact.kind, artifact]));
+  const decisionAt = Date.parse(sources.decision.observed_at);
+  const drainAt = Date.parse(sources.diagnosticDrain.observed_at);
+  const executionCreatedAt = Date.parse(byKind["execution-plan"].created_at);
   if (
-    new Set(identities).size !== identities.length ||
-    identities.some(
-      (identity, index) => index > 0 && compareAscii(identities[index - 1], identity) >= 0,
-    )
+    Date.parse(byKind.decision.created_at) < decisionAt ||
+    Date.parse(byKind["diagnostic-drain"].created_at) < drainAt ||
+    executionCreatedAt < Date.parse(sources.executionPlan.started_at) ||
+    executionCreatedAt > decisionAt ||
+    Date.parse(byKind["release-plan-lock"].created_at) > decisionAt
   ) {
-    fail("release validation receipt source_artifacts must be unique in kind/name ASCII order");
-  }
-  const required = [
-    ["execution-plan", sourceAttempts.execution_plan],
-    ["decision", sourceAttempts.decision],
-    ["diagnostic-drain", sourceAttempts.diagnostic_drain],
-  ];
-  for (const [kind, source] of required) {
-    const matches = artifacts.filter((artifact) => artifact.kind === kind);
-    if (
-      matches.length !== 1 ||
-      matches[0].run_id !== attempt.run_id ||
-      matches[0].run_attempt !== source.parent_run_attempt ||
-      matches[0].content_digest !== source.digest
-    ) {
-      fail(`release validation receipt source_artifacts ${kind} binding is invalid`);
-    }
-  }
-  const planLocks = artifacts.filter((artifact) => artifact.kind === "release-plan-lock");
-  if (planLocks.length !== 1 || planLocks[0].content_digest !== releasePlan.lock_digest) {
-    fail("release validation receipt release-plan-lock artifact binding is invalid");
+    fail("release validation source artifact timestamps differ from source observations");
   }
   return artifacts;
 }
 
-function validateTimestamps(value, attempt, sourceArtifacts) {
-  const timestamps = object(value, "release validation receipt timestamps");
-  exactKeys(
-    timestamps,
-    ["started_at", "decision_at", "drain_completed_at", "sealed_at"],
-    "release validation receipt timestamps",
-  );
-  const result = {
-    started_at: timestamp(
-      timestamps.started_at,
-      "release validation receipt timestamps started_at",
-    ),
-    decision_at: timestamp(
-      timestamps.decision_at,
-      "release validation receipt timestamps decision_at",
-    ),
-    drain_completed_at: timestamp(
-      timestamps.drain_completed_at,
-      "release validation receipt timestamps drain_completed_at",
-    ),
-    sealed_at: timestamp(timestamps.sealed_at, "release validation receipt timestamps sealed_at"),
-  };
-  const ordered = [
-    result.started_at,
-    result.decision_at,
-    result.drain_completed_at,
-    result.sealed_at,
-  ].map(Date.parse);
-  if (ordered.some((entry, index) => index > 0 && ordered[index - 1] > entry)) {
-    fail("release validation receipt timestamps must be chronological");
-  }
-  if (
-    sourceArtifacts.some(
-      (artifact) => Date.parse(artifact.created_at) > Date.parse(result.sealed_at),
-    )
-  ) {
-    fail("release validation receipt cannot precede a source artifact");
-  }
-  if (!attempt.url.includes(`/actions/runs/${attempt.run_id}`)) {
-    fail("release validation receipt timestamp attempt binding is invalid");
-  }
-  return result;
-}
-
-function validateLineage(value) {
+function validateLineageShape(value) {
   const lineage = object(value, "release validation receipt lineage");
   exactKeys(
     lineage,
@@ -692,14 +678,20 @@ function validateLineage(value) {
       lineage.generation,
       "release validation receipt lineage generation",
     ),
-    root_receipt_digest: nullableDigest(
-      lineage.root_receipt_digest,
-      "release validation receipt lineage root_receipt_digest",
-    ),
-    parent_receipt_digest: nullableDigest(
-      lineage.parent_receipt_digest,
-      "release validation receipt lineage parent_receipt_digest",
-    ),
+    root_receipt_digest:
+      lineage.root_receipt_digest === null
+        ? null
+        : digest(
+            lineage.root_receipt_digest,
+            "release validation receipt lineage root_receipt_digest",
+          ),
+    parent_receipt_digest:
+      lineage.parent_receipt_digest === null
+        ? null
+        : digest(
+            lineage.parent_receipt_digest,
+            "release validation receipt lineage parent_receipt_digest",
+          ),
   };
   if (
     (result.generation === 0 &&
@@ -712,8 +704,371 @@ function validateLineage(value) {
   return result;
 }
 
+function sameLineagePolicy(left, right) {
+  return (
+    left.validation.intent === right.validation.intent &&
+    left.validation.profile === right.validation.profile &&
+    left.validation.soak === right.validation.soak &&
+    left.validation.policy.id === right.validation.policy.id
+  );
+}
+
+function buildLineage({ parentReceipt, rootReceipt, validation, startedAt }) {
+  if (parentReceipt === undefined) {
+    if (rootReceipt !== undefined) {
+      fail("release validation root receipt requires a parent receipt");
+    }
+    return { generation: 0, root_receipt_digest: null, parent_receipt_digest: null };
+  }
+  const parent = validateReleaseValidationReceipt(parentReceipt);
+  if (!sameLineagePolicy({ validation }, parent)) {
+    fail("release validation parent receipt uses a different intent policy");
+  }
+  if (Date.parse(parent.timestamps.sealed_at) > Date.parse(startedAt)) {
+    fail("release validation parent receipt was sealed after its child started");
+  }
+  const parentDigest = releaseValidationReceiptDigest(parent);
+  let root;
+  if (parent.lineage.generation === 0) {
+    root = parent;
+    if (rootReceipt !== undefined) {
+      const suppliedRoot = validateReleaseValidationReceipt(rootReceipt);
+      if (releaseValidationReceiptDigest(suppliedRoot) !== parentDigest) {
+        fail("release validation supplied root differs from the generation-zero parent");
+      }
+    }
+  } else {
+    if (rootReceipt === undefined) {
+      fail("release validation non-root parent requires the actual root receipt");
+    }
+    root = validateReleaseValidationReceipt(rootReceipt);
+    if (
+      root.lineage.generation !== 0 ||
+      releaseValidationReceiptDigest(root) !== parent.lineage.root_receipt_digest
+    ) {
+      fail("release validation root receipt does not continue the parent lineage");
+    }
+  }
+  if (!sameLineagePolicy({ validation }, root)) {
+    fail("release validation root receipt uses a different intent policy");
+  }
+  return {
+    generation: parent.lineage.generation + 1,
+    root_receipt_digest: releaseValidationReceiptDigest(root),
+    parent_receipt_digest: parentDigest,
+  };
+}
+
+function normalizeFinalGroups(executionPlan, drain) {
+  return executionPlan.groups.map((planned) => {
+    const observed = drain.groups.find((group) => group.id === planned.id);
+    return {
+      id: planned.id,
+      mode: planned.mode,
+      policy: planned.policy,
+      workflow_path: planned.workflow_path,
+      run_id: planned.run_id,
+      run_attempt: planned.run_attempt,
+      workflow_sha: planned.workflow_sha,
+      url: planned.url,
+      conclusion: observed.conclusion,
+      completed_at: observed.completed_at,
+      jobs: observed.jobs,
+    };
+  });
+}
+
+export function sealReleaseValidationReceipt(input) {
+  const releasePlanLock = validateReleasePlanLock(input.releasePlanLock);
+  const executionPlan = validateReleaseValidationExecutionPlanSource(input.executionPlan);
+  const decision = validateReleaseValidationStateSource(input.decision, "decision");
+  const diagnosticDrain = validateReleaseValidationStateSource(
+    input.diagnosticDrain,
+    "diagnostic-drain",
+  );
+  verifyPlanBinding(releasePlanLock, executionPlan);
+  verifyDecisionAndDrain(executionPlan, decision, diagnosticDrain);
+  const sourceArtifacts = validateSourceArtifacts(input.sourceArtifacts, {
+    releasePlanLock,
+    executionPlan,
+    decision,
+    diagnosticDrain,
+  });
+  const sealedAt = timestamp(input.sealedAt, "release validation receipt sealed_at");
+  if (
+    sourceArtifacts.some((artifact) => Date.parse(artifact.created_at) > Date.parse(sealedAt)) ||
+    Date.parse(diagnosticDrain.observed_at) > Date.parse(sealedAt)
+  ) {
+    fail("release validation receipt was sealed before its sources completed");
+  }
+  const plan = releasePlanLock.plan;
+  const validation = {
+    intent: plan.validation.intent,
+    profile: plan.validation.profile,
+    soak: plan.validation.soak,
+    allowed_groups: plan.validation.allowed_groups,
+    rerun_group: executionPlan.rerun_group,
+    policy: {
+      id: RELEASE_VALIDATION_POLICY_ID,
+      fail_fast: executionPlan.fail_fast,
+    },
+  };
+  const receipt = {
+    schema: RELEASE_VALIDATION_RECEIPT_SCHEMA,
+    canonicalization: RELEASE_PLAN_CANONICALIZATION,
+    target: {
+      repository: REPOSITORY,
+      ref: plan.target_context_ref,
+      sha: plan.candidate_sha,
+    },
+    tooling: {
+      repository: plan.tooling.repository,
+      workflow_path: plan.tooling.workflow_path,
+      ref: plan.tooling.ref,
+      sha: plan.tooling.sha,
+    },
+    attempt: {
+      workflow_name: WORKFLOW_NAME,
+      run_id: executionPlan.parent_run_id,
+      run_attempt: Math.max(decision.parent_run_attempt, diagnosticDrain.parent_run_attempt),
+      url: `https://github.com/${REPOSITORY}/actions/runs/${executionPlan.parent_run_id}`,
+    },
+    release_plan: {
+      schema: plan.schema,
+      purpose: plan.purpose,
+      plan_digest: releasePlanDigest(plan),
+      lock_digest: releaseCanonicalDigest(releasePlanLock),
+    },
+    validation,
+    source_attempts: {
+      execution_plan: {
+        schema: executionPlan.schema,
+        digest: releaseCanonicalDigest(executionPlan),
+        parent_run_attempt: executionPlan.parent_run_attempt,
+      },
+      decision: {
+        schema: decision.schema,
+        digest: releaseCanonicalDigest(decision),
+        parent_run_attempt: decision.parent_run_attempt,
+        source_parent_run_attempt: decision.source_parent_run_attempt,
+      },
+      diagnostic_drain: {
+        schema: diagnosticDrain.schema,
+        digest: releaseCanonicalDigest(diagnosticDrain),
+        parent_run_attempt: diagnosticDrain.parent_run_attempt,
+        source_parent_run_attempt: diagnosticDrain.source_parent_run_attempt,
+      },
+    },
+    groups: normalizeFinalGroups(executionPlan, diagnosticDrain),
+    source_artifacts: sourceArtifacts,
+    timestamps: {
+      started_at: executionPlan.started_at,
+      decision_at: decision.observed_at,
+      drain_completed_at: diagnosticDrain.observed_at,
+      sealed_at: sealedAt,
+    },
+    lineage: buildLineage({
+      parentReceipt: input.parentReceipt,
+      rootReceipt: input.rootReceipt,
+      validation,
+      startedAt: executionPlan.started_at,
+    }),
+  };
+  return validateReleaseValidationReceipt(receipt);
+}
+
+function validateReceiptGroup(value, index, toolingSha) {
+  const label = `release validation receipt groups[${index}]`;
+  const group = object(value, label);
+  exactKeys(
+    group,
+    [
+      "id",
+      "mode",
+      "policy",
+      "workflow_path",
+      "run_id",
+      "run_attempt",
+      "workflow_sha",
+      "url",
+      "conclusion",
+      "completed_at",
+      "jobs",
+    ],
+    label,
+  );
+  const id = ascii(group.id, `${label}.id`);
+  const groupRunId = runId(group.run_id, `${label}.run_id`);
+  if (!Array.isArray(group.jobs) || group.jobs.length === 0) {
+    fail(`${label}.jobs must be a non-empty array`);
+  }
+  const jobs = sortedUnique(
+    group.jobs.map((job, jobIndex) =>
+      validateStateJob(job, "release validation receipt", id, groupRunId, jobIndex),
+    ),
+    `${label}.jobs`,
+    (job) => job.name,
+  );
+  const result = {
+    id,
+    mode: enumValue(group.mode, GROUP_MODES, `${label}.mode`),
+    policy: ascii(group.policy, `${label}.policy`),
+    workflow_path: ascii(group.workflow_path, `${label}.workflow_path`),
+    run_id: groupRunId,
+    run_attempt: positiveInteger(group.run_attempt, `${label}.run_attempt`),
+    workflow_sha: sha(group.workflow_sha, `${label}.workflow_sha`),
+    url: exactRunUrl(group.url, groupRunId, `${label}.url`),
+    conclusion: enumValue(group.conclusion, RUN_CONCLUSIONS, `${label}.conclusion`),
+    completed_at: timestamp(group.completed_at, `${label}.completed_at`),
+    jobs,
+  };
+  if (
+    result.workflow_sha !== toolingSha ||
+    jobs.some(
+      (job) => job.status !== "completed" || job.conclusion === null || job.completed_at === null,
+    )
+  ) {
+    fail(`${label} is not terminal or differs from tooling`);
+  }
+  return result;
+}
+
+function validateReceiptSourceAttempt(value, label, state) {
+  const source = object(value, label);
+  exactKeys(
+    source,
+    state
+      ? ["schema", "digest", "parent_run_attempt", "source_parent_run_attempt"]
+      : ["schema", "digest", "parent_run_attempt"],
+    label,
+  );
+  return {
+    schema: ascii(source.schema, `${label}.schema`),
+    digest: digest(source.digest, `${label}.digest`),
+    parent_run_attempt: positiveInteger(source.parent_run_attempt, `${label}.parent_run_attempt`),
+    ...(state
+      ? {
+          source_parent_run_attempt: positiveInteger(
+            source.source_parent_run_attempt,
+            `${label}.source_parent_run_attempt`,
+          ),
+        }
+      : {}),
+  };
+}
+
+function validateReceiptArtifacts(value, context) {
+  if (!Array.isArray(value) || value.length !== 4) {
+    fail("release validation receipt source_artifacts must contain exactly four artifacts");
+  }
+  const expected = {
+    decision: {
+      name: `full-release-decision-${context.attempt.run_id}-${context.sourceAttempts.decision.parent_run_attempt}`,
+      entry: REQUIRED_ARTIFACTS.decision.entry,
+      attempt: context.sourceAttempts.decision.parent_run_attempt,
+      digest: context.sourceAttempts.decision.digest,
+    },
+    "diagnostic-drain": {
+      name: `full-release-diagnostics-${context.attempt.run_id}-${context.sourceAttempts.diagnostic_drain.parent_run_attempt}`,
+      entry: REQUIRED_ARTIFACTS["diagnostic-drain"].entry,
+      attempt: context.sourceAttempts.diagnostic_drain.parent_run_attempt,
+      digest: context.sourceAttempts.diagnostic_drain.digest,
+    },
+    "execution-plan": {
+      name: `full-release-execution-plan-${context.attempt.run_id}`,
+      entry: REQUIRED_ARTIFACTS["execution-plan"].entry,
+      attempt: context.sourceAttempts.execution_plan.parent_run_attempt,
+      digest: context.sourceAttempts.execution_plan.digest,
+    },
+    "release-plan-lock": {
+      name: `release-plan-lock-${context.attempt.run_id}-${context.sourceAttempts.execution_plan.parent_run_attempt}`,
+      entry: REQUIRED_ARTIFACTS["release-plan-lock"].entry,
+      attempt: context.sourceAttempts.execution_plan.parent_run_attempt,
+      digest: context.releasePlan.lock_digest,
+    },
+  };
+  const artifacts = sortedUnique(
+    value.map((entry, index) => {
+      const label = `release validation receipt source_artifacts[${index}]`;
+      const artifact = object(entry, label);
+      exactKeys(
+        artifact,
+        [
+          "kind",
+          "artifact_id",
+          "artifact_name",
+          "entry_name",
+          "run_id",
+          "run_attempt",
+          "archive_digest",
+          "content_digest",
+          "created_at",
+          "url",
+        ],
+        label,
+      );
+      const kind = ascii(artifact.kind, `${label}.kind`);
+      if (!Object.hasOwn(expected, kind)) {
+        fail(`${label}.kind is unsupported`);
+      }
+      const artifactId = runId(artifact.artifact_id, `${label}.artifact_id`);
+      const artifactRunId = runId(artifact.run_id, `${label}.run_id`);
+      const result = {
+        kind,
+        artifact_id: artifactId,
+        artifact_name: ascii(artifact.artifact_name, `${label}.artifact_name`),
+        entry_name: ascii(artifact.entry_name, `${label}.entry_name`),
+        run_id: artifactRunId,
+        run_attempt: positiveInteger(artifact.run_attempt, `${label}.run_attempt`),
+        archive_digest: digest(artifact.archive_digest, `${label}.archive_digest`),
+        content_digest: digest(artifact.content_digest, `${label}.content_digest`),
+        created_at: timestamp(artifact.created_at, `${label}.created_at`),
+        url: exactArtifactUrl(artifact.url, artifactRunId, artifactId, `${label}.url`),
+      };
+      const required = expected[kind];
+      if (
+        result.run_id !== context.attempt.run_id ||
+        result.run_attempt !== required.attempt ||
+        result.artifact_name !== required.name ||
+        result.entry_name !== required.entry ||
+        result.content_digest !== required.digest
+      ) {
+        fail(`${label} coordinates differ from its receipt sources`);
+      }
+      return result;
+    }),
+    "release validation receipt source_artifacts",
+    (artifact) => `${artifact.kind}\0${artifact.artifact_name}`,
+  );
+  const ids = artifacts.map((artifact) => artifact.artifact_id);
+  const coordinates = artifacts.map(
+    (artifact) =>
+      `${artifact.run_id}\0${artifact.run_attempt}\0${artifact.artifact_name}\0${artifact.entry_name}`,
+  );
+  if (new Set(ids).size !== ids.length || new Set(coordinates).size !== coordinates.length) {
+    fail("release validation receipt source_artifacts IDs or coordinates are duplicated");
+  }
+  const byKind = Object.fromEntries(artifacts.map((artifact) => [artifact.kind, artifact]));
+  const startedAt = Date.parse(context.timestamps.started_at);
+  const decisionAt = Date.parse(context.timestamps.decision_at);
+  const drainAt = Date.parse(context.timestamps.drain_completed_at);
+  const sealedAt = Date.parse(context.timestamps.sealed_at);
+  if (
+    Date.parse(byKind.decision.created_at) < decisionAt ||
+    Date.parse(byKind["diagnostic-drain"].created_at) < drainAt ||
+    Date.parse(byKind["execution-plan"].created_at) < startedAt ||
+    Date.parse(byKind["execution-plan"].created_at) > decisionAt ||
+    Date.parse(byKind["release-plan-lock"].created_at) > decisionAt ||
+    artifacts.some((artifact) => Date.parse(artifact.created_at) > sealedAt)
+  ) {
+    fail("release validation receipt source artifact timestamps are invalid");
+  }
+  return artifacts;
+}
+
 export function validateReleaseValidationReceipt(value) {
-  const receipt = object(value, "release validation receipt");
+  const label = "release validation receipt";
+  const receipt = object(value, label);
   exactKeys(
     receipt,
     [
@@ -726,65 +1081,236 @@ export function validateReleaseValidationReceipt(value) {
       "validation",
       "source_attempts",
       "groups",
-      "child_runs",
-      "observed_jobs",
       "source_artifacts",
       "timestamps",
       "lineage",
     ],
-    "release validation receipt",
+    label,
   );
-  if (receipt.schema !== RELEASE_VALIDATION_RECEIPT_SCHEMA) {
-    fail(`release validation receipt schema must be ${RELEASE_VALIDATION_RECEIPT_SCHEMA}`);
+  if (
+    receipt.schema !== RELEASE_VALIDATION_RECEIPT_SCHEMA ||
+    receipt.canonicalization !== RELEASE_PLAN_CANONICALIZATION
+  ) {
+    fail("release validation receipt schema or canonicalization is unsupported");
   }
-  if (receipt.canonicalization !== RELEASE_PLAN_CANONICALIZATION) {
-    fail(`release validation receipt canonicalization must be ${RELEASE_PLAN_CANONICALIZATION}`);
+  const target = object(receipt.target, `${label} target`);
+  exactKeys(target, ["repository", "ref", "sha"], `${label} target`);
+  const targetSha = sha(target.sha, `${label} target.sha`);
+  const normalizedTarget = {
+    repository: ascii(target.repository, `${label} target.repository`),
+    ref: targetRef(target.ref, targetSha, `${label} target.ref`),
+    sha: targetSha,
+  };
+  if (normalizedTarget.repository !== REPOSITORY) {
+    fail(`release validation receipt target.repository must be ${REPOSITORY}`);
   }
-  const target = validateTarget(receipt.target);
-  const tooling = validateTooling(receipt.tooling);
-  const attempt = validateAttempt(receipt.attempt, tooling);
-  const releasePlan = validateReleasePlanBinding(receipt.release_plan);
-  const validation = validateValidation(receipt.validation, releasePlan.purpose);
-  const sourceAttempts = validateSourceAttempts(receipt.source_attempts, attempt);
-  const groups = validateGroups(receipt.groups);
-  const childRuns = validateChildRuns(receipt.child_runs, groups, tooling);
-  const observedJobs = validateObservedJobs(receipt.observed_jobs, childRuns);
-  const sourceArtifacts = validateSourceArtifacts(
-    receipt.source_artifacts,
-    attempt,
+  const tooling = object(receipt.tooling, `${label} tooling`);
+  exactKeys(tooling, ["repository", "workflow_path", "ref", "sha"], `${label} tooling`);
+  const normalizedTooling = {
+    repository: ascii(tooling.repository, `${label} tooling.repository`),
+    workflow_path: ascii(tooling.workflow_path, `${label} tooling.workflow_path`),
+    ref: qualifiedRef(tooling.ref, `${label} tooling.ref`),
+    sha: sha(tooling.sha, `${label} tooling.sha`),
+  };
+  if (
+    normalizedTooling.repository !== REPOSITORY ||
+    normalizedTooling.workflow_path !== WORKFLOW_PATH
+  ) {
+    fail("release validation receipt tooling authority is unsupported");
+  }
+  const attempt = object(receipt.attempt, `${label} attempt`);
+  exactKeys(attempt, ["workflow_name", "run_id", "run_attempt", "url"], `${label} attempt`);
+  const attemptRunId = runId(attempt.run_id, `${label} attempt.run_id`);
+  const normalizedAttempt = {
+    workflow_name: ascii(attempt.workflow_name, `${label} attempt.workflow_name`),
+    run_id: attemptRunId,
+    run_attempt: positiveInteger(attempt.run_attempt, `${label} attempt.run_attempt`),
+    url: exactRunUrl(attempt.url, attemptRunId, `${label} attempt.url`),
+  };
+  if (normalizedAttempt.workflow_name !== WORKFLOW_NAME) {
+    fail(`release validation receipt attempt.workflow_name must be ${WORKFLOW_NAME}`);
+  }
+  const releasePlan = object(receipt.release_plan, `${label} release_plan`);
+  exactKeys(
     releasePlan,
-    sourceAttempts,
+    ["schema", "purpose", "plan_digest", "lock_digest"],
+    `${label} release_plan`,
   );
-  const timestamps = validateTimestamps(receipt.timestamps, attempt, sourceArtifacts);
-  const lineage = validateLineage(receipt.lineage);
+  const normalizedReleasePlan = {
+    schema: ascii(releasePlan.schema, `${label} release_plan.schema`),
+    purpose: ascii(releasePlan.purpose, `${label} release_plan.purpose`),
+    plan_digest: digest(releasePlan.plan_digest, `${label} release_plan.plan_digest`),
+    lock_digest: digest(releasePlan.lock_digest, `${label} release_plan.lock_digest`),
+  };
+  if (normalizedReleasePlan.schema !== "openclaw.release-plan.v1") {
+    fail("release validation receipt release_plan.schema is unsupported");
+  }
+  const validation = object(receipt.validation, `${label} validation`);
+  exactKeys(
+    validation,
+    ["intent", "profile", "soak", "allowed_groups", "rerun_group", "policy"],
+    `${label} validation`,
+  );
+  if (!Array.isArray(validation.allowed_groups) || validation.allowed_groups.length === 0) {
+    fail(`${label} validation.allowed_groups must be a non-empty array`);
+  }
+  const allowedGroups = sortedUnique(
+    validation.allowed_groups.map((group, index) =>
+      ascii(group, `${label} validation.allowed_groups[${index}]`),
+    ),
+    `${label} validation.allowed_groups`,
+    (group) => group,
+  );
+  const policy = object(validation.policy, `${label} validation.policy`);
+  exactKeys(policy, ["id", "fail_fast"], `${label} validation.policy`);
+  const normalizedValidation = {
+    intent: ascii(validation.intent, `${label} validation.intent`),
+    profile: ascii(validation.profile, `${label} validation.profile`),
+    soak: booleanValue(validation.soak, `${label} validation.soak`),
+    allowed_groups: allowedGroups,
+    rerun_group: ascii(validation.rerun_group, `${label} validation.rerun_group`),
+    policy: {
+      id: ascii(policy.id, `${label} validation.policy.id`),
+      fail_fast: booleanValue(policy.fail_fast, `${label} validation.policy.fail_fast`),
+    },
+  };
+  if (
+    normalizedValidation.policy.id !== RELEASE_VALIDATION_POLICY_ID ||
+    !allowedGroups.includes(normalizedValidation.rerun_group)
+  ) {
+    fail("release validation receipt validation policy or rerun group is unsupported");
+  }
+  releaseValidationIntentForPurpose(normalizedReleasePlan.purpose, normalizedValidation.intent);
+  resolveReleaseValidationIntent(normalizedValidation.intent, {
+    profile: normalizedValidation.profile,
+    soak: normalizedValidation.soak,
+  });
+  const sourceAttempts = object(receipt.source_attempts, `${label} source_attempts`);
+  exactKeys(
+    sourceAttempts,
+    ["execution_plan", "decision", "diagnostic_drain"],
+    `${label} source_attempts`,
+  );
+  const normalizedSourceAttempts = {
+    execution_plan: validateReceiptSourceAttempt(
+      sourceAttempts.execution_plan,
+      `${label} source_attempts.execution_plan`,
+      false,
+    ),
+    decision: validateReceiptSourceAttempt(
+      sourceAttempts.decision,
+      `${label} source_attempts.decision`,
+      true,
+    ),
+    diagnostic_drain: validateReceiptSourceAttempt(
+      sourceAttempts.diagnostic_drain,
+      `${label} source_attempts.diagnostic_drain`,
+      true,
+    ),
+  };
+  if (
+    normalizedSourceAttempts.execution_plan.schema !== EXECUTION_PLAN_SCHEMA ||
+    normalizedSourceAttempts.decision.schema !== DECISION_SCHEMA ||
+    normalizedSourceAttempts.diagnostic_drain.schema !== DRAIN_SCHEMA ||
+    normalizedSourceAttempts.decision.source_parent_run_attempt !==
+      normalizedSourceAttempts.execution_plan.parent_run_attempt ||
+    normalizedSourceAttempts.diagnostic_drain.source_parent_run_attempt !==
+      normalizedSourceAttempts.execution_plan.parent_run_attempt
+  ) {
+    fail("release validation receipt source attempt binding is invalid");
+  }
+  if (
+    normalizedAttempt.run_attempt !==
+    Math.max(
+      normalizedSourceAttempts.decision.parent_run_attempt,
+      normalizedSourceAttempts.diagnostic_drain.parent_run_attempt,
+    )
+  ) {
+    fail("release validation receipt attempt differs from its terminal source attempts");
+  }
+  if (!Array.isArray(receipt.groups) || receipt.groups.length === 0) {
+    fail(`${label} groups must be a non-empty array`);
+  }
+  const groups = sortedUnique(
+    receipt.groups.map((group, index) => validateReceiptGroup(group, index, normalizedTooling.sha)),
+    `${label} groups`,
+    (group) => group.id,
+  );
+  const timestamps = object(receipt.timestamps, `${label} timestamps`);
+  exactKeys(
+    timestamps,
+    ["started_at", "decision_at", "drain_completed_at", "sealed_at"],
+    `${label} timestamps`,
+  );
+  const normalizedTimestamps = {
+    started_at: timestamp(timestamps.started_at, `${label} timestamps.started_at`),
+    decision_at: timestamp(timestamps.decision_at, `${label} timestamps.decision_at`),
+    drain_completed_at: timestamp(
+      timestamps.drain_completed_at,
+      `${label} timestamps.drain_completed_at`,
+    ),
+    sealed_at: timestamp(timestamps.sealed_at, `${label} timestamps.sealed_at`),
+  };
+  const orderedTimes = [
+    normalizedTimestamps.started_at,
+    normalizedTimestamps.decision_at,
+    normalizedTimestamps.drain_completed_at,
+    normalizedTimestamps.sealed_at,
+  ].map(Date.parse);
+  if (orderedTimes.some((time, index) => index > 0 && orderedTimes[index - 1] > time)) {
+    fail("release validation receipt timestamps are not chronological");
+  }
   const result = {
     schema: RELEASE_VALIDATION_RECEIPT_SCHEMA,
     canonicalization: RELEASE_PLAN_CANONICALIZATION,
-    target,
-    tooling,
-    attempt,
-    release_plan: releasePlan,
-    validation,
-    source_attempts: sourceAttempts,
+    target: normalizedTarget,
+    tooling: normalizedTooling,
+    attempt: normalizedAttempt,
+    release_plan: normalizedReleasePlan,
+    validation: normalizedValidation,
+    source_attempts: normalizedSourceAttempts,
     groups,
-    child_runs: childRuns,
-    observed_jobs: observedJobs,
-    source_artifacts: sourceArtifacts,
-    timestamps,
-    lineage,
+    source_artifacts: validateReceiptArtifacts(receipt.source_artifacts, {
+      attempt: normalizedAttempt,
+      releasePlan: normalizedReleasePlan,
+      sourceAttempts: normalizedSourceAttempts,
+      timestamps: normalizedTimestamps,
+    }),
+    timestamps: normalizedTimestamps,
+    lineage: validateLineageShape(receipt.lineage),
   };
-  if (
-    validation.policy.outcome === "passed" &&
-    observedJobs.some((job) => job.policy === "blocking" && job.conclusion !== "success")
-  ) {
-    fail("release validation receipt passed outcome contains failed blocking evidence");
-  }
   if (
     Buffer.byteLength(canonicalReleaseJson(result), "ascii") > RELEASE_VALIDATION_RECEIPT_MAX_BYTES
   ) {
     fail(`release validation receipt exceeds ${RELEASE_VALIDATION_RECEIPT_MAX_BYTES} bytes`);
   }
   return result;
+}
+
+export function verifyReleaseValidationReceiptLineage(
+  receiptValue,
+  { parentReceipt, rootReceipt } = {},
+) {
+  const receipt = validateReleaseValidationReceipt(receiptValue);
+  const expected = buildLineage({
+    parentReceipt,
+    rootReceipt,
+    validation: receipt.validation,
+    startedAt: receipt.timestamps.started_at,
+  });
+  if (canonicalReleaseJson(receipt.lineage) !== canonicalReleaseJson(expected)) {
+    fail("release validation receipt lineage differs from the supplied parent/root continuity");
+  }
+  return receipt.lineage;
+}
+
+export function verifyReleaseValidationReceipt(receiptValue, input) {
+  const receipt = validateReleaseValidationReceipt(receiptValue);
+  const expected = sealReleaseValidationReceipt(input);
+  if (canonicalReleaseJson(receipt) !== canonicalReleaseJson(expected)) {
+    fail("release validation receipt differs from its validated source objects");
+  }
+  return receipt;
 }
 
 export function canonicalReleaseValidationReceiptJson(value) {
@@ -804,23 +1330,20 @@ export function parseReleaseValidationReceiptJson(text) {
 }
 
 export function validateReleaseValidationReceiptLocator(value) {
-  const envelope = object(value, "release validation receipt locator");
+  const label = "release validation receipt locator";
+  const envelope = object(value, label);
   exactKeys(
     envelope,
     ["schema", "canonicalization", "receipt_digest", "locator", "sealed_at"],
-    "release validation receipt locator",
+    label,
   );
-  if (envelope.schema !== RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA) {
-    fail(
-      `release validation receipt locator schema must be ${RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA}`,
-    );
+  if (
+    envelope.schema !== RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA ||
+    envelope.canonicalization !== RELEASE_PLAN_CANONICALIZATION
+  ) {
+    fail("release validation receipt locator schema or canonicalization is unsupported");
   }
-  if (envelope.canonicalization !== RELEASE_PLAN_CANONICALIZATION) {
-    fail(
-      `release validation receipt locator canonicalization must be ${RELEASE_PLAN_CANONICALIZATION}`,
-    );
-  }
-  const locator = object(envelope.locator, "release validation receipt locator coordinates");
+  const locator = object(envelope.locator, `${label} coordinates`);
   exactKeys(
     locator,
     [
@@ -831,76 +1354,55 @@ export function validateReleaseValidationReceiptLocator(value) {
       "artifact_name",
       "entry_name",
       "archive_digest",
+      "url",
     ],
-    "release validation receipt locator coordinates",
+    `${label} coordinates`,
   );
-  const result = {
+  const locatorRunId = runId(locator.run_id, `${label} run_id`);
+  const artifactId = runId(locator.artifact_id, `${label} artifact_id`);
+  const normalizedLocator = {
+    repository: ascii(locator.repository, `${label} repository`),
+    run_id: locatorRunId,
+    run_attempt: positiveInteger(locator.run_attempt, `${label} run_attempt`),
+    artifact_id: artifactId,
+    artifact_name: ascii(locator.artifact_name, `${label} artifact_name`),
+    entry_name: ascii(locator.entry_name, `${label} entry_name`),
+    archive_digest: digest(locator.archive_digest, `${label} archive_digest`),
+    url: exactArtifactUrl(locator.url, locatorRunId, artifactId, `${label} url`),
+  };
+  if (
+    normalizedLocator.repository !== REPOSITORY ||
+    normalizedLocator.entry_name !== "release-validation-receipt.json" ||
+    normalizedLocator.artifact_name !==
+      `release-validation-receipt-${locatorRunId}-${normalizedLocator.run_attempt}`
+  ) {
+    fail("release validation receipt locator coordinates are unsupported");
+  }
+  return {
     schema: RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA,
     canonicalization: RELEASE_PLAN_CANONICALIZATION,
-    receipt_digest: digest(
-      envelope.receipt_digest,
-      "release validation receipt locator receipt_digest",
-    ),
-    locator: {
-      repository: asciiString(locator.repository, "release validation receipt locator repository"),
-      run_id: runId(locator.run_id, "release validation receipt locator run_id"),
-      run_attempt: positiveInteger(
-        locator.run_attempt,
-        "release validation receipt locator run_attempt",
-      ),
-      artifact_id: runId(locator.artifact_id, "release validation receipt locator artifact_id"),
-      artifact_name: asciiString(
-        locator.artifact_name,
-        "release validation receipt locator artifact_name",
-      ),
-      entry_name: asciiString(locator.entry_name, "release validation receipt locator entry_name"),
-      archive_digest: digest(
-        locator.archive_digest,
-        "release validation receipt locator archive_digest",
-      ),
-    },
-    sealed_at: timestamp(envelope.sealed_at, "release validation receipt locator sealed_at"),
+    receipt_digest: digest(envelope.receipt_digest, `${label} receipt_digest`),
+    locator: normalizedLocator,
+    sealed_at: timestamp(envelope.sealed_at, `${label} sealed_at`),
   };
-  if (result.locator.repository !== REPOSITORY) {
-    fail(`release validation receipt locator repository must be ${REPOSITORY}`);
-  }
-  if (result.locator.entry_name !== "release-validation-receipt.json") {
-    fail("release validation receipt locator entry_name is unsupported");
-  }
-  if (
-    result.locator.artifact_name !==
-    `release-validation-receipt-${result.locator.run_id}-${result.locator.run_attempt}`
-  ) {
-    fail("release validation receipt locator artifact_name must bind its run and attempt");
-  }
-  if (
-    Buffer.byteLength(canonicalReleaseJson(result), "ascii") >
-    RELEASE_VALIDATION_RECEIPT_LOCATOR_MAX_BYTES
-  ) {
-    fail(
-      `release validation receipt locator exceeds ${RELEASE_VALIDATION_RECEIPT_LOCATOR_MAX_BYTES} bytes`,
-    );
-  }
-  return result;
 }
 
 export function createReleaseValidationReceiptLocator(receiptValue, locatorValue) {
   const receipt = validateReleaseValidationReceipt(receiptValue);
-  const locator = object(locatorValue, "release validation receipt locator coordinates");
-  const envelope = validateReleaseValidationReceiptLocator({
+  const result = validateReleaseValidationReceiptLocator({
     schema: RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA,
     canonicalization: RELEASE_PLAN_CANONICALIZATION,
     receipt_digest: releaseValidationReceiptDigest(receipt),
-    locator,
+    locator: locatorValue,
     sealed_at: receipt.timestamps.sealed_at,
   });
   if (
-    envelope.locator.run_id !== receipt.attempt.run_id ||
-    envelope.locator.run_attempt !== receipt.attempt.run_attempt
+    result.locator.run_id !== receipt.attempt.run_id ||
+    result.locator.run_attempt !== receipt.attempt.run_attempt
   ) {
     fail("release validation receipt locator attempt differs from its receipt");
   }
-  return envelope;
+  return result;
 }
 
 export function validateReleaseValidationReceiptLocatorForReceipt(locatorValue, receiptValue) {

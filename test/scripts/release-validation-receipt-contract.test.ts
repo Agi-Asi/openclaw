@@ -1,509 +1,594 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  canonicalReleaseJson,
+  createReleasePlanLock,
+  releaseCanonicalDigest,
+} from "../../scripts/release-plan-contract.mjs";
 import {
   canonicalReleaseValidationReceiptJson,
   canonicalReleaseValidationReceiptLocatorJson,
   createReleaseValidationReceiptLocator,
   parseReleaseValidationReceiptJson,
   parseReleaseValidationReceiptLocatorJson,
-  RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA,
-  RELEASE_VALIDATION_RECEIPT_SCHEMA,
   releaseValidationReceiptDigest,
-  validateReleaseValidationReceiptLocatorForReceipt,
+  sealReleaseValidationReceipt,
+  validateReleaseValidationExecutionPlanSource,
   validateReleaseValidationReceipt,
+  validateReleaseValidationReceiptLocatorForReceipt,
+  validateReleaseValidationStateSource,
+  verifyReleaseValidationReceipt,
+  verifyReleaseValidationReceiptLineage,
+} from "../../scripts/release-validation-receipt-contract.mjs";
+import type {
+  ReleaseValidationExecutionPlanSource,
+  ReleaseValidationReceiptSealInput,
+  ReleaseValidationSourceArtifact,
+  ReleaseValidationStateGroup,
+  ReleaseValidationStateJob,
+  ReleaseValidationStateSource,
 } from "../../scripts/release-validation-receipt-contract.mjs";
 
 const TARGET_SHA = "a".repeat(40);
 const TOOLING_SHA = "b".repeat(40);
-const PLAN_DIGEST = `sha256:${"1".repeat(64)}`;
-const LOCK_DIGEST = `sha256:${"2".repeat(64)}`;
-const EXECUTION_PLAN_DIGEST = `sha256:${"3".repeat(64)}`;
-const DECISION_DIGEST = `sha256:${"4".repeat(64)}`;
-const DRAIN_DIGEST = `sha256:${"5".repeat(64)}`;
+const PARENT_RUN_ID = "9001";
+const PARENT_RUN_URL = `https://github.com/openclaw/openclaw/actions/runs/${PARENT_RUN_ID}`;
+const sourceFixture = JSON.parse(
+  readFileSync(resolve("test/fixtures/release-plan-v1.source.json"), "utf8"),
+) as Record<string, unknown>;
 
-function sourceArtifact(
-  kind: string,
+function addSeconds(value: string, seconds: number): string {
+  return new Date(Date.parse(value) + seconds * 1000).toISOString().replace(".000Z", "Z");
+}
+
+function job(
+  runId: string,
   id: string,
   name: string,
-  entryName: string,
-  runAttempt: number,
-  archiveCharacter: string,
-  contentDigest: string,
-) {
+  policy: "advisory" | "blocking",
+  status: "completed" | "in_progress",
+  conclusion: "failure" | "success" | null,
+  completedAt: string | null,
+): ReleaseValidationStateJob {
   return {
-    kind,
-    artifact_id: id,
-    artifact_name: name,
-    entry_name: entryName,
-    run_id: "9001",
-    run_attempt: runAttempt,
-    archive_digest: `sha256:${archiveCharacter.repeat(64)}`,
-    content_digest: contentDigest,
-    created_at: "2026-08-21T10:40:00Z",
+    name,
+    policy,
+    status,
+    conclusion,
+    started_at: "2026-08-21T09:05:00Z",
+    completed_at: completedAt,
+    url: `https://github.com/openclaw/openclaw/actions/runs/${runId}/job/${id}`,
   };
 }
 
-function receiptFixture() {
+function stateGroup(
+  id: string,
+  runId: string,
+  status: "completed" | "in_progress",
+  conclusion: "failure" | "success" | null,
+  completedAt: string | null,
+  jobs: ReleaseValidationStateJob[],
+): ReleaseValidationStateGroup {
   return {
-    schema: RELEASE_VALIDATION_RECEIPT_SCHEMA,
-    canonicalization: "ascii-sorted-compact-json-trailing-newline-v1",
-    target: {
-      repository: "openclaw/openclaw",
-      ref: "refs/tags/v2026.8.1-beta.3",
-      sha: TARGET_SHA,
-    },
-    tooling: {
-      repository: "openclaw/openclaw",
-      ref: "refs/tags/release-publish/bbbbbbbbbbbb-123",
-      sha: TOOLING_SHA,
-    },
-    attempt: {
-      workflow_path: ".github/workflows/full-release-validation.yml",
-      workflow_name: "Full Release Validation",
-      workflow_ref: "refs/tags/release-publish/bbbbbbbbbbbb-123",
-      workflow_sha: TOOLING_SHA,
-      run_id: "9001",
-      run_attempt: 2,
-      url: "https://github.com/openclaw/openclaw/actions/runs/9001/attempts/2",
-    },
-    release_plan: {
-      schema: "openclaw.release-plan.v1",
-      purpose: "beta-publish",
-      plan_digest: PLAN_DIGEST,
-      lock_digest: LOCK_DIGEST,
-    },
-    validation: {
-      intent: "release-beta",
-      profile: "beta",
-      soak: false,
-      policy: {
-        id: "openclaw.release-validation-policy.v1",
-        fail_fast: false,
-        outcome: "passed",
-      },
-    },
-    source_attempts: {
-      execution_plan: {
-        schema: "openclaw.full-release-execution-plan.v1",
-        digest: EXECUTION_PLAN_DIGEST,
-        parent_run_attempt: 1,
-      },
-      decision: {
-        schema: "openclaw.full-release-decision.v2",
-        digest: DECISION_DIGEST,
-        parent_run_attempt: 2,
-        source_parent_run_attempt: 1,
-      },
-      diagnostic_drain: {
-        schema: "openclaw.full-release-diagnostic-drain.v2",
-        digest: DRAIN_DIGEST,
-        parent_run_attempt: 2,
-        source_parent_run_attempt: 1,
-      },
-    },
+    id,
+    run_id: runId,
+    run_attempt: 1,
+    status,
+    conclusion,
+    completed_at: completedAt,
+    url: `https://github.com/openclaw/openclaw/actions/runs/${runId}`,
+    jobs,
+  };
+}
+
+function executionPlanFixture(): ReleaseValidationExecutionPlanSource {
+  return {
+    schema: "openclaw.full-release-execution-plan.v1",
+    parent_run_id: PARENT_RUN_ID,
+    parent_run_attempt: 1,
+    workflow_ref: `refs/tags/release-publish/${TOOLING_SHA.slice(0, 12)}-123`,
+    workflow_sha: TOOLING_SHA,
+    target_sha: TARGET_SHA,
+    release_profile: "beta",
+    rerun_group: "all",
+    fail_fast: false,
+    started_at: "2026-08-21T09:00:00Z",
     groups: [
-      { id: "normal-ci", mode: "blocking", policy: "required-success" },
-      { id: "performance", mode: "diagnostic", policy: "advisory-beta" },
-      { id: "release-checks", mode: "blocking", policy: "required-success" },
-    ],
-    child_runs: [
       {
-        group: "normal-ci",
+        id: "normal-ci",
+        mode: "blocking",
+        policy: "required-success",
         workflow_path: ".github/workflows/ci.yml",
         run_id: "9101",
         run_attempt: 1,
         workflow_sha: TOOLING_SHA,
-        conclusion: "success",
         url: "https://github.com/openclaw/openclaw/actions/runs/9101",
       },
       {
-        group: "performance",
+        id: "performance",
+        mode: "diagnostic",
+        policy: "advisory",
         workflow_path: ".github/workflows/openclaw-performance.yml",
         run_id: "9102",
         run_attempt: 1,
         workflow_sha: TOOLING_SHA,
-        conclusion: "failure",
         url: "https://github.com/openclaw/openclaw/actions/runs/9102",
       },
       {
-        group: "release-checks",
+        id: "release-checks",
+        mode: "blocking",
+        policy: "required-success",
         workflow_path: ".github/workflows/openclaw-release-checks.yml",
         run_id: "9103",
         run_attempt: 1,
         workflow_sha: TOOLING_SHA,
-        conclusion: "success",
         url: "https://github.com/openclaw/openclaw/actions/runs/9103",
       },
     ],
-    observed_jobs: [
-      {
-        group: "normal-ci",
-        name: "test",
-        policy: "blocking",
-        status: "completed",
-        conclusion: "success",
-        started_at: "2026-08-21T09:01:00Z",
-        completed_at: "2026-08-21T09:21:00Z",
-        url: "https://github.com/openclaw/openclaw/actions/runs/9101/job/1",
-      },
-      {
-        group: "performance",
-        name: "bench",
-        policy: "advisory",
-        status: "completed",
-        conclusion: "failure",
-        started_at: "2026-08-21T09:02:00Z",
-        completed_at: "2026-08-21T09:12:00Z",
-        url: "https://github.com/openclaw/openclaw/actions/runs/9102/job/2",
-      },
-      {
-        group: "release-checks",
-        name: "package",
-        policy: "blocking",
-        status: "completed",
-        conclusion: "success",
-        started_at: "2026-08-21T09:03:00Z",
-        completed_at: "2026-08-21T10:30:00Z",
-        url: "https://github.com/openclaw/openclaw/actions/runs/9103/job/3",
-      },
-    ],
-    source_artifacts: [
-      sourceArtifact(
-        "decision",
-        "9201",
-        "full-release-decision-9001-2",
-        "full-release-decision.json",
-        2,
-        "6",
-        DECISION_DIGEST,
-      ),
-      sourceArtifact(
-        "diagnostic-drain",
-        "9202",
-        "full-release-diagnostics-9001-2",
-        "full-release-diagnostic-manifest.json",
-        2,
-        "7",
-        DRAIN_DIGEST,
-      ),
-      sourceArtifact(
-        "execution-plan",
-        "9203",
-        "full-release-execution-plan-9001",
-        "full-release-execution-plan.json",
-        1,
-        "8",
-        EXECUTION_PLAN_DIGEST,
-      ),
-      sourceArtifact(
-        "release-plan-lock",
-        "9204",
-        "release-plan-lock-9001",
-        "release-plan-lock.json",
-        2,
-        "9",
-        LOCK_DIGEST,
-      ),
-    ],
-    timestamps: {
-      started_at: "2026-08-21T09:00:00Z",
-      decision_at: "2026-08-21T09:22:00Z",
-      drain_completed_at: "2026-08-21T10:35:00Z",
-      sealed_at: "2026-08-21T10:45:00Z",
-    },
-    lineage: {
-      generation: 0,
-      root_receipt_digest: null,
-      parent_receipt_digest: null,
-    },
   };
 }
 
-function locatorCoordinates() {
+function decisionFixture(
+  executionPlan: ReleaseValidationExecutionPlanSource,
+): ReleaseValidationStateSource {
+  return {
+    schema: "openclaw.full-release-decision.v2",
+    parent_run_id: PARENT_RUN_ID,
+    parent_run_attempt: 2,
+    source_parent_run_attempt: 1,
+    workflow_ref: executionPlan.workflow_ref,
+    workflow_sha: TOOLING_SHA,
+    target_sha: TARGET_SHA,
+    execution_plan_digest: releaseCanonicalDigest(executionPlan),
+    observed_at: "2026-08-21T10:00:00Z",
+    groups: [
+      stateGroup("normal-ci", "9101", "completed", "success", "2026-08-21T09:25:00Z", [
+        job("9101", "1", "test", "blocking", "completed", "success", "2026-08-21T09:25:00Z"),
+      ]),
+      stateGroup("performance", "9102", "in_progress", null, null, [
+        job("9102", "2", "bench", "advisory", "in_progress", null, null),
+      ]),
+      stateGroup("release-checks", "9103", "completed", "success", "2026-08-21T09:50:00Z", [
+        job("9103", "3", "package", "blocking", "completed", "success", "2026-08-21T09:50:00Z"),
+      ]),
+    ],
+  };
+}
+
+function diagnosticDrainFixture(
+  decision: ReleaseValidationStateSource,
+): ReleaseValidationStateSource {
+  const normalCi = structuredClone(decision.groups[0]!);
+  const releaseChecks = structuredClone(decision.groups[2]!);
+  return {
+    ...structuredClone(decision),
+    schema: "openclaw.full-release-diagnostic-drain.v2",
+    observed_at: "2026-08-21T10:30:00Z",
+    groups: [
+      normalCi,
+      stateGroup("performance", "9102", "completed", "failure", "2026-08-21T10:20:00Z", [
+        job("9102", "2", "bench", "advisory", "completed", "failure", "2026-08-21T10:20:00Z"),
+      ]),
+      releaseChecks,
+    ],
+  };
+}
+
+type FixtureBase = Omit<
+  ReleaseValidationReceiptSealInput,
+  "parentReceipt" | "rootReceipt" | "sourceArtifacts"
+>;
+type Fixture = FixtureBase & { sourceArtifacts: ReleaseValidationSourceArtifact[] };
+
+function sourceArtifacts(fixture: FixtureBase): ReleaseValidationSourceArtifact[] {
+  const coordinates = [
+    {
+      kind: "decision",
+      artifact_id: "9201",
+      artifact_name: "full-release-decision-9001-2",
+      entry_name: "full-release-decision.json",
+      run_attempt: 2,
+      content: fixture.decision,
+      created_at: addSeconds(fixture.decision.observed_at, 60),
+      archive: "1",
+    },
+    {
+      kind: "diagnostic-drain",
+      artifact_id: "9202",
+      artifact_name: "full-release-diagnostics-9001-2",
+      entry_name: "full-release-diagnostic-manifest.json",
+      run_attempt: 2,
+      content: fixture.diagnosticDrain,
+      created_at: addSeconds(fixture.diagnosticDrain.observed_at, 60),
+      archive: "2",
+    },
+    {
+      kind: "execution-plan",
+      artifact_id: "9203",
+      artifact_name: "full-release-execution-plan-9001",
+      entry_name: "full-release-execution-plan.json",
+      run_attempt: 1,
+      content: fixture.executionPlan,
+      created_at: addSeconds(fixture.executionPlan.started_at, 60),
+      archive: "3",
+    },
+    {
+      kind: "release-plan-lock",
+      artifact_id: "9204",
+      artifact_name: "release-plan-lock-9001-1",
+      entry_name: "release-plan-lock.json",
+      run_attempt: 1,
+      content: fixture.releasePlanLock,
+      created_at: addSeconds(fixture.executionPlan.started_at, -60),
+      archive: "4",
+    },
+  ] as const;
+  return coordinates.map((artifact) => ({
+    kind: artifact.kind,
+    artifact_id: artifact.artifact_id,
+    artifact_name: artifact.artifact_name,
+    entry_name: artifact.entry_name,
+    run_id: PARENT_RUN_ID,
+    run_attempt: artifact.run_attempt,
+    archive_digest:
+      `sha256:${artifact.archive.repeat(64)}` as ReleaseValidationSourceArtifact["archive_digest"],
+    content_digest: releaseCanonicalDigest(
+      artifact.content,
+    ) as ReleaseValidationSourceArtifact["content_digest"],
+    created_at: artifact.created_at,
+    url: `${PARENT_RUN_URL}/artifacts/${artifact.artifact_id}`,
+  }));
+}
+
+function inputFixture(): Fixture {
+  const executionPlan = executionPlanFixture();
+  const decision = decisionFixture(executionPlan);
+  const diagnosticDrain = diagnosticDrainFixture(decision);
+  const base = {
+    releasePlanLock: createReleasePlanLock(sourceFixture),
+    executionPlan,
+    decision,
+    diagnosticDrain,
+    sealedAt: "2026-08-21T10:32:00Z",
+  };
+  return { ...base, sourceArtifacts: sourceArtifacts(base) };
+}
+
+function refreshArtifacts(fixture: Fixture): Fixture {
+  fixture.sourceArtifacts = sourceArtifacts(fixture);
+  return fixture;
+}
+
+function shiftFixture(fixture: Fixture, seconds: number): Fixture {
+  const shiftObject = (value: unknown): void => {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+    for (const [key, entry] of Object.entries(value)) {
+      if (
+        typeof entry === "string" &&
+        (key === "started_at" || key === "completed_at" || key === "observed_at")
+      ) {
+        (value as Record<string, unknown>)[key] = addSeconds(entry, seconds);
+      } else {
+        shiftObject(entry);
+      }
+    }
+  };
+  shiftObject(fixture.executionPlan);
+  shiftObject(fixture.decision);
+  shiftObject(fixture.diagnosticDrain);
+  fixture.decision.execution_plan_digest = releaseCanonicalDigest(fixture.executionPlan);
+  fixture.diagnosticDrain.execution_plan_digest = releaseCanonicalDigest(fixture.executionPlan);
+  fixture.sealedAt = addSeconds(fixture.sealedAt, seconds);
+  return refreshArtifacts(fixture);
+}
+
+function locatorFixture(receipt: ReturnType<typeof sealReleaseValidationReceipt>) {
   return {
     repository: "openclaw/openclaw",
-    run_id: "9001",
-    run_attempt: 2,
+    run_id: receipt.attempt.run_id,
+    run_attempt: receipt.attempt.run_attempt,
     artifact_id: "9301",
-    artifact_name: "release-validation-receipt-9001-2",
+    artifact_name: `release-validation-receipt-${receipt.attempt.run_id}-${receipt.attempt.run_attempt}`,
     entry_name: "release-validation-receipt.json",
-    archive_digest: `sha256:${"a".repeat(64)}`,
+    archive_digest: `sha256:${"9".repeat(64)}`,
+    url: `${receipt.attempt.url}/artifacts/9301`,
   };
 }
 
-describe("release validation receipt contract", () => {
-  it("canonicalizes, hashes, and parses one immutable receipt", () => {
-    const fixture = receiptFixture();
-    const canonical = canonicalReleaseValidationReceiptJson(fixture);
-    expect(canonical.endsWith("\n")).toBe(true);
-    expect(canonical.slice(0, -1)).toMatch(/^[\x20-\x7e]+$/u);
-    expect(parseReleaseValidationReceiptJson(canonical)).toEqual(
-      validateReleaseValidationReceipt(fixture),
+describe("release validation receipt source sealer", () => {
+  it("derives the release-valid receipt from the locked plan and source evidence", () => {
+    const input = inputFixture();
+    const receipt = sealReleaseValidationReceipt(input);
+
+    expect(receipt.target).toEqual({
+      repository: "openclaw/openclaw",
+      ref: "refs/tags/v2026.8.1-beta.2",
+      sha: TARGET_SHA,
+    });
+    expect(receipt.tooling).toEqual(input.releasePlanLock.plan.tooling);
+    expect(receipt.release_plan).toEqual({
+      schema: "openclaw.release-plan.v1",
+      purpose: "beta-publish",
+      plan_digest: input.releasePlanLock.digest,
+      lock_digest: releaseCanonicalDigest(input.releasePlanLock),
+    });
+    expect(receipt.validation).toEqual({
+      intent: "release-beta",
+      profile: "beta",
+      soak: false,
+      allowed_groups: ["all", "ci", "package"],
+      rerun_group: "all",
+      policy: { id: "openclaw.release-validation-policy.v1", fail_fast: false },
+    });
+    expect(receipt).not.toHaveProperty("outcome");
+    expect(receipt.groups).toEqual(
+      input.executionPlan.groups.map((group, index) => {
+        const observed = input.diagnosticDrain.groups[index]!;
+        return {
+          ...group,
+          conclusion: observed.conclusion,
+          completed_at: observed.completed_at,
+          jobs: observed.jobs,
+        };
+      }),
     );
-    expect(releaseValidationReceiptDigest(fixture)).toMatch(/^sha256:[a-f0-9]{64}$/u);
-    expect(
-      releaseValidationReceiptDigest({
-        ...fixture,
-        target: { sha: TARGET_SHA, ref: fixture.target.ref, repository: fixture.target.repository },
-      }),
-    ).toBe(releaseValidationReceiptDigest(fixture));
-    expect(
-      releaseValidationReceiptDigest({
-        ...fixture,
-        target: { ...fixture.target, sha: "c".repeat(40) },
-      }),
-    ).not.toBe(releaseValidationReceiptDigest(fixture));
+    expect(verifyReleaseValidationReceipt(receipt, input)).toEqual(receipt);
   });
 
-  it("rejects duplicate, reordered, pretty, CRLF, and non-ASCII bytes", () => {
-    const canonical = canonicalReleaseValidationReceiptJson(receiptFixture());
-    const parsed = JSON.parse(canonical) as Record<string, unknown>;
-    const duplicate = canonical.replace('{"attempt":', `{"attempt":{},"attempt":`);
-    expect(() => parseReleaseValidationReceiptJson(duplicate)).toThrow("duplicate key");
-    expect(() =>
-      parseReleaseValidationReceiptJson(
-        `${JSON.stringify({
-          schema: parsed.schema,
-          target: parsed.target,
-          ...parsed,
-        })}\n`,
-      ),
-    ).toThrow("canonical bytes");
-    expect(() => parseReleaseValidationReceiptJson(`${JSON.stringify(parsed, null, 2)}\n`)).toThrow(
-      "compact printable ASCII",
+  it("rejects self-declared receipt changes even when the changed receipt is structurally valid", () => {
+    const input = inputFixture();
+    const receipt = sealReleaseValidationReceipt(input);
+    const mutations = [
+      (value: Record<string, any>) => (value.target.sha = "c".repeat(40)),
+      (value: Record<string, any>) => (value.tooling.sha = "c".repeat(40)),
+      (value: Record<string, any>) => (value.release_plan.plan_digest = `sha256:${"c".repeat(64)}`),
+      (value: Record<string, any>) => (value.validation.allowed_groups = ["all", "ci"]),
+      (value: Record<string, any>) => (value.groups[0].policy = "optional"),
+      (value: Record<string, any>) => (value.groups[0].jobs[0].name = "other"),
+    ];
+    for (const mutate of mutations) {
+      const changed = structuredClone(receipt) as unknown as Record<string, any>;
+      mutate(changed);
+      expect(() => verifyReleaseValidationReceipt(changed, input)).toThrow();
+    }
+  });
+
+  it("binds execution target, tooling, profile, and selected group to the ReleasePlan lock", () => {
+    const mutations = [
+      (value: Fixture) => (value.executionPlan.target_sha = "c".repeat(40)),
+      (value: Fixture) => (value.executionPlan.workflow_sha = "c".repeat(40)),
+      (value: Fixture) => (value.executionPlan.release_profile = "full"),
+      (value: Fixture) => (value.executionPlan.rerun_group = "performance"),
+    ];
+    for (const mutate of mutations) {
+      const input = inputFixture();
+      mutate(input);
+      input.decision.execution_plan_digest = releaseCanonicalDigest(input.executionPlan);
+      input.diagnosticDrain.execution_plan_digest = releaseCanonicalDigest(input.executionPlan);
+      refreshArtifacts(input);
+      expect(() => sealReleaseValidationReceipt(input)).toThrow(/validated ReleasePlan|tooling/);
+    }
+  });
+
+  it("requires every blocking job and run to succeed before Decision", () => {
+    const mutations = [
+      (value: Fixture) => (value.decision.groups[0]!.status = "in_progress"),
+      (value: Fixture) => (value.decision.groups[0]!.conclusion = "failure"),
+      (value: Fixture) => (value.decision.groups[0]!.jobs[0]!.status = "in_progress"),
+      (value: Fixture) => (value.decision.groups[0]!.jobs[0]!.conclusion = "failure"),
+      (value: Fixture) =>
+        (value.decision.groups[0]!.jobs[0]!.completed_at = "2026-08-21T10:01:00Z"),
+    ];
+    for (const mutate of mutations) {
+      const input = inputFixture();
+      mutate(input);
+      refreshArtifacts(input);
+      expect(() => sealReleaseValidationReceipt(input)).toThrow(
+        /blocking (group|job)|inconsistent/,
+      );
+    }
+  });
+
+  it("requires diagnostic completion before Drain and immutable blocking evidence after Decision", () => {
+    const incomplete = inputFixture();
+    incomplete.diagnosticDrain.groups[1]!.jobs[0]!.status = "in_progress";
+    incomplete.diagnosticDrain.groups[1]!.jobs[0]!.conclusion = null;
+    incomplete.diagnosticDrain.groups[1]!.jobs[0]!.completed_at = null;
+    refreshArtifacts(incomplete);
+    expect(() => sealReleaseValidationReceipt(incomplete)).toThrow(/drained job|inconsistent/);
+
+    const changed = inputFixture();
+    changed.diagnosticDrain.groups[0]!.jobs[0]!.completed_at = "2026-08-21T09:26:00Z";
+    changed.diagnosticDrain.groups[0]!.completed_at = "2026-08-21T09:26:00Z";
+    refreshArtifacts(changed);
+    expect(() => sealReleaseValidationReceipt(changed)).toThrow("blocking job changed");
+
+    const omitted = inputFixture();
+    omitted.diagnosticDrain.groups[0]!.jobs = [];
+    refreshArtifacts(omitted);
+    expect(() => sealReleaseValidationReceipt(omitted)).toThrow(/non-empty array|blocking job/);
+
+    const blockingDiagnostic = inputFixture();
+    blockingDiagnostic.diagnosticDrain.groups[1]!.jobs[0]!.policy = "blocking";
+    refreshArtifacts(blockingDiagnostic);
+    expect(() => sealReleaseValidationReceipt(blockingDiagnostic)).toThrow(
+      "diagnostic group contains a blocking job",
     );
-    expect(() => parseReleaseValidationReceiptJson(canonical.replace(/\n$/u, "\r\n"))).toThrow(
-      "exactly one trailing LF",
-    );
-    expect(() =>
-      parseReleaseValidationReceiptJson(canonical.replace("normal-ci", "normal-cí")),
-    ).toThrow("printable ASCII");
   });
 
-  it("rejects unknown fields at every authority boundary", () => {
-    const fixture = receiptFixture();
-    expect(() => validateReleaseValidationReceipt({ ...fixture, latest: true })).toThrow(
-      "receipt keys must be exactly",
-    );
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        attempt: { ...fixture.attempt, head_branch: "main" },
-      }),
-    ).toThrow("attempt keys must be exactly");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        validation: {
-          ...fixture.validation,
-          policy: { ...fixture.validation.policy, retry: true },
-        },
-      }),
-    ).toThrow("policy keys must be exactly");
-  });
-
-  it("binds purpose, intent, profile, soak, target, and tooling", () => {
-    const fixture = receiptFixture();
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        validation: { ...fixture.validation, intent: "release-stable" },
-      }),
-    ).toThrow("does not allow validation intent");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        validation: { ...fixture.validation, profile: "full" },
-      }),
-    ).toThrow("profile assertion conflicts");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        target: { ...fixture.target, ref: "main" },
-      }),
-    ).toThrow("qualified branch or tag ref");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        child_runs: fixture.child_runs.map((child, index) =>
-          index === 0 ? { ...child, workflow_sha: "c".repeat(40) } : child,
-        ),
-      }),
-    ).toThrow("workflow SHA differs from tooling");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        attempt: { ...fixture.attempt, workflow_sha: "c".repeat(40) },
-      }),
-    ).toThrow("workflow identity differs from tooling");
-  });
-
-  it("binds execution plan, Decision, and Drain source attempts and artifacts", () => {
-    const fixture = receiptFixture();
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        source_attempts: {
-          ...fixture.source_attempts,
-          decision: {
-            ...fixture.source_attempts.decision,
-            source_parent_run_attempt: 2,
-          },
-        },
-      }),
-    ).toThrow("bind the execution plan attempt");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        source_attempts: {
-          ...fixture.source_attempts,
-          diagnostic_drain: {
-            ...fixture.source_attempts.diagnostic_drain,
-            parent_run_attempt: 3,
-          },
-        },
-      }),
-    ).toThrow("cannot exceed the receipt attempt");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        source_artifacts: fixture.source_artifacts.map((artifact) =>
-          artifact.kind === "decision"
-            ? { ...artifact, content_digest: `sha256:${"f".repeat(64)}` }
-            : artifact,
-        ),
-      }),
-    ).toThrow("decision binding is invalid");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        release_plan: { ...fixture.release_plan, lock_digest: `sha256:${"e".repeat(64)}` },
-      }),
-    ).toThrow("release-plan-lock artifact binding is invalid");
-  });
-
-  it("requires complete, sorted, unique group and job evidence", () => {
-    const fixture = receiptFixture();
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        groups: [...fixture.groups].reverse(),
-      }),
-    ).toThrow("ascending ASCII order");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        child_runs: fixture.child_runs.slice(1),
-      }),
-    ).toThrow("cover every declared group");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        observed_jobs: fixture.observed_jobs.map((job, index) =>
-          index === 0 ? { ...job, status: "in_progress" } : job,
-        ),
-      }),
-    ).toThrow("must be terminal");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        observed_jobs: [...fixture.observed_jobs, fixture.observed_jobs[0]],
-      }),
-    ).toThrow("unique in group/name ASCII order");
-  });
-
-  it("allows diagnostic failures but rejects a passed blocking failure", () => {
-    const fixture = receiptFixture();
-    expect(validateReleaseValidationReceipt(fixture).validation.policy.outcome).toBe("passed");
-    expect(
-      validateReleaseValidationReceipt({
-        ...fixture,
-        child_runs: fixture.child_runs.map((child) =>
-          child.group === "release-checks" ? { ...child, conclusion: "failure" } : child,
-        ),
-      }).validation.policy.outcome,
-    ).toBe("passed");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        observed_jobs: fixture.observed_jobs.map((job, index) =>
-          index === 0 ? { ...job, conclusion: "failure" } : job,
-        ),
-      }),
-    ).toThrow("failed blocking evidence");
-  });
-
-  it("requires chronological timestamps and coherent lineage", () => {
-    const fixture = receiptFixture();
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        timestamps: { ...fixture.timestamps, decision_at: "2026-08-21T08:59:59Z" },
-      }),
-    ).toThrow("timestamps must be chronological");
-    expect(() =>
-      validateReleaseValidationReceipt({
-        ...fixture,
-        lineage: {
-          generation: 0,
-          root_receipt_digest: `sha256:${"d".repeat(64)}`,
-          parent_receipt_digest: null,
-        },
-      }),
-    ).toThrow("generation and digests disagree");
-    expect(
-      validateReleaseValidationReceipt({
-        ...fixture,
-        lineage: {
-          generation: 1,
-          root_receipt_digest: `sha256:${"d".repeat(64)}`,
-          parent_receipt_digest: `sha256:${"d".repeat(64)}`,
-        },
-      }).lineage.generation,
-    ).toBe(1);
+  it("requires exact source artifact identities, coordinates, names, URLs, and digests", () => {
+    const mutations = [
+      (value: Fixture) => (value.sourceArtifacts[1]!.artifact_id = "9201"),
+      (value: Fixture) => (value.sourceArtifacts[0]!.artifact_name = "full-release-decision-9001"),
+      (value: Fixture) => (value.sourceArtifacts[0]!.entry_name = "decision.json"),
+      (value: Fixture) => (value.sourceArtifacts[0]!.run_attempt = 1),
+      (value: Fixture) => (value.sourceArtifacts[0]!.content_digest = `sha256:${"f".repeat(64)}`),
+      (value: Fixture) =>
+        (value.sourceArtifacts[0]!.url =
+          "https://github.com/openclaw/openclaw/actions/runs/9001/artifacts/9999"),
+      (value: Fixture) => (value.sourceArtifacts[1]!.created_at = "2026-08-21T10:29:59Z"),
+    ];
+    for (const mutate of mutations) {
+      const input = inputFixture();
+      mutate(input);
+      expect(() => sealReleaseValidationReceipt(input)).toThrow(
+        /unique|coordinates|must equal|timestamps/,
+      );
+    }
   });
 });
 
-describe("release validation receipt locator contract", () => {
-  it("creates and parses a digest-bound locator envelope", () => {
-    const receipt = receiptFixture();
-    const locator = createReleaseValidationReceiptLocator(receipt, locatorCoordinates());
-    expect(locator.schema).toBe(RELEASE_VALIDATION_RECEIPT_LOCATOR_SCHEMA);
-    expect(locator.receipt_digest).toBe(releaseValidationReceiptDigest(receipt));
-    const canonical = canonicalReleaseValidationReceiptLocatorJson(locator);
-    expect(parseReleaseValidationReceiptLocatorJson(canonical)).toEqual(locator);
-    expect(validateReleaseValidationReceiptLocatorForReceipt(locator, receipt)).toEqual(locator);
+describe("release validation receipt lineage", () => {
+  it("requires actual parent and root receipts for continuous same-intent lineage", () => {
+    const rootInput = inputFixture();
+    const root = sealReleaseValidationReceipt(rootInput);
+    expect(root.lineage).toEqual({
+      generation: 0,
+      root_receipt_digest: null,
+      parent_receipt_digest: null,
+    });
+    expect(verifyReleaseValidationReceiptLineage(root)).toEqual(root.lineage);
+
+    const childInput = shiftFixture(inputFixture(), 86_400);
+    const child = sealReleaseValidationReceipt({ ...childInput, parentReceipt: root });
+    expect(child.lineage).toEqual({
+      generation: 1,
+      root_receipt_digest: releaseValidationReceiptDigest(root),
+      parent_receipt_digest: releaseValidationReceiptDigest(root),
+    });
+    expect(
+      verifyReleaseValidationReceiptLineage(child, { parentReceipt: root, rootReceipt: root }),
+    ).toEqual(child.lineage);
+
+    const grandchildInput = shiftFixture(inputFixture(), 172_800);
+    const grandchild = sealReleaseValidationReceipt({
+      ...grandchildInput,
+      parentReceipt: child,
+      rootReceipt: root,
+    });
+    expect(grandchild.lineage.generation).toBe(2);
+    expect(
+      verifyReleaseValidationReceiptLineage(grandchild, {
+        parentReceipt: child,
+        rootReceipt: root,
+      }),
+    ).toEqual(grandchild.lineage);
+    expect(() =>
+      sealReleaseValidationReceipt({ ...grandchildInput, parentReceipt: child }),
+    ).toThrow("actual root receipt");
   });
 
-  it("rejects locator attempt drift, unknown keys, and receipt digest tampering", () => {
-    const receipt = receiptFixture();
+  it("rejects forged roots, different intent policy, late parents, and lineage-field tampering", () => {
+    const root = sealReleaseValidationReceipt(inputFixture());
+    const childInput = shiftFixture(inputFixture(), 86_400);
+    const child = sealReleaseValidationReceipt({ ...childInput, parentReceipt: root });
+    const grandchildInput = shiftFixture(inputFixture(), 172_800);
+    const unrelatedRoot = sealReleaseValidationReceipt({
+      ...inputFixture(),
+      sealedAt: "2026-08-21T10:33:00Z",
+    });
     expect(() =>
-      createReleaseValidationReceiptLocator(receipt, {
-        ...locatorCoordinates(),
-        run_attempt: 1,
-        artifact_name: "release-validation-receipt-9001-1",
+      sealReleaseValidationReceipt({
+        ...grandchildInput,
+        parentReceipt: child,
+        rootReceipt: unrelatedRoot,
       }),
-    ).toThrow("attempt differs from its receipt");
+    ).toThrow("does not continue");
+
+    const differentIntent = structuredClone(root);
+    differentIntent.release_plan.purpose = "main-qualification";
+    differentIntent.validation.intent = "main-daily";
     expect(() =>
-      createReleaseValidationReceiptLocator(receipt, {
-        ...locatorCoordinates(),
-        artifact_name: "release-validation-receipt-latest",
+      sealReleaseValidationReceipt({
+        ...childInput,
+        parentReceipt: differentIntent,
       }),
-    ).toThrow("artifact_name must bind its run and attempt");
-    const locator = createReleaseValidationReceiptLocator(receipt, locatorCoordinates());
+    ).toThrow("different intent policy");
+
+    expect(() => sealReleaseValidationReceipt({ ...inputFixture(), parentReceipt: root })).toThrow(
+      "sealed after its child started",
+    );
+
+    const forged = structuredClone(child);
+    forged.lineage.parent_receipt_digest = `sha256:${"f".repeat(64)}`;
     expect(() =>
-      parseReleaseValidationReceiptLocatorJson(
-        canonicalReleaseValidationReceiptLocatorJson({
-          ...locator,
-          locator: { ...locator.locator, mutable_latest: true },
-        }),
+      verifyReleaseValidationReceiptLineage(forged, {
+        parentReceipt: root,
+        rootReceipt: root,
+      }),
+    ).toThrow("differs from the supplied parent/root");
+  });
+});
+
+describe("release validation receipt canonical bytes and locator", () => {
+  it("rejects unknown fields, duplicate keys, noncanonical bytes, and digest tampering", () => {
+    const input = inputFixture();
+    const receipt = sealReleaseValidationReceipt(input);
+    const text = canonicalReleaseValidationReceiptJson(receipt);
+    expect(parseReleaseValidationReceiptJson(text)).toEqual(receipt);
+    expect(text.endsWith("\n")).toBe(true);
+    expect(text.slice(0, -1)).toMatch(/^[\x20-\x7e]+$/u);
+
+    expect(() => validateReleaseValidationReceipt({ ...receipt, extra: true })).toThrow(
+      "keys must be exactly",
+    );
+    expect(() =>
+      parseReleaseValidationReceiptJson(
+        text.replace(
+          '{"attempt":',
+          `{"attempt":${canonicalReleaseJson(receipt.attempt).trim()},"attempt":`,
+        ),
       ),
-    ).toThrow("coordinates keys must be exactly");
-    const canonical = canonicalReleaseValidationReceiptLocatorJson(locator);
-    const tampered = parseReleaseValidationReceiptLocatorJson(
-      canonical.replace(locator.receipt_digest, `sha256:${"f".repeat(64)}`),
+    ).toThrow("duplicate key");
+    expect(() => parseReleaseValidationReceiptJson(JSON.stringify(receipt, null, 2))).toThrow(
+      /trailing LF|compact printable ASCII/,
     );
-    expect(() => validateReleaseValidationReceiptLocatorForReceipt(tampered, receipt)).toThrow(
-      "differs from its receipt",
+
+    const changed = structuredClone(receipt);
+    changed.release_plan.lock_digest = `sha256:${"e".repeat(64)}`;
+    expect(() => verifyReleaseValidationReceipt(changed, input)).toThrow();
+  });
+
+  it("binds the locator to exact receipt attempt, artifact coordinates, URL, and digest", () => {
+    const receipt = sealReleaseValidationReceipt(inputFixture());
+    const locator = createReleaseValidationReceiptLocator(receipt, locatorFixture(receipt));
+    const text = canonicalReleaseValidationReceiptLocatorJson(locator);
+    expect(parseReleaseValidationReceiptLocatorJson(text)).toEqual(locator);
+    expect(validateReleaseValidationReceiptLocatorForReceipt(locator, receipt)).toEqual(locator);
+
+    for (const mutate of [
+      (value: Record<string, any>) => (value.receipt_digest = `sha256:${"e".repeat(64)}`),
+      (value: Record<string, any>) => (value.locator.run_attempt = 1),
+      (value: Record<string, any>) => (value.locator.artifact_name = "receipt"),
+      (value: Record<string, any>) =>
+        (value.locator.url =
+          "https://github.com/openclaw/openclaw/actions/runs/9001/artifacts/9999"),
+    ]) {
+      const changed = structuredClone(locator) as unknown as Record<string, any>;
+      mutate(changed);
+      expect(() => validateReleaseValidationReceiptLocatorForReceipt(changed, receipt)).toThrow();
+    }
+  });
+
+  it("strictly validates execution and state source schemas", () => {
+    const input = inputFixture();
+    expect(validateReleaseValidationExecutionPlanSource(input.executionPlan)).toEqual(
+      input.executionPlan,
     );
+    expect(validateReleaseValidationStateSource(input.decision, "decision")).toEqual(
+      input.decision,
+    );
+    expect(() =>
+      validateReleaseValidationExecutionPlanSource({ ...input.executionPlan, extra: true }),
+    ).toThrow("keys must be exactly");
+    expect(() =>
+      validateReleaseValidationStateSource(
+        { ...input.decision, schema: "openclaw.full-release-decision.v1" },
+        "decision",
+      ),
+    ).toThrow("schema must be");
   });
 });

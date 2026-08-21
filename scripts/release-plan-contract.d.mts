@@ -34,7 +34,7 @@ export type ReleasePlan = {
 
 export type ReleasePlanLock = {
   schema: "openclaw.release-plan-lock.v1";
-  digest: string;
+  digest: `sha256:${string}`;
   plan: ReleasePlan;
 };
 
@@ -43,7 +43,7 @@ export const RELEASE_PLAN_LOCK_SCHEMA: "openclaw.release-plan-lock.v1";
 export const RELEASE_PLAN_CANONICALIZATION: "ascii-sorted-compact-json-trailing-newline-v1";
 export const RELEASE_PLAN_MAX_BYTES: number;
 export function canonicalReleaseJson(value: unknown): string;
-export function releaseCanonicalDigest(value: unknown): string;
+export function releaseCanonicalDigest(value: unknown): `sha256:${string}`;
 export function parseCanonicalReleaseJson<T = unknown>(
   text: string,
   options?: {
@@ -54,7 +54,7 @@ export function parseCanonicalReleaseJson<T = unknown>(
 ): T;
 export function validateReleasePlan(value: unknown): ReleasePlan;
 export function canonicalReleasePlanJson(value: unknown): string;
-export function releasePlanDigest(value: unknown): string;
+export function releasePlanDigest(value: unknown): `sha256:${string}`;
 export function createReleasePlanLock(value: unknown): ReleasePlanLock;
 export function validateReleasePlanLock(value: unknown): ReleasePlanLock;
 export function canonicalReleasePlanLockJson(value: unknown): string;
