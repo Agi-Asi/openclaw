@@ -604,17 +604,19 @@ describe("channelsAddCommand", () => {
 
   it("keeps an omitted hosted selector on the shared picker path", async () => {
     const config: OpenClawConfig = { channels: {} };
+    const signal = new AbortController().signal;
     configMocks.readConfigFileSnapshot.mockResolvedValue({
       ...baseConfigSnapshot,
       sourceConfig: config,
       config,
     });
 
-    await runChannelsSetupWizard({}, runtime, channelWizardMocks.prompter);
+    await runChannelsSetupWizard({ signal }, runtime, channelWizardMocks.prompter);
 
     expect(setupOptions()).not.toHaveProperty("initialSelection");
     expect(setupOptions()).not.toHaveProperty("finishAfterInitialSelection");
     expect(setupOptions().deferDeviceLinkToClient).toBe(true);
+    expect(setupOptions().signal).toBe(signal);
   });
 
   it.each(["external-chat", "ext"])(
