@@ -897,6 +897,8 @@ export const en: TranslationMap = {
     draft: "Draft",
     draftDescription: "Keep this session to yourself until you publish it",
     messagePlaceholder: "What should this session work on?",
+    dictate: "Hold to dictate",
+    dictationHoldToSpeak: "Hold the microphone to dictate, then release to insert what you said.",
     readingAttachment: "Reading attachment",
     start: "Start session",
     startInTerminal: "Start in terminal",
@@ -5949,7 +5951,8 @@ export const en: TranslationMap = {
       dictationFinalizing: "Finishing dictation…",
       dictationFinalizationTimedOut:
         "Dictation stopped before the last partial transcript could be finalized.",
-      dictationProviderUnavailable: "No transcription provider is configured for dictation.",
+      dictationProviderUnavailable:
+        "No transcription provider is configured for dictation. Choose one in Settings to dictate.",
       dictationRecording: "Recording {elapsed}",
       dictationReleaseToInsert: "Release to insert dictation",
       realtimeTalkRequiresMicrophone: "Realtime voice input requires browser microphone access.",

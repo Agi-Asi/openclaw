@@ -54,6 +54,31 @@ type MicrophonePickerProps = {
   onSelect: (deviceId: string) => void;
 };
 
+/**
+ * Drops focus from the device picker's trigger once a device has been chosen.
+ * The dropdown restores focus there on close, which is right for a normal
+ * trigger and wrong for this one: it is revealed by hover, so a focused trigger
+ * keeps the microphone expanded after the pointer has moved on. Deferred to the
+ * next task because the dropdown restores focus as part of closing.
+ */
+function releaseMicrophonePickerFocus(
+  dropdown: EventTarget | null,
+  item: HTMLElement,
+): void {
+  if (item.matches(":focus-visible")) {
+    return;
+  }
+  if (!(dropdown instanceof HTMLElement)) {
+    return;
+  }
+  queueMicrotask(() => {
+    const trigger = dropdown.querySelector<HTMLElement>(".chat-talk-input-picker__trigger");
+    if (trigger && document.activeElement === trigger) {
+      trigger.blur();
+    }
+  });
+}
+
 export function renderMicrophonePicker(props: MicrophonePickerProps) {
   // Discovery reporting an issue with nothing enumerated is the browser stating
   // there is no capture route at all: a "System default" row would claim a
@@ -81,8 +106,14 @@ export function renderMicrophonePicker(props: MicrophonePickerProps) {
       .open=${props.open}
       @wa-show=${props.onOpen}
       @wa-hide=${props.onClose}
-      @wa-select=${(event: CustomEvent<{ item: { value?: string } }>) =>
-        props.onSelect(event.detail.item.value ?? "")}
+      @wa-select=${(event: CustomEvent<{ item: HTMLElement & { value?: string } }>) => {
+        props.onSelect(event.detail.item.value ?? "");
+        // The dropdown hands focus back to its trigger on close, but this trigger
+        // only exists while the control is hovered or keyboard-focused. Left
+        // focused it holds the microphone open with the pointer nowhere near it,
+        // so the choice is made and the control returns to rest.
+        releaseMicrophonePickerFocus(event.currentTarget, event.detail.item);
+      }}
     >
       <button
         slot="trigger"
@@ -146,7 +177,28 @@ export function renderMicrophonePicker(props: MicrophonePickerProps) {
   `;
 }
 
-function renderComposerVoiceButton(props: ChatRunControlsProps) {
+/**
+ * What the microphone control itself reads. Narrower than the chat run controls
+ * on purpose: the new-session composer offers the same control without a run to
+ * abort, a send action, or a Talk session to toggle.
+ */
+export type ComposerVoiceButtonProps = {
+  connected: boolean;
+  sending: boolean;
+  isBusy: boolean;
+  dictation?: ComposerDictationController;
+  microphonePicker?: TemplateResult | typeof nothing;
+  /**
+   * What the control offers at rest. The chat composer's microphone also starts
+   * Talk, so it promises voice input; a surface that only dictates says so
+   * rather than offering something it cannot start.
+   */
+  idleLabel?: string;
+  onDictationPointerDown?: (event: PointerEvent) => void;
+  onToggleVoice?: () => void;
+};
+
+export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
   const active = props.dictation?.active === true;
   const finalizing = props.dictation?.finalizing === true;
   const holding = props.dictation?.locksComposer === true;
@@ -154,13 +206,14 @@ function renderComposerVoiceButton(props: ChatRunControlsProps) {
     ? t("chat.composer.dictationFinalizing")
     : active
       ? t("chat.composer.dictationReleaseToInsert")
-      : t("chat.composer.startVoiceInput");
+      : (props.idleLabel ?? t("chat.composer.startVoiceInput"));
   const tooltip =
     props.dictation && !(active || finalizing) ? t("chat.composer.voiceGestureHint") : label;
   // This shape owns pointer capture. Keep it stable while dictation rerenders,
   // or replacing the button releases capture and cancels the active hold.
   return html`
     <span class="chat-talk-control">
+      ${holding ? nothing : props.microphonePicker}
       <openclaw-tooltip .content=${tooltip}>
         <button
           class=${active
@@ -191,7 +244,6 @@ function renderComposerVoiceButton(props: ChatRunControlsProps) {
                 `}
         </button>
       </openclaw-tooltip>
-      ${holding ? nothing : props.microphonePicker}
     </span>
   `;
 }
@@ -246,54 +298,37 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
   // duplicate announcement.
   const voiceErrored = props.voiceStatus === "error";
   const voiceButton = renderComposerVoiceButton(props);
-  const sendAction = html`
-    <openclaw-tooltip .content=${activeRunActionTooltip}>
+  // Dictation and Talk are one affordance to the operator — a microphone — so
+  // the control shows whenever either route exists, and it always sits ahead of
+  // the primary action rather than standing in for it.
+  const voiceControl = props.dictation || props.onToggleVoice ? voiceButton : nothing;
+  // Send holds the trailing edge whatever the draft is. During an active run the
+  // same slot shows stop while empty, then becomes the follow-up action as soon
+  // as the operator composes content; two competing primary buttons never render.
+  const renderSendAction = (tooltip: string, description: string, label: string) => html`
+    <openclaw-tooltip .content=${tooltip}>
       <button
         class="chat-send-btn"
         @pointerdown=${props.onPrimaryActionPointerDown}
         @click=${send}
-        ?disabled=${!props.canSend || props.sending}
-        aria-label=${activeRunActionDescription}
+        ?disabled=${!props.canSend || props.sending || !hasComposedContent}
+        aria-label=${description}
       >
         ${icons.arrowUp}
-        <span class="agent-chat__control-label">${activeRunActionLabel}</span>
+        <span class="agent-chat__control-label">${label}</span>
       </button>
     </openclaw-tooltip>
   `;
-  const emptySendDescription = props.canSend
-    ? t("chat.composer.emptyHint")
-    : t("chat.runControls.sendMessage");
-  const idleAction = html`
-    <openclaw-tooltip .content=${props.canSend ? emptySendDescription : t("chat.runControls.send")}>
-      <button
-        class="chat-send-btn"
-        @pointerdown=${props.onPrimaryActionPointerDown}
-        @click=${send}
-        disabled
-        aria-label=${emptySendDescription}
-      >
-        ${icons.arrowUp}
-        <span class="agent-chat__control-label">${t("chat.runControls.send")}</span>
-      </button>
-    </openclaw-tooltip>
-  `;
-  const stopAction = html`
-    <openclaw-tooltip .content=${t("chat.runControls.stopWithShortcut")}>
-      <button
-        class="chat-send-btn chat-send-btn--stop"
-        @pointerdown=${props.onPrimaryActionPointerDown}
-        @click=${props.onAbort}
-        aria-label=${t("chat.runControls.stopGenerating")}
-      >
-        ${icons.stop}
-        <span class="agent-chat__control-label">${t("chat.runControls.stop")}</span>
-      </button>
-    </openclaw-tooltip>
-  `;
+  const sendAction = renderSendAction(
+    hasComposedContent ? activeRunActionTooltip : t("chat.composer.emptyHint"),
+    hasComposedContent ? activeRunActionDescription : t("chat.composer.emptyHint"),
+    activeRunActionLabel,
+  );
   return html`
     ${props.voiceActive && props.onToggleVoice
       ? html`
           <span class="chat-talk-control chat-talk-control--active">
+            ${props.microphonePicker}
             <openclaw-tooltip .content=${t("chat.composer.stopVoiceInput")}>
               <button
                 class="chat-send-btn chat-send-btn--voice-live${voiceErrored
@@ -311,7 +346,6 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
                 <span class="chat-send-btn__voice-stop-glyph">${icons.stop}</span>
               </button>
             </openclaw-tooltip>
-            ${props.microphonePicker}
           </span>
           ${voiceErrored
             ? nothing
@@ -355,14 +389,14 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
           ${abortAction}
         `
       : html`
-          ${props.dictation || props.onToggleVoice ? voiceButton : nothing}
+          ${voiceControl}
           ${props.dictation?.active
             ? nothing
-            : hasComposedContent
-              ? sendAction
-              : props.canAbort
-                ? stopAction
-                : idleAction}
+            : props.canAbort
+              ? hasComposedContent
+                ? sendAction
+                : abortAction
+              : sendAction}
         `}
   `;
 }

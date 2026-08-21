@@ -1512,6 +1512,8 @@ async function createChatPickerScenario(
       activeRunIds: [PLAN_DEMO_RUN_ID],
       childSessions: ["agent:main:lisbon-trip", ...swarmChildRows.map((row) => row.key)],
       hasActiveRun: true,
+      totalTokens: 170_000,
+      totalTokensFresh: true,
     }),
     ...swarmChildRows,
     sessionRow(OBSERVER_DEMO_SESSION_KEY, "Session observer demo", baseTime - 3_000, {
@@ -1720,6 +1722,7 @@ async function createChatPickerScenario(
     assistantName: "Molty",
     defaultAgentId: "main",
     serverBuildId: "mock",
+    sessionKey: "agent:main:main",
     // Advertised Gateway methods gate session actions (see
     // ui/src/lib/session-method-access.ts). Omitting the mutation methods left
     // every session context-menu row disabled, so the harness could not show
