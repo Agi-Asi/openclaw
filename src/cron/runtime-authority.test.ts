@@ -26,7 +26,45 @@ describe("normalizeCronRuntimeAuthority", () => {
     expect(Object.isFrozen((normalized.payload.apps as unknown[])[0])).toBe(true);
   });
 
+  it("normalizes producer-bound scheduled tool bindings", () => {
+    const input = {
+      ...authority({ version: 1 }),
+      toolBindings: [
+        {
+          sourceTool: "gateway_exec",
+          targetTool: "exec",
+          execTarget: { host: "gateway" },
+        },
+        { sourceTool: "gateway_process", targetTool: "process" },
+      ],
+    };
+
+    const normalized = normalizeCronRuntimeAuthority(input);
+
+    expect(normalized).toEqual(input);
+    expect(Object.isFrozen(normalized?.toolBindings)).toBe(true);
+    expect(Object.isFrozen(normalized?.toolBindings?.[0])).toBe(true);
+  });
+
   it.each([
+    {
+      ...authority({}),
+      toolBindings: [
+        {
+          sourceTool: "gateway_exec",
+          targetTool: "exec",
+          execTarget: { host: "node" },
+        },
+      ],
+    },
+    {
+      ...authority({}),
+      toolBindings: [
+        { sourceTool: "gateway_exec", targetTool: "process" },
+        { sourceTool: "gateway_exec", targetTool: "process" },
+      ],
+    },
+    { ...authority({}), toolBindings: [{ sourceTool: "gateway_exec", targetTool: "write" }] },
     authority({ value: Number.NaN }),
     authority({ value: Number.POSITIVE_INFINITY }),
     authority({ value: undefined }),

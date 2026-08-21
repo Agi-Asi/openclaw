@@ -1,5 +1,8 @@
 import { asNonArrayRecord } from "@openclaw/normalization-core/record-coerce";
+import type { CronScheduledToolBinding } from "../cron/runtime-authority.js";
 import type { AnyAgentTool } from "./tools/common.js";
+
+const scheduledToolBindings = new WeakMap<AnyAgentTool, CronScheduledToolBinding>();
 
 const EXEC_POLICY_PARAMETER_NAMES = new Set(["host", "security", "ask"]);
 const NODE_EXEC_PARAMETER_NAMES = new Set(["command", "workdir", "env", "timeoutSeconds", "node"]);
@@ -7,6 +10,20 @@ const NODE_EXEC_PARAMETER_NAMES = new Set(["command", "workdir", "env", "timeout
 type PinnedExecToolTarget =
   | { host: "gateway"; ask?: "always" }
   | { host: "node"; node?: string };
+
+export function bindCronScheduledTool(
+  tool: AnyAgentTool,
+  binding: CronScheduledToolBinding,
+): AnyAgentTool {
+  scheduledToolBindings.set(tool, binding);
+  return tool;
+}
+
+export function getCronScheduledToolBinding(
+  tool: AnyAgentTool,
+): CronScheduledToolBinding | undefined {
+  return scheduledToolBindings.get(tool);
+}
 
 /** Restricts an exec tool to one host target even when callers submit broader arguments. */
 export function pinExecToolTarget(tool: AnyAgentTool, target: PinnedExecToolTarget): AnyAgentTool {

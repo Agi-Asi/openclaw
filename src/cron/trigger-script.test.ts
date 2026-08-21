@@ -92,9 +92,44 @@ describe("cron trigger script evaluator", () => {
         script: 'await exec({ command: "printf openclaw-cron-alias-ok" }); return { fire: false };',
         state: null,
         toolsAllow: ["gateway_exec", "gateway_process"],
+        runtimeAuthority: {
+          version: 1,
+          runtimeId: "codex",
+          namespace: "scheduled-tools",
+          payload: { version: 1 },
+          toolBindings: [
+            {
+              sourceTool: "gateway_exec",
+              targetTool: "exec",
+              execTarget: { host: "gateway" },
+            },
+            { sourceTool: "gateway_process", targetTool: "process" },
+          ],
+        },
         scheduledToolPolicy: { version: 1, mode: "trusted" },
       }),
     ).resolves.toEqual({ kind: "evaluated", fire: false });
+  });
+
+  it("does not project a colliding raw alias without producer-bound authority", async () => {
+    const workspaceDir = tempDirs.make("openclaw-cron-codex-alias-collision-");
+    const evaluate = createCronScriptRuntime({
+      config: {
+        agents: { defaults: { workspace: workspaceDir } },
+        tools: { exec: { host: "gateway", security: "full", ask: "off" } },
+      } as OpenClawConfig,
+    }).evaluateTrigger;
+
+    const result = await evaluate({
+      jobId: "job-colliding-gateway-exec",
+      script: 'await exec({ command: "printf must-not-run" }); return { fire: false };',
+      state: null,
+      toolsAllow: ["gateway_exec"],
+      scheduledToolPolicy: { version: 1, mode: "trusted" },
+    });
+
+    expect(result).toMatchObject({ kind: "error", code: "internal_error" });
+    expect(result.kind === "error" ? result.error : "").toContain("exec is not defined");
   });
 
   it.each(["node_exec", "sandbox_exec"])(

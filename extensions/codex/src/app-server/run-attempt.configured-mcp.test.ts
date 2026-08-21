@@ -5,14 +5,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mcpMocks = vi.hoisted(() => ({
   authorityResolvers: [] as Array<
     (options?: { signal?: AbortSignal }) => Promise<{
-      tools: readonly (string | { name: string; pluginId?: string })[];
+      tools: readonly (
+        | string
+        | { name: string; pluginId?: string; scheduledToolBinding?: unknown }
+      )[];
       provenance: { version: 1; source: "final-executable-surface" };
+      runtimeAuthority?: unknown;
     }>
   >,
   captureCalls: [] as Array<{
     sourceNames: string[];
     storedNames: string[];
     provenance?: unknown;
+    storedBindings: unknown[];
   }>,
   captureRefs: [] as Array<{
     value?: { version: 1; source: "final-executable-surface" };
@@ -127,21 +132,18 @@ vi.mock("openclaw/plugin-sdk/codex-mcp-projection", async (importOriginal) => {
       const [target, captureRef, tools] = args;
       mcpMocks.captureRefs.push(captureRef);
       mcpMocks.captureFacade(target, captureRef, tools);
-      target.length = 0;
-      for (const tool of tools) {
-        if (
-          !target.some((entry) => (typeof entry === "string" ? entry : entry.name) === tool.name)
-        ) {
-          target.push({ name: tool.name });
-        }
-      }
-      captureRef.value = { version: 1, source: "final-executable-surface" };
+      await actual.captureFinalCodexCronCreatorToolAllowlist(target, captureRef, tools);
       mcpMocks.captureCalls.push({
         sourceNames: tools.map((tool) => tool.name).toSorted(),
         storedNames: target
           .map((entry) => (typeof entry === "string" ? entry : entry.name))
           .toSorted(),
         provenance: captureRef.value,
+        storedBindings: target.flatMap((entry) =>
+          typeof entry === "string" || !entry.scheduledToolBinding
+            ? []
+            : [entry.scheduledToolBinding],
+        ),
       });
     },
   };
@@ -232,6 +234,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     setCodexTestModelSupportsTools(params, true);
     params.disableTools = false;
     params.runtimePlan = createCodexRuntimePlanFixture();
+    admitLocalOperatorCronAuthority(params);
 
     const harness = createStartedThreadHarness();
     const run = runCodexAppServerAttempt(params);
@@ -244,6 +247,22 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(mcpMocks.captureCalls[0]?.storedNames).toContain("gateway_exec");
     expect(mcpMocks.captureCalls[0]?.storedNames).toContain("gateway_process");
     expect(mcpMocks.captureCalls[0]?.storedNames).not.toContain("exec");
+    expect(mcpMocks.captureCalls[0]?.storedBindings).toEqual([
+      {
+        sourceTool: "gateway_exec",
+        targetTool: "exec",
+        execTarget: { host: "gateway" },
+      },
+      { sourceTool: "gateway_process", targetTool: "process" },
+    ]);
+
+    const authority = await mcpMocks.authorityResolvers[0]!();
+    expect(authority.runtimeAuthority).toMatchObject({
+      version: 1,
+      runtimeId: "codex",
+      namespace: "scheduled-tools",
+      toolBindings: mcpMocks.captureCalls[0]?.storedBindings,
+    });
   });
 
   it("does not replace bundle discovery with partial prepared plugin metadata", async () => {

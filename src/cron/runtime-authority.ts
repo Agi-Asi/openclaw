@@ -5,10 +5,28 @@ const CRON_RUNTIME_AUTHORITY_MAX_BYTES = 64 * 1024;
 const CRON_RUNTIME_AUTHORITY_MAX_ID_LENGTH = 128;
 const CRON_RUNTIME_AUTHORITY_MAX_DEPTH = 16;
 const CRON_RUNTIME_AUTHORITY_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const CRON_RUNTIME_AUTHORITY_KEYS = new Set(["version", "runtimeId", "namespace", "payload"]);
+const CRON_RUNTIME_AUTHORITY_KEYS = new Set([
+  "version",
+  "runtimeId",
+  "namespace",
+  "payload",
+  "toolBindings",
+]);
+const CRON_RUNTIME_AUTHORITY_MAX_TOOL_BINDINGS = 16;
 
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export type CronScheduledToolBinding =
+  | Readonly<{
+      sourceTool: string;
+      targetTool: "exec";
+      execTarget: Readonly<{ host: "gateway" }>;
+    }>
+  | Readonly<{
+      sourceTool: string;
+      targetTool: "process";
+    }>;
 
 export type CronRuntimeAuthority = Readonly<{
   version: 1;
@@ -17,6 +35,8 @@ export type CronRuntimeAuthority = Readonly<{
   /** Runtime-owned payload discriminator; core never interprets its value. */
   namespace: string;
   payload: Readonly<Record<string, unknown>>;
+  /** Host-validated projections from runtime-specific creator tools to scheduled tools. */
+  toolBindings?: readonly CronScheduledToolBinding[];
 }>;
 
 function normalizeAuthorityId(value: unknown): string | undefined {
@@ -99,6 +119,55 @@ function deepFreezeJson(value: JsonValue): JsonValue {
   return value;
 }
 
+function normalizeToolBindings(value: unknown): readonly CronScheduledToolBinding[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length > CRON_RUNTIME_AUTHORITY_MAX_TOOL_BINDINGS) {
+    return undefined;
+  }
+  const bindings: CronScheduledToolBinding[] = [];
+  const seenSources = new Set<string>();
+  for (const candidate of value) {
+    if (!isRecord(candidate)) {
+      return undefined;
+    }
+    const sourceTool = normalizeAuthorityId(candidate.sourceTool);
+    if (!sourceTool || seenSources.has(sourceTool)) {
+      return undefined;
+    }
+    if (
+      candidate.targetTool === "exec" &&
+      Object.keys(candidate).every((key) =>
+        ["sourceTool", "targetTool", "execTarget"].includes(key),
+      ) &&
+      isRecord(candidate.execTarget) &&
+      Object.keys(candidate.execTarget).length === 1 &&
+      candidate.execTarget.host === "gateway"
+    ) {
+      seenSources.add(sourceTool);
+      bindings.push(
+        Object.freeze({
+          sourceTool,
+          targetTool: "exec",
+          execTarget: Object.freeze({ host: "gateway" }),
+        }),
+      );
+      continue;
+    }
+    if (
+      candidate.targetTool === "process" &&
+      Object.keys(candidate).every((key) => key === "sourceTool" || key === "targetTool")
+    ) {
+      seenSources.add(sourceTool);
+      bindings.push(Object.freeze({ sourceTool, targetTool: "process" }));
+      continue;
+    }
+    return undefined;
+  }
+  return Object.freeze(bindings);
+}
+
 /** Validates the private persisted transport without learning runtime-owned payload semantics. */
 export function normalizeCronRuntimeAuthority(value: unknown): CronRuntimeAuthority | undefined {
   if (
@@ -114,7 +183,8 @@ export function normalizeCronRuntimeAuthority(value: unknown): CronRuntimeAuthor
   const runtimeId = normalizeAuthorityId(value.runtimeId);
   const namespace = normalizeAuthorityId(value.namespace);
   const payload = cloneJsonObject(value.payload);
-  if (!runtimeId || !namespace || !payload) {
+  const toolBindings = normalizeToolBindings(value.toolBindings);
+  if (!runtimeId || !namespace || !payload || (value.toolBindings !== undefined && !toolBindings)) {
     return undefined;
   }
   const normalized = {
@@ -122,6 +192,7 @@ export function normalizeCronRuntimeAuthority(value: unknown): CronRuntimeAuthor
     runtimeId,
     namespace,
     payload: deepFreezeJson(payload) as Readonly<Record<string, unknown>>,
+    ...(toolBindings ? { toolBindings } : {}),
   } as const;
   if (Buffer.byteLength(JSON.stringify(normalized), "utf8") > CRON_RUNTIME_AUTHORITY_MAX_BYTES) {
     return undefined;

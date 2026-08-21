@@ -1,6 +1,9 @@
 // Cron tool type declarations shared with the cron tool implementation.
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { CronRuntimeAuthority } from "../../cron/runtime-authority.js";
+import type {
+  CronRuntimeAuthority,
+  CronScheduledToolBinding,
+} from "../../cron/runtime-authority.js";
 import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.js";
 import type { DeliveryContext } from "../../utils/delivery-context.shared.js";
 import type { callGatewayTool } from "./gateway.js";
@@ -10,6 +13,7 @@ export type CronCreatorToolAllowlistEntry =
   | {
       name: string;
       pluginId?: string;
+      scheduledToolBinding?: CronScheduledToolBinding;
     };
 
 type CronToolsAllowCaptureProvenance = {

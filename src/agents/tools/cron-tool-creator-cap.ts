@@ -1,3 +1,4 @@
+import type { CronScheduledToolBinding } from "../../cron/runtime-authority.js";
 import { isRecord } from "../../utils.js";
 import { isToolAllowedByPolicyName } from "../tool-policy-match.js";
 import {
@@ -43,7 +44,9 @@ export function assertInheritedCronToolCaptureReady(
 export function replaceWithEffectiveCronCreatorToolAllowlist<T extends { name: string }>(
   target: CronCreatorToolAllowlistEntry[],
   tools: readonly T[],
-  toolMeta?: (tool: T) => { pluginId?: string } | undefined,
+  toolMeta?: (
+    tool: T,
+  ) => { pluginId?: string; scheduledToolBinding?: CronScheduledToolBinding } | undefined,
 ): void {
   target.length = 0;
   const seen = new Set<string>();
@@ -56,7 +59,12 @@ export function replaceWithEffectiveCronCreatorToolAllowlist<T extends { name: s
     const meta = toolMeta?.(tool);
     const pluginId =
       typeof meta?.pluginId === "string" ? normalizeToolPolicyName(meta.pluginId) : undefined;
-    target.push(pluginId ? { name, pluginId } : { name });
+    const scheduledToolBinding = meta?.scheduledToolBinding;
+    target.push({
+      name,
+      ...(pluginId ? { pluginId } : {}),
+      ...(scheduledToolBinding ? { scheduledToolBinding } : {}),
+    });
   }
 }
 
@@ -65,7 +73,9 @@ export function captureFinalEffectiveCronCreatorToolAllowlist<T extends { name: 
   target: CronCreatorToolAllowlistEntry[],
   captureRef: CronToolsAllowCaptureRef,
   tools: readonly T[],
-  toolMeta?: (tool: T) => { pluginId?: string } | undefined,
+  toolMeta?: (
+    tool: T,
+  ) => { pluginId?: string; scheduledToolBinding?: CronScheduledToolBinding } | undefined,
 ): void {
   replaceWithEffectiveCronCreatorToolAllowlist(target, tools, toolMeta);
   captureRef.value = { version: 1, source: "final-executable-surface" };

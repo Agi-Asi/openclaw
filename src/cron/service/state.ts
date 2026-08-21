@@ -101,7 +101,7 @@ export type CronServiceDeps = {
   /** List enabled, configured channel ids without exposing channel machinery to cron core. */
   listConfiguredChannels?: () => readonly string[] | Promise<readonly string[]>;
   evaluateCronTrigger?: (params: {
-    job: CronJob;
+    job: CronStoredJob;
     script: string;
     state: unknown;
     streamBatch?: string;
@@ -219,7 +219,7 @@ export type CronServiceDeps = {
     } & CronRunOutcome
   >;
   runScriptJob?: (params: {
-    job: CronJob;
+    job: CronStoredJob;
     streamBatch?: string;
     abortSignal?: AbortSignal;
   }) => Promise<

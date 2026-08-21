@@ -99,6 +99,13 @@ function makeAuthorityStore(jobId: string): CronStoreFile {
     runtimeId: "codex",
     namespace: "codex.apps",
     payload: { apps: [{ id: "calendar" }] },
+    toolBindings: [
+      {
+        sourceTool: "gateway_exec",
+        targetTool: "exec",
+        execTarget: { host: "gateway" },
+      },
+    ],
   };
   return store;
 }

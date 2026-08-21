@@ -53,6 +53,7 @@ import {
   resolveCronAgentConfig,
 } from "./isolated-agent/run-config.js";
 import { resolveCronAgentSessionKey } from "./isolated-agent/session-key.js";
+import type { CronRuntimeAuthority } from "./runtime-authority.js";
 import {
   DEFAULT_CRON_SCRIPT_TIMEOUT_SECONDS,
   DEFAULT_CRON_SCRIPT_TOOL_BUDGET,
@@ -66,8 +67,6 @@ const MAX_TRIGGER_STATE_BYTES = 16 * 1024;
 const MAX_CACHED_TRIGGER_RUNTIMES = 128;
 const HEADLESS_TRIGGER_WALL_CLOCK_MS = 30_000;
 const HEADLESS_TRIGGER_TOOL_BUDGET = 5;
-const GATEWAY_EXEC_CREATOR_ALIAS = "gateway_exec";
-const GATEWAY_PROCESS_CREATOR_ALIAS = "gateway_process";
 
 let activeTriggerEvaluations = 0;
 
@@ -93,6 +92,7 @@ type PrepareTriggerRuntime = (params: {
   jobId: string;
   agentId?: string;
   toolsAllow?: string[];
+  runtimeAuthority?: CronRuntimeAuthority;
   scheduledToolPolicy?: ScheduledToolPolicyContext;
   signal?: AbortSignal;
 }) => Promise<PreparedTriggerRuntime>;
@@ -114,22 +114,30 @@ function resolveTriggerAgentId(config: OpenClawConfig, agentId?: string): string
   return agentId?.trim() ? normalizeAgentId(agentId) : resolveDefaultAgentId(config);
 }
 
-function projectTriggerToolAuthority(toolsAllow: string[] | undefined): {
+function projectTriggerToolAuthority(
+  toolsAllow: string[] | undefined,
+  runtimeAuthority: CronRuntimeAuthority | undefined,
+): {
   toolsAllow: string[] | undefined;
   pinGatewayExec: boolean;
 } {
-  if (!toolsAllow?.includes(GATEWAY_EXEC_CREATOR_ALIAS)) {
+  if (!toolsAllow || !runtimeAuthority?.toolBindings?.length) {
     return { toolsAllow, pinGatewayExec: false };
   }
+  const bindingsBySource = new Map(
+    runtimeAuthority.toolBindings.map((binding) => [binding.sourceTool, binding]),
+  );
+  let pinGatewayExec = false;
   const projected = new Set(
     toolsAllow.map((name) => {
-      if (name === GATEWAY_EXEC_CREATOR_ALIAS) {
-        return "exec";
+      const binding = bindingsBySource.get(name);
+      if (binding?.targetTool === "exec") {
+        pinGatewayExec = binding.execTarget.host === "gateway";
       }
-      return name === GATEWAY_PROCESS_CREATOR_ALIAS ? "process" : name;
+      return binding?.targetTool ?? name;
     }),
   );
-  return { toolsAllow: [...projected], pinGatewayExec: true };
+  return { toolsAllow: [...projected], pinGatewayExec };
 }
 
 async function prepareTriggerRuntime(params: {
@@ -137,6 +145,7 @@ async function prepareTriggerRuntime(params: {
   jobId: string;
   agentId?: string;
   toolsAllow?: string[];
+  runtimeAuthority?: CronRuntimeAuthority;
   scheduledToolPolicy?: ScheduledToolPolicyContext;
   signal?: AbortSignal;
 }): Promise<PreparedTriggerRuntime> {
@@ -179,7 +188,10 @@ async function prepareTriggerRuntime(params: {
     params.signal?.throwIfAborted();
     const effectiveWorkspace =
       sandbox?.enabled && sandbox.workspaceAccess !== "rw" ? sandbox.workspaceDir : workspaceDir;
-    const projectedAuthority = projectTriggerToolAuthority(params.toolsAllow);
+    const projectedAuthority = projectTriggerToolAuthority(
+      params.toolsAllow,
+      params.runtimeAuthority,
+    );
     const toolPlan = resolveEmbeddedAttemptToolConstructionPlan({
       toolsEnabled: true,
       toolsAllow: projectedAuthority.toolsAllow,
@@ -381,6 +393,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
     requestedAgentId?: string;
     agentId: string;
     toolsAllow?: string[];
+    runtimeAuthority?: CronRuntimeAuthority;
     scheduledToolPolicy?: ScheduledToolPolicyContext;
     toolsAllowKey: string;
     signal: AbortSignal;
@@ -416,6 +429,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
       jobId: request.jobId,
       agentId: request.requestedAgentId,
       toolsAllow: request.toolsAllow,
+      runtimeAuthority: request.runtimeAuthority,
       scheduledToolPolicy: request.scheduledToolPolicy,
       signal: request.signal,
     });
@@ -442,6 +456,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
     agentId?: string;
     script: string;
     toolsAllow?: string[];
+    runtimeAuthority?: CronRuntimeAuthority;
     scheduledToolPolicy?: ScheduledToolPolicyContext;
     abortSignal?: AbortSignal;
     wallClockMs: number;
@@ -462,6 +477,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
       const agentId = resolveTriggerAgentId(runtimeConfig, params.agentId);
       const toolsAllowKey = JSON.stringify([
         params.toolsAllow ?? null,
+        params.runtimeAuthority?.toolBindings ?? null,
         params.scheduledToolPolicy ?? null,
       ]);
       const runtime = await resolveCachedRuntime({
@@ -470,6 +486,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
         requestedAgentId: params.agentId,
         agentId,
         toolsAllow: params.toolsAllow,
+        runtimeAuthority: params.runtimeAuthority,
         scheduledToolPolicy: params.scheduledToolPolicy,
         toolsAllowKey,
         signal: evaluationScope.signal,
@@ -643,6 +660,7 @@ export function createCronScriptRuntime(deps: CronTriggerEvaluatorDeps) {
       state: unknown;
       streamBatch?: string;
       toolsAllow?: string[];
+      runtimeAuthority?: CronRuntimeAuthority;
       scheduledToolPolicy?: ScheduledToolPolicyContext;
       abortSignal?: AbortSignal;
     }): Promise<CronTriggerEvaluationResult> => {
@@ -670,6 +688,7 @@ export function createCronScriptRuntime(deps: CronTriggerEvaluatorDeps) {
       state: unknown;
       streamBatch?: string;
       toolsAllow?: string[];
+      runtimeAuthority?: CronRuntimeAuthority;
       scheduledToolPolicy?: ScheduledToolPolicyContext;
       timeoutSeconds?: number;
       toolBudget?: number;

@@ -33,8 +33,32 @@ import {
   resolveScheduledCodexAppCreatorCaptureDecision,
 } from "./scheduled-app-authority.js";
 
+type CodexCronCreatorTool = Parameters<typeof captureFinalCodexCronCreatorToolAllowlist>[0][number];
+type CodexCronRuntimeAuthority = NonNullable<EmbeddedRunAttemptParams["scheduledRuntimeAuthority"]>;
+
 function isAuthorityResolutionOperationAbort(error: unknown, signal: AbortSignal | undefined) {
   return signal?.aborted === true && error === signal.reason;
+}
+
+function bindCodexCronScheduledTools(
+  authority: CodexCronRuntimeAuthority | undefined,
+  tools: readonly CodexCronCreatorTool[],
+): CodexCronRuntimeAuthority | undefined {
+  const toolBindings = tools.flatMap((tool) =>
+    typeof tool === "string" || !tool.scheduledToolBinding ? [] : [tool.scheduledToolBinding],
+  );
+  if (toolBindings.length === 0) {
+    return authority;
+  }
+  return {
+    ...(authority ?? {
+      version: 1,
+      runtimeId: "codex",
+      namespace: "scheduled-tools",
+      payload: { version: 1 },
+    }),
+    toolBindings,
+  };
 }
 
 export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
@@ -140,7 +164,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     frameToolCallId?: string;
     frameImageIdentity?: string;
   } = { value: 0 };
-  const cronCreatorToolAllowlist: Array<string | { name: string; pluginId?: string }> = [];
+  const cronCreatorToolAllowlist: CodexCronCreatorTool[] = [];
   const cronCreatorToolAllowlistCaptureRef: {
     value?: { version: 1; source: "final-executable-surface" };
   } = {};
@@ -174,20 +198,22 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   const canResolveScheduledCodexAppAuthority = appCreatorCapture.supported;
   const requiresScheduledCodexAppAuthority = appCreatorCapture.required;
   const canResolveAnyScheduledCreatorAuthority =
-    canResolveScheduledConfiguredMcpCreatorAuthority || requiresScheduledCodexAppAuthority;
+    canResolveScheduledConfiguredMcpCreatorAuthority ||
+    requiresScheduledCodexAppAuthority ||
+    (nativeToolSurfaceEnabled === true && sandbox?.enabled !== true);
   let toolBridge: ReturnType<typeof createCodexDynamicToolBridge> | undefined;
   let creatorAuthorityPromise:
     | Promise<{
-        tools: readonly (string | { name: string; pluginId?: string })[];
+        tools: readonly CodexCronCreatorTool[];
         provenance: { version: 1; source: "final-executable-surface" };
-        runtimeAuthority?: NonNullable<EmbeddedRunAttemptParams["scheduledRuntimeAuthority"]>;
+        runtimeAuthority?: CodexCronRuntimeAuthority;
       }>
     | undefined;
   let resolveCreatorAuthorityImpl:
     | ((options?: { signal?: AbortSignal }) => Promise<{
-        tools: readonly (string | { name: string; pluginId?: string })[];
+        tools: readonly CodexCronCreatorTool[];
         provenance: { version: 1; source: "final-executable-surface" };
-        runtimeAuthority?: NonNullable<EmbeddedRunAttemptParams["scheduledRuntimeAuthority"]>;
+        runtimeAuthority?: CodexCronRuntimeAuthority;
       }>)
     | undefined;
   const runtimeYieldCompletionClaim: { current?: () => boolean } = {};
@@ -224,7 +250,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
       ? {
           resolveCronCreatorToolAuthority: (options?: { signal?: AbortSignal }) => {
             if (!resolveCreatorAuthorityImpl) {
-              throw new Error("configured MCP authority resolver was invoked before tool setup");
+              throw new Error("cron creator authority resolver was invoked before tool setup");
             }
             options?.signal?.throwIfAborted();
             if (creatorAuthorityPromise) {
@@ -449,7 +475,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         if (!toolBridge) {
           throw new Error("cron creator authority resolver lost the active tool bridge");
         }
-        const authorityTools: Array<string | { name: string; pluginId?: string }> = [];
+        const authorityTools: CodexCronCreatorTool[] = [];
         const captureRef: {
           value?: { version: 1; source: "final-executable-surface" };
         } = {};
@@ -462,7 +488,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
           throw new Error("cron creator authority snapshot did not produce provenance");
         }
         const appSource = scheduledAppAuthoritySourceRef.current;
-        const runtimeAuthority =
+        const appRuntimeAuthority =
           canResolveScheduledCodexAppAuthority && preparedChatgptAuth
             ? appSource
               ? await captureScheduledCodexAppAuthority({
@@ -476,6 +502,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
                   );
                 })()
             : undefined;
+        const runtimeAuthority = bindCodexCronScheduledTools(appRuntimeAuthority, authorityTools);
         if (!canResolveScheduledConfiguredMcpCreatorAuthority) {
           options?.signal?.throwIfAborted();
           return Object.freeze({
