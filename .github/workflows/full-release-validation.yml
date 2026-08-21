@@ -15,8 +15,7 @@ on:
         type: string
       trusted_workflow_json:
         description: Trusted release tooling identity JSON
-        required: false
-        default: ""
+        required: true
         type: string
       target_context_ref:
         description: Optional canonical release branch or tag context for an exact-SHA target
@@ -167,7 +166,7 @@ env:
   # Read retries and one-shot dispatch recovery share this classifier; dispatch POSTs never retry.
   GH_TRANSIENT_SERVER_OR_NETWORK_PATTERN: "HTTP 5[0-9][0-9]|Server Error|invalid character .* looking for beginning of value|error connecting to|context deadline exceeded|connection reset by peer|connection refused|TLS handshake timeout|i/o timeout|network is unreachable|(^|[^A-Za-z0-9_])EOF([^A-Za-z0-9_]|$)|ETIMEDOUT|ECONNRESET|EAI_AGAIN"
   NODE_VERSION: "24.16.0"
-  RELEASE_ISOLATION_TOOLING_CONTRACT: "1"
+  RELEASE_ISOLATION_TOOLING_CONTRACT: "2"
 
 jobs:
   resolve_target:
@@ -470,14 +469,7 @@ jobs:
               allowUnreleasedChangelog: $allowUnreleasedChangelog,
               pluginPrereleaseNodeExcludePatternsJson: $pluginPrereleaseNodeExcludePatternsJson
             }')"
-          trusted_workflow_json="${TRUSTED_WORKFLOW_JSON:-}"
-          if [[ -z "$trusted_workflow_json" ]]; then
-            trusted_workflow_json="$(jq -nc \
-              --arg ref main \
-              --arg fullRef refs/heads/main \
-              --arg sha "$GITHUB_SHA" \
-              '{ref: $ref, fullRef: $fullRef, sha: $sha}')"
-          fi
+          trusted_workflow_json="${TRUSTED_WORKFLOW_JSON}"
           trusted_workflow_ref="$(jq -er '.ref | select(type == "string" and length > 0)' <<< "$trusted_workflow_json")"
           trusted_workflow_full_ref="$(jq -er '.fullRef | select(type == "string" and length > 0)' <<< "$trusted_workflow_json")"
           trusted_workflow_sha="$(jq -er '.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$trusted_workflow_json")"

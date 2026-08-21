@@ -15,7 +15,7 @@ import { execGhRead } from "./lib/plain-gh.mjs";
 
 const WORKFLOW = "full-release-validation.yml";
 const TRUSTED_WORKFLOW_PATH = `.github/workflows/${WORKFLOW}`;
-const RELEASE_ISOLATION_TOOLING_CONTRACT = "1";
+const RELEASE_ISOLATION_TOOLING_CONTRACT = "2";
 const RELEASE_ISOLATION_TOOLING_CONTRACT_ENV = "RELEASE_ISOLATION_TOOLING_CONTRACT";
 const RELEASE_EVIDENCE_VERIFIER_PATHS = [
   "scripts/release-ci-summary.mjs",
@@ -59,6 +59,10 @@ type TemporaryRefParams = {
   dryRun: boolean;
   parentConclusion: string;
   evidenceVerified: boolean;
+};
+type TrustedWorkflowHarness = {
+  contract: "1" | "2";
+  verifierPath: string;
 };
 
 function stringValue(value: unknown, fallback = ""): string {
@@ -639,7 +643,7 @@ export function assertTrustedWorkflowHarness(
     }).status === 0,
   readPath: (relativePath: string) => string = (relativePath) =>
     run("git", ["show", `${workflowSha}:${relativePath}`]),
-) {
+): TrustedWorkflowHarness {
   if (!pathExists(TRUSTED_WORKFLOW_PATH)) {
     throw new Error(
       `trusted workflow SHA ${workflowSha} does not contain ${TRUSTED_WORKFLOW_PATH}`,
@@ -654,23 +658,33 @@ export function assertTrustedWorkflowHarness(
       { cause: error },
     );
   }
-  if (
-    !isJsonRecord(workflow) ||
-    !isJsonRecord(workflow.env) ||
-    workflow.env[RELEASE_ISOLATION_TOOLING_CONTRACT_ENV] !== RELEASE_ISOLATION_TOOLING_CONTRACT
-  ) {
+  const contract =
+    isJsonRecord(workflow) && isJsonRecord(workflow.env)
+      ? workflow.env[RELEASE_ISOLATION_TOOLING_CONTRACT_ENV]
+      : undefined;
+  if (contract !== "1" && contract !== RELEASE_ISOLATION_TOOLING_CONTRACT) {
     throw new Error(
-      `Tooling SHA ${workflowSha} does not declare ${RELEASE_ISOLATION_TOOLING_CONTRACT_ENV}=${RELEASE_ISOLATION_TOOLING_CONTRACT} in ${TRUSTED_WORKFLOW_PATH}`,
+      `Tooling SHA ${workflowSha} does not declare a supported ${RELEASE_ISOLATION_TOOLING_CONTRACT_ENV} in ${TRUSTED_WORKFLOW_PATH}`,
+    );
+  }
+  const workflowInputs =
+    isJsonRecord(workflow) &&
+    isJsonRecord(workflow.on) &&
+    isJsonRecord(workflow.on.workflow_dispatch) &&
+    isJsonRecord(workflow.on.workflow_dispatch.inputs)
+      ? workflow.on.workflow_dispatch.inputs
+      : undefined;
+  if (!workflowInputs || !Object.hasOwn(workflowInputs, "expected_sha")) {
+    throw new Error(
+      `Tooling SHA ${workflowSha} is missing workflow_dispatch input expected_sha in ${TRUSTED_WORKFLOW_PATH}`,
     );
   }
   if (
-    !isJsonRecord(workflow.on) ||
-    !isJsonRecord(workflow.on.workflow_dispatch) ||
-    !isJsonRecord(workflow.on.workflow_dispatch.inputs) ||
-    !Object.hasOwn(workflow.on.workflow_dispatch.inputs, "expected_sha")
+    contract === RELEASE_ISOLATION_TOOLING_CONTRACT &&
+    !Object.hasOwn(workflowInputs, "trusted_workflow_json")
   ) {
     throw new Error(
-      `Tooling SHA ${workflowSha} is missing workflow_dispatch input expected_sha in ${TRUSTED_WORKFLOW_PATH}`,
+      `Tooling SHA ${workflowSha} declares ${RELEASE_ISOLATION_TOOLING_CONTRACT_ENV}=2 but is missing workflow_dispatch input trusted_workflow_json in ${TRUSTED_WORKFLOW_PATH}`,
     );
   }
   const verifierPath = RELEASE_EVIDENCE_VERIFIER_PATHS.find((relativePath) =>
@@ -681,7 +695,7 @@ export function assertTrustedWorkflowHarness(
       `trusted workflow SHA ${workflowSha} does not contain a supported release evidence verifier`,
     );
   }
-  return verifierPath;
+  return { contract, verifierPath };
 }
 
 export function releaseEvidenceVerifierPath(worktreeRoot: string) {
@@ -739,7 +753,10 @@ function main() {
   args.inputs.allow_unreleased_changelog ??= args.targetRef ? "false" : "true";
   const targetContextRef = verifyTargetRef(args.targetRef, targetSha, targetVersion);
   const workflowSha = resolveTrustedWorkflowSha(args.workflowSha, args.trustedWorkflowRef);
-  assertTrustedWorkflowHarness(workflowSha);
+  const trustedWorkflowHarness = assertTrustedWorkflowHarness(workflowSha);
+  if (trustedWorkflowHarness.contract === "1") {
+    args.inputs.reuse_evidence = "false";
+  }
   const shortSha = workflowSha.slice(0, 12);
   const branch = `release-ci/${shortSha}-${Date.now()}`;
   const remoteBranchRef = `refs/heads/${branch}`;
@@ -748,14 +765,18 @@ function main() {
   const dispatchInputs = {
     ref: targetSha,
     expected_sha: targetSha,
-    trusted_workflow_json: JSON.stringify({
-      ref: args.trustedWorkflowRef,
-      fullRef:
-        args.trustedWorkflowRef === "main"
-          ? "refs/heads/main"
-          : `refs/tags/${args.trustedWorkflowRef}`,
-      sha: workflowSha,
-    }),
+    ...(trustedWorkflowHarness.contract === RELEASE_ISOLATION_TOOLING_CONTRACT
+      ? {
+          trusted_workflow_json: JSON.stringify({
+            ref: args.trustedWorkflowRef,
+            fullRef:
+              args.trustedWorkflowRef === "main"
+                ? "refs/heads/main"
+                : `refs/tags/${args.trustedWorkflowRef}`,
+            sha: workflowSha,
+          }),
+        }
+      : {}),
     ...(targetContextRef !== targetSha ? { target_context_ref: targetContextRef } : {}),
     ...args.inputs,
   };

@@ -1527,7 +1527,9 @@ jobs:
             fi
             resume_state="$(node --import tsx "${GITHUB_WORKSPACE}/.release-harness/scripts/openclaw-npm-resume-run.mts" \
               --repo "${GITHUB_REPOSITORY}" \
-              --run-id "${OPENCLAW_NPM_RESUME_RUN_ID}")"
+              --run-id "${OPENCLAW_NPM_RESUME_RUN_ID}" \
+              --trusted-workflow-ref "${PARENT_WORKFLOW_BRANCH}" \
+              --trusted-workflow-full-ref "${GITHUB_REF}")"
             resume_url="$(printf '%s' "${resume_state}" | jq -er '.url')"
             openclaw_npm_expected_workflow_ref="$(printf '%s' "${resume_state}" | jq -er '.workflowRef')"
             openclaw_npm_expected_workflow_sha="$(printf '%s' "${resume_state}" | jq -er '.workflowSha')"

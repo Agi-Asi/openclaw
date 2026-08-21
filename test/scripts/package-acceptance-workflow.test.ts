@@ -1358,6 +1358,8 @@ describe("package acceptance workflow", () => {
     expect(dispatch.run).toContain(
       '-f plugin_sdk_api_acknowledgement="${PLUGIN_SDK_API_ACKNOWLEDGEMENT}"',
     );
+    expect(dispatch.run).toContain('--trusted-workflow-ref "${PARENT_WORKFLOW_BRANCH}"');
+    expect(dispatch.run).toContain('--trusted-workflow-full-ref "${GITHUB_REF}"');
   });
 
   it("requires selected plugin names or complete immutable evidence for broad publication", () => {
@@ -5409,9 +5411,12 @@ describe("package artifact reuse", () => {
         type: "boolean",
       },
       trusted_workflow_json: {
-        default: "",
+        required: true,
         type: "string",
       },
+    });
+    expect(readWorkflow(FULL_RELEASE_VALIDATION_WORKFLOW).env).toMatchObject({
+      RELEASE_ISOLATION_TOOLING_CONTRACT: "2",
     });
     expect(workflow).toContain("CHILD_WORKFLOW_REF: ${{ github.ref_name }}");
     expect(workflow).toContain('gh workflow run "$workflow" --ref "$CHILD_WORKFLOW_REF" "$@" 2>&1');
@@ -5465,6 +5470,7 @@ describe("package artifact reuse", () => {
       '--trusted-workflow-full-ref "$trusted_workflow_full_ref"',
       '--trusted-workflow-sha "$trusted_workflow_sha"',
     ]);
+    expect(evidenceReuseStep.run).not.toContain('if [[ -z "$trusted_workflow_json" ]]');
     expect(targetSummaryStep.env).toMatchObject({
       SKIP_PACKAGE_TELEGRAM_E2E: "${{ inputs.skip_package_telegram_e2e }}",
     });

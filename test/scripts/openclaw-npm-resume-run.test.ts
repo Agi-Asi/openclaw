@@ -24,7 +24,7 @@ function fixture(
       head_branch: BRANCH,
       head_sha: SHA,
       html_url: URL,
-      path: `.github/workflows/openclaw-npm-release.yml@refs/tags/${BRANCH}`,
+      path: ".github/workflows/openclaw-npm-release.yml",
       workflow_id: 101,
     },
     tag: {
@@ -32,6 +32,8 @@ function fixture(
       verification: { verified: true },
     },
     tagRef: { object: { sha: TAG_OBJECT_SHA, type: "tag" } },
+    trustedWorkflowFullRef: `refs/tags/${BRANCH}`,
+    trustedWorkflowRef: BRANCH,
     ...overrides,
   };
 }
@@ -97,8 +99,29 @@ describe("openclaw npm resume run identity", () => {
     });
   });
 
+  it("accepts the canonical path shape returned by the Actions workflow run API", () => {
+    expect(
+      validateOpenClawNpmResumeRun(
+        fixture({
+          run: {
+            conclusion: "success",
+            event: "workflow_dispatch",
+            head_branch: BRANCH,
+            head_sha: SHA,
+            html_url: URL,
+            path: ".github/workflows/openclaw-npm-release.yml",
+            workflow_id: 101,
+          },
+        }),
+      ),
+    ).toMatchObject({
+      workflowRef: `refs/tags/${BRANCH}`,
+      workflowSha: SHA,
+    });
+  });
+
   it.each([
-    ["branch", { run: { ...fixture().run, head_branch: "main" } }, "untrusted workflow ref"],
+    ["branch", { run: { ...fixture().run, head_branch: "main" } }, "untrusted workflow identity"],
     ["workflow", { run: { ...fixture().run, workflow_id: 999 } }, "untrusted workflow identity"],
     ["event", { run: { ...fixture().run, event: "push" } }, "untrusted workflow identity"],
     [
@@ -112,9 +135,14 @@ describe("openclaw npm resume run identity", () => {
       "untrusted workflow identity",
     ],
     [
-      "same-name branch path",
-      { run: { ...fixture().run, path: `.github/workflows/openclaw-npm-release.yml@${BRANCH}` } },
-      "untrusted workflow identity",
+      "same-name branch full ref",
+      { trustedWorkflowFullRef: `refs/heads/${BRANCH}` },
+      "untrusted workflow ref",
+    ],
+    [
+      "mismatched supplied ref",
+      { trustedWorkflowRef: `release-publish/${SHA.slice(0, 12)}-124` },
+      "untrusted workflow ref",
     ],
     [
       "tag kind",
@@ -171,7 +199,13 @@ describe("openclaw npm resume run identity", () => {
     });
 
     expect(
-      resolveOpenClawNpmResumeRun({ repo: "openclaw/openclaw", runGh, runId: "456" }),
+      resolveOpenClawNpmResumeRun({
+        repo: "openclaw/openclaw",
+        runGh,
+        runId: "456",
+        trustedWorkflowFullRef: `refs/tags/${BRANCH}`,
+        trustedWorkflowRef: BRANCH,
+      }),
     ).toMatchObject({ workflowRef: `refs/tags/${BRANCH}`, workflowSha: SHA });
     expect(runGh).toHaveBeenCalledTimes(6);
   });
@@ -200,7 +234,13 @@ describe("openclaw npm resume run identity", () => {
     });
 
     expect(
-      resolveOpenClawNpmResumeRun({ repo: "openclaw/openclaw", runGh, runId: "456" }),
+      resolveOpenClawNpmResumeRun({
+        repo: "openclaw/openclaw",
+        runGh,
+        runId: "456",
+        trustedWorkflowFullRef: `refs/tags/${BRANCH}`,
+        trustedWorkflowRef: BRANCH,
+      }),
     ).toMatchObject({ workflowRef: `refs/tags/${BRANCH}`, workflowSha: SHA });
     expect(runGh).toHaveBeenCalledTimes(4);
     expect(runGh.mock.calls.flatMap(([args]) => args)).not.toContain(
