@@ -77,7 +77,9 @@ const repositoryScriptEntries = [
   "scripts/memory-index-manager.sync-repro.ts!",
   "scripts/openclaw-release-clawhub-plan.ts!",
   "scripts/openclaw-release-clawhub-runtime-state.ts!",
-  // Plugin Prerelease invokes this trusted scanner against an inert candidate checkout.
+  // Plugin Prerelease builds immutable package artifacts, then scans them in a bounded child.
+  "scripts/plugin-npm-security-prepare.mts!",
+  "scripts/plugin-npm-security-scan-runner.mjs!",
   "scripts/plugin-npm-security-scan.mts!",
   // Oxlint loads this JS plugin by path from config/oxlint/boundary-guards.json.
   "scripts/oxlint-boundary-guards.mjs!",

@@ -1,32 +1,167 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertCanonicalNpmPackageName,
   assertCompleteScannerSummary,
   buildPluginNpmSecurityScanReport,
   collectNpmPackedFiles,
+  constrainPluginNpmSecurityScanReport,
+  listPluginNpmSecurityArtifacts,
+  listPublishablePluginPackages,
   normalizePackedFindingPath,
   parsePacklistFiles,
   resolveReviewedSourceLayout,
-  runPluginNpmSecurityScan,
   scanPublishablePluginPackages,
   stageScannerRelevantPackedFiles,
+  stageScannerRelevantPluginTarballFiles,
+  type PublishablePluginPackage,
+  type ScanPackageResult,
 } from "../../scripts/lib/plugin-npm-security-scan.mts";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 
+const CANDIDATE_SHA = "1".repeat(40);
+const TOOLING_SHA = "2".repeat(40);
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+
+function initGitRepo(root: string): void {
+  execFileSync("git", ["init", "--quiet", root]);
+  execFileSync("git", ["-C", root, "config", "user.email", "test@example.invalid"]);
+  execFileSync("git", ["-C", root, "config", "user.name", "OpenClaw Test"]);
+}
+
+function writePublishableManifest(
+  root: string,
+  extensionId: string,
+  packageName: string,
+  extra: Record<string, unknown> = {},
+): void {
+  const packageDir = join(root, "extensions", extensionId);
+  mkdirSync(packageDir, { recursive: true });
+  writeFileSync(
+    join(packageDir, "package.json"),
+    `${JSON.stringify({
+      name: packageName,
+      openclaw: { release: { publishToNpm: true } },
+      version: "1.0.0",
+      ...extra,
+    })}\n`,
+    "utf8",
+  );
+  execFileSync("git", ["-C", root, "add", `extensions/${extensionId}/package.json`]);
+}
+
+function writePluginArtifact(params: {
+  extensionId: string;
+  files: Record<string, string | Buffer>;
+  packageName: string;
+  version?: string;
+}) {
+  const root = tempDirs.make("openclaw-plugin-npm-security-artifact-");
+  const packageRoot = join(root, "source");
+  const artifactDir = join(root, "artifacts", params.extensionId);
+  const packageVersion = params.version ?? "1.0.0";
+  mkdirSync(packageRoot, { recursive: true });
+  mkdirSync(artifactDir, { recursive: true });
+  writeFileSync(
+    join(packageRoot, "package.json"),
+    `${JSON.stringify({ name: params.packageName, version: packageVersion })}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(packageRoot, "openclaw.plugin.json"),
+    `${JSON.stringify({ id: params.extensionId })}\n`,
+    "utf8",
+  );
+  for (const [relativePath, content] of Object.entries(params.files)) {
+    const filePath = join(packageRoot, relativePath);
+    mkdirSync(join(filePath, ".."), { recursive: true });
+    writeFileSync(filePath, content);
+  }
+  const packOutput = execFileSync(
+    "npm",
+    ["pack", "--json", "--ignore-scripts", "--pack-destination", artifactDir],
+    { cwd: packageRoot, encoding: "utf8" },
+  );
+  const packEntries = JSON.parse(packOutput) as Array<{ filename?: unknown }>;
+  const tarballName = packEntries[0]?.filename;
+  if (typeof tarballName !== "string") {
+    throw new Error("npm pack fixture did not return a tarball filename");
+  }
+  const tarballPath = join(artifactDir, tarballName);
+  const tarballSha256 = createHash("sha256").update(readFileSync(tarballPath)).digest("hex");
+  writeFileSync(
+    join(artifactDir, "plugin-npm-security-artifact.json"),
+    `${JSON.stringify({
+      candidateSha: CANDIDATE_SHA,
+      extensionId: params.extensionId,
+      packageDir: `extensions/${params.extensionId}`,
+      packageName: params.packageName,
+      packageVersion,
+      schemaVersion: 1,
+      tarballName,
+      tarballSha256,
+      toolingSha: TOOLING_SHA,
+    })}\n`,
+    "utf8",
+  );
+  return {
+    artifact: {
+      artifactDir,
+      candidateSha: CANDIDATE_SHA,
+      extensionId: params.extensionId,
+      packageDir: `extensions/${params.extensionId}`,
+      packageName: params.packageName,
+      packageVersion,
+      tarballPath,
+      tarballSha256,
+      toolingSha: TOOLING_SHA,
+    },
+    artifactRoot: join(root, "artifacts"),
+    expectedPackage: {
+      extensionId: params.extensionId,
+      packageDir: `extensions/${params.extensionId}`,
+      packageName: params.packageName,
+      packageVersion,
+    } satisfies PublishablePluginPackage,
+    packageRoot,
+    tarballPath,
+  };
+}
+
+function currentLayoutFindings(): string[] {
+  return [
+    "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/sandbox-child.ts",
+    "@openclaw/codex:dangerous-exec:src/app-server/transport-process-containment.ts",
+    ...Array.from(
+      { length: 13 },
+      () => "@openclaw/codex:dangerous-exec:src/app-server/transport.process.test.ts",
+    ),
+  ];
+}
+
+function syntheticResult(
+  packageName: string,
+  overrides: Partial<ScanPackageResult> = {},
+): ScanPackageResult {
+  return {
+    expectedReviewedCriticalFindings: [],
+    packageName,
+    packageVersion: "1.0.0",
+    packedFileCount: 1,
+    reviewedCriticalFindings: [],
+    scanFindingCount: 0,
+    tarballSha256: "a".repeat(64),
+    unexpectedCriticalFindings: [],
+    ...overrides,
+  };
+}
 
 describe("scripts/lib/plugin-npm-security-scan.mts", () => {
   it("accepts only the complete current and frozen-legacy source layouts", () => {
-    const current = [
-      "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/sandbox-child.ts",
-      "@openclaw/codex:dangerous-exec:src/app-server/transport-process-containment.ts",
-      ...Array.from(
-        { length: 13 },
-        () => "@openclaw/codex:dangerous-exec:src/app-server/transport.process.test.ts",
-      ),
-    ];
+    const current = currentLayoutFindings();
     const frozenLegacy = [
       "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/http.ts",
       "@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/processes.ts",
@@ -42,7 +177,7 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     expect(resolveReviewedSourceLayout([...current, current[0]!])).toBeUndefined();
   });
 
-  it("collects candidate package files without running lifecycle scripts", async () => {
+  it("collects package files without running lifecycle or candidate replacement helpers", async () => {
     const packageDir = tempDirs.make("openclaw-plugin-npm-security-pack-");
     const replacementMarker = join(packageDir, "replacement-helper-ran");
     const lifecycleMarkers = ["prepare", "prepack", "postpack"].map((name) =>
@@ -50,37 +185,34 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     );
     writeFileSync(
       join(packageDir, "package.json"),
-      `${JSON.stringify(
-        {
-          name: "@openclaw/test-inert-package",
-          version: "1.0.0",
-          scripts: {
-            prepare: `node -e "require('node:fs').writeFileSync(${JSON.stringify(
-              lifecycleMarkers[0],
-            )}, 'ran')"`,
-            prepack: `node -e "require('node:fs').writeFileSync(${JSON.stringify(
-              lifecycleMarkers[1],
-            )}, 'ran')"`,
-            postpack: `node -e "require('node:fs').writeFileSync(${JSON.stringify(
-              lifecycleMarkers[2],
-            )}, 'ran')"`,
-          },
-        },
-        null,
-        2,
-      )}\n`,
+      `${JSON.stringify({
+        name: "@openclaw/test-inert-package",
+        scripts: Object.fromEntries(
+          ["prepare", "prepack", "postpack"].map((name, index) => [
+            name,
+            `node -e "require('node:fs').writeFileSync(${JSON.stringify(lifecycleMarkers[index])}, 'ran')"`,
+          ]),
+        ),
+        version: "1.0.0",
+      })}\n`,
       "utf8",
     );
     writeFileSync(join(packageDir, "index.js"), "export const value = 1;\n", "utf8");
     writeFileSync(
       join(packageDir, "plugin-npm-pack-files.mjs"),
-      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(
-        replacementMarker,
-      )}, "ran");\n`,
+      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(replacementMarker)}, "ran");\n`,
       "utf8",
     );
 
-    const packedFiles = await collectNpmPackedFiles(packageDir, "@openclaw/test-inert-package");
+    const trustedHelper = join(tempDirs.make("openclaw-plugin-npm-security-helper-"), "helper.mjs");
+    writeFileSync(
+      trustedHelper,
+      'process.stdout.write(JSON.stringify(["index.js", "package.json", "plugin-npm-pack-files.mjs"]));\n',
+      "utf8",
+    );
+    const packedFiles = await collectNpmPackedFiles(packageDir, "@openclaw/test-inert-package", {
+      helperPath: trustedHelper,
+    });
 
     expect(packedFiles).toContain("index.js");
     expect(packedFiles).toContain("package.json");
@@ -112,40 +244,60 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     ).toThrow("duplicate path");
     expect(() =>
       parsePacklistFiles(
-        JSON.stringify(Array.from({ length: 50_001 }, (_, index) => `file-${index}.js`)),
+        JSON.stringify(Array.from({ length: 20_001 }, (_, index) => `file-${index}.js`)),
         "@openclaw/test",
       ),
     ).toThrow("file-count limit");
   });
 
-  it("fails closed when the trusted packlist helper exceeds process limits", async () => {
+  it("preserves bounded packlist helper failure categories", async () => {
     const root = tempDirs.make("openclaw-plugin-packlist-helper-limits-");
     const packageDir = tempDirs.make("openclaw-plugin-packlist-helper-package-");
     const timeoutHelper = join(root, "timeout.mjs");
-    const oomHelper = join(root, "oom.mjs");
+    const failedHelper = join(root, "failed.mjs");
     writeFileSync(timeoutHelper, "await new Promise(() => {});\n", "utf8");
-    writeFileSync(
-      oomHelper,
-      "const values = [];\nwhile (true) values.push(new Array(100000).fill(Math.random()));\n",
-      "utf8",
-    );
+    writeFileSync(failedHelper, "process.exit(7);\n", "utf8");
 
     await expect(
       collectNpmPackedFiles(packageDir, "@openclaw/test-timeout", {
         helperPath: timeoutHelper,
         timeoutMs: 25,
       }),
-    ).rejects.toThrow("trusted packlist helper exceeded its resource limits");
+    ).rejects.toThrow("trusted packlist helper timed out");
     await expect(
-      collectNpmPackedFiles(packageDir, "@openclaw/test-oom", {
-        helperPath: oomHelper,
-        maxOldSpaceMb: 16,
-        timeoutMs: 10_000,
+      collectNpmPackedFiles(packageDir, "@openclaw/test-failed", {
+        helperPath: failedHelper,
       }),
-    ).rejects.toThrow("trusted packlist helper exceeded its resource limits");
-  }, 15_000);
+    ).rejects.toThrow("trusted packlist helper failed");
+  });
 
-  it("fails closed on truncated scans and packed-file path escapes", () => {
+  it("bounds manifests and rejects noncanonical or duplicate package identities", async () => {
+    expect(() => assertCanonicalNpmPackageName("OpenClaw/Bad", "fixture")).toThrow(
+      "invalid npm package name",
+    );
+
+    const duplicateRoot = tempDirs.make("openclaw-plugin-npm-security-duplicates-");
+    initGitRepo(duplicateRoot);
+    writePublishableManifest(duplicateRoot, "one", "@openclaw/duplicate");
+    writePublishableManifest(duplicateRoot, "two", "@openclaw/duplicate");
+    await expect(listPublishablePluginPackages(duplicateRoot)).rejects.toThrow(
+      "duplicate publishable package",
+    );
+    await expect(
+      listPublishablePluginPackages(duplicateRoot, { maxPackageManifests: 1 }),
+    ).rejects.toThrow("package-count limit");
+
+    const manifestRoot = tempDirs.make("openclaw-plugin-npm-security-manifest-");
+    initGitRepo(manifestRoot);
+    writePublishableManifest(manifestRoot, "large", "@openclaw/large", {
+      description: "x".repeat(1024),
+    });
+    await expect(
+      listPublishablePluginPackages(manifestRoot, { maxManifestBytes: 256 }),
+    ).rejects.toThrow("manifest exceeds the byte limit");
+  });
+
+  it("fails closed on truncated scans, source escapes, and tarball symlinks", () => {
     expect(() => assertCompleteScannerSummary("@openclaw/test", { truncated: true })).toThrow(
       "security scan reached its file limit",
     );
@@ -160,182 +312,209 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
     const outsideFile = join(outsideDir, "outside.ts");
     writeFileSync(outsideFile, "export const value = 1;\n", "utf8");
     symlinkSync(outsideFile, join(packageDir, "escape.ts"));
-
     expect(() => stageScannerRelevantPackedFiles(packageDir, ["escape.ts"])).toThrow(
       "not a regular file",
     );
 
-    const oversizeDir = tempDirs.make("openclaw-plugin-npm-security-oversize-");
-    writeFileSync(join(oversizeDir, "oversize.ts"), Buffer.alloc(1024 * 1024 + 1));
-    expect(() => stageScannerRelevantPackedFiles(oversizeDir, ["oversize.ts"])).toThrow(
-      "per-file byte limit",
+    const artifact = writePluginArtifact({
+      extensionId: "symlink",
+      files: { "index.js": "export const value = 1;\n" },
+      packageName: "@openclaw/test-symlink",
+    });
+    symlinkSync(outsideFile, join(artifact.packageRoot, "escape.ts"));
+    execFileSync(
+      "tar",
+      ["-czf", artifact.tarballPath, "-C", join(artifact.packageRoot, ".."), "source"],
+      { env: { ...process.env, COPYFILE_DISABLE: "1" } },
     );
-
-    const boundedDir = tempDirs.make("openclaw-plugin-npm-security-bounds-");
-    writeFileSync(join(boundedDir, "one.ts"), "1", "utf8");
-    writeFileSync(join(boundedDir, "two.ts"), "22", "utf8");
-    expect(() =>
-      stageScannerRelevantPackedFiles(boundedDir, ["one.ts", "two.ts"], {
-        maxPackedFileBytes: 10,
-        maxPackedFiles: 10,
-        maxPackedTotalBytes: 10,
-        maxFileBytes: 10,
-        maxFiles: 1,
-        maxTotalBytes: 10,
-      }),
-    ).toThrow("file-count limit");
-    expect(() =>
-      stageScannerRelevantPackedFiles(boundedDir, ["two.ts"], {
-        maxPackedFileBytes: 10,
-        maxPackedFiles: 10,
-        maxPackedTotalBytes: 10,
-        maxFileBytes: 10,
-        maxFiles: 10,
-        maxTotalBytes: 1,
-      }),
-    ).toThrow("total-byte limit");
-
-    const assetDir = tempDirs.make("openclaw-plugin-npm-security-asset-bounds-");
-    writeFileSync(join(assetDir, "asset.bin"), Buffer.alloc(11));
-    expect(() =>
-      stageScannerRelevantPackedFiles(assetDir, ["asset.bin"], {
-        maxPackedFileBytes: 20,
-        maxPackedFiles: 10,
-        maxPackedTotalBytes: 10,
-        maxFileBytes: 10,
-        maxFiles: 10,
-        maxTotalBytes: 10,
-      }),
-    ).toThrow("Packed input exceeds the total-byte limit");
+    expect(() => stageScannerRelevantPluginTarballFiles(artifact.tarballPath)).toThrow();
   });
 
-  it("normalizes only exact bundler hash filenames", () => {
+  it("accounts for all packed bytes and scans only exact bundler hash filenames", () => {
+    const artifact = writePluginArtifact({
+      extensionId: "packed",
+      files: {
+        "asset.bin": Buffer.alloc(128),
+        "dist/service-BaCqPs_5.js": "export const value = 1;\n",
+        "dist/service-malware.js": "export const value = 2;\n",
+      },
+      packageName: "@openclaw/test-packed",
+    });
+    const staged = stageScannerRelevantPluginTarballFiles(artifact.tarballPath);
+    try {
+      expect(staged.inspection.inventory.map((entry) => entry.path)).toContain("package/asset.bin");
+      expect(staged.packedFiles).toContain("asset.bin");
+    } finally {
+      rmSync(staged.stageDir, { force: true, recursive: true });
+    }
     expect(normalizePackedFindingPath("dist/service-BaCqPs_5.js")).toBe("dist/service-<hash>.js");
     expect(normalizePackedFindingPath("dist/service-malware.js")).toBe("dist/service-malware.js");
   });
 
-  it("retains expected SHAs and redacts candidate paths in failure reports", () => {
-    const root = tempDirs.make("openclaw-plugin-npm-security-failure-");
-    const candidateRoot = join(root, "missing-candidate");
-    const reportPath = join(root, "report.json");
-    const candidateSha = "1".repeat(40);
-    const toolingSha = "2".repeat(40);
-    const result = spawnSync(
-      process.execPath,
-      [
-        "--import",
-        "tsx",
-        "scripts/plugin-npm-security-scan.mts",
-        "--candidate-root",
-        candidateRoot,
-        "--candidate-sha",
-        candidateSha,
-        "--tooling-sha",
-        toolingSha,
-        "--report",
-        reportPath,
-      ],
-      { cwd: process.cwd(), encoding: "utf8" },
-    );
-    const report = JSON.parse(readFileSync(reportPath, "utf8")) as {
-      candidateSha: string;
-      toolingSha: string;
-    };
-
-    expect(result.status).toBe(1);
-    expect(report.candidateSha).toBe(candidateSha);
-    expect(report.toolingSha).toBe(toolingSha);
-    expect(JSON.stringify(report)).not.toContain(candidateRoot);
-    expect(result.stderr).not.toContain(candidateRoot);
-  });
-
-  it("finds malicious packed code and retains it when another package fails", async () => {
-    const maliciousDir = tempDirs.make("openclaw-plugin-npm-security-malicious-");
-    writeFileSync(
-      join(maliciousDir, "package.json"),
-      `${JSON.stringify({
-        files: ["index.js"],
-        name: "@openclaw/test-malicious",
-        version: "1.0.0",
-      })}\n`,
-      "utf8",
-    );
-    writeFileSync(
-      join(maliciousDir, "index.js"),
-      `const { execSync } = require("node:child_process");\nexecSync("id");\n`,
-      "utf8",
-    );
-
-    const oversizedDir = tempDirs.make("openclaw-plugin-npm-security-failing-");
-    writeFileSync(
-      join(oversizedDir, "package.json"),
-      `${JSON.stringify({
-        files: ["oversized.js"],
-        name: "@openclaw/test-oversized",
-        version: "1.0.0",
-      })}\n`,
-      "utf8",
-    );
-    writeFileSync(join(oversizedDir, "oversized.js"), Buffer.alloc(1024 * 1024 + 1));
+  it("finds malicious final-artifact code, ignores candidate scanner replacements, and fails slow", async () => {
+    const marker = join(tempDirs.make("openclaw-plugin-npm-security-marker-"), "ran");
+    const malicious = writePluginArtifact({
+      extensionId: "malicious",
+      files: {
+        "index.js": `const { execSync } = require("node:child_process");\nexecSync("id");\n`,
+        "scripts/plugin-npm-security-scan.mts": `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran");\n`,
+      },
+      packageName: "@openclaw/test-malicious",
+    });
+    const oversized = writePluginArtifact({
+      extensionId: "oversized",
+      files: { "oversized.js": Buffer.alloc(1024 * 1024 + 1) },
+      packageName: "@openclaw/test-oversized",
+    });
 
     const { packageResults, scanErrors } = await scanPublishablePluginPackages([
-      { packageDir: oversizedDir, packageName: "@openclaw/test-oversized" },
-      { packageDir: maliciousDir, packageName: "@openclaw/test-malicious" },
+      oversized.artifact,
+      malicious.artifact,
     ]);
 
+    expect(existsSync(marker)).toBe(false);
     expect(packageResults).toHaveLength(1);
-    expect(packageResults[0]?.unexpectedCriticalFindings).toEqual([
-      {
-        line: 2,
-        path: "index.js",
-        ruleId: "dangerous-exec",
-      },
-    ]);
+    expect(packageResults[0]?.unexpectedCriticalFindings).toContainEqual({
+      line: 2,
+      path: "index.js",
+      ruleId: "dangerous-exec",
+    });
     expect(scanErrors).toHaveLength(1);
     expect(scanErrors[0]).toContain("@openclaw/test-oversized");
-    expect(scanErrors[0]).not.toContain(oversizedDir);
+    expect(scanErrors[0]).not.toContain(oversized.artifact.tarballPath);
 
     const report = buildPluginNpmSecurityScanReport({
-      candidateSha: "1".repeat(40),
+      candidateSha: CANDIDATE_SHA,
       packageResults,
       scanErrors,
-      toolingSha: "2".repeat(40),
+      toolingSha: TOOLING_SHA,
     });
     expect(report.status).toBe("fail");
     expect(report.errors).toContainEqual(expect.stringContaining("unexpected critical findings"));
     expect(report.errors).toContainEqual(expect.stringContaining("package scan failed"));
     expect(JSON.stringify(report)).not.toContain("execSync");
+  });
+
+  it("validates immutable artifact identity and exact package plans", () => {
+    const artifact = writePluginArtifact({
+      extensionId: "identity",
+      files: { "index.js": "export const value = 1;\n" },
+      packageName: "@openclaw/test-identity",
+    });
+    expect(
+      listPluginNpmSecurityArtifacts({
+        artifactRoot: artifact.artifactRoot,
+        candidateSha: CANDIDATE_SHA,
+        expectedPackages: [artifact.expectedPackage],
+        toolingSha: TOOLING_SHA,
+      }).map((entry) => entry.packageName),
+    ).toEqual(["@openclaw/test-identity"]);
+    expect(() =>
+      listPluginNpmSecurityArtifacts({
+        artifactRoot: artifact.artifactRoot,
+        candidateSha: CANDIDATE_SHA,
+        expectedPackages: [],
+        toolingSha: TOOLING_SHA,
+      }),
+    ).toThrow("does not match the trusted package plan");
+  });
+
+  it("caps total findings and emits byte-identical bounded reports", () => {
+    const packageResults = [
+      syntheticResult("@openclaw/codex", {
+        reviewedCriticalFindings: currentLayoutFindings(),
+        scanFindingCount: 51,
+      }),
+    ];
+    const report = buildPluginNpmSecurityScanReport({
+      candidateSha: CANDIDATE_SHA,
+      maxTotalFindings: 50,
+      packageResults,
+      toolingSha: TOOLING_SHA,
+    });
+    expect(report.errors).toContain(
+      "Plugin npm security scan exceeded the total finding-count limit.",
+    );
     expect(JSON.stringify(report)).toBe(
       JSON.stringify(
         buildPluginNpmSecurityScanReport({
-          candidateSha: report.candidateSha,
+          candidateSha: CANDIDATE_SHA,
+          maxTotalFindings: 50,
           packageResults: structuredClone(packageResults).reverse(),
-          scanErrors: structuredClone(scanErrors).reverse(),
-          toolingSha: report.toolingSha,
+          toolingSha: TOOLING_SHA,
         }),
       ),
     );
+    expect(constrainPluginNpmSecurityScanReport(report, 64).errors).toEqual([
+      "Plugin npm security scan report exceeded the byte limit.",
+    ]);
   });
 
-  it("scans the complete current-root publishable plugin inventory", async () => {
-    const report = await runPluginNpmSecurityScan({
-      candidateDir: process.cwd(),
-      toolingDir: process.cwd(),
-    });
+  it("writes sanitized exact-identity reports when the bounded scanner times out or OOMs", () => {
+    const root = tempDirs.make("openclaw-plugin-npm-security-runner-");
+    const timeoutChild = join(root, "timeout.mjs");
+    const oomChild = join(root, "oom.mjs");
+    writeFileSync(timeoutChild, "await new Promise(() => {});\n", "utf8");
+    writeFileSync(
+      oomChild,
+      "const values = [];\nwhile (true) values.push(new Array(100000).fill(Math.random()));\n",
+      "utf8",
+    );
+    for (const [label, child, timeoutMs] of [
+      ["timeout", timeoutChild, "25"],
+      ["oom", oomChild, "10000"],
+    ] as const) {
+      const reportPath = join(root, `${label}.json`);
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/plugin-npm-security-scan-runner.mjs",
+          "--artifact-root",
+          join(root, "artifacts"),
+          "--candidate-sha",
+          CANDIDATE_SHA,
+          "--expected-packages-json",
+          "[]",
+          "--tooling-sha",
+          TOOLING_SHA,
+          "--report",
+          reportPath,
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            NODE_ENV: "test",
+            OPENCLAW_PLUGIN_SECURITY_RUNNER_CHILD: child,
+            OPENCLAW_PLUGIN_SECURITY_RUNNER_HEAP_MB: "16",
+            OPENCLAW_PLUGIN_SECURITY_RUNNER_TIMEOUT_MS: timeoutMs,
+          },
+          timeout: 15_000,
+        },
+      );
+      const report = JSON.parse(readFileSync(reportPath, "utf8")) as {
+        candidateSha: string;
+        toolingSha: string;
+      };
+      expect(result.status).toBe(1);
+      expect(report).toMatchObject({
+        candidateSha: CANDIDATE_SHA,
+        toolingSha: TOOLING_SHA,
+      });
+      expect(`${result.stdout}${result.stderr}${JSON.stringify(report)}`).not.toContain(root);
+    }
+  }, 30_000);
 
-    expect(report).toMatchObject({
-      layout: "current",
-      status: "pass",
-      summary: {
-        unexpectedCriticalFindingCount: 0,
-      },
-    });
-    expect(report.summary.packageCount).toBe(report.packages.length);
-    expect(report.summary.packageCount).toBeGreaterThan(0);
-    expect(
-      report.packages
-        .find((entry) => entry.packageName === "@openclaw/acpx")
-        ?.reviewedCriticalFindings.some((finding) => finding.endsWith(".test.ts")),
-    ).toBe(true);
-  }, 120_000);
+  it("retains the complete current-root publishable plugin inventory contract", async () => {
+    const packages = await listPublishablePluginPackages(process.cwd());
+    expect(packages.length).toBeGreaterThan(0);
+    expect(packages.map((plugin) => plugin.packageName)).toContain("@openclaw/acpx");
+    expect(new Set(packages.map((plugin) => plugin.packageName)).size).toBe(packages.length);
+    expect(packages).toEqual(
+      packages.toSorted((left, right) =>
+        left.packageName < right.packageName ? -1 : left.packageName > right.packageName ? 1 : 0,
+      ),
+    );
+  });
 });

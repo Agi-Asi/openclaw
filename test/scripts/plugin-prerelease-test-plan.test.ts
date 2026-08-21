@@ -1,6 +1,8 @@
 // Plugin Prerelease Test Plan tests cover plugin prerelease test plan script behavior.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { findLaneByName } from "../../scripts/lib/docker-e2e-plan.mts";
@@ -279,19 +281,25 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
   it("keeps the trusted security scanner outside the candidate test process", () => {
     const pluginWorkflow = readPluginPrereleaseWorkflow();
     const pluginSource = readFileSync(".github/workflows/plugin-prerelease.yml", "utf8");
+    const resolver = pluginWorkflow.jobs["resolve-candidate"];
+    const securityPlan = pluginWorkflow.jobs["plugin-npm-security-plan"];
+    const securityPackage = pluginWorkflow.jobs["plugin-npm-security-package"];
     const securityScan = pluginWorkflow.jobs["plugin-npm-security-scan"];
     const nodeShard = pluginWorkflow.jobs["plugin-prerelease-node-shard"];
     const trustedCheckout = securityScan.steps.find(
       (step: WorkflowStep) => step.name === "Checkout trusted scanner tooling",
     );
-    const candidateCheckout = securityScan.steps.find(
+    const candidateCheckout = securityPlan.steps.find(
       (step: WorkflowStep) => step.name === "Checkout candidate as inert data",
+    );
+    const packageCandidateCheckout = securityPackage.steps.find(
+      (step: WorkflowStep) => step.name === "Checkout candidate package source",
     );
     const installDependencies = securityScan.steps.find(
       (step: WorkflowStep) => step.name === "Install trusted scanner dependencies",
     );
     const runSecurityScan = securityScan.steps.find(
-      (step: WorkflowStep) => step.name === "Scan candidate plugin packages",
+      (step: WorkflowStep) => step.name === "Scan immutable plugin tarballs",
     );
     const uploadReport = securityScan.steps.find(
       (step: WorkflowStep) => step.name === "Upload plugin npm security scan report",
@@ -316,20 +324,29 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       uses: CHECKOUT_V6,
       with: {
         "persist-credentials": false,
-        ref: "${{ needs.preflight.outputs.checkout_revision }}",
+        ref: "${{ needs.resolve-candidate.outputs.checkout_revision }}",
         path: ".release-candidate",
       },
     });
+    expect(packageCandidateCheckout).toMatchObject({
+      uses: CHECKOUT_V6,
+      with: {
+        "persist-credentials": false,
+        ref: "${{ needs.resolve-candidate.outputs.checkout_revision }}",
+        path: ".release-candidate",
+      },
+    });
+    expect(
+      securityScan.steps.find(
+        (step: WorkflowStep) => step.name === "Checkout candidate as inert data",
+      ),
+    ).toBeUndefined();
     expect(installDependencies?.run).toBe(
       "pnpm install --frozen-lockfile --prefer-offline --ignore-scripts",
     );
-    expect(runSecurityScan?.run).toContain(
-      "node --import tsx scripts/plugin-npm-security-scan.mts",
-    );
-    expect(runSecurityScan?.run).not.toContain(
-      ".release-candidate/scripts/plugin-npm-security-scan.mts",
-    );
-    expect(runSecurityScan?.run).toContain("--candidate-root .release-candidate");
+    expect(runSecurityScan?.run).toContain("node scripts/plugin-npm-security-scan-runner.mjs");
+    expect(runSecurityScan?.run).toContain("--artifact-root");
+    expect(runSecurityScan?.run).not.toContain("--candidate-root");
     expect(runSecurityScan?.run).toContain('--candidate-sha "$CANDIDATE_SHA"');
     expect(uploadReport).toMatchObject({
       if: "always()",
@@ -339,13 +356,74 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
         path: "${{ runner.temp }}/plugin-npm-security-scan.json",
       },
     });
-    expect(nodeShard.needs).toEqual(["preflight"]);
+    expect(resolver.outputs).toEqual({
+      checkout_revision: "${{ steps.resolve.outputs.checkout_revision }}",
+    });
+    expect(securityScan.needs).toEqual([
+      "resolve-candidate",
+      "plugin-npm-security-plan",
+      "plugin-npm-security-package",
+    ]);
+    expect(securityScan.needs).not.toContain("preflight");
+    expect(securityPackage.permissions).toEqual({ contents: "read" });
+    expect(securityPackage.secrets).toBeUndefined();
+    expect(nodeShard.needs).toEqual(["resolve-candidate", "preflight"]);
     expect(runNodeShard?.run).toContain('spawnSync("pnpm", ["test", "--", ...configs]');
     expect(pluginSource).not.toContain("npm-install-security-scan.release.test.ts");
     expect(pluginSource).not.toContain("node_test_exclude_patterns_json");
     expect(releaseSource).not.toContain("plugin_prerelease_node_exclude_patterns_json");
     expect(releaseSource).not.toContain("Plugin prerelease Node exclusions");
     expect(pluginDispatch?.run).not.toContain("node_test_exclude_patterns_json");
+  });
+
+  it("keeps late candidate GITHUB_OUTPUT writes outside trusted candidate identity", () => {
+    const pluginWorkflow = readPluginPrereleaseWorkflow();
+    const preflight = pluginWorkflow.jobs.preflight;
+    const resolver = pluginWorkflow.jobs["resolve-candidate"];
+    const securityScan = pluginWorkflow.jobs["plugin-npm-security-scan"];
+    const root = mkdtempSync(join(tmpdir(), "openclaw-plugin-late-output-"));
+    try {
+      const candidateModule = join(root, "candidate.mjs");
+      const githubOutput = join(root, "github-output");
+      writeFileSync(
+        candidateModule,
+        [
+          'import { appendFileSync } from "node:fs";',
+          `process.on("exit", () => appendFileSync(process.env.GITHUB_OUTPUT, ${JSON.stringify(`checkout_revision=${"f".repeat(40)}\n`)}));`,
+        ].join("\n"),
+        "utf8",
+      );
+      execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          'await import(process.argv[1]); const { appendFileSync } = await import("node:fs"); appendFileSync(process.env.GITHUB_OUTPUT, "run_plugin_prerelease_suite=true\\n");',
+          candidateModule,
+        ],
+        { env: { ...process.env, GITHUB_OUTPUT: githubOutput } },
+      );
+      const lateCandidateOutput = new Map(
+        readFileSync(githubOutput, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => line.split("=", 2)),
+      );
+
+      expect(lateCandidateOutput.get("checkout_revision")).toBe("f".repeat(40));
+      expect(preflight.outputs).not.toHaveProperty("checkout_revision");
+      expect(resolver.outputs.checkout_revision).toBe(
+        "${{ steps.resolve.outputs.checkout_revision }}",
+      );
+      expect(JSON.stringify(securityScan)).toContain(
+        "needs.resolve-candidate.outputs.checkout_revision",
+      );
+      expect(JSON.stringify(securityScan)).not.toContain(
+        "needs.preflight.outputs.checkout_revision",
+      );
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
   });
 
   it("wires the full plugin prerelease plan into its release workflow", () => {
@@ -402,7 +480,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(staticShard).toEqual({
       if: "needs.preflight.outputs.run_plugin_prerelease_static == 'true'",
       name: "${{ matrix.check_name }}",
-      needs: ["preflight"],
+      needs: ["resolve-candidate", "preflight"],
       permissions: {
         contents: "read",
       },
@@ -416,7 +494,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
             "fetch-depth": 1,
             "fetch-tags": false,
             "persist-credentials": false,
-            ref: "${{ needs.preflight.outputs.checkout_revision }}",
+            ref: "${{ needs.resolve-candidate.outputs.checkout_revision }}",
             submodules: false,
           },
         },
@@ -595,7 +673,6 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       type: "string",
     });
     expect(pluginManifestEnv).toEqual({
-      EXPECTED_SHA: "${{ inputs.expected_sha }}",
       FULL_RELEASE_VALIDATION: "${{ inputs.full_release_validation && 'true' || 'false' }}",
     });
     expect(pluginManifestScript).toContain(
@@ -605,7 +682,6 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       "const runDocker = fullReleaseValidation && dockerLanes.length > 0;",
     );
     expect(pluginPreflight.outputs).toEqual({
-      checkout_revision: "${{ steps.manifest.outputs.checkout_revision }}",
       plugin_prerelease_docker_lanes:
         "${{ steps.manifest.outputs.plugin_prerelease_docker_lanes }}",
       plugin_prerelease_extension_matrix:
@@ -625,8 +701,8 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     );
     expect(securityScan).toMatchObject({
       name: "plugin-npm-security-scan",
-      needs: ["preflight"],
-      permissions: { contents: "read" },
+      needs: ["resolve-candidate", "plugin-npm-security-plan", "plugin-npm-security-package"],
+      permissions: { actions: "read", contents: "read" },
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 20,
     });
@@ -643,7 +719,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       extensionShard.steps.find((step: WorkflowStep) => step.name === "Run extension shard").run,
     ).toContain("--retry=1");
     expect(inspector.name).toBe("plugin-prerelease-inspector");
-    expect(inspector.needs).toEqual(["preflight"]);
+    expect(inspector.needs).toEqual(["resolve-candidate", "preflight"]);
     expect(inspector.if).toBe("needs.preflight.outputs.run_plugin_prerelease_suite == 'true'");
     expect(inspector["continue-on-error"]).toBe(true);
     expect(inspector["runs-on"]).toBe("ubuntu-24.04");
@@ -687,7 +763,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(dockerSuite).toMatchObject({
       if: "${{ inputs.full_release_validation && needs.preflight.outputs.run_plugin_prerelease_docker == 'true' }}",
       name: "plugin-prerelease-docker-suite",
-      needs: ["preflight"],
+      needs: ["resolve-candidate", "preflight"],
       permissions: {
         actions: "read",
         contents: "read",
@@ -703,7 +779,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
         include_repo_e2e: false,
         live_models_only: false,
         allow_unreleased_changelog: true,
-        ref: "${{ needs.preflight.outputs.checkout_revision }}",
+        ref: "${{ needs.resolve-candidate.outputs.checkout_revision }}",
         shared_image_artifact_namespace: "plugin-prerelease",
         shared_image_policy: "no-push-artifact",
         targeted_docker_lane_group_size: 2,
@@ -711,6 +787,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     });
     expect(dockerSuite.secrets).toBeUndefined();
     expect(suite.needs).toEqual([
+      "resolve-candidate",
       "preflight",
       "plugin-npm-security-scan",
       "plugin-prerelease-static-shard",

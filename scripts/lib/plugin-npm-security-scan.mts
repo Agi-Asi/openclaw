@@ -4,12 +4,15 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -18,10 +21,16 @@ import {
   type SkillScanFinding,
 } from "../../src/skills/security/scanner.js";
 import { runTasksWithConcurrency } from "../../src/utils/run-with-concurrency.js";
+import {
+  inspectPackageTarballBytes,
+  readBoundedRegularFile,
+} from "../plugin-publication-artifact.mjs";
 
-type PublishablePluginPackage = {
+export type PublishablePluginPackage = {
+  extensionId: string;
   packageDir: string;
   packageName: string;
+  packageVersion: string;
 };
 
 type CriticalFindingRecord = {
@@ -30,12 +39,23 @@ type CriticalFindingRecord = {
   ruleId: string;
 };
 
-type ScanPackageResult = {
+export type ScanPackageResult = {
   expectedReviewedCriticalFindings: string[];
   packageName: string;
+  packageVersion: string;
   packedFileCount: number;
   reviewedCriticalFindings: string[];
+  scanFindingCount: number;
+  tarballSha256: string;
   unexpectedCriticalFindings: CriticalFindingRecord[];
+};
+
+type PluginNpmSecurityArtifact = PublishablePluginPackage & {
+  artifactDir: string;
+  candidateSha: string;
+  tarballPath: string;
+  tarballSha256: string;
+  toolingSha: string;
 };
 
 export type PluginNpmSecurityScanReport = {
@@ -46,6 +66,7 @@ export type PluginNpmSecurityScanReport = {
   schemaVersion: 1;
   status: "pass" | "fail";
   summary: {
+    findingCount: number;
     packageCount: number;
     reviewedCriticalFindingCount: number;
     unexpectedCriticalFindingCount: number;
@@ -54,7 +75,18 @@ export type PluginNpmSecurityScanReport = {
 };
 
 const execFileAsync = promisify(execFile);
-const MAX_PACKED_FILES_PER_PACKAGE = 50_000;
+const require = createRequire(import.meta.url);
+const validateNpmPackageName = require("validate-npm-package-name") as (name: unknown) => {
+  validForNewPackages: boolean;
+};
+export const MAX_PUBLISHABLE_PLUGIN_PACKAGES = 256;
+export const MAX_PLUGIN_PACKAGE_MANIFEST_BYTES = 256 * 1024;
+export const MAX_PLUGIN_SCAN_FINDINGS_PER_PACKAGE = 10_000;
+export const MAX_PLUGIN_SCAN_TOTAL_FINDINGS = 50_000;
+export const MAX_PLUGIN_SCAN_REPORT_BYTES = 1024 * 1024;
+const MAX_PLUGIN_SECURITY_ARTIFACT_METADATA_BYTES = 64 * 1024;
+const MAX_PLUGIN_TARBALL_BYTES = 128 * 1024 * 1024;
+const MAX_PACKED_FILES_PER_PACKAGE = 20_000;
 const MAX_PACKED_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_PACKED_TOTAL_BYTES_PER_PACKAGE = 256 * 1024 * 1024;
 const MAX_SCANNABLE_FILES_PER_PACKAGE = 10_000;
@@ -141,8 +173,12 @@ function expandFindingCounts(counts: ReadonlyMap<string, number>): string[] {
   return [...counts].flatMap(([key, count]) => Array.from({ length: count }, () => key));
 }
 
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function sortStrings(values: readonly string[]): string[] {
-  return [...values].toSorted((left, right) => left.localeCompare(right));
+  return [...values].toSorted(compareCodeUnits);
 }
 
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -203,6 +239,7 @@ export async function collectNpmPackedFiles(
 ): Promise<string[]> {
   const helperPath = limits.helperPath ?? PACKLIST_HELPER_PATH;
   const maxOldSpaceMb = limits.maxOldSpaceMb ?? PACKLIST_HELPER_MAX_OLD_SPACE_MB;
+  const timeoutMs = limits.timeoutMs ?? PACKLIST_HELPER_TIMEOUT_MS;
   try {
     const { stdout } = await execFileAsync(
       process.execPath,
@@ -217,12 +254,28 @@ export async function collectNpmPackedFiles(
         },
         killSignal: "SIGKILL",
         maxBuffer: limits.maxBufferBytes ?? PACKLIST_HELPER_MAX_BUFFER_BYTES,
-        timeout: limits.timeoutMs ?? PACKLIST_HELPER_TIMEOUT_MS,
+        signal: AbortSignal.timeout(timeoutMs),
       },
     );
     return parsePacklistFiles(stdout, packageName);
-  } catch {
-    throw new Error(`${packageName}: trusted packlist helper exceeded its resource limits.`);
+  } catch (error) {
+    const failure =
+      error && typeof error === "object"
+        ? (error as { code?: unknown; killed?: unknown; signal?: unknown })
+        : {};
+    if (failure.code === "ABORT_ERR" || failure.code === "ETIMEDOUT") {
+      throw new Error(`${packageName}: trusted packlist helper timed out.`);
+    }
+    if (failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      throw new Error(`${packageName}: trusted packlist helper exceeded its output limit.`);
+    }
+    if (failure.killed === true || typeof failure.signal === "string") {
+      throw new Error(`${packageName}: trusted packlist helper exceeded its process limit.`);
+    }
+    if (typeof failure.code === "number") {
+      throw new Error(`${packageName}: trusted packlist helper failed.`);
+    }
+    throw new Error(`${packageName}: trusted packlist helper could not start.`);
   }
 }
 
@@ -363,8 +416,23 @@ async function gitOutput(rootDir: string, args: string[]): Promise<string> {
   return stdout.trim();
 }
 
-async function listPublishablePluginPackages(
+export function assertCanonicalNpmPackageName(packageName: unknown, label: string): string {
+  if (
+    typeof packageName !== "string" ||
+    packageName.trim() !== packageName ||
+    !validateNpmPackageName(packageName).validForNewPackages
+  ) {
+    throw new Error(`${label}: publishable plugin has an invalid npm package name.`);
+  }
+  return packageName;
+}
+
+export async function listPublishablePluginPackages(
   candidateDir: string,
+  limits: {
+    maxManifestBytes?: number;
+    maxPackageManifests?: number;
+  } = {},
 ): Promise<PublishablePluginPackage[]> {
   const { stdout } = await execFileAsync(
     "git",
@@ -375,8 +443,12 @@ async function listPublishablePluginPackages(
     },
   );
   const packageFiles = stdout.split("\0").filter(Boolean).toSorted();
+  const maxPackageManifests = limits.maxPackageManifests ?? MAX_PUBLISHABLE_PLUGIN_PACKAGES;
+  if (packageFiles.length > maxPackageManifests) {
+    throw new Error("Candidate exceeds the plugin package-count limit.");
+  }
 
-  return packageFiles.flatMap((packageFile) => {
+  const publishablePackages = packageFiles.flatMap((packageFile) => {
     const match = /^extensions\/([^/]+)\/package\.json$/u.exec(packageFile);
     if (!match?.[1]) {
       return [];
@@ -387,18 +459,294 @@ async function listPublishablePluginPackages(
     if (!packageStat.isFile()) {
       throw new Error(`${packageFile}: package manifest is not a regular file.`);
     }
+    if (
+      packageStat.size === 0 ||
+      packageStat.size > (limits.maxManifestBytes ?? MAX_PLUGIN_PACKAGE_MANIFEST_BYTES)
+    ) {
+      throw new Error(`${packageFile}: package manifest exceeds the byte limit.`);
+    }
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       name?: unknown;
+      version?: unknown;
       openclaw?: { release?: { publishToNpm?: unknown } };
     };
     if (packageJson.openclaw?.release?.publishToNpm !== true) {
       return [];
     }
-    if (typeof packageJson.name !== "string" || !packageJson.name.trim()) {
-      throw new Error(`${packageFile}: publishable plugin is missing its package name.`);
+    const packageName = assertCanonicalNpmPackageName(packageJson.name, packageFile);
+    if (
+      typeof packageJson.version !== "string" ||
+      !packageJson.version ||
+      packageJson.version.trim() !== packageJson.version
+    ) {
+      throw new Error(`${packageFile}: publishable plugin has an invalid package version.`);
     }
-    return [{ packageDir, packageName: packageJson.name }];
+    return [
+      {
+        extensionId: match[1],
+        packageDir,
+        packageName,
+        packageVersion: packageJson.version,
+      },
+    ];
   });
+  const seenNames = new Set<string>();
+  for (const plugin of publishablePackages) {
+    if (seenNames.has(plugin.packageName)) {
+      throw new Error(`Candidate contains duplicate publishable package ${plugin.packageName}.`);
+    }
+    seenNames.add(plugin.packageName);
+  }
+  return publishablePackages.toSorted((left, right) =>
+    compareCodeUnits(left.packageName, right.packageName),
+  );
+}
+
+const PLUGIN_SECURITY_ARTIFACT_METADATA = "plugin-npm-security-artifact.json";
+
+function parseExpectedPackages(value: unknown): PublishablePluginPackage[] {
+  if (!Array.isArray(value) || value.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
+    throw new Error("Expected plugin package inventory is invalid.");
+  }
+  const packages = value.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`Expected plugin package entry ${index} is invalid.`);
+    }
+    const candidate = entry as Record<string, unknown>;
+    const extensionId = candidate.extensionId;
+    const packageDir = candidate.packageDir;
+    const packageName = assertCanonicalNpmPackageName(
+      candidate.packageName,
+      `Expected plugin package entry ${index}`,
+    );
+    const packageVersion = candidate.packageVersion;
+    if (
+      typeof extensionId !== "string" ||
+      !/^[a-z0-9][a-z0-9._-]*$/u.test(extensionId) ||
+      packageDir !== `extensions/${extensionId}` ||
+      typeof packageVersion !== "string" ||
+      !packageVersion ||
+      packageVersion.trim() !== packageVersion
+    ) {
+      throw new Error(`Expected plugin package entry ${index} is invalid.`);
+    }
+    return { extensionId, packageDir, packageName, packageVersion };
+  });
+  const sorted = packages.toSorted((left, right) =>
+    compareCodeUnits(left.packageName, right.packageName),
+  );
+  if (
+    new Set(sorted.map((plugin) => plugin.packageName)).size !== sorted.length ||
+    new Set(sorted.map((plugin) => plugin.extensionId)).size !== sorted.length ||
+    JSON.stringify(sorted) !== JSON.stringify(packages)
+  ) {
+    throw new Error("Expected plugin package inventory must be unique and sorted.");
+  }
+  return sorted;
+}
+
+function readPluginSecurityArtifact(
+  artifactDir: string,
+  expectedCandidateSha: string,
+  expectedToolingSha: string,
+): PluginNpmSecurityArtifact {
+  const metadataPath = join(artifactDir, PLUGIN_SECURITY_ARTIFACT_METADATA);
+  const metadataStat = lstatSync(metadataPath);
+  if (
+    !metadataStat.isFile() ||
+    metadataStat.size === 0 ||
+    metadataStat.size > MAX_PLUGIN_SECURITY_ARTIFACT_METADATA_BYTES
+  ) {
+    throw new Error("Plugin security artifact metadata is outside the byte limit.");
+  }
+  const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
+  const expectedKeys = [
+    "candidateSha",
+    "extensionId",
+    "packageDir",
+    "packageName",
+    "packageVersion",
+    "schemaVersion",
+    "tarballName",
+    "tarballSha256",
+    "toolingSha",
+  ];
+  if (
+    metadata.schemaVersion !== 1 ||
+    JSON.stringify(Object.keys(metadata).toSorted()) !== JSON.stringify(expectedKeys)
+  ) {
+    throw new Error("Plugin security artifact metadata has an invalid shape.");
+  }
+  const packageName = assertCanonicalNpmPackageName(
+    metadata.packageName,
+    "Plugin security artifact metadata",
+  );
+  const extensionId = metadata.extensionId;
+  const packageDir = metadata.packageDir;
+  const packageVersion = metadata.packageVersion;
+  const tarballName = metadata.tarballName;
+  const tarballSha256 = metadata.tarballSha256;
+  if (
+    metadata.candidateSha !== expectedCandidateSha ||
+    metadata.toolingSha !== expectedToolingSha ||
+    typeof extensionId !== "string" ||
+    !/^[a-z0-9][a-z0-9._-]*$/u.test(extensionId) ||
+    packageDir !== `extensions/${extensionId}` ||
+    typeof packageVersion !== "string" ||
+    !packageVersion ||
+    packageVersion.trim() !== packageVersion ||
+    typeof tarballName !== "string" ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u.test(tarballName) ||
+    basename(tarballName) !== tarballName ||
+    typeof tarballSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(tarballSha256)
+  ) {
+    throw new Error("Plugin security artifact metadata identity is invalid.");
+  }
+  const artifactEntries = readdirSync(artifactDir, { withFileTypes: true });
+  if (
+    artifactEntries.length !== 2 ||
+    artifactEntries.some(
+      (entry) =>
+        !entry.isFile() ||
+        (entry.name !== PLUGIN_SECURITY_ARTIFACT_METADATA && entry.name !== tarballName),
+    )
+  ) {
+    throw new Error("Plugin security artifact contains unexpected entries.");
+  }
+  const tarballPath = join(artifactDir, tarballName);
+  const tarballStat = lstatSync(tarballPath);
+  if (
+    !tarballStat.isFile() ||
+    tarballStat.size === 0 ||
+    tarballStat.size > MAX_PLUGIN_TARBALL_BYTES
+  ) {
+    throw new Error(`${packageName}: plugin tarball is outside the byte limit.`);
+  }
+  return {
+    artifactDir,
+    candidateSha: expectedCandidateSha,
+    extensionId,
+    packageDir,
+    packageName,
+    packageVersion,
+    tarballPath,
+    tarballSha256,
+    toolingSha: expectedToolingSha,
+  };
+}
+
+export function listPluginNpmSecurityArtifacts(params: {
+  artifactRoot: string;
+  candidateSha: string;
+  expectedPackages: unknown;
+  toolingSha: string;
+}): PluginNpmSecurityArtifact[] {
+  const expectedPackages = parseExpectedPackages(params.expectedPackages);
+  const artifactRoot = realpathSync(params.artifactRoot);
+  const entries = readdirSync(artifactRoot, { withFileTypes: true }).toSorted((left, right) =>
+    compareCodeUnits(left.name, right.name),
+  );
+  if (entries.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
+    throw new Error("Plugin security artifact set exceeds the package-count limit.");
+  }
+  const artifacts = entries.map((entry) => {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new Error("Plugin security artifact root contains a non-directory entry.");
+    }
+    return readPluginSecurityArtifact(
+      join(artifactRoot, entry.name),
+      params.candidateSha,
+      params.toolingSha,
+    );
+  });
+  const sorted = artifacts.toSorted((left, right) =>
+    compareCodeUnits(left.packageName, right.packageName),
+  );
+  if (new Set(sorted.map((plugin) => plugin.packageName)).size !== sorted.length) {
+    throw new Error("Plugin security artifact set contains duplicate package names.");
+  }
+  const observedPackages = sorted.map(
+    ({ extensionId, packageDir, packageName, packageVersion }) => ({
+      extensionId,
+      packageDir,
+      packageName,
+      packageVersion,
+    }),
+  );
+  if (JSON.stringify(observedPackages) !== JSON.stringify(expectedPackages)) {
+    throw new Error("Plugin security artifact set does not match the trusted package plan.");
+  }
+  return sorted;
+}
+
+export function stageScannerRelevantPluginTarballFiles(tarballPath: string): {
+  fileCount: number;
+  inspection: {
+    inventory: Array<{ path: string; sizeBytes: number; type: string }>;
+    packageManifest: Record<string, unknown>;
+    tarballSha256: string;
+  };
+  packedFiles: string[];
+  stageDir: string;
+  totalBytes: number;
+} {
+  const stageDir = mkdtempSync(join(tmpdir(), "openclaw-plugin-npm-scan-"));
+  let fileCount = 0;
+  let totalBytes = 0;
+  const packedFiles: string[] = [];
+  try {
+    const tarballBytes = readBoundedRegularFile(tarballPath, {
+      label: "Plugin security tarball",
+      maxBytes: MAX_PLUGIN_TARBALL_BYTES,
+    });
+    const inspection = inspectPackageTarballBytes(tarballBytes, {
+      maxArchiveBytes: MAX_PLUGIN_TARBALL_BYTES,
+      maxEntries: MAX_PACKED_FILES_PER_PACKAGE,
+      maxEntryBytes: MAX_PACKED_FILE_BYTES,
+      maxExpandedBytes: MAX_PACKED_TOTAL_BYTES_PER_PACKAGE,
+      maxPathBytes: 4 * 1024 * 1024,
+      maxTotalFileBytes: MAX_PACKED_TOTAL_BYTES_PER_PACKAGE,
+      onFile: ({ content, path }: { content: Uint8Array; path: string }) => {
+        if (!path.startsWith("package/")) {
+          throw new Error("Plugin tarball file escaped package/.");
+        }
+        const packedPath = path.slice("package/".length);
+        packedFiles.push(packedPath);
+        if (!isScannable(packedPath)) {
+          return;
+        }
+        if (content.byteLength > MAX_SCANNABLE_FILE_BYTES) {
+          throw new Error(`Packed scanner input exceeds the per-file byte limit: ${packedPath}`);
+        }
+        fileCount += 1;
+        totalBytes += content.byteLength;
+        if (fileCount > MAX_SCANNABLE_FILES_PER_PACKAGE) {
+          throw new Error("Packed scanner input exceeds the file-count limit.");
+        }
+        if (totalBytes > MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE) {
+          throw new Error("Packed scanner input exceeds the total-byte limit.");
+        }
+        const target = join(stageDir, ...packedPath.split("/"));
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, content);
+      },
+    }) as {
+      inventory: Array<{ path: string; sizeBytes: number; type: string }>;
+      packageManifest: Record<string, unknown>;
+      tarballSha256: string;
+    };
+    return {
+      fileCount,
+      inspection,
+      packedFiles: packedFiles.toSorted(),
+      stageDir,
+      totalBytes,
+    };
+  } catch (error) {
+    rmSync(stageDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function findingRecord(stageDir: string, finding: SkillScanFinding): CriticalFindingRecord {
@@ -421,27 +769,37 @@ export function assertCompleteScannerSummary(
   }
 }
 
-async function scanPublishablePluginPackage(
-  plugin: PublishablePluginPackage,
+async function scanPublishablePluginArtifact(
+  plugin: PluginNpmSecurityArtifact,
 ): Promise<ScanPackageResult> {
   const reviewedCriticalFindings: string[] = [];
   const expectedReviewedCriticalFindings: string[] = [];
   const unexpectedCriticalFindings: CriticalFindingRecord[] = [];
-  const packedFiles = await collectNpmPackedFiles(plugin.packageDir, plugin.packageName);
-  for (const packedFile of packedFiles) {
-    expectedReviewedCriticalFindings.push(
-      ...expectedOptionalReviewedFindingsForPackedPath(plugin.packageName, packedFile),
-    );
-  }
-
-  const staged = stageScannerRelevantPackedFiles(plugin.packageDir, packedFiles);
+  let scanFindingCount = 0;
+  const staged = stageScannerRelevantPluginTarballFiles(plugin.tarballPath);
   try {
+    if (
+      staged.inspection.packageManifest.name !== plugin.packageName ||
+      staged.inspection.packageManifest.version !== plugin.packageVersion ||
+      staged.inspection.tarballSha256 !== plugin.tarballSha256
+    ) {
+      throw new Error(`${plugin.packageName}: immutable plugin tarball identity mismatch.`);
+    }
+    for (const packedFile of staged.packedFiles) {
+      expectedReviewedCriticalFindings.push(
+        ...expectedOptionalReviewedFindingsForPackedPath(plugin.packageName, packedFile),
+      );
+    }
     const summary = await scanDirectoryWithSummary(staged.stageDir, {
       excludeTestFiles: false,
       maxFileBytes: MAX_SCANNABLE_FILE_BYTES,
       maxFiles: MAX_SCANNABLE_FILES_PER_PACKAGE,
     });
     assertCompleteScannerSummary(plugin.packageName, summary);
+    if (summary.findings.length > MAX_PLUGIN_SCAN_FINDINGS_PER_PACKAGE) {
+      throw new Error(`${plugin.packageName}: security scan exceeded the finding-count limit.`);
+    }
+    scanFindingCount = summary.findings.length;
     if (summary.scannedFiles !== staged.fileCount) {
       throw new Error(
         `${plugin.packageName}: security scan processed ${summary.scannedFiles} of ${staged.fileCount} staged files.`,
@@ -466,10 +824,13 @@ async function scanPublishablePluginPackage(
   return {
     expectedReviewedCriticalFindings: sortStrings(expectedReviewedCriticalFindings),
     packageName: plugin.packageName,
-    packedFileCount: staged.packedFileCount,
+    packageVersion: plugin.packageVersion,
+    packedFileCount: staged.inspection.inventory.filter((entry) => entry.type === "file").length,
     reviewedCriticalFindings: sortStrings(reviewedCriticalFindings),
+    scanFindingCount,
+    tarballSha256: plugin.tarballSha256,
     unexpectedCriticalFindings: unexpectedCriticalFindings.toSorted((left, right) =>
-      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+      compareCodeUnits(JSON.stringify(left), JSON.stringify(right)),
     ),
   };
 }
@@ -485,15 +846,23 @@ function expectedRequiredFindingsForPackage(
 
 export function buildPluginNpmSecurityScanReport(params: {
   candidateSha: string;
+  maxTotalFindings?: number;
   packageResults: ScanPackageResult[];
   scanErrors?: readonly string[];
   toolingSha: string;
 }): PluginNpmSecurityScanReport {
   const { candidateSha, packageResults, toolingSha } = params;
   const allReviewedFindings = packageResults.flatMap((result) => result.reviewedCriticalFindings);
+  const totalFindingCount = packageResults.reduce(
+    (total, result) => total + result.scanFindingCount,
+    0,
+  );
   const layout = resolveReviewedSourceLayout(allReviewedFindings);
   const errors: string[] = sortStrings(params.scanErrors ?? []);
 
+  if (totalFindingCount > (params.maxTotalFindings ?? MAX_PLUGIN_SCAN_TOTAL_FINDINGS)) {
+    errors.push("Plugin npm security scan exceeded the total finding-count limit.");
+  }
   if (!layout) {
     errors.push("Reviewed critical findings do not match exactly one supported release layout.");
   }
@@ -546,10 +915,10 @@ export function buildPluginNpmSecurityScanReport(params: {
       expectedReviewedCriticalFindings: sortStrings(result.expectedReviewedCriticalFindings),
       reviewedCriticalFindings: sortStrings(result.reviewedCriticalFindings),
       unexpectedCriticalFindings: result.unexpectedCriticalFindings.toSorted((left, right) =>
-        JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        compareCodeUnits(JSON.stringify(left), JSON.stringify(right)),
       ),
     }))
-    .toSorted((left, right) => left.packageName.localeCompare(right.packageName));
+    .toSorted((left, right) => compareCodeUnits(left.packageName, right.packageName));
   return {
     candidateSha,
     errors: sortStrings(errors),
@@ -558,6 +927,7 @@ export function buildPluginNpmSecurityScanReport(params: {
     schemaVersion: 1,
     status: errors.length === 0 ? "pass" : "fail",
     summary: {
+      findingCount: totalFindingCount,
       packageCount: packageResults.length,
       reviewedCriticalFindingCount: allReviewedFindings.length,
       unexpectedCriticalFindingCount,
@@ -566,7 +936,27 @@ export function buildPluginNpmSecurityScanReport(params: {
   };
 }
 
-function sanitizePackageScanError(plugin: PublishablePluginPackage, error: unknown): string {
+export function constrainPluginNpmSecurityScanReport(
+  report: PluginNpmSecurityScanReport,
+  maxBytes = MAX_PLUGIN_SCAN_REPORT_BYTES,
+): PluginNpmSecurityScanReport {
+  const serializedBytes = Buffer.byteLength(`${JSON.stringify(report)}\n`, "utf8");
+  if (serializedBytes <= maxBytes) {
+    return report;
+  }
+  return {
+    candidateSha: report.candidateSha,
+    errors: ["Plugin npm security scan report exceeded the byte limit."],
+    layout: null,
+    packages: [],
+    schemaVersion: 1,
+    status: "fail",
+    summary: report.summary,
+    toolingSha: report.toolingSha,
+  };
+}
+
+function sanitizePackageScanError(plugin: PluginNpmSecurityArtifact, error: unknown): string {
   let message = error instanceof Error ? error.message : "Unknown package scan failure.";
   for (const [path, replacement] of [
     [plugin.packageDir, "<candidate-package>"],
@@ -581,7 +971,7 @@ function sanitizePackageScanError(plugin: PublishablePluginPackage, error: unkno
 }
 
 export async function scanPublishablePluginPackages(
-  packages: readonly PublishablePluginPackage[],
+  packages: readonly PluginNpmSecurityArtifact[],
 ): Promise<{ packageResults: ScanPackageResult[]; scanErrors: string[] }> {
   const scanErrors: string[] = [];
   const { results } = await runTasksWithConcurrency({
@@ -593,7 +983,7 @@ export async function scanPublishablePluginPackages(
         plugin ? sanitizePackageScanError(plugin, error) : "Unknown package: package scan failed.",
       );
     },
-    tasks: packages.map((plugin) => () => scanPublishablePluginPackage(plugin)),
+    tasks: packages.map((plugin) => () => scanPublishablePluginArtifact(plugin)),
   });
   return {
     packageResults: results.filter((result): result is ScanPackageResult => result !== undefined),
@@ -602,21 +992,30 @@ export async function scanPublishablePluginPackages(
 }
 
 export async function runPluginNpmSecurityScan(params: {
-  candidateDir: string;
+  artifactRoot: string;
+  candidateSha: string;
+  expectedPackages: unknown;
   toolingDir: string;
+  toolingSha: string;
 }): Promise<PluginNpmSecurityScanReport> {
-  const candidateDir = realpathSync(params.candidateDir);
   const toolingDir = realpathSync(params.toolingDir);
-  const [candidateSha, toolingSha, packages] = await Promise.all([
-    gitOutput(candidateDir, ["rev-parse", "HEAD"]),
-    gitOutput(toolingDir, ["rev-parse", "HEAD"]),
-    listPublishablePluginPackages(candidateDir),
-  ]);
-  const { packageResults, scanErrors } = await scanPublishablePluginPackages(packages);
-  return buildPluginNpmSecurityScanReport({
-    candidateSha,
-    packageResults,
-    scanErrors,
+  const toolingSha = await gitOutput(toolingDir, ["rev-parse", "HEAD"]);
+  if (toolingSha !== params.toolingSha) {
+    throw new Error("Trusted scanner tooling checkout differs from the expected commit.");
+  }
+  const packages = listPluginNpmSecurityArtifacts({
+    artifactRoot: params.artifactRoot,
+    candidateSha: params.candidateSha,
+    expectedPackages: params.expectedPackages,
     toolingSha,
   });
+  const { packageResults, scanErrors } = await scanPublishablePluginPackages(packages);
+  return constrainPluginNpmSecurityScanReport(
+    buildPluginNpmSecurityScanReport({
+      candidateSha: params.candidateSha,
+      packageResults,
+      scanErrors,
+      toolingSha,
+    }),
+  );
 }
