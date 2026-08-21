@@ -11,11 +11,10 @@ import { basename, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveNpmJsonEntries } from "./lib/npm-json-output.mts";
 import {
-  collectNpmPackedFiles,
   listPublishablePluginPackages,
+  resolveCandidatePluginPackageDir,
   type PublishablePluginPackage,
 } from "./lib/plugin-npm-security-scan.mts";
-import { resolveNpmRunner } from "./npm-runner.mts";
 import {
   inspectPackageTarballBytes,
   readBoundedRegularFile,
@@ -156,16 +155,7 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
   if (!selected) {
     throw new Error("Selected plugin package is absent from the trusted package plan.");
   }
-
-  const testPacklistHelper =
-    process.env.NODE_ENV === "test"
-      ? process.env.OPENCLAW_PLUGIN_SECURITY_TEST_PACKLIST_HELPER
-      : undefined;
-  const expectedPackedFiles = await collectNpmPackedFiles(
-    selected.packageDir,
-    selected.packageName,
-    testPacklistHelper ? { helperPath: testPacklistHelper } : {},
-  );
+  resolveCandidatePluginPackageDir(candidateRoot, args.extensionId);
   if (existsSync(args.outputDir)) {
     if (readdirSync(args.outputDir).length !== 0) {
       throw new Error("Plugin security artifact output directory must be empty.");
@@ -174,39 +164,32 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
     mkdirSync(args.outputDir, { recursive: true });
   }
 
-  // Qualification keeps the candidate inert. This packs checked-in package input
-  // without release builds, asset hooks, installs, lock generation, or overlays.
-  const npm = resolveNpmRunner({
-    env: {
-      ...process.env,
-      NPM_CONFIG_AUDIT: "false",
-      NPM_CONFIG_FUND: "false",
-      NPM_CONFIG_IGNORE_SCRIPTS: "true",
-      NPM_CONFIG_PROVENANCE: "false",
-      NPM_CONFIG_WORKSPACES: "false",
+  // This unprivileged job is the only candidate-code execution boundary. It
+  // uses the same pack owner as publication so the trusted scanner sees built,
+  // overlaid, dependency-complete package bytes without executing candidate code.
+  const publishScript =
+    process.env.NODE_ENV === "test" && process.env.OPENCLAW_PLUGIN_SECURITY_TEST_PUBLISH_SCRIPT
+      ? process.env.OPENCLAW_PLUGIN_SECURITY_TEST_PUBLISH_SCRIPT
+      : join(toolingRoot, "scripts", "plugin-npm-publish.sh");
+  const result = spawnSync(
+    "bash",
+    [publishScript, "--repo-root", candidateRoot, "--pack", args.packageDir],
+    {
+      cwd: toolingRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        OPENCLAW_PLUGIN_NPM_PACK_OUTPUT_DIR: args.outputDir,
+      },
+      killSignal: "SIGKILL",
+      maxBuffer: MAX_PACK_STDOUT_BYTES,
+      shell: false,
+      stdio: ["ignore", "pipe", "inherit"],
+      timeout: PACK_TIMEOUT_MS,
     },
-    npmArgs: [
-      "pack",
-      "--json",
-      "--ignore-scripts",
-      "--workspaces=false",
-      "--pack-destination",
-      args.outputDir,
-    ],
-  });
-  const result = spawnSync(npm.command, npm.args, {
-    cwd: selected.packageDir,
-    encoding: "utf8",
-    env: npm.env ?? process.env,
-    killSignal: "SIGKILL",
-    maxBuffer: MAX_PACK_STDOUT_BYTES,
-    shell: npm.shell,
-    stdio: ["ignore", "pipe", "inherit"],
-    timeout: PACK_TIMEOUT_MS,
-    windowsVerbatimArguments: npm.windowsVerbatimArguments,
-  });
+  );
   if (result.status !== 0 || result.signal || result.error) {
-    throw new Error(`${selected.packageName}: trusted inert plugin pack failed.`);
+    throw new Error(`${selected.packageName}: publication-equivalent plugin pack failed.`);
   }
   const packEntries = parsePackOutput(result.stdout);
   if (packEntries.length !== 1) {
@@ -228,30 +211,21 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
   const inspection = inspectPackageTarballBytes(tarballBytes, {
     maxArchiveBytes: MAX_TARBALL_BYTES,
   });
-  const packedFiles = inspection.inventory
-    .filter((entry) => entry.type === "file")
-    .map((entry) => {
-      if (!entry.path.startsWith("package/")) {
-        throw new Error(`${selected.packageName}: inert package input escaped package/.`);
-      }
-      return entry.path.slice("package/".length);
-    })
-    .toSorted();
   if (
     inspection.packageManifest.name !== selected.packageName ||
-    inspection.packageManifest.version !== selected.packageVersion ||
-    JSON.stringify(packedFiles) !== JSON.stringify(expectedPackedFiles)
+    inspection.packageManifest.version !== selected.packageVersion
   ) {
-    throw new Error(`${selected.packageName}: inert package input identity mismatch.`);
+    throw new Error(`${selected.packageName}: publication-equivalent package identity mismatch.`);
   }
   const artifactEntries = readdirSync(args.outputDir);
   if (artifactEntries.length !== 1 || artifactEntries[0] !== tarballName) {
     throw new Error(`${selected.packageName}: packaging produced unexpected artifact files.`);
   }
   const metadata = {
-    artifactKind: "inert-package-input",
+    artifactKind: "publication-equivalent-plugin-tarball",
     candidateSha: args.candidateSha,
     extensionId: selected.extensionId,
+    packOwner: "scripts/plugin-npm-publish.sh",
     packageDir: args.packageDir,
     packageName: selected.packageName,
     packageVersion: selected.packageVersion,

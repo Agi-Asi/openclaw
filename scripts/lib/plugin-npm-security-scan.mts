@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import {
-  copyFileSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -10,10 +9,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import {
   isScannable,
@@ -51,9 +48,12 @@ export type ScanPackageResult = {
 };
 
 type PluginNpmSecurityArtifact = PublishablePluginPackage & {
-  artifactKind: "inert-package-input";
+  artifactKind: "publication-equivalent-plugin-tarball";
   artifactDir: string;
   candidateSha: string;
+  compressedBytes: number;
+  expandedBytes: number;
+  packOwner: "scripts/plugin-npm-publish.sh";
   tarballPath: string;
   tarballSha256: string;
   toolingSha: string;
@@ -76,10 +76,6 @@ export type PluginNpmSecurityScanReport = {
 };
 
 const execFileAsync = promisify(execFile);
-const require = createRequire(import.meta.url);
-const validateNpmPackageName = require("validate-npm-package-name") as (name: unknown) => {
-  validForNewPackages: boolean;
-};
 export const MAX_PUBLISHABLE_PLUGIN_PACKAGES = 256;
 export const MAX_PLUGIN_PACKAGE_MANIFEST_BYTES = 256 * 1024;
 export const MAX_PLUGIN_SCAN_FINDINGS_PER_PACKAGE = 10_000;
@@ -87,26 +83,16 @@ export const MAX_PLUGIN_SCAN_TOTAL_FINDINGS = 50_000;
 export const MAX_PLUGIN_SCAN_REPORT_BYTES = 1024 * 1024;
 const MAX_PLUGIN_SECURITY_ARTIFACT_METADATA_BYTES = 64 * 1024;
 const MAX_PLUGIN_TARBALL_BYTES = 128 * 1024 * 1024;
+const MAX_PLUGIN_TARBALL_TOTAL_BYTES = 512 * 1024 * 1024;
+const MAX_PLUGIN_EXPANDED_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_PACKED_FILES_PER_PACKAGE = 20_000;
 const MAX_PACKED_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_PACKED_TOTAL_BYTES_PER_PACKAGE = 256 * 1024 * 1024;
 const MAX_SCANNABLE_FILES_PER_PACKAGE = 10_000;
 const MAX_SCANNABLE_FILE_BYTES = 1024 * 1024;
 const MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE = 64 * 1024 * 1024;
-const MAX_PACKED_PATH_BYTES = 4096;
-const PACKLIST_HELPER_MAX_BUFFER_BYTES = 8 * 1024 * 1024;
-const PACKLIST_HELPER_MAX_OLD_SPACE_MB = 256;
-const PACKLIST_HELPER_TIMEOUT_MS = 60_000;
 const PACKAGE_SCAN_CONCURRENCY = 4;
-const PACKLIST_HELPER_PATH = fileURLToPath(new URL("./plugin-npm-pack-files.mjs", import.meta.url));
-const DEFAULT_SCANNER_INPUT_LIMITS = {
-  maxPackedFileBytes: MAX_PACKED_FILE_BYTES,
-  maxPackedFiles: MAX_PACKED_FILES_PER_PACKAGE,
-  maxPackedTotalBytes: MAX_PACKED_TOTAL_BYTES_PER_PACKAGE,
-  maxFileBytes: MAX_SCANNABLE_FILE_BYTES,
-  maxFiles: MAX_SCANNABLE_FILES_PER_PACKAGE,
-  maxTotalBytes: MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE,
-};
+const CANONICAL_NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u;
 
 const COMMON_REVIEWED_CRITICAL_FINDING_COUNTS = new Map<string, number>([
   ["@openclaw/acpx:dangerous-exec:src/codex-auth-bridge.ts", 1],
@@ -197,89 +183,6 @@ export function resolveReviewedSourceLayout(
   );
 }
 
-export function parsePacklistFiles(raw: string, packageName: string): string[] {
-  const parsed = JSON.parse(raw) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error(`${packageName}: packlist helper did not return a files list.`);
-  }
-
-  if (parsed.length > MAX_PACKED_FILES_PER_PACKAGE) {
-    throw new Error(`${packageName}: packlist exceeds the file-count limit.`);
-  }
-
-  const packedPaths: string[] = [];
-  const seenPaths = new Set<string>();
-  for (const [index, packedPath] of parsed.entries()) {
-    if (
-      typeof packedPath !== "string" ||
-      !isSafePackedPath(packedPath) ||
-      Buffer.byteLength(packedPath, "utf8") > MAX_PACKED_PATH_BYTES
-    ) {
-      throw new Error(`${packageName}: packlist entry ${index} has an invalid path.`);
-    }
-    if (seenPaths.has(packedPath)) {
-      throw new Error(`${packageName}: packlist returned a duplicate path: ${packedPath}`);
-    }
-    seenPaths.add(packedPath);
-    packedPaths.push(packedPath);
-  }
-  return packedPaths.toSorted();
-}
-
-type PacklistHelperLimits = {
-  helperPath?: string;
-  maxBufferBytes?: number;
-  maxOldSpaceMb?: number;
-  timeoutMs?: number;
-};
-
-export async function collectNpmPackedFiles(
-  packageDir: string,
-  packageName: string,
-  limits: PacklistHelperLimits = {},
-): Promise<string[]> {
-  const helperPath = limits.helperPath ?? PACKLIST_HELPER_PATH;
-  const maxOldSpaceMb = limits.maxOldSpaceMb ?? PACKLIST_HELPER_MAX_OLD_SPACE_MB;
-  const timeoutMs = limits.timeoutMs ?? PACKLIST_HELPER_TIMEOUT_MS;
-  try {
-    const { stdout } = await execFileAsync(
-      process.execPath,
-      [`--max-old-space-size=${maxOldSpaceMb}`, helperPath, packageDir],
-      {
-        cwd: dirname(PACKLIST_HELPER_PATH),
-        encoding: "utf8",
-        env: {
-          CI: "1",
-          HOME: tmpdir(),
-          PATH: process.env.PATH,
-        },
-        killSignal: "SIGKILL",
-        maxBuffer: limits.maxBufferBytes ?? PACKLIST_HELPER_MAX_BUFFER_BYTES,
-        signal: AbortSignal.timeout(timeoutMs),
-      },
-    );
-    return parsePacklistFiles(stdout, packageName);
-  } catch (error) {
-    const failure =
-      error && typeof error === "object"
-        ? (error as { code?: unknown; killed?: unknown; signal?: unknown })
-        : {};
-    if (failure.code === "ABORT_ERR" || failure.code === "ETIMEDOUT") {
-      throw new Error(`${packageName}: trusted packlist helper timed out.`);
-    }
-    if (failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      throw new Error(`${packageName}: trusted packlist helper exceeded its output limit.`);
-    }
-    if (failure.killed === true || typeof failure.signal === "string") {
-      throw new Error(`${packageName}: trusted packlist helper exceeded its process limit.`);
-    }
-    if (typeof failure.code === "number") {
-      throw new Error(`${packageName}: trusted packlist helper failed.`);
-    }
-    throw new Error(`${packageName}: trusted packlist helper could not start.`);
-  }
-}
-
 export function normalizePackedFindingPath(packedPath: string): string {
   for (const prefix of [
     "dynamic-tools",
@@ -319,96 +222,6 @@ function isReviewedCriticalFinding(key: string): boolean {
   );
 }
 
-function isSafePackedPath(packedPath: string): boolean {
-  if (
-    !packedPath ||
-    isAbsolute(packedPath) ||
-    packedPath.includes("\\") ||
-    /[\u0000-\u001f\u007f]/u.test(packedPath) ||
-    packedPath.split("/").some((segment) => !segment || segment === "." || segment === "..")
-  ) {
-    return false;
-  }
-  return !packedPath.split("/").some((segment) => {
-    return segment === "node_modules" || segment.startsWith(".");
-  });
-}
-
-function assertPathInside(parentPath: string, childPath: string): void {
-  const relativePath = relative(parentPath, childPath);
-  if (relativePath === "" || (!relativePath.startsWith(`..${sep}`) && relativePath !== "..")) {
-    return;
-  }
-  throw new Error(`Packed file escaped its plugin package: ${relativePath}`);
-}
-
-export function stageScannerRelevantPackedFiles(
-  packageDir: string,
-  packedFiles: readonly string[],
-  limits = DEFAULT_SCANNER_INPUT_LIMITS,
-): {
-  fileCount: number;
-  packedFileCount: number;
-  packedTotalBytes: number;
-  stageDir: string;
-  totalBytes: number;
-} {
-  const stageDir = mkdtempSync(join(tmpdir(), "openclaw-plugin-npm-scan-"));
-  const realPackageDir = realpathSync(packageDir);
-  let fileCount = 0;
-  let packedFileCount = 0;
-  let packedTotalBytes = 0;
-  let totalBytes = 0;
-
-  try {
-    for (const packedPath of packedFiles) {
-      if (!isSafePackedPath(packedPath)) {
-        throw new Error(`npm pack returned an unsafe path: ${packedPath}`);
-      }
-      const source = resolve(realPackageDir, packedPath);
-      const sourceStat = lstatSync(source);
-      if (!sourceStat.isFile()) {
-        throw new Error(`Packed scanner input is not a regular file: ${packedPath}`);
-      }
-      packedFileCount += 1;
-      packedTotalBytes += sourceStat.size;
-      if (sourceStat.size > limits.maxPackedFileBytes) {
-        throw new Error(`Packed input exceeds the per-file byte limit: ${packedPath}`);
-      }
-      if (packedFileCount > limits.maxPackedFiles) {
-        throw new Error("Packed input exceeds the file-count limit.");
-      }
-      if (packedTotalBytes > limits.maxPackedTotalBytes) {
-        throw new Error("Packed input exceeds the total-byte limit.");
-      }
-
-      const realSource = realpathSync(source);
-      assertPathInside(realPackageDir, realSource);
-      if (!isScannable(packedPath)) {
-        continue;
-      }
-      if (sourceStat.size > limits.maxFileBytes) {
-        throw new Error(`Packed scanner input exceeds the per-file byte limit: ${packedPath}`);
-      }
-      fileCount += 1;
-      totalBytes += sourceStat.size;
-      if (fileCount > limits.maxFiles) {
-        throw new Error("Packed scanner input exceeds the file-count limit.");
-      }
-      if (totalBytes > limits.maxTotalBytes) {
-        throw new Error("Packed scanner input exceeds the total-byte limit.");
-      }
-      const target = join(stageDir, ...packedPath.split("/"));
-      mkdirSync(dirname(target), { recursive: true });
-      copyFileSync(realSource, target);
-    }
-    return { fileCount, packedFileCount, packedTotalBytes, stageDir, totalBytes };
-  } catch (error) {
-    rmSync(stageDir, { recursive: true, force: true });
-    throw error;
-  }
-}
-
 async function gitOutput(rootDir: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", ["-C", rootDir, ...args], {
     encoding: "utf8",
@@ -421,11 +234,37 @@ export function assertCanonicalNpmPackageName(packageName: unknown, label: strin
   if (
     typeof packageName !== "string" ||
     packageName.trim() !== packageName ||
-    !validateNpmPackageName(packageName).validForNewPackages
+    packageName.length > 214 ||
+    !CANONICAL_NPM_PACKAGE_NAME.test(packageName)
   ) {
     throw new Error(`${label}: publishable plugin has an invalid npm package name.`);
   }
   return packageName;
+}
+
+export function resolveCandidatePluginPackageDir(
+  candidateDir: string,
+  extensionId: string,
+): string {
+  const candidateRoot = realpathSync(candidateDir);
+  const packageDir = resolve(candidateRoot, "extensions", extensionId);
+  const relativePackageDir = relative(candidateRoot, packageDir);
+  if (relativePackageDir !== `extensions${sep}${extensionId}`) {
+    throw new Error(`extensions/${extensionId}: package directory escaped the candidate checkout.`);
+  }
+  const packageStat = lstatSync(packageDir);
+  if (!packageStat.isDirectory() || packageStat.isSymbolicLink()) {
+    throw new Error(`extensions/${extensionId}: package directory is not a real directory.`);
+  }
+  if (realpathSync(packageDir) !== packageDir) {
+    throw new Error(`extensions/${extensionId}: package directory resolves outside its path.`);
+  }
+  const packageJsonPath = join(packageDir, "package.json");
+  const packageJsonStat = lstatSync(packageJsonPath);
+  if (!packageJsonStat.isFile() || packageJsonStat.isSymbolicLink()) {
+    throw new Error(`extensions/${extensionId}/package.json: manifest is not a regular file.`);
+  }
+  return packageDir;
 }
 
 export async function listPublishablePluginPackages(
@@ -454,12 +293,9 @@ export async function listPublishablePluginPackages(
     if (!match?.[1]) {
       return [];
     }
-    const packageDir = resolve(candidateDir, "extensions", match[1]);
+    const packageDir = resolveCandidatePluginPackageDir(candidateDir, match[1]);
     const packageJsonPath = join(packageDir, "package.json");
     const packageStat = lstatSync(packageJsonPath);
-    if (!packageStat.isFile()) {
-      throw new Error(`${packageFile}: package manifest is not a regular file.`);
-    }
     if (
       packageStat.size === 0 ||
       packageStat.size > (limits.maxManifestBytes ?? MAX_PLUGIN_PACKAGE_MANIFEST_BYTES)
@@ -504,6 +340,19 @@ export async function listPublishablePluginPackages(
 }
 
 const PLUGIN_SECURITY_ARTIFACT_METADATA = "plugin-npm-security-artifact.json";
+const PLUGIN_SECURITY_ARTIFACT_PREFIX = "plugin-npm-security-package-";
+
+type PluginNpmSecurityArtifactLimits = {
+  maxCompressedBytes?: number;
+  maxExpandedBytes?: number;
+};
+
+export type PluginNpmSecurityArtifactLoadResult = {
+  artifacts: PluginNpmSecurityArtifact[];
+  compressedBytes: number;
+  expandedBytes: number;
+  ingestionErrors: string[];
+};
 
 function parseExpectedPackages(value: unknown): PublishablePluginPackage[] {
   if (!Array.isArray(value) || value.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
@@ -548,6 +397,7 @@ function parseExpectedPackages(value: unknown): PublishablePluginPackage[] {
 
 function readPluginSecurityArtifact(
   artifactDir: string,
+  expectedPackage: PublishablePluginPackage,
   expectedCandidateSha: string,
   expectedToolingSha: string,
 ): PluginNpmSecurityArtifact {
@@ -555,16 +405,23 @@ function readPluginSecurityArtifact(
   const metadataStat = lstatSync(metadataPath);
   if (
     !metadataStat.isFile() ||
+    metadataStat.isSymbolicLink() ||
     metadataStat.size === 0 ||
     metadataStat.size > MAX_PLUGIN_SECURITY_ARTIFACT_METADATA_BYTES
   ) {
     throw new Error("Plugin security artifact metadata is outside the byte limit.");
   }
-  const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
+  let metadata: Record<string, unknown>;
+  try {
+    metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
+  } catch {
+    throw new Error("Plugin security artifact metadata is not valid JSON.");
+  }
   const expectedKeys = [
     "artifactKind",
     "candidateSha",
     "extensionId",
+    "packOwner",
     "packageDir",
     "packageName",
     "packageVersion",
@@ -574,7 +431,8 @@ function readPluginSecurityArtifact(
     "toolingSha",
   ];
   if (
-    metadata.artifactKind !== "inert-package-input" ||
+    metadata.artifactKind !== "publication-equivalent-plugin-tarball" ||
+    metadata.packOwner !== "scripts/plugin-npm-publish.sh" ||
     metadata.schemaVersion !== 1 ||
     JSON.stringify(Object.keys(metadata).toSorted()) !== JSON.stringify(expectedKeys)
   ) {
@@ -592,12 +450,10 @@ function readPluginSecurityArtifact(
   if (
     metadata.candidateSha !== expectedCandidateSha ||
     metadata.toolingSha !== expectedToolingSha ||
-    typeof extensionId !== "string" ||
-    !/^[a-z0-9][a-z0-9._-]*$/u.test(extensionId) ||
-    packageDir !== `extensions/${extensionId}` ||
-    typeof packageVersion !== "string" ||
-    !packageVersion ||
-    packageVersion.trim() !== packageVersion ||
+    extensionId !== expectedPackage.extensionId ||
+    packageDir !== expectedPackage.packageDir ||
+    packageName !== expectedPackage.packageName ||
+    packageVersion !== expectedPackage.packageVersion ||
     typeof tarballName !== "string" ||
     !/^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u.test(tarballName) ||
     basename(tarballName) !== tarballName ||
@@ -612,6 +468,7 @@ function readPluginSecurityArtifact(
     artifactEntries.some(
       (entry) =>
         !entry.isFile() ||
+        entry.isSymbolicLink() ||
         (entry.name !== PLUGIN_SECURITY_ARTIFACT_METADATA && entry.name !== tarballName),
     )
   ) {
@@ -621,16 +478,44 @@ function readPluginSecurityArtifact(
   const tarballStat = lstatSync(tarballPath);
   if (
     !tarballStat.isFile() ||
+    tarballStat.isSymbolicLink() ||
     tarballStat.size === 0 ||
     tarballStat.size > MAX_PLUGIN_TARBALL_BYTES
   ) {
     throw new Error(`${packageName}: plugin tarball is outside the byte limit.`);
   }
+  const tarballBytes = readBoundedRegularFile(tarballPath, {
+    label: "Plugin security tarball",
+    maxBytes: MAX_PLUGIN_TARBALL_BYTES,
+  });
+  let inspection: ReturnType<typeof inspectPackageTarballBytes>;
+  try {
+    inspection = inspectPackageTarballBytes(tarballBytes, {
+      maxArchiveBytes: MAX_PLUGIN_TARBALL_BYTES,
+      maxEntries: MAX_PACKED_FILES_PER_PACKAGE,
+      maxEntryBytes: MAX_PACKED_FILE_BYTES,
+      maxExpandedBytes: MAX_PACKED_TOTAL_BYTES_PER_PACKAGE,
+      maxPathBytes: 4 * 1024 * 1024,
+      maxTotalFileBytes: MAX_PACKED_TOTAL_BYTES_PER_PACKAGE,
+    });
+  } catch {
+    throw new Error("Plugin security artifact tarball structure is invalid.");
+  }
+  if (
+    inspection.tarballSha256 !== tarballSha256 ||
+    inspection.packageManifest.name !== packageName ||
+    inspection.packageManifest.version !== packageVersion
+  ) {
+    throw new Error("Plugin security artifact tarball identity is invalid.");
+  }
   return {
-    artifactKind: "inert-package-input",
+    artifactKind: "publication-equivalent-plugin-tarball",
     artifactDir,
     candidateSha: expectedCandidateSha,
+    compressedBytes: tarballStat.size,
+    expandedBytes: inspection.totalFileBytes,
     extensionId,
+    packOwner: "scripts/plugin-npm-publish.sh",
     packageDir,
     packageName,
     packageVersion,
@@ -640,48 +525,147 @@ function readPluginSecurityArtifact(
   };
 }
 
-export function listPluginNpmSecurityArtifacts(params: {
+function resolveAggregateLimit(value: number | undefined, fallback: number, label: string): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (!Number.isSafeInteger(value) || value <= 0 || value > fallback) {
+    throw new Error(`${label} must be a positive integer no larger than ${fallback}.`);
+  }
+  return value;
+}
+
+function artifactDirectoryName(candidateSha: string, extensionId: string): string {
+  return `${PLUGIN_SECURITY_ARTIFACT_PREFIX}${candidateSha}-${extensionId}`;
+}
+
+function sanitizeArtifactIngestionError(
+  expectedPackage: PublishablePluginPackage,
+  error: unknown,
+): string {
+  const knownCategories = new Set([
+    "Plugin security artifact metadata is outside the byte limit.",
+    "Plugin security artifact metadata is not valid JSON.",
+    "Plugin security artifact metadata has an invalid shape.",
+    "Plugin security artifact metadata identity is invalid.",
+    "Plugin security artifact contains unexpected entries.",
+    "Plugin security artifact tarball structure is invalid.",
+    "Plugin security artifact tarball identity is invalid.",
+  ]);
+  const message = error instanceof Error ? error.message : "";
+  const category =
+    knownCategories.has(message) || message.endsWith("plugin tarball is outside the byte limit.")
+      ? message.replace(`${expectedPackage.packageName}: `, "")
+      : "Plugin security artifact validation failed.";
+  return `${expectedPackage.packageName}: ${category}`;
+}
+
+export function loadPluginNpmSecurityArtifacts(params: {
   artifactRoot: string;
   candidateSha: string;
   expectedPackages: unknown;
+  limits?: PluginNpmSecurityArtifactLimits;
   toolingSha: string;
-}): PluginNpmSecurityArtifact[] {
+}): PluginNpmSecurityArtifactLoadResult {
   const expectedPackages = parseExpectedPackages(params.expectedPackages);
+  const rootStat = lstatSync(params.artifactRoot);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("Plugin security artifact root is not a real directory.");
+  }
   const artifactRoot = realpathSync(params.artifactRoot);
   const entries = readdirSync(artifactRoot, { withFileTypes: true }).toSorted((left, right) =>
     compareCodeUnits(left.name, right.name),
   );
+  const maxCompressedBytes = resolveAggregateLimit(
+    params.limits?.maxCompressedBytes,
+    MAX_PLUGIN_TARBALL_TOTAL_BYTES,
+    "Plugin security compressed-byte limit",
+  );
+  const maxExpandedBytes = resolveAggregateLimit(
+    params.limits?.maxExpandedBytes,
+    MAX_PLUGIN_EXPANDED_TOTAL_BYTES,
+    "Plugin security expanded-byte limit",
+  );
+  const entriesByName = new Map(entries.map((entry) => [entry.name, entry]));
+  const expectedNames = new Set(
+    expectedPackages.map((plugin) =>
+      artifactDirectoryName(params.candidateSha, plugin.extensionId),
+    ),
+  );
+  const ingestionErrors: string[] = [];
   if (entries.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
-    throw new Error("Plugin security artifact set exceeds the package-count limit.");
+    ingestionErrors.push("Plugin security artifact set exceeds the package-count limit.");
   }
-  const artifacts = entries.map((entry) => {
-    if (!entry.isDirectory() || entry.isSymbolicLink()) {
-      throw new Error("Plugin security artifact root contains a non-directory entry.");
-    }
-    return readPluginSecurityArtifact(
-      join(artifactRoot, entry.name),
-      params.candidateSha,
-      params.toolingSha,
+  const unexpectedEntryCount = entries.filter((entry) => !expectedNames.has(entry.name)).length;
+  if (unexpectedEntryCount > 0) {
+    ingestionErrors.push(
+      `Plugin security artifact root contains ${unexpectedEntryCount} unexpected entries.`,
     );
-  });
-  const sorted = artifacts.toSorted((left, right) =>
-    compareCodeUnits(left.packageName, right.packageName),
-  );
-  if (new Set(sorted.map((plugin) => plugin.packageName)).size !== sorted.length) {
-    throw new Error("Plugin security artifact set contains duplicate package names.");
   }
-  const observedPackages = sorted.map(
-    ({ extensionId, packageDir, packageName, packageVersion }) => ({
-      extensionId,
-      packageDir,
-      packageName,
-      packageVersion,
-    }),
-  );
-  if (JSON.stringify(observedPackages) !== JSON.stringify(expectedPackages)) {
-    throw new Error("Plugin security artifact set does not match the trusted package plan.");
+
+  const artifacts: PluginNpmSecurityArtifact[] = [];
+  let compressedBytes = 0;
+  let expandedBytes = 0;
+  for (const expectedPackage of expectedPackages) {
+    const entryName = artifactDirectoryName(params.candidateSha, expectedPackage.extensionId);
+    const entry = entriesByName.get(entryName);
+    if (!entry) {
+      ingestionErrors.push(`${expectedPackage.packageName}: plugin security artifact is missing.`);
+      continue;
+    }
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      ingestionErrors.push(
+        `${expectedPackage.packageName}: plugin security artifact is not a real directory.`,
+      );
+      continue;
+    }
+    try {
+      const artifact = readPluginSecurityArtifact(
+        join(artifactRoot, entry.name),
+        expectedPackage,
+        params.candidateSha,
+        params.toolingSha,
+      );
+      if (compressedBytes + artifact.compressedBytes > maxCompressedBytes) {
+        ingestionErrors.push(
+          `${expectedPackage.packageName}: aggregate compressed-byte limit exceeded.`,
+        );
+        continue;
+      }
+      if (expandedBytes + artifact.expandedBytes > maxExpandedBytes) {
+        ingestionErrors.push(
+          `${expectedPackage.packageName}: aggregate expanded-byte limit exceeded.`,
+        );
+        continue;
+      }
+      compressedBytes += artifact.compressedBytes;
+      expandedBytes += artifact.expandedBytes;
+      artifacts.push(artifact);
+    } catch (error) {
+      ingestionErrors.push(sanitizeArtifactIngestionError(expectedPackage, error));
+    }
   }
-  return sorted;
+
+  return {
+    artifacts,
+    compressedBytes,
+    expandedBytes,
+    ingestionErrors: sortStrings(ingestionErrors),
+  };
+}
+
+export function listPluginNpmSecurityArtifacts(params: {
+  artifactRoot: string;
+  candidateSha: string;
+  expectedPackages: unknown;
+  limits?: PluginNpmSecurityArtifactLimits;
+  toolingSha: string;
+}): PluginNpmSecurityArtifact[] {
+  const result = loadPluginNpmSecurityArtifacts(params);
+  if (result.ingestionErrors.length > 0) {
+    throw new Error(result.ingestionErrors.join("\n"));
+  }
+  return result.artifacts;
 }
 
 export function stageScannerRelevantPluginTarballFiles(tarballPath: string): {
@@ -787,7 +771,7 @@ async function scanPublishablePluginArtifact(
       staged.inspection.packageManifest.version !== plugin.packageVersion ||
       staged.inspection.tarballSha256 !== plugin.tarballSha256
     ) {
-      throw new Error(`${plugin.packageName}: inert package input identity mismatch.`);
+      throw new Error(`${plugin.packageName}: publication artifact identity mismatch.`);
     }
     for (const packedFile of staged.packedFiles) {
       expectedReviewedCriticalFindings.push(
@@ -999,6 +983,7 @@ export async function runPluginNpmSecurityScan(params: {
   artifactRoot: string;
   candidateSha: string;
   expectedPackages: unknown;
+  limits?: PluginNpmSecurityArtifactLimits;
   toolingDir: string;
   toolingSha: string;
 }): Promise<PluginNpmSecurityScanReport> {
@@ -1007,18 +992,19 @@ export async function runPluginNpmSecurityScan(params: {
   if (toolingSha !== params.toolingSha) {
     throw new Error("Trusted scanner tooling checkout differs from the expected commit.");
   }
-  const packages = listPluginNpmSecurityArtifacts({
+  const loaded = loadPluginNpmSecurityArtifacts({
     artifactRoot: params.artifactRoot,
     candidateSha: params.candidateSha,
     expectedPackages: params.expectedPackages,
+    limits: params.limits,
     toolingSha,
   });
-  const { packageResults, scanErrors } = await scanPublishablePluginPackages(packages);
+  const { packageResults, scanErrors } = await scanPublishablePluginPackages(loaded.artifacts);
   return constrainPluginNpmSecurityScanReport(
     buildPluginNpmSecurityScanReport({
       candidateSha: params.candidateSha,
       packageResults,
-      scanErrors,
+      scanErrors: [...loaded.ingestionErrors, ...scanErrors],
       toolingSha,
     }),
   );

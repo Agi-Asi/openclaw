@@ -300,7 +300,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       (step: WorkflowStep) => step.name === "Install trusted scanner dependencies",
     );
     const runSecurityScan = securityScan.steps.find(
-      (step: WorkflowStep) => step.name === "Scan inert plugin package inputs",
+      (step: WorkflowStep) => step.name === "Scan publication-equivalent plugin artifacts",
     );
     const uploadReport = securityScan.steps.find(
       (step: WorkflowStep) => step.name === "Upload plugin npm security scan report",
@@ -310,6 +310,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     );
     const releaseWorkflow = readFullReleaseValidationWorkflow();
     const releaseSource = readFileSync(".github/workflows/full-release-validation.yml", "utf8");
+    const pluginNpmReleaseSource = readFileSync(".github/workflows/plugin-npm-release.yml", "utf8");
     const pluginDispatch = releaseWorkflow.jobs.plugin_prerelease.steps.find(
       (step: WorkflowStep) => step.name === "Dispatch and monitor plugin prerelease",
     );
@@ -368,15 +369,15 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(securityScan.needs).not.toContain("preflight");
     expect(securityPackage.permissions).toEqual({ contents: "read" });
     expect(securityPackage.secrets).toBeUndefined();
-    expect(JSON.stringify(securityPackage)).not.toContain("plugin-npm-publish.sh");
-    expect(JSON.stringify(securityPackage)).not.toContain("plugin-npm-runtime-build");
-    expect(JSON.stringify(securityPackage)).not.toContain("generate-npm-package-lock");
-    expect(securityPrepareSource).not.toContain("plugin-npm-publish.sh");
-    expect(securityPrepareSource).not.toContain("plugin-npm-runtime-build");
-    expect(securityPrepareSource).not.toContain("generate-npm-package-lock");
-    expect(securityPrepareSource).not.toMatch(/\bnpmArgs:\s*\[\s*["'](?:ci|install)["']/u);
-    expect(securityPrepareSource).toContain('"--ignore-scripts"');
-    expect(securityPrepareSource).toContain('"--workspaces=false"');
+    expect(JSON.stringify(securityPackage)).not.toContain("id-token");
+    expect(JSON.stringify(securityPackage)).not.toContain("packages: write");
+    expect(JSON.stringify(securityPackage)).not.toContain("${{ secrets.");
+    expect(securityPrepareSource).toContain('"scripts", "plugin-npm-publish.sh"');
+    expect(securityPrepareSource).toContain('"--pack"');
+    expect(securityPrepareSource).toContain("shell: false");
+    expect(securityPrepareSource).toContain("resolveCandidatePluginPackageDir");
+    expect(pluginNpmReleaseSource).toContain("bash .release-tooling/scripts/plugin-npm-publish.sh");
+    expect(pluginNpmReleaseSource).toContain('--pack "${PACKAGE_DIR}"');
     expect(nodeShard.needs).toEqual(["resolve-candidate", "preflight"]);
     expect(runNodeShard?.run).toContain('spawnSync("pnpm", ["test", "--", ...configs]');
     expect(pluginSource).not.toContain("npm-install-security-scan.release.test.ts");

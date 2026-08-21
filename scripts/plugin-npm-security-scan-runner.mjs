@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_HEAP_MB = 768;
+const DEFAULT_RSS_MB = 1024;
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_CAPTURE_BYTES = 512 * 1024;
 const MAX_REPORT_BYTES = 1024 * 1024;
@@ -51,6 +52,38 @@ function boundedAppend(current, chunk) {
     return current;
   }
   return Buffer.concat([current, chunk]).subarray(0, MAX_CAPTURE_BYTES);
+}
+
+function processGroupRssBytes(pid) {
+  if (process.platform === "win32") {
+    return null;
+  }
+  const result = spawnSync("ps", ["-o", "rss=", "-g", String(pid)], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5_000,
+  });
+  if (result.status !== 0) {
+    return null;
+  }
+  const samples = result.stdout
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map((value) => Number(value));
+  if (samples.length === 0 || samples.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    return null;
+  }
+  return samples.reduce((total, value) => total + value, 0) * 1024;
+}
+
+function killProcessGroup(child) {
+  if (!child.pid) {
+    return;
+  }
+  try {
+    process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGKILL");
+  } catch {}
 }
 
 function sanitizeOutput(value, args) {
@@ -121,6 +154,7 @@ async function run(argv) {
   const args = parseArgs(argv);
   const scannerPath = testOverride("OPENCLAW_PLUGIN_SECURITY_RUNNER_CHILD", SCANNER_PATH);
   const heapMb = Number(testOverride("OPENCLAW_PLUGIN_SECURITY_RUNNER_HEAP_MB", DEFAULT_HEAP_MB));
+  const rssMb = Number(testOverride("OPENCLAW_PLUGIN_SECURITY_RUNNER_RSS_MB", DEFAULT_RSS_MB));
   const timeoutMs = Number(
     testOverride("OPENCLAW_PLUGIN_SECURITY_RUNNER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS),
   );
@@ -128,6 +162,9 @@ async function run(argv) {
     !Number.isSafeInteger(heapMb) ||
     heapMb < 16 ||
     heapMb > 4096 ||
+    !Number.isSafeInteger(rssMb) ||
+    rssMb < 16 ||
+    rssMb > 4096 ||
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs < 10 ||
     timeoutMs > DEFAULT_TIMEOUT_MS
@@ -137,6 +174,7 @@ async function run(argv) {
 
   let stdout = Buffer.alloc(0);
   let stderr = Buffer.alloc(0);
+  let rssExceeded = false;
   let timedOut = false;
   const child = spawn(
     process.execPath,
@@ -159,19 +197,27 @@ async function run(argv) {
   child.stderr.on("data", (chunk) => {
     stderr = boundedAppend(stderr, chunk);
   });
+  const rssLimitBytes = rssMb * 1024 * 1024;
+  const rssTimer = setInterval(() => {
+    if (child.exitCode !== null || child.signalCode !== null || !child.pid) {
+      return;
+    }
+    const rssBytes = processGroupRssBytes(child.pid);
+    if (rssBytes !== null && rssBytes > rssLimitBytes) {
+      rssExceeded = true;
+      killProcessGroup(child);
+    }
+  }, 250);
   const timer = setTimeout(() => {
     timedOut = true;
-    if (child.pid) {
-      try {
-        process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGKILL");
-      } catch {}
-    }
+    killProcessGroup(child);
   }, timeoutMs);
   const result = await new Promise((resolve) => {
     child.on("error", (error) => resolve({ error, status: null }));
     child.on("close", (status, signal) => resolve({ error: undefined, signal, status }));
   });
   clearTimeout(timer);
+  clearInterval(rssTimer);
 
   const safeStdout = sanitizeOutput(stdout, args);
   const safeStderr = sanitizeOutput(stderr, args);
@@ -183,6 +229,10 @@ async function run(argv) {
   }
   if (timedOut) {
     writeFailureReport(args, "timed out");
+    return 1;
+  }
+  if (rssExceeded) {
+    writeFailureReport(args, "exceeded its RSS limit");
     return 1;
   }
   if (result.error) {
