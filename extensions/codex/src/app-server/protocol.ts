@@ -510,7 +510,7 @@ export type CodexThreadItem = {
 
 export type CodexStrictReviewRequiredNotification = {
   method: "autoApprovalReview/strictReviewRequired";
-  params: {
+  params: JsonObject & {
     threadId: string;
     turnId: string;
     startedAtMs: number;

@@ -443,20 +443,13 @@ async function mirror(params: {
           // identity so retries cannot turn a stale idempotency hit into evidence.
           messageToAppend = attachCodexMirrorIdentity(messageToAppend, mirrorIdentity);
         }
-        const asyncDelivery =
-          "openclawAsyncDelivery" in message &&
-          typeof message.openclawAsyncDelivery === "object" &&
-          message.openclawAsyncDelivery !== null &&
-          "itemId" in message.openclawAsyncDelivery
-            ? message.openclawAsyncDelivery
-            : undefined;
+        const asyncDelivery = Reflect.get(message, "openclawAsyncDelivery");
         if (typeof asyncDelivery?.itemId === "string") {
           // Async delivery ownership is provider-authored. Whole-message hooks may
           // rewrite content, but must not turn the durable row into a terminal answer.
-          messageToAppend = {
-            ...messageToAppend,
+          messageToAppend = Object.assign(messageToAppend, {
             openclawAsyncDelivery: { itemId: asyncDelivery.itemId },
-          } satisfies AgentMessage & { openclawAsyncDelivery: { itemId: string } };
+          });
         }
         messageToAppend = projectAgentHarnessTranscriptMessageForDisplay({
           hidden: (message as { display?: boolean }).display === false,

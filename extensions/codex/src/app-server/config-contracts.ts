@@ -36,7 +36,7 @@ export type CodexAppServerDefaultPolicy = {
 };
 export type CodexAppServerApprovalPolicy = "never" | "on-request";
 export type CodexAppServerApprovalPolicySource = "config" | "env" | "requirements" | "implicit";
-export type CodexAppServerEffectiveApprovalPolicy = CodexApprovalPolicy;
+export type CodexAppServerEffectiveApprovalPolicy = Exclude<CodexApprovalPolicy, "untrusted">;
 export type CodexAppServerSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 export type CodexAppServerApprovalsReviewer = "user" | "auto_review" | "guardian_subagent";
 export type CodexAppServerCommandSource = "managed" | "resolved-managed" | "config" | "env";

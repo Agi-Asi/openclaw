@@ -154,6 +154,7 @@ type CodexComputerUseInspectionParams = {
   defaultBundledMarketplacePath?: string;
   defaultBundledMarketplacePathCandidates?: readonly string[];
   repairComputerUseMcpChildren?: () => Promise<CodexComputerUseRepairStatus>;
+  releaseNativeConfigFence?: () => void;
 };
 
 type MarketplaceRef =

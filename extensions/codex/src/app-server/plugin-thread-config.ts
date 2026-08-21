@@ -159,13 +159,14 @@ export async function buildCodexPluginThreadConfig(
 ): Promise<CodexPluginThreadConfig> {
   const appCache = params.appCache ?? defaultCodexAppInventoryCache;
   const threadAppCacheKey = resolveCodexPluginThreadAppCacheKey(params);
-  const threadRequest: CodexPluginRuntimeRequest = (method, requestParams, options) =>
+  const threadRequest: CodexPluginRuntimeRequest = (method, requestParams) =>
     params.request(
       method,
-      (method === "app/installed" || method === "app/read") && params.threadId
+      (method === "app/installed" || method === "app/read") &&
+        params.threadId &&
+        isJsonObject(requestParams)
         ? { ...requestParams, threadId: params.threadId }
         : requestParams,
-      options,
     );
   let inputFingerprint = buildCodexPluginThreadConfigInputFingerprint({
     pluginConfig: params.pluginConfig,

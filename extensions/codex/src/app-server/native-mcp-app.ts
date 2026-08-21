@@ -9,6 +9,7 @@ import {
   normalizeOptionalString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { getCodexAppServerClientInstanceId, type CodexAppServerClient } from "./client.js";
+import type { ResourceReadResult } from "./protocol-mcp.js";
 import type { CodexMcpServerStatus, CodexThreadItem, JsonObject, JsonValue } from "./protocol.js";
 import { retainSharedCodexAppServerClientIfCurrent } from "./shared-client.js";
 
@@ -162,8 +163,8 @@ function createNativeMcpRuntime(params: {
 
 async function readCorrelatedMcpResource(
   originCallId: string,
-  responsePromise: ReturnType<CodexAppServerClient["request"]>,
-) {
+  responsePromise: Promise<ResourceReadResult>,
+): Promise<ResourceReadResult> {
   const response = await responsePromise;
   if (response.originCallId !== originCallId) {
     throw new Error(
