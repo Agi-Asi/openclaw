@@ -50,7 +50,7 @@ import {
   type ReadToolDetails,
   type ReadToolTruncationDetails,
 } from "./sessions/tools/index.js";
-import { expandOsHomePrefix, resolveReadPath } from "./sessions/tools/path-utils.js";
+import { expandOsHomePrefix, resolveToCwd } from "./sessions/tools/path-utils.js";
 import { createBoundedReadTextPage, formatReadContinuationNotice } from "./sessions/tools/read.js";
 import {
   ReadToolContinuationSchema,
@@ -634,6 +634,7 @@ function resolveToolPathAgainstWorkspaceRoot(params: {
 type MemoryFlushAppendOnlyWriteOptions = {
   root: string;
   relativePath: string;
+  memoryWriteProvenance?: MemoryWriteProvenanceObserver;
   containerWorkdir?: string;
   sandbox?: {
     root: string;
@@ -756,14 +757,35 @@ export function wrapToolMemoryFlushAppendOnlyWrite(
         );
       }
 
-      await appendMemoryFlushContent({
+      const contentBefore = await readOptionalUtf8File({
         absolutePath: allowedAbsolutePath,
-        root: options.root,
         relativePath: options.relativePath,
-        content,
         sandbox: options.sandbox,
         signal,
       });
+      const separator =
+        contentBefore.length > 0 && !contentBefore.endsWith("\n") && !content.startsWith("\n")
+          ? "\n"
+          : "";
+      const commit = () =>
+        appendMemoryFlushContent({
+          absolutePath: allowedAbsolutePath,
+          root: options.root,
+          relativePath: options.relativePath,
+          content,
+          sandbox: options.sandbox,
+          signal,
+        });
+      if (options.memoryWriteProvenance?.classifies(allowedAbsolutePath)) {
+        await options.memoryWriteProvenance.write({
+          absolutePath: allowedAbsolutePath,
+          contentBefore,
+          contentAfter: `${contentBefore}${separator}${content}`,
+          commit,
+        });
+      } else {
+        await commit();
+      }
       // This wrapper inherits the write tool's output schema, so report only
       // the authoritative `changed`; deriving `created` before append is racy.
       return {
@@ -1058,7 +1080,7 @@ export function wrapReadToolWithSkillContent(
       root: cwd,
       containerWorkdir: options?.containerWorkdir,
     });
-    return resolveReadPath(mapped, cwd);
+    return resolveToCwd(mapped, cwd);
   };
   const instructionContent = new Map<string, string | undefined>(
     (options?.instructionPaths ?? []).map((filePath) => [
