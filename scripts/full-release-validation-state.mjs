@@ -23,6 +23,7 @@ import {
   releasePlanGateFailures,
   selectReleaseStateArtifacts,
   validateReleaseExecutionPlanArtifact,
+  validateReleaseStateArtifact,
   verifyReleaseStateArtifacts,
 } from "./full-release-validation-policy.mjs";
 import {
@@ -173,19 +174,14 @@ async function checkpointProvenance(signal) {
   };
 }
 
-function emitCheckpoint(kind, payload, provenance) {
-  for (const line of encodeFullReleaseValidationLogCheckpoint({ kind, payload, provenance })) {
+function emitCheckpoint(lines) {
+  for (const line of lines) {
     console.log(line);
   }
 }
 
-async function emitOptionalCheckpoint(kind, payload, signal) {
-  try {
-    const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
-    emitCheckpoint(kind, payload, await checkpointProvenance(boundedSignal));
-  } catch (error) {
-    console.error(`[frv] ${kind} checkpoint unavailable: ${String(error?.message ?? error)}`);
-  }
+function checkpointLines(kind, payload, provenance) {
+  return provenance ? encodeFullReleaseValidationLogCheckpoint({ kind, payload, provenance }) : [];
 }
 
 function issue(kind, child, message, extra = {}) {
@@ -433,14 +429,26 @@ function writeExecutionPlan(path, payload) {
   }
 }
 
+function commitExecutionPlan(path, payload, encodedCheckpointLines) {
+  emitCheckpoint(encodedCheckpointLines);
+  writeExecutionPlan(path, payload);
+  process.exitCode = payload.blockers.length > 0 || payload.errors.length > 0 ? 2 : 0;
+}
+
 function appendSummary(mode, payload) {
   if (!process.env.GITHUB_STEP_SUMMARY) {
     return;
   }
-  appendFileSync(
-    process.env.GITHUB_STEP_SUMMARY,
-    `## ${mode === "decision" ? "Release Decision" : "Diagnostic Drain"}\n\n${formatReleaseStateOutcome(payload)}\n`,
-  );
+  try {
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `## ${mode === "decision" ? "Release Decision" : "Diagnostic Drain"}\n\n${formatReleaseStateOutcome(payload)}\n`,
+    );
+  } catch (error) {
+    console.warn(
+      `warning: could not write ${mode} summary: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 export function formatReleaseStateHeartbeat(mode, decision) {
@@ -556,8 +564,7 @@ async function planMode() {
         ),
     });
     const restored = validateReleaseExecutionPlanArtifact(recovered.payload, expected);
-    writeExecutionPlan(outputPath, restored);
-    emitCheckpoint("plan", restored, provenance);
+    commitExecutionPlan(outputPath, restored, checkpointLines("plan", restored, provenance));
     return;
   }
   if (currentAttempt !== 1) {
@@ -566,6 +573,9 @@ async function planMode() {
 
   const planInputs = parsePlanInputs(process.env.FULL_RELEASE_PLAN_INPUTS_JSON);
   const built = buildReleaseExecutionPlan(planInputs);
+  const provenance = expected.targetSha
+    ? await checkpointProvenance(abortController.signal)
+    : undefined;
   let finished = false;
   let plan = buildReleaseExecutionPlanArtifact({
     children: built.children,
@@ -577,7 +587,9 @@ async function planMode() {
     trustedWorkflow: trustedWorkflowFromInputs(planInputs),
   });
   const stop = () => {
-    if (finished) return abortController.abort(new Error("execution plan checkpoint cancelled"));
+    if (finished) {
+      return;
+    }
     abortController.abort(new Error("execution plan collection cancelled"));
     plan = buildReleaseExecutionPlanArtifact({
       blockers: plan.blockers,
@@ -597,9 +609,16 @@ async function planMode() {
       rerunGroup: expected.rerunGroup,
       trustedWorkflow: plan.trustedWorkflow,
     });
-    writeExecutionPlan(outputPath, plan);
+    const terminalPlan = validateReleaseExecutionPlanArtifact(plan, expected);
     finished = true;
-    process.exit(1);
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+    commitExecutionPlan(
+      outputPath,
+      terminalPlan,
+      checkpointLines("plan", terminalPlan, provenance),
+    );
+    process.exit(process.exitCode);
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
@@ -619,15 +638,11 @@ async function planMode() {
     rerunGroup: expected.rerunGroup,
     trustedWorkflow: trustedWorkflowFromInputs(planInputs),
   });
-  writeExecutionPlan(outputPath, plan);
-  validateReleaseExecutionPlanArtifact(plan, expected);
+  const terminalPlan = validateReleaseExecutionPlanArtifact(plan, expected);
   finished = true;
-  if (expected.targetSha) {
-    await emitOptionalCheckpoint("plan", plan, abortController.signal);
-  }
-  if ((reuse.blockers?.length ?? 0) > 0 || (reuse.errors?.length ?? 0) > 0) {
-    throw new Error("release execution plan could not bind reusable evidence");
-  }
+  process.removeListener("SIGINT", stop);
+  process.removeListener("SIGTERM", stop);
+  commitExecutionPlan(outputPath, terminalPlan, checkpointLines("plan", terminalPlan, provenance));
 }
 
 async function collectMode(mode) {
@@ -670,25 +685,40 @@ async function collectMode(mode) {
   }));
   let finished = false;
   const abortController = new AbortController();
+  const provenance = expected.targetSha
+    ? await checkpointProvenance(abortController.signal)
+    : undefined;
   let decisionReuse = { blockers: [], children: plan, errors: [] };
 
-  const writePayload = (decision, cancellation = {}) => {
-    const payload = buildReleaseStateArtifact({
-      cancellation,
-      children: snapshots,
-      decision,
-      executionPlan,
-      expected,
+  const buildPayload = (decision, cancellation = {}) =>
+    validateReleaseStateArtifact(
+      buildReleaseStateArtifact({
+        cancellation,
+        children: snapshots,
+        decision,
+        executionPlan,
+        expected,
+        mode,
+        releaseProfile,
+        rerunGroup,
+      }),
+      { ...expected, releaseProfile, rerunGroup },
       mode,
-      releaseProfile,
-      rerunGroup,
-    });
+    );
+  const commitPayload = (payload, encodedCheckpointLines) => {
+    finished = true;
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+    emitCheckpoint(encodedCheckpointLines);
     writeResult(outputPath, payload);
+    process.exitCode =
+      payload.state === "passed" ? 0 : payload.state === "orchestration_error" ? 2 : 1;
     appendSummary(mode, payload);
-    return payload;
   };
   const stop = () => {
-    if (finished) return abortController.abort(new Error(`${mode} checkpoint cancelled`));
+    if (finished) {
+      return;
+    }
     abortController.abort(new Error(`${mode} collector cancelled`));
     const decision = classifyReleaseSnapshot({
       cancelled: true,
@@ -706,9 +736,9 @@ async function collectMode(mode) {
       releaseProfile,
       workflowRef: expected.workflowRef,
     });
-    writePayload(decision, { cancelledRunIds, requested: true });
-    finished = true;
-    process.exit(1);
+    const payload = buildPayload(decision, { cancelledRunIds, requested: true });
+    commitPayload(payload, checkpointLines(mode, payload, provenance));
+    process.exit(process.exitCode);
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
@@ -771,7 +801,7 @@ async function collectMode(mode) {
   }
 
   let nextHeartbeat = 0;
-  while (!finished) {
+  while (true) {
     snapshots = await Promise.all(
       plan.map((child, index) => readChild(child, snapshots[index], abortController.signal)),
     );
@@ -815,13 +845,8 @@ async function collectMode(mode) {
         : decision.state === "orchestration_error" ||
           (decision.state !== "qualifying" && decision.activeRunIds.length === 0);
     if (done) {
-      const payload = writePayload(decision, { cancelledRunIds, requested: false });
-      finished = true;
-      process.exitCode =
-        payload.state === "passed" ? 0 : payload.state === "orchestration_error" ? 2 : 1;
-      if (expected.targetSha) {
-        await emitOptionalCheckpoint(mode, payload, abortController.signal);
-      }
+      const payload = buildPayload(decision, { cancelledRunIds, requested: false });
+      commitPayload(payload, checkpointLines(mode, payload, provenance));
       return;
     }
     await abortableSleep(pollIntervalMs, abortController.signal);

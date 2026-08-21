@@ -201,7 +201,7 @@ describe("full release validation log checkpoints", () => {
     ).toThrow("header");
   });
 
-  it("searches earlier attempts newest-first and falls past pre-emission failures", async () => {
+  it("searches earlier attempts newest-first and falls past a completed no-marker attempt", async () => {
     const attempts: number[] = [];
     const result = await recoverFullReleaseValidationLogCheckpoint({
       currentAttempt: 4,
@@ -211,7 +211,7 @@ describe("full release validation log checkpoints", () => {
         attempts.push(attempt);
         return [
           {
-            conclusion: attempt === 3 ? "failure" : "success",
+            conclusion: "success",
             head_sha: SHA,
             id: attempt,
             name: "Seal release execution plan",
@@ -228,6 +228,40 @@ describe("full release validation log checkpoints", () => {
     expect(attempts).toEqual([3, 2]);
     expect(result).toMatchObject({ payload: { source: 2 }, sourceAttempt: 2 });
   });
+
+  it.each([
+    ["partial", "[openclaw-frv-checkpoint] chunk plan 1/1 e30"],
+    [
+      "duplicate",
+      `${checkpointLog("plan", { source: 2 }, 2)}\n${checkpointLog("plan", { source: 2 }, 2)}`,
+    ],
+    ["conflicting", checkpointLog("plan", { source: 2 }, 2).replace(/[a-f0-9]$/u, "f")],
+  ])(
+    "fails closed on a %s newest-attempt checkpoint instead of using older state",
+    async (_, log) => {
+      await expect(
+        recoverFullReleaseValidationLogCheckpoint({
+          currentAttempt: 3,
+          expected: provenance(3),
+          kind: "plan",
+          listJobsForAttempt: async (attempt) => [
+            {
+              conclusion: "success",
+              head_sha: SHA,
+              id: attempt,
+              name: "Seal release execution plan",
+              run_attempt: attempt,
+              run_id: 123,
+              status: "completed",
+              workflow_name: "Full Release Validation",
+            },
+          ],
+          readJobLog: async (jobId) =>
+            Number(jobId) === 2 ? log : checkpointLog("plan", { source: 1 }, 1),
+        }),
+      ).rejects.toThrow();
+    },
+  );
 
   it("recovers Decision and Drain from independent source attempts", async () => {
     const recover = (kind: "decision" | "drain", sourceAttempt: number) =>
