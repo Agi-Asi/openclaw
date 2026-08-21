@@ -50,7 +50,6 @@ function workflowFixture(overrides: Record<string, unknown> = {}) {
   return {
     id: Number(workflowId),
     path: ".github/workflows/release-candidate-artifacts.yml",
-    state: "active",
     ...overrides,
   };
 }
@@ -157,9 +156,20 @@ describe("candidate receipt contract", () => {
     expect(receipt).not.toHaveProperty("candidate_sha");
     expect(receipt).not.toHaveProperty("version");
     expect(receipt).not.toHaveProperty("validation");
+    expect(receipt.artifacts).toHaveProperty("e2e_plugin_registry");
+    expect(receipt.artifacts).not.toHaveProperty("plugin_registry");
     expect(() =>
       validateCandidateReceipt({ ...sourceFixture, candidate_sha: "a".repeat(40) }),
     ).toThrow("candidate receipt keys must be exactly");
+    expect(() =>
+      validateCandidateReceipt({
+        ...sourceFixture,
+        artifacts: {
+          ...(sourceFixture.artifacts as Record<string, unknown>),
+          plugin_registry: (sourceFixture.artifacts as Record<string, unknown>).e2e_plugin_registry,
+        },
+      }),
+    ).toThrow("candidate receipt artifacts keys must be exactly");
   });
 });
 
@@ -245,7 +255,26 @@ describe("candidate receipt locator", () => {
     );
   });
 
-  it("discovers one nonce-bound run, polls its exact attempt, and reads its receipt artifact", async () => {
+  it("bounds transient API failures", async () => {
+    const runGh = vi.fn(() => {
+      throw new Error("GitHub API unavailable");
+    });
+    await expect(
+      locateCandidateReceipt({
+        dispatchId,
+        releasePlanDigest: lockFixture.receipt.release_plan_digest,
+        repo: "openclaw/openclaw",
+        runGh,
+        sleep: async () => {},
+        timeoutMs: 1000,
+        workflowId,
+        workflowSha,
+      }),
+    ).rejects.toThrow("failed after 3 attempts");
+    expect(runGh).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries APIs and artifact propagation before reading the exact receipt", async () => {
     const receiptArtifactName = `release-candidate-receipt-${runId}-${runAttempt}`;
     const artifactResponse = artifactsFixture();
     artifactResponse.artifacts.push({
@@ -256,6 +285,12 @@ describe("candidate receipt locator", () => {
       workflow_run: { id: Number(runId) },
     });
     artifactResponse.total_count = 5;
+    const incompleteArtifactResponse = {
+      artifacts: artifactResponse.artifacts.filter(
+        (artifact) => artifact.id !== Number(lockFixture.receipt.artifacts.root_image.artifact_id),
+      ),
+      total_count: 4,
+    };
     const responses = new Map<string, unknown>([
       [
         `api repos/openclaw/openclaw/actions/workflows/${workflowId} --method GET`,
@@ -269,12 +304,13 @@ describe("candidate receipt locator", () => {
         `api repos/openclaw/openclaw/actions/runs/${runId}/attempts/${runAttempt} --method GET`,
         runFixture(),
       ],
-      [`api repos/openclaw/openclaw/actions/runs/${runId} --method GET`, runFixture()],
       [
         `api repos/openclaw/openclaw/actions/runs/${runId}/artifacts?per_page=100 --method GET`,
         artifactResponse,
       ],
     ]);
+    let workflowAttempts = 0;
+    let artifactAttempts = 0;
     const runGh = vi.fn((args: string[]) => {
       if (args[0] === "run" && args[1] === "download") {
         const dir = args[args.indexOf("--dir") + 1];
@@ -284,12 +320,33 @@ describe("candidate receipt locator", () => {
         writeFileSync(resolve(dir, "candidate-receipt-lock.json"), lockText);
         return "";
       }
+      if (
+        args.join(" ") ===
+          `api repos/openclaw/openclaw/actions/workflows/${workflowId} --method GET` &&
+        workflowAttempts++ === 0
+      ) {
+        throw new Error("transient GitHub API failure");
+      }
+      if (
+        args.join(" ") ===
+        `api repos/openclaw/openclaw/actions/runs/${runId}/artifacts?per_page=100 --method GET`
+      ) {
+        artifactAttempts += 1;
+        return JSON.stringify(
+          artifactAttempts === 1
+            ? { artifacts: artifactsFixture().artifacts, total_count: 4 }
+            : artifactAttempts === 2
+              ? incompleteArtifactResponse
+              : artifactResponse,
+        );
+      }
       const response = responses.get(args.join(" "));
       if (!response) {
         throw new Error(`unexpected gh invocation: ${args.join(" ")}`);
       }
       return JSON.stringify(response);
     });
+    const sleep = vi.fn(async () => {});
 
     await expect(
       locateCandidateReceipt({
@@ -297,12 +354,15 @@ describe("candidate receipt locator", () => {
         releasePlanDigest: lockFixture.receipt.release_plan_digest,
         repo: "openclaw/openclaw",
         runGh,
-        sleep: async () => {},
+        sleep,
         timeoutMs: 1000,
         workflowId,
         workflowSha,
       }),
     ).resolves.toEqual(lockFixture);
+    expect(workflowAttempts).toBe(2);
+    expect(artifactAttempts).toBe(3);
+    expect(sleep).toHaveBeenCalled();
     expect(runGh).toHaveBeenCalledWith([
       "run",
       "download",
@@ -316,17 +376,35 @@ describe("candidate receipt locator", () => {
     ]);
   });
 
-  it("rejects a superseded exact attempt", async () => {
+  it("keeps an exact successful attempt valid without consulting later reruns", async () => {
+    const receiptArtifactName = `release-candidate-receipt-${runId}-${runAttempt}`;
+    const artifactResponse = artifactsFixture();
+    artifactResponse.artifacts.push({
+      digest: `sha256:${"5".repeat(64)}`,
+      expired: false,
+      id: 105,
+      name: receiptArtifactName,
+      workflow_run: { id: Number(runId) },
+    });
+    artifactResponse.total_count = 5;
     const runGh = vi.fn((args: string[]) => {
       const key = args.join(" ");
+      if (args[0] === "run" && args[1] === "download") {
+        const dir = args[args.indexOf("--dir") + 1];
+        if (!dir) {
+          throw new Error("missing download dir");
+        }
+        writeFileSync(resolve(dir, "candidate-receipt-lock.json"), lockText);
+        return "";
+      }
       if (key.includes(`actions/workflows/${workflowId} --method GET`)) {
         return JSON.stringify(workflowFixture());
       }
       if (key.includes(`actions/runs/${runId}/attempts/${runAttempt}`)) {
         return JSON.stringify(runFixture());
       }
-      if (key.includes(`actions/runs/${runId} --method GET`)) {
-        return JSON.stringify(runFixture({ run_attempt: 3 }));
+      if (key.includes(`actions/runs/${runId}/artifacts?per_page=100`)) {
+        return JSON.stringify(artifactResponse);
       }
       throw new Error(`unexpected gh invocation: ${key}`);
     });
@@ -343,7 +421,13 @@ describe("candidate receipt locator", () => {
         workflowId,
         workflowSha,
       }),
-    ).rejects.toThrow("superseded by a rerun");
+    ).resolves.toEqual(lockFixture);
+    expect(runGh).not.toHaveBeenCalledWith([
+      "api",
+      `repos/openclaw/openclaw/actions/runs/${runId}`,
+      "--method",
+      "GET",
+    ]);
   });
 });
 
@@ -411,13 +495,16 @@ describe("release candidate artifact producer workflow", () => {
     expect(text).not.toContain("--push");
   });
 
-  it("validates canonical ReleasePlan bytes and derives candidate inputs without copying plan fields", () => {
+  it("verifies repository-derived ReleasePlan authority before exposing candidate inputs", () => {
     const validate = workflowJob(workflow, "validate_release_plan");
-    const step = workflowStep(validate, "Validate ReleasePlanLock");
+    const step = workflowStep(validate, "Verify repository-derived ReleasePlan authority");
     expect(step.run).toContain("parseReleasePlanLockJson");
+    expect(step.run).toContain("verifyReleasePlanLock");
     expect(step.run).toContain("dispatch_id must be one safe unique caller nonce");
-    expect(step.run).toContain("lock.plan.tooling.sha !== process.env.WORKFLOW_SHA");
-    expect(step.run).toContain("lock.plan.tooling.ref !== process.env.WORKFLOW_FULL_REF");
+    expect(step.run).toContain("repos/${process.env.GITHUB_REPOSITORY}/commits/${candidateSha}");
+    expect(step.run).toContain('"fetch", "--force", "--no-tags", "origin", candidateSha');
+    expect(step.run).toContain("toolingFullRef: workflowFullRef");
+    expect(step.run).toContain("toolingSha: workflowSha");
     expect(step.run).toContain("candidate_sha=${lock.plan.candidate_sha}");
     expect(step.run).toContain("release_plan_digest=${lock.digest}");
     expect(step.run).toContain("release_profile=${lock.plan.validation.profile}");
@@ -440,6 +527,20 @@ describe("release candidate artifact producer workflow", () => {
       shared_image_policy: "no-push-artifact",
     });
     expect(root["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404");
+    const build = workflowStep(root, "Build root Dockerfile image");
+    expect(build.env).toMatchObject({
+      BUILD_TIMESTAMP: "2000-01-01T00:00:00.000Z",
+      TARGET_SHA: "${{ needs.validate_release_plan.outputs.candidate_sha }}",
+    });
+    expect(build.run).toContain('--build-arg "GIT_COMMIT=$TARGET_SHA"');
+    expect(build.run).toContain('--build-arg "OPENCLAW_BUILD_TIMESTAMP=$BUILD_TIMESTAMP"');
+    const verify = workflowStep(root, "Verify root image build provenance");
+    expect(verify.run).toContain("/app/dist/build-info.json");
+    expect(verify.run).toContain('embedded_commit" != "$TARGET_SHA');
+    const stepNames = root.steps?.map((step) => step.name) ?? [];
+    expect(stepNames.indexOf("Verify root image build provenance")).toBeLessThan(
+      stepNames.indexOf("Pack root Dockerfile image artifact"),
+    );
     expect(workflowStep(root, "Pack root Dockerfile image artifact").run).toContain(
       "scripts/docker/shared-image-artifact.sh",
     );
@@ -459,11 +560,12 @@ describe("release candidate artifact producer workflow", () => {
     );
     expect(provenance.run).toContain(".display_title == $title");
     expect(provenance.run).toContain("actions/workflows/${workflow_id}");
+    expect(provenance.run).not.toContain('.state == "active"');
     const create = workflowStep(receipt, "Create canonical CandidateReceiptLock");
     expect(create.run).toContain("createCandidateReceiptLock");
     expect(create.run).toContain('docker_image: artifact("DOCKER_IMAGE"');
+    expect(create.run).toContain("e2e_plugin_registry: artifact(");
     expect(create.run).toContain('package: artifact("PACKAGE"');
-    expect(create.run).toContain("plugin_registry: artifact(");
     expect(create.run).toContain('root_image: artifact("ROOT_IMAGE"');
     expect(workflowStep(receipt, "Upload CandidateReceiptLock").with).toMatchObject({
       name: "release-candidate-receipt-${{ github.run_id }}-${{ github.run_attempt }}",

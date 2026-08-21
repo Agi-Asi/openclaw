@@ -13,7 +13,7 @@ const SHA_PATTERN = /^[a-f0-9]{40}$/u;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const POSITIVE_DECIMAL_PATTERN = /^[1-9][0-9]*$/u;
 const ASCII_PATTERN = /^[\x20-\x7e]+$/u;
-const ARTIFACT_KEYS = ["docker_image", "package", "plugin_registry", "root_image"];
+const ARTIFACT_KEYS = ["docker_image", "e2e_plugin_registry", "package", "root_image"];
 const compareAscii = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 function fail(message) {
@@ -158,8 +158,8 @@ export function validateCandidateReceipt(value) {
     }
   }
   const exactArtifactNames = {
+    e2e_plugin_registry: `docker-e2e-prepublish-plugin-registry${expectedNameSuffix}`,
     package: `docker-e2e-package${expectedNameSuffix}`,
-    plugin_registry: `docker-e2e-prepublish-plugin-registry${expectedNameSuffix}`,
     root_image: `release-candidate-root-image${expectedNameSuffix}`,
   };
   for (const [key, expectedName] of Object.entries(exactArtifactNames)) {

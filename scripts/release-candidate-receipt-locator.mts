@@ -15,6 +15,12 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 type RunGh = (args: string[]) => string;
+type NormalizedCandidateReceiptLocatorOptions = CandidateReceiptLocatorOptions & {
+  releasePlanDigest: string;
+  timeoutMs: number;
+  workflowId: string;
+  workflowSha: string;
+};
 
 export type CandidateReceiptLocatorOptions = {
   dispatchId: string;
@@ -39,6 +45,8 @@ const DISPATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const GH_COMMAND_TIMEOUT_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 15_000;
+const API_RETRY_ATTEMPTS = 3;
+const API_RETRY_DELAY_MS = 1_000;
 
 function fail(message: string): never {
   throw new Error(message);
@@ -47,7 +55,7 @@ function fail(message: string): never {
 function parseJson(raw: string, label: string): unknown {
   try {
     return JSON.parse(raw) as unknown;
-  } catch (error) {
+  } catch (error: unknown) {
     throw new Error(`${label} returned invalid JSON`, { cause: error });
   }
 }
@@ -91,7 +99,9 @@ function digest(value: unknown, label: string): string {
   return normalized;
 }
 
-function requireOptions(options: CandidateReceiptLocatorOptions) {
+function requireOptions(
+  options: CandidateReceiptLocatorOptions,
+): NormalizedCandidateReceiptLocatorOptions {
   if (options.repo !== REPOSITORY) {
     fail(`candidate receipt repository must be ${REPOSITORY}`);
   }
@@ -138,7 +148,7 @@ function validateArtifactMetadata(
     name: string;
     runId: string;
   },
-) {
+): void {
   const workflowRun = record(artifact.workflow_run, `${expected.name} workflow_run`);
   if (
     positiveDecimal(artifact.id, `${expected.name} artifact id`) !== expected.id ||
@@ -162,7 +172,7 @@ export function validateCandidateReceiptProvenance(params: {
   lock: CandidateReceiptLock;
   run: unknown;
   workflow: unknown;
-}) {
+}): CandidateReceiptLock {
   const lock = validateCandidateReceiptLock(params.lock);
   const run = record(params.run, "candidate receipt run");
   const workflow = record(params.workflow, "candidate receipt workflow");
@@ -185,10 +195,9 @@ export function validateCandidateReceiptProvenance(params: {
   if (
     positiveDecimal(workflow.id, "candidate receipt workflow id") !== params.expectedWorkflowId ||
     requiredString(workflow.path, "candidate receipt workflow path") !==
-      CANDIDATE_RECEIPT_WORKFLOW_PATH ||
-    workflow.state !== "active"
+      CANDIDATE_RECEIPT_WORKFLOW_PATH
   ) {
-    fail("candidate receipt workflow identity does not match the canonical active workflow");
+    fail("candidate receipt workflow identity does not match the canonical workflow");
   }
 
   const receipt = lock.receipt;
@@ -245,18 +254,18 @@ function runGhCommand(
     maxBuffer: number;
     timeout: number;
   },
-) {
+): string {
   return execFileSync(command, args, options);
 }
 
 async function pollUntil<T>(
   deadline: number,
-  poll: () => T | undefined,
+  poll: () => Promise<T | undefined> | T | undefined,
   sleep: (milliseconds: number) => Promise<void>,
   timeoutMessage: string,
 ): Promise<T> {
   while (Date.now() <= deadline) {
-    const result = poll();
+    const result = await poll();
     if (result !== undefined) {
       return result;
     }
@@ -265,18 +274,38 @@ async function pollUntil<T>(
   fail(timeoutMessage);
 }
 
+async function retryOperation<T>(
+  deadline: number,
+  sleep: (milliseconds: number) => Promise<void>,
+  label: string,
+  operation: () => Promise<T> | T,
+): Promise<T> {
+  let lastError: unknown;
+  let attempts = 0;
+  for (let attempt = 1; attempt <= API_RETRY_ATTEMPTS; attempt += 1) {
+    attempts = attempt;
+    try {
+      return await operation();
+    } catch (error: unknown) {
+      lastError = error;
+    }
+    if (attempt === API_RETRY_ATTEMPTS || Date.now() >= deadline) {
+      break;
+    }
+    await sleep(Math.min(API_RETRY_DELAY_MS * attempt, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error(`${label} failed after ${attempts} attempts`, { cause: lastError });
+}
+
 function discoverRun(
-  api: (endpoint: string) => unknown,
+  responseValue: unknown,
   params: {
     dispatchId: string;
     workflowId: string;
     workflowSha: string;
   },
 ): { runAttempt: string; runId: string } | undefined {
-  const response = record(
-    api(`actions/workflows/${params.workflowId}/runs?event=workflow_dispatch&per_page=100`),
-    "candidate receipt workflow runs response",
-  );
+  const response = record(responseValue, "candidate receipt workflow runs response");
   if (!Array.isArray(response.workflow_runs)) {
     fail("candidate receipt workflow runs response must contain workflow_runs");
   }
@@ -303,19 +332,6 @@ function discoverRun(
   };
 }
 
-function requireCurrentAttempt(
-  api: (endpoint: string) => unknown,
-  runId: string,
-  runAttempt: string,
-) {
-  const latestRun = record(api(`actions/runs/${runId}`), "candidate receipt latest run");
-  if (
-    positiveDecimal(latestRun.run_attempt, "candidate receipt latest run attempt") !== runAttempt
-  ) {
-    fail("candidate receipt producer attempt was superseded by a rerun");
-  }
-}
-
 export async function locateCandidateReceipt(
   rawOptions: CandidateReceiptLocatorOptions,
 ): Promise<CandidateReceiptLock> {
@@ -330,17 +346,18 @@ export async function locateCandidateReceipt(
       new Promise((resolve) => {
         setTimeout(resolve, milliseconds);
       }));
-  const api = (endpoint: string): unknown =>
-    parseJson(runGh(["api", `repos/${options.repo}/${endpoint}`, "--method", "GET"]), endpoint);
   const deadline = Date.now() + options.timeoutMs;
-  const workflow = api(`actions/workflows/${options.workflowId}`);
+  const api = (endpoint: string): Promise<unknown> =>
+    retryOperation(deadline, sleep, endpoint, () =>
+      parseJson(runGh(["api", `repos/${options.repo}/${endpoint}`, "--method", "GET"]), endpoint),
+    );
+  const workflow = await api(`actions/workflows/${options.workflowId}`);
   const workflowRecord = record(workflow, "candidate receipt workflow");
   if (
     positiveDecimal(workflowRecord.id, "candidate receipt workflow id") !== options.workflowId ||
-    workflowRecord.path !== CANDIDATE_RECEIPT_WORKFLOW_PATH ||
-    workflowRecord.state !== "active"
+    workflowRecord.path !== CANDIDATE_RECEIPT_WORKFLOW_PATH
   ) {
-    fail("candidate receipt workflow identity does not match the canonical active workflow");
+    fail("candidate receipt workflow identity does not match the canonical workflow");
   }
 
   const exactRun =
@@ -348,21 +365,26 @@ export async function locateCandidateReceipt(
       ? { runAttempt: options.runAttempt, runId: options.runId }
       : await pollUntil(
           deadline,
-          () =>
-            discoverRun(api, {
-              dispatchId: options.dispatchId,
-              workflowId: options.workflowId,
-              workflowSha: options.workflowSha,
-            }),
+          async () =>
+            discoverRun(
+              await api(
+                `actions/workflows/${options.workflowId}/runs?event=workflow_dispatch&per_page=100`,
+              ),
+              {
+                dispatchId: options.dispatchId,
+                workflowId: options.workflowId,
+                workflowSha: options.workflowSha,
+              },
+            ),
           sleep,
           "timed out locating the candidate receipt producer run",
         );
 
   const run = await pollUntil(
     deadline,
-    () => {
+    async () => {
       const current = record(
-        api(`actions/runs/${exactRun.runId}/attempts/${exactRun.runAttempt}`),
+        await api(`actions/runs/${exactRun.runId}/attempts/${exactRun.runAttempt}`),
         "candidate receipt run attempt",
       );
       if (current.status !== "completed") {
@@ -376,16 +398,19 @@ export async function locateCandidateReceipt(
     sleep,
     "timed out waiting for the candidate receipt producer",
   );
-  requireCurrentAttempt(api, exactRun.runId, exactRun.runAttempt);
 
-  const artifacts = api(`actions/runs/${exactRun.runId}/artifacts?per_page=100`);
+  // A completed attempt is immutable evidence. Later reruns do not revoke it;
+  // consumers revalidate this exact run, attempt, receipt, and artifact set at use.
   const receiptArtifactName = `release-candidate-receipt-${exactRun.runId}-${exactRun.runAttempt}`;
-  const receiptArtifact = artifactRecords(artifacts).find(
-    (entry) => entry.name === receiptArtifactName,
+  const receiptArtifact = await pollUntil(
+    deadline,
+    async () => {
+      const response = await api(`actions/runs/${exactRun.runId}/artifacts?per_page=100`);
+      return artifactRecords(response).find((entry) => entry.name === receiptArtifactName);
+    },
+    sleep,
+    "timed out waiting for the candidate receipt lock artifact",
   );
-  if (!receiptArtifact) {
-    fail("candidate receipt lock artifact is missing from the producer run");
-  }
   validateArtifactMetadata(receiptArtifact, {
     digest: digest(receiptArtifact.digest, "candidate receipt lock artifact digest"),
     id: positiveDecimal(receiptArtifact.id, "candidate receipt lock artifact id"),
@@ -394,20 +419,41 @@ export async function locateCandidateReceipt(
   });
 
   const downloadDir = mkdtempSync(join(tmpdir(), "openclaw-candidate-receipt-"));
+  const receiptPath = join(downloadDir, RECEIPT_FILE_NAME);
   try {
-    runGh([
-      "run",
-      "download",
-      exactRun.runId,
-      "--repo",
-      options.repo,
-      "--name",
-      receiptArtifactName,
-      "--dir",
-      downloadDir,
-    ]);
-    const parsedLock = parseCandidateReceiptLockJson(
-      readFileSync(join(downloadDir, RECEIPT_FILE_NAME), "utf8"),
+    await retryOperation(deadline, sleep, "candidate receipt lock download", () => {
+      rmSync(receiptPath, { force: true });
+      return runGh([
+        "run",
+        "download",
+        exactRun.runId,
+        "--repo",
+        options.repo,
+        "--name",
+        receiptArtifactName,
+        "--dir",
+        downloadDir,
+      ]);
+    });
+    const parsedLock = parseCandidateReceiptLockJson(readFileSync(receiptPath, "utf8"));
+    const expectedArtifactIds = new Set(
+      Object.values(parsedLock.receipt.artifacts).map((artifact) => artifact.artifact_id),
+    );
+    const artifacts = await pollUntil(
+      deadline,
+      async () => {
+        const response = await api(`actions/runs/${exactRun.runId}/artifacts?per_page=100`);
+        const visibleArtifactIds = new Set(
+          artifactRecords(response).map((artifact) =>
+            positiveDecimal(artifact.id, "candidate receipt artifact id"),
+          ),
+        );
+        return [...expectedArtifactIds].every((id) => visibleArtifactIds.has(id))
+          ? response
+          : undefined;
+      },
+      sleep,
+      "timed out waiting for candidate artifact metadata propagation",
     );
     const validatedLock = validateCandidateReceiptProvenance({
       artifacts,
@@ -421,9 +467,6 @@ export async function locateCandidateReceipt(
       run,
       workflow,
     });
-    // A rerun invalidates the just-read artifact namespace even if it starts
-    // between the first attempt check and the final receipt read.
-    requireCurrentAttempt(api, exactRun.runId, exactRun.runAttempt);
     return validatedLock;
   } finally {
     rmSync(downloadDir, { force: true, recursive: true });
@@ -468,7 +511,7 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  void main().catch((error) => {
+  void main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     console.error("[release-candidate-receipt-locator] FAILED (exit 1)");
     process.exitCode = 1;

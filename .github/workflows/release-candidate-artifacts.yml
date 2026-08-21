@@ -46,19 +46,35 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Validate ReleasePlanLock
+      - name: Setup trusted verifier runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24.x"
+
+      - name: Setup trusted verifier pnpm
+        uses: ./.github/actions/setup-pnpm-store-cache
+        with:
+          node-version: "24.x"
+
+      - name: Install trusted verifier dependencies
+        run: pnpm install --filter . --frozen-lockfile --prefer-offline --ignore-scripts
+
+      - name: Verify repository-derived ReleasePlan authority
         id: plan
         env:
           DISPATCH_ID: ${{ inputs.dispatch_id }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_PLAN_LOCK_BASE64: ${{ inputs.release_plan_lock_base64 }}
           WORKFLOW_FULL_REF: ${{ github.ref }}
           WORKFLOW_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          node --input-type=module <<'NODE'
+          node --import tsx --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
           import fs from "node:fs";
           import { parseReleasePlanLockJson } from "./scripts/release-plan-contract.mjs";
+          import { verifyReleasePlanLock } from "./scripts/release-plan-producer.mts";
 
           const dispatchId = process.env.DISPATCH_ID ?? "";
           if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(dispatchId)) {
@@ -72,13 +88,60 @@ jobs:
           if (bytes.toString("base64") !== encoded) {
             throw new Error("release_plan_lock_base64 is not canonical base64");
           }
-          const lock = parseReleasePlanLockJson(bytes.toString("utf8"));
-          if (lock.plan.tooling.sha !== process.env.WORKFLOW_SHA) {
-            throw new Error("ReleasePlan tooling SHA must equal the candidate producer workflow SHA");
+          const lockJson = bytes.toString("utf8");
+          // This parse extracts claimed source coordinates only. The repository-derived
+          // verifier below is the authority for every plan field and tooling route.
+          const claimedLock = parseReleasePlanLockJson(lockJson);
+          const workflowSha = process.env.WORKFLOW_SHA ?? "";
+          const workflowFullRef = process.env.WORKFLOW_FULL_REF ?? "";
+          const candidateSha = claimedLock.plan.candidate_sha;
+          const gh = (args) =>
+            execFileSync("gh", args, {
+              encoding: "utf8",
+              killSignal: "SIGKILL",
+              maxBuffer: 16 * 1024 * 1024,
+              stdio: ["ignore", "pipe", "pipe"],
+              timeout: 60_000,
+            });
+          const candidateCommit = JSON.parse(
+            gh([
+              "api",
+              `repos/${process.env.GITHUB_REPOSITORY}/commits/${candidateSha}`,
+              "--method",
+              "GET",
+            ]),
+          );
+          if (candidateCommit.sha !== candidateSha) {
+            throw new Error("ReleasePlan candidate SHA is not an exact commit in the repository");
           }
-          if (lock.plan.tooling.ref !== process.env.WORKFLOW_FULL_REF) {
-            throw new Error("ReleasePlan tooling ref must equal the candidate producer workflow ref");
+          execFileSync("git", ["fetch", "--force", "--no-tags", "origin", candidateSha], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          if (claimedLock.plan.purpose === "postpublish-confidence") {
+            const tagRef = claimedLock.plan.target_context_ref;
+            execFileSync("git", ["fetch", "--force", "origin", `${tagRef}:${tagRef}`], {
+              encoding: "utf8",
+              stdio: ["ignore", "pipe", "pipe"],
+            });
           }
+          const intent =
+            claimedLock.plan.purpose === "main-qualification"
+              ? "main-qualification"
+              : claimedLock.plan.purpose === "postpublish-confidence"
+                ? "postpublish-confidence"
+                : "publish";
+          const source = {
+            candidateRef: claimedLock.plan.target_context_ref,
+            candidateSha,
+            toolingFullRef: workflowFullRef,
+            toolingSha: workflowSha,
+            intent,
+            ...(intent === "main-qualification"
+              ? { validationIntent: claimedLock.plan.validation.intent }
+              : {}),
+          };
+          const lock = verifyReleasePlanLock(lockJson, source);
           const outputPath = process.env.GITHUB_OUTPUT;
           if (!outputPath) {
             throw new Error("GITHUB_OUTPUT is required");
@@ -162,17 +225,42 @@ jobs:
 
       - name: Build root Dockerfile image
         env:
+          # Candidate images use deterministic build metadata so retries do not alter provenance.
+          BUILD_TIMESTAMP: "2000-01-01T00:00:00.000Z"
           IMAGE_REF: openclaw-release-candidate-root:${{ needs.validate_release_plan.outputs.candidate_sha }}
+          TARGET_SHA: ${{ needs.validate_release_plan.outputs.candidate_sha }}
         shell: bash
         run: |
           set -euo pipefail
           timeout --kill-after=30s 45m docker buildx build \
             --progress=plain \
             --load \
+            --build-arg "GIT_COMMIT=$TARGET_SHA" \
+            --build-arg "OPENCLAW_BUILD_TIMESTAMP=$BUILD_TIMESTAMP" \
             --build-arg OPENCLAW_EXTENSIONS=matrix \
             --tag "$IMAGE_REF" \
             --file ./Dockerfile \
             .
+
+      - name: Verify root image build provenance
+        env:
+          IMAGE_REF: openclaw-release-candidate-root:${{ needs.validate_release_plan.outputs.candidate_sha }}
+          TARGET_SHA: ${{ needs.validate_release_plan.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          embedded_commit="$(
+            docker run --rm --entrypoint node "$IMAGE_REF" -e '
+              const fs = require("node:fs");
+              const info = JSON.parse(fs.readFileSync("/app/dist/build-info.json", "utf8"));
+              if (typeof info.commit !== "string") process.exit(2);
+              process.stdout.write(info.commit);
+            '
+          )"
+          if [[ "$embedded_commit" != "$TARGET_SHA" ]]; then
+            echo "Root image build commit ${embedded_commit:-missing} does not match ${TARGET_SHA}." >&2
+            exit 1
+          fi
 
       - name: Pack root Dockerfile image artifact
         id: image_artifact
@@ -264,7 +352,7 @@ jobs:
           jq -e \
             --arg id "$workflow_id" \
             --arg path "$EXPECTED_WORKFLOW_PATH" \
-            '(.id | tostring) == $id and .path == $path and .state == "active"' \
+            '(.id | tostring) == $id and .path == $path' \
             <<< "$workflow_json" >/dev/null
           echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
 
@@ -278,10 +366,10 @@ jobs:
           PACKAGE_ARTIFACT_ID: ${{ needs.candidate_artifacts.outputs.package_artifact_id }}
           PACKAGE_ARTIFACT_NAME: ${{ needs.candidate_artifacts.outputs.package_artifact_name }}
           PACKAGE_SHA256: ${{ needs.candidate_artifacts.outputs.package_sha256 }}
-          PLUGIN_REGISTRY_ARTIFACT_DIGEST: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_digest }}
-          PLUGIN_REGISTRY_ARTIFACT_ID: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_id }}
-          PLUGIN_REGISTRY_ARTIFACT_NAME: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_name }}
-          PLUGIN_REGISTRY_MANIFEST_SHA256: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_manifest_sha256 }}
+          E2E_PLUGIN_REGISTRY_ARTIFACT_DIGEST: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_digest }}
+          E2E_PLUGIN_REGISTRY_ARTIFACT_ID: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_id }}
+          E2E_PLUGIN_REGISTRY_ARTIFACT_NAME: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_name }}
+          E2E_PLUGIN_REGISTRY_MANIFEST_SHA256: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_manifest_sha256 }}
           RELEASE_PLAN_DIGEST: ${{ needs.validate_release_plan.outputs.release_plan_digest }}
           ROOT_IMAGE_ARCHIVE_SHA256: ${{ needs.root_image.outputs.archive_sha256 }}
           ROOT_IMAGE_ARTIFACT_DIGEST: ${{ needs.root_image.outputs.artifact_digest }}
@@ -330,11 +418,11 @@ jobs:
             },
             artifacts: {
               docker_image: artifact("DOCKER_IMAGE", "DOCKER_IMAGE_ARCHIVE_SHA256"),
-              package: artifact("PACKAGE", "PACKAGE_SHA256"),
-              plugin_registry: artifact(
-                "PLUGIN_REGISTRY",
-                "PLUGIN_REGISTRY_MANIFEST_SHA256",
+              e2e_plugin_registry: artifact(
+                "E2E_PLUGIN_REGISTRY",
+                "E2E_PLUGIN_REGISTRY_MANIFEST_SHA256",
               ),
+              package: artifact("PACKAGE", "PACKAGE_SHA256"),
               root_image: artifact("ROOT_IMAGE", "ROOT_IMAGE_ARCHIVE_SHA256"),
             },
           });

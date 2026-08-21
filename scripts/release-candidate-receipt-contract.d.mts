@@ -18,8 +18,8 @@ export type CandidateReceipt = {
   };
   artifacts: {
     docker_image: CandidateReceiptArtifact;
+    e2e_plugin_registry: CandidateReceiptArtifact;
     package: CandidateReceiptArtifact;
-    plugin_registry: CandidateReceiptArtifact;
     root_image: CandidateReceiptArtifact;
   };
 };
