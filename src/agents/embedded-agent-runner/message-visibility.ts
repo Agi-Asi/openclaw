@@ -197,6 +197,7 @@ export function isIntermediateAssistantTranscriptMessage(message: unknown): bool
   }
   const asyncDelivery = record.openclawAsyncDelivery;
   if (asyncDelivery && typeof asyncDelivery === "object" && !Array.isArray(asyncDelivery)) {
+    // SAFETY: the object/non-array guard permits reading an optional itemId as unknown.
     const itemId = (asyncDelivery as { itemId?: unknown }).itemId;
     if (typeof itemId === "string" && itemId.trim().length > 0) {
       return true;

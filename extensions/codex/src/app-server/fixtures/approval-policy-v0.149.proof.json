@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
-  "bindingSha256": "417b72584a0129ab06936d3863707e8bcda1637a9309f1d631aaef84f4a01ca3",
-  "generatedAt": "2026-08-21T10:51:21Z",
+  "bindingSha256": "3e903b1f7012854194b26532dff7f336de85b5856c3c7f4a890ca67bb1ebee41",
+  "generatedAt": "2026-08-21T12:55:17Z",
   "openclaw": {
     "frozenParent": "2d25f59b4a50b9f6579ae6d203f68616888f4fec",
     "adapterSources": [
@@ -34,7 +34,7 @@
         "sha256": "e175ee6d2b6742ede87b2e84aec1a121d58e1c26edb6007e1618674b097fb760"
       }
     ],
-    "candidateDiffSha256": "f76d96576ae68fc517838d9f4946a49e099787f88e3d543e0f9665a787154ae1"
+    "candidateDiffSha256": "1c9179fa0c12551210d0ed18b9a494625281c8b1c5e0550267c3cb7dda8fe874"
   },
   "codex": {
     "version": "0.149.0",

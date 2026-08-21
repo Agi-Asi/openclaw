@@ -142,6 +142,7 @@ export function createAssistantAsyncMessage(
     stopReason: "stop",
     timestamp,
     openclawAsyncDelivery: { itemId },
+    // SAFETY: this is a complete AssistantMessage plus OpenClaw-owned async delivery metadata.
   } as AssistantMessage;
 }
 

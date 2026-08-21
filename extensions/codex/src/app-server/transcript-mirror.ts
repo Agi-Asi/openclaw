@@ -443,6 +443,7 @@ async function mirror(params: {
           // identity so retries cannot turn a stale idempotency hit into evidence.
           messageToAppend = attachCodexMirrorIdentity(messageToAppend, mirrorIdentity);
         }
+        // SAFETY: provider messages may carry this optional untrusted delivery marker.
         const asyncDelivery = (
           message as AgentMessage & { openclawAsyncDelivery?: { itemId?: unknown } }
         ).openclawAsyncDelivery;
@@ -452,6 +453,7 @@ async function mirror(params: {
           messageToAppend = {
             ...messageToAppend,
             openclawAsyncDelivery: { itemId: asyncDelivery.itemId },
+            // SAFETY: spreading a valid AgentMessage plus additive metadata preserves its discriminated shape.
           } as AgentMessage;
         }
         messageToAppend = projectAgentHarnessTranscriptMessageForDisplay({
