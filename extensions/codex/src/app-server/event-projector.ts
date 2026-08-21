@@ -65,6 +65,7 @@ export class CodexAppServerEventProjector {
   private readonly reasoningProjection: CodexReasoningProjection;
   private readonly activeItemIds = new Set<string>();
   private readonly completedItemIds = new Set<string>();
+  private readonly settledAsyncDeliveryItemIds = new Set<string>();
   private readonly activeCompactionItemIds = new Set<string>();
   private readonly terminalPresentationClearedItemIds = new Set<string>();
   private readonly nativeToolOutcomeOrdinals = new Map<string, number>();
@@ -254,6 +255,9 @@ export class CodexAppServerEventProjector {
       case "item/autoApprovalReview/started":
       case "item/autoApprovalReview/completed":
         this.eventProjection.handleGuardianReview(notification.method, params);
+        break;
+      case "autoApprovalReview/strictReviewRequired":
+        this.eventProjection.handleStrictReviewRequired(params);
         break;
       case "guardianWarning":
         this.eventProjection.handleGuardianWarning(params);
@@ -448,7 +452,14 @@ export class CodexAppServerEventProjector {
       this.activeItemIds.delete(itemId);
       this.completedItemIds.add(itemId);
     }
-    this.assistantProjection.recordItemCompleted(item, itemId, this.activeItemIds);
+    const asyncMessage = this.assistantProjection.recordItemCompleted(
+      item,
+      itemId,
+      this.activeItemIds,
+    );
+    if (asyncMessage) {
+      await this.deliverAsyncMessage(asyncMessage);
+    }
     this.reasoningProjection.recordItem(item);
     await this.generatedMediaProjection.recordNative(item);
     if (item?.type === "contextCompaction" && itemId) {
@@ -536,7 +547,10 @@ export class CodexAppServerEventProjector {
     }
     for (const item of turnItems) {
       this.diagnostics.warnUnknownItemStatus(item);
-      this.assistantProjection.recordSnapshotItem(item);
+      const asyncMessage = this.assistantProjection.recordSnapshotItem(item);
+      if (asyncMessage) {
+        await this.deliverAsyncMessage(asyncMessage);
+      }
       this.reasoningProjection.recordItem(item);
       await this.generatedMediaProjection.recordNative(item);
       this.toolProgressProjection.recordToolMeta(item);
@@ -551,6 +565,22 @@ export class CodexAppServerEventProjector {
     this.assistantProjection.finalizeAnswerCandidate(turn);
     this.activeCompactionItemIds.clear();
     await this.reasoningProjection.maybeEndReasoning();
+  }
+
+  private async deliverAsyncMessage(delivery: {
+    itemId: string;
+    message: Parameters<
+      NonNullable<CodexAppServerEventProjectorOptions["onAsyncDelivery"]>
+    >[0]["message"];
+    text: string;
+  }): Promise<void> {
+    if (this.settledAsyncDeliveryItemIds.has(delivery.itemId)) {
+      return;
+    }
+    const settlement = await this.options.onAsyncDelivery?.(delivery);
+    if (settlement === "settled") {
+      this.settledAsyncDeliveryItemIds.add(delivery.itemId);
+    }
   }
 
   private async emitSnapshotOnlyNativeToolProgress(item: CodexThreadItem): Promise<void> {

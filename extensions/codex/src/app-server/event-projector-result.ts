@@ -55,6 +55,7 @@ type CodexAttemptResultInput = {
   assistantProjection: Pick<
     CodexAssistantProjection,
     | "collectAssistantTexts"
+    | "collectAsyncMessages"
     | "collectCommentaryMessages"
     | "createAssistantMessage"
     | "createAssistantMirrorMessage"
@@ -84,6 +85,7 @@ export function buildCodexAttemptResult(
   // tool lacking a terminal item so audit consumers never retain an open action.
   input.nativeToolLifecycleProjection.finalizeActive();
   const assistantTexts = input.assistantProjection.collectAssistantTexts();
+  const asyncMessages = input.assistantProjection.collectAsyncMessages();
   const commentaryMessages = input.assistantProjection.collectCommentaryMessages();
   const reasoningText = input.reasoningProjection.reasoningText();
   const planText = input.reasoningProjection.planText();
@@ -152,6 +154,7 @@ export function buildCodexAttemptResult(
     upstreamUserText: input.upstreamUserText,
     reasoningText,
     planText,
+    asyncMessages,
     commentaryMessages,
     toolMessages: input.toolTranscriptProjection.transcriptMessages,
     lastAssistant,

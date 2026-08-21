@@ -5,6 +5,7 @@ import {
   it,
   vi,
   THREAD_ID,
+  TURN_ID,
   createParams,
   createProjector,
   buildEmptyToolTelemetry,
@@ -79,6 +80,41 @@ describe("CodexAppServerEventProjector reasoning and guardian projection", () =>
     expect(completed.rationale).toBe("Benign local probe.");
     expect(completed.actionType).toBe("execve");
     expect(completed.command).toBe("printf hello");
+    expect(
+      projector.buildResult(buildEmptyToolTelemetry()).didSendDeterministicApprovalPrompt,
+    ).toBe(false);
+  });
+
+  it("routes strict review requirements to the human-visible guardian lane", async () => {
+    const onAgentEvent = vi.fn();
+    const projector = await createProjector({ ...(await createParams()), onAgentEvent });
+
+    await projector.handleNotification(
+      forCurrentTurn("item/autoApprovalReview/started", {
+        reviewId: "review-strict",
+        targetItemId: "cmd-strict",
+        review: { status: "inProgress" },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("autoApprovalReview/strictReviewRequired", {
+        startedAtMs: 1_787_273_600_000,
+      }),
+    );
+
+    expect(
+      findAgentEvent(onAgentEvent, {
+        stream: "codex_app_server.guardian",
+        phase: "strict_review_required",
+      }).data,
+    ).toMatchObject({
+      method: "autoApprovalReview/strictReviewRequired",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      reviewId: "review-strict",
+      targetItemId: "cmd-strict",
+      startedAtMs: 1_787_273_600_000,
+    });
     expect(
       projector.buildResult(buildEmptyToolTelemetry()).didSendDeterministicApprovalPrompt,
     ).toBe(false);

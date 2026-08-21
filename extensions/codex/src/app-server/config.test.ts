@@ -2447,13 +2447,31 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
   });
 
   it.each([
-    { execMode: "auto", policies: ["never"] },
-    { execMode: "auto", policies: ["untrusted"] },
-    { execMode: "ask", policies: ["never"] },
-    { execMode: "ask", policies: ["untrusted"] },
+    {
+      execMode: "auto",
+      policies: ["never"],
+      error: "tools.exec.mode=auto requires Codex app-server prompting approvals",
+    },
+    {
+      execMode: "auto",
+      policies: ["untrusted"],
+      error:
+        'Codex requirements allowed_approval_policies only permits retired "untrusted"; replace it with "on-request".',
+    },
+    {
+      execMode: "ask",
+      policies: ["never"],
+      error: "tools.exec.mode=ask requires Codex app-server prompting approvals",
+    },
+    {
+      execMode: "ask",
+      policies: ["untrusted"],
+      error:
+        'Codex requirements allowed_approval_policies only permits retired "untrusted"; replace it with "on-request".',
+    },
   ] as const)(
     "fails closed when normalized OpenClaw $execMode mode can only use $policies approvals",
-    ({ execMode, policies }) => {
+    ({ execMode, policies, error }) => {
       expect(() =>
         resolveRuntimeForTest({
           pluginConfig: {},
@@ -2462,7 +2480,7 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
             .map((policy) => `"${policy}"`)
             .join(", ")}]\n`,
         }),
-      ).toThrow(`tools.exec.mode=${execMode} requires Codex app-server prompting approvals`);
+      ).toThrow(error);
     },
   );
 
@@ -2976,6 +2994,24 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
       sandbox: "danger-full-access",
       approvalsReviewer: "user",
     });
+  });
+
+  it("rejects the retired untrusted approval policy at runtime", () => {
+    expect(() =>
+      readCodexPluginConfig({
+        appServer: { approvalPolicy: "untrusted" },
+      }),
+    ).toThrow(
+      'plugins.entries.codex.config.appServer.approvalPolicy="untrusted" is retired; run "openclaw doctor --fix" to migrate it to "on-request".',
+    );
+    expect(() =>
+      resolveRuntimeForTest({
+        pluginConfig: {},
+        env: { OPENCLAW_CODEX_APP_SERVER_APPROVAL_POLICY: "untrusted" },
+      }),
+    ).toThrow(
+      'Codex app-server approval policy "untrusted" is retired; run "openclaw doctor --fix" and use "on-request".',
+    );
   });
 
   it("derives distinct shared-client keys for distinct auth tokens without exposing them", () => {

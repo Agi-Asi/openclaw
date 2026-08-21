@@ -202,6 +202,7 @@ describe("CodexAppServerEventProjector terminal errors", () => {
     { codexErrorInfo: "serverOverloaded", expected: true },
     { codexErrorInfo: "usageLimitExceeded", expected: false },
     { codexErrorInfo: "unauthorized", expected: false },
+    { codexErrorInfo: "misalignmentPolicyViolation", expected: false },
   ])(
     "projects $codexErrorInfo terminal error recovery eligibility as $expected",
     async ({ codexErrorInfo, expected }) => {
