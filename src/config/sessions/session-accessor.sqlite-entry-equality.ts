@@ -5,6 +5,11 @@ type SqliteLifecycleTargetSnapshot = {
   rows: Array<{ entry: SessionEntry; sessionKey: string }>;
 };
 
+type SessionEntryComparator = (
+  left: SessionEntry | undefined,
+  right: SessionEntry | undefined,
+) => boolean;
+
 export function sqliteSessionEntriesEqual(
   left: SessionEntry | undefined,
   right: SessionEntry | undefined,
@@ -60,14 +65,29 @@ export function sqliteLifecycleTargetSnapshotsEqual(
   expected: SqliteLifecycleTargetSnapshot,
   current: SqliteLifecycleTargetSnapshot,
 ): boolean {
+  return sqliteTargetSnapshotsEqual(expected, current, sqliteLifecycleSessionEntriesEqual);
+}
+
+export function sqliteSessionTargetSnapshotsEqual(
+  expected: SqliteLifecycleTargetSnapshot,
+  current: SqliteLifecycleTargetSnapshot,
+): boolean {
+  return sqliteTargetSnapshotsEqual(expected, current, sqliteSessionEntriesEqual);
+}
+
+function sqliteTargetSnapshotsEqual(
+  expected: SqliteLifecycleTargetSnapshot,
+  current: SqliteLifecycleTargetSnapshot,
+  entriesEqual: SessionEntryComparator,
+): boolean {
   return (
     expected.primary?.key === current.primary?.key &&
-    sqliteLifecycleSessionEntriesEqual(expected.primary?.entry, current.primary?.entry) &&
+    entriesEqual(expected.primary?.entry, current.primary?.entry) &&
     expected.rows.length === current.rows.length &&
     expected.rows.every(
       (row, index) =>
         row.sessionKey === current.rows[index]?.sessionKey &&
-        sqliteLifecycleSessionEntriesEqual(row.entry, current.rows[index]?.entry),
+        entriesEqual(row.entry, current.rows[index]?.entry),
     )
   );
 }

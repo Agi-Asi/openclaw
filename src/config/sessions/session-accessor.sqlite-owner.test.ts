@@ -122,4 +122,66 @@ describe("SQLite session owner assignment", () => {
       });
     });
   });
+
+  it("rejects a lifecycle removal planned before assigning an owner", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const scope = {
+        agentId: "main",
+        env: state.env,
+        sessionKey: "agent:main:owned-lifecycle-removal",
+      };
+      const blockerKey = "agent:main:lifecycle-removal-blocker";
+      const storePath = state.statePath("agents", "main", "sessions", "sessions.json");
+      await upsertSessionEntryCore(scope, {
+        sessionId: "session-owned-lifecycle-removal",
+        updatedAt: 1,
+      });
+      const expectedEntry = loadSessionEntry(scope);
+      if (!expectedEntry) {
+        throw new Error("expected persisted lifecycle removal entry");
+      }
+      let releaseBuilder: () => void = () => undefined;
+      const builderGate = new Promise<void>((resolve) => {
+        releaseBuilder = resolve;
+      });
+      let markBuilderStarted: () => void = () => undefined;
+      const builderStarted = new Promise<void>((resolve) => {
+        markBuilderStarted = resolve;
+      });
+      const mutation = applySessionEntryLifecycleMutation({
+        agentId: scope.agentId,
+        storePath,
+        removals: [{ expectedEntry, sessionKey: scope.sessionKey }],
+        upserts: [
+          {
+            sessionKey: blockerKey,
+            buildEntry: async () => {
+              markBuilderStarted();
+              await builderGate;
+              return { sessionId: "lifecycle-removal-blocker", updatedAt: 1 };
+            },
+          },
+        ],
+        skipMaintenance: true,
+      });
+
+      await builderStarted;
+      assignSessionOwner(scope, {
+        owner: { type: "human", id: "profile-owner" },
+        assignedBy: { type: "human", id: "profile-assigner" },
+        assignedAt: 2,
+      });
+      releaseBuilder();
+
+      await expect(mutation).rejects.toThrow("changed before lifecycle removal");
+      expect(loadSessionEntry(scope)).toMatchObject({
+        owner: {
+          actor: { type: "human", id: "profile-owner" },
+          assignedBy: { type: "human", id: "profile-assigner" },
+          assignedAt: 2,
+        },
+        sessionId: "session-owned-lifecycle-removal",
+      });
+    });
+  });
 });

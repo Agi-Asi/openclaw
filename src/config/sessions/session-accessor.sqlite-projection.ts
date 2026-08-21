@@ -307,10 +307,13 @@ export async function applySessionEntryLifecycleMutation(params: {
           removal,
           params.allowCanonicalRepair,
         );
-        if (!sqliteLifecycleSessionEntriesEqual(entry, removal.expectedEntry)) {
-          const replacedInSameMutation = projected.upsertedEntries.some(
-            (upsert) => upsert.sessionKey === removal.sessionKey,
-          );
+        const replacedInSameMutation = projected.upsertedEntries.some(
+          (upsert) => upsert.sessionKey === removal.sessionKey,
+        );
+        const removalEntryMatches = replacedInSameMutation
+          ? sqliteLifecycleSessionEntriesEqual(entry, removal.expectedEntry)
+          : sqliteSessionEntriesEqual(entry, removal.expectedEntry);
+        if (!removalEntryMatches) {
           throw new Error(
             replacedInSameMutation
               ? `SQLite session entry has stale lifecycle state for ${removal.sessionKey}`
@@ -410,7 +413,7 @@ export async function applySessionEntryLifecycleMutation(params: {
           removal,
           params.allowCanonicalRepair,
         );
-        if (!sqliteLifecycleSessionEntriesEqual(entry, removal.expectedEntry)) {
+        if (!sqliteSessionEntriesEqual(entry, removal.expectedEntry)) {
           throw new Error(
             `SQLite session entry changed before lifecycle removal for ${removal.sessionKey}`,
           );

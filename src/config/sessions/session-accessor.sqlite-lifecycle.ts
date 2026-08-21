@@ -28,9 +28,8 @@ import type {
   SessionLifecycleArtifactCleanupResult,
 } from "./session-accessor.sqlite-contract.js";
 import {
-  sqliteLifecycleTargetSnapshotsEqual,
-  sqliteLifecycleSessionEntriesEqual,
   sqliteSessionEntriesEqual,
+  sqliteSessionTargetSnapshotsEqual,
 } from "./session-accessor.sqlite-entry-equality.js";
 import {
   assertLifecycleTargetUnchanged,
@@ -400,7 +399,7 @@ async function deleteSqliteSessionEntryLifecycleLocked(
       const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
       const targetSnapshot = readLifecycleTargetSnapshot(database, params.target);
       if (
-        !sqliteLifecycleTargetSnapshotsEqual(prepared.targetSnapshot, targetSnapshot) ||
+        !sqliteSessionTargetSnapshotsEqual(prepared.targetSnapshot, targetSnapshot) ||
         !shouldDeleteSqliteSessionEntryLifecycle(database, targetSnapshot.primary?.entry, params)
       ) {
         return DELETE_EXPECTED_ENTRY_MISMATCH;
@@ -441,7 +440,7 @@ async function deleteSqliteSessionEntryLifecycleLocked(
       runOpenClawAgentWriteTransaction((transactionDb) => {
         const targetSnapshot = readLifecycleTargetSnapshot(transactionDb, params.target);
         if (
-          !sqliteLifecycleTargetSnapshotsEqual(prepared.targetSnapshot, targetSnapshot) ||
+          !sqliteSessionTargetSnapshotsEqual(prepared.targetSnapshot, targetSnapshot) ||
           !shouldDeleteSqliteSessionEntryLifecycle(
             transactionDb,
             targetSnapshot.primary?.entry,
@@ -481,7 +480,7 @@ async function deleteSqliteSessionEntryLifecycleLocked(
       const transactionSnapshot = readLifecycleTargetSnapshot(transactionDb, params.target);
       const transactionEntry = transactionSnapshot.primary?.entry;
       if (
-        !sqliteLifecycleTargetSnapshotsEqual(prepared.targetSnapshot, transactionSnapshot) ||
+        !sqliteSessionTargetSnapshotsEqual(prepared.targetSnapshot, transactionSnapshot) ||
         !shouldDeleteSqliteSessionEntryLifecycle(transactionDb, transactionEntry, params)
       ) {
         return expectedEntryMismatchResult([]);
@@ -608,7 +607,7 @@ function shouldDeleteSqliteSessionEntryLifecycle(
   }
   if (
     params.expectedEntry !== undefined &&
-    !sqliteLifecycleSessionEntriesEqual(entry, params.expectedEntry)
+    !sqliteSessionEntriesEqual(entry, params.expectedEntry)
   ) {
     return false;
   }

@@ -507,12 +507,15 @@ function sqliteLifecycleTargetMatchesExpectedEntry(
   database: OpenClawAgentDatabase,
   target: { canonicalKey: string; storeKeys: string[] },
   expectedEntry: SessionEntry | undefined,
+  operation: "deleted" | "reset",
 ): boolean {
   const current = resolveLifecyclePrimaryEntry(database, target)?.entry;
   if (!current || !expectedEntry) {
     return current === expectedEntry;
   }
-  return sqliteLifecycleSessionEntriesEqual(current, expectedEntry);
+  return operation === "deleted"
+    ? sqliteSessionEntriesEqual(current, expectedEntry)
+    : sqliteLifecycleSessionEntriesEqual(current, expectedEntry);
 }
 
 export function assertLifecycleTargetUnchanged(
@@ -521,7 +524,7 @@ export function assertLifecycleTargetUnchanged(
   expectedEntry: SessionEntry | undefined,
   operation: "deleted" | "reset",
 ): void {
-  if (sqliteLifecycleTargetMatchesExpectedEntry(database, target, expectedEntry)) {
+  if (sqliteLifecycleTargetMatchesExpectedEntry(database, target, expectedEntry, operation)) {
     return;
   }
   throw new Error(`SQLite session entry changed before ${operation} lifecycle mutation`);
