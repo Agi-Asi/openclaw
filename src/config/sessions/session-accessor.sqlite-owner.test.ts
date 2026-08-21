@@ -91,24 +91,39 @@ describe("SQLite session owner assignment", () => {
         sessionId: "session-owned-lifecycle",
         updatedAt: 1,
       });
-      assignSessionOwner(scope, {
-        owner: { type: "human", id: "profile-owner" },
-        assignedBy: { type: "human", id: "profile-assigner" },
-        assignedAt: 2,
+      let releaseBuilder: () => void = () => undefined;
+      const builderGate = new Promise<void>((resolve) => {
+        releaseBuilder = resolve;
       });
-
-      await applySessionEntryLifecycleMutation({
+      let markBuilderStarted: () => void = () => undefined;
+      const builderStarted = new Promise<void>((resolve) => {
+        markBuilderStarted = resolve;
+      });
+      const mutation = applySessionEntryLifecycleMutation({
         agentId: scope.agentId,
         storePath: state.statePath("agents", "main", "sessions", "sessions.json"),
         upserts: [
           {
             sessionKey: scope.sessionKey,
-            buildEntry: ({ currentEntry }) =>
-              currentEntry ? { ...currentEntry, label: "updated", updatedAt: 3 } : null,
+            buildEntry: async ({ currentEntry }) => {
+              markBuilderStarted();
+              await builderGate;
+              return currentEntry ? { ...currentEntry, label: "updated", updatedAt: 3 } : null;
+            },
           },
         ],
         skipMaintenance: true,
       });
+
+      await builderStarted;
+      assignSessionOwner(scope, {
+        owner: { type: "human", id: "profile-owner" },
+        assignedBy: { type: "human", id: "profile-assigner" },
+        assignedAt: 2,
+      });
+      releaseBuilder();
+
+      await expect(mutation).resolves.toMatchObject({ afterCount: 1 });
 
       expect(loadSessionEntry(scope)).toMatchObject({
         label: "updated",
