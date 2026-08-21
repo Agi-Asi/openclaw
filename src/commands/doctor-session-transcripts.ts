@@ -19,6 +19,7 @@ import {
 } from "../config/sessions/transcript-tree.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HealthFinding, HealthRepairEffect } from "../flows/health-checks.js";
+import { writeTextAtomic } from "../infra/json-files.js";
 import { shortenHomePath } from "../utils.js";
 import {
   repairCanonicalSessionKeys,
@@ -255,15 +256,11 @@ async function writeActiveTranscript(params: {
   filePath: string;
   entries: TranscriptEntry[];
   activePath: ActiveTranscriptPath;
-}): Promise<string> {
+}): Promise<void> {
   const header = params.entries.find((entry) => entry.type === "session");
   if (!header) {
     throw new Error("missing session header");
   }
-  const backupPath = `${params.filePath}.pre-doctor-branch-repair-${new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")}.bak`;
-  await fs.copyFile(params.filePath, backupPath);
   const lastPersistedId = getEntryId(params.activePath.entriesToPersist.at(-1) ?? {});
   const terminalLeafControl = params.activePath.terminalLeafControl
     ? {
@@ -279,21 +276,45 @@ async function writeActiveTranscript(params: {
   ]
     .map((entry) => JSON.stringify(entry))
     .join("\n");
-  await fs.writeFile(params.filePath, `${next}\n`, "utf-8");
-  return backupPath;
+  await writeTextAtomic(params.filePath, next, {
+    tempPrefix: `${path.basename(params.filePath)}.doctor-repair`,
+    trailingNewline: true,
+  });
 }
 
 async function writeTranscriptEntries(params: {
   filePath: string;
   entries: TranscriptEntry[];
-}): Promise<string> {
-  const backupPath = `${params.filePath}.pre-doctor-openai-codex-repair-${new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")}.bak`;
-  await fs.copyFile(params.filePath, backupPath);
+}): Promise<void> {
   const next = params.entries.map((entry) => JSON.stringify(entry)).join("\n");
-  await fs.writeFile(params.filePath, `${next}\n`, "utf-8");
-  return backupPath;
+  await writeTextAtomic(params.filePath, next, {
+    tempPrefix: `${path.basename(params.filePath)}.doctor-repair`,
+    trailingNewline: true,
+  });
+}
+
+async function publishTranscriptRepair(params: {
+  result: SessionTranscriptHealthIssue;
+  backupLabel: "branch-repair" | "openai-codex-repair";
+  write: () => Promise<void>;
+}): Promise<TranscriptRepairResult> {
+  let backupPath: string | undefined;
+  try {
+    const nextBackupPath = `${params.result.filePath}.pre-doctor-${params.backupLabel}-${new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")}.bak`;
+    await fs.copyFile(params.result.filePath, nextBackupPath);
+    backupPath = nextBackupPath;
+    await params.write();
+    return { ...params.result, repaired: true, backupPath };
+  } catch (err) {
+    return {
+      ...params.result,
+      repaired: false,
+      ...(backupPath ? { backupPath } : {}),
+      reason: String(err),
+    };
+  }
 }
 
 /** Repairs one transcript file by keeping the active branch and backing up the original file. */
@@ -308,17 +329,19 @@ async function repairBrokenSessionTranscriptFile(params: {
     const activePath = selectActivePath(entries);
     if (!activePath) {
       if (legacyOpenAICodexEntries > 0 && params.shouldRepair) {
-        const backupPath = await writeTranscriptEntries({ filePath: params.filePath, entries });
-        return {
-          filePath: params.filePath,
-          broken: true,
-          repaired: true,
-          originalEntries: entries.length,
-          activeEntries: 0,
-          legacyOpenAICodexEntries,
-          backupPath,
-          reason: "no active branch",
-        };
+        return await publishTranscriptRepair({
+          result: {
+            filePath: params.filePath,
+            broken: true,
+            repaired: false,
+            originalEntries: entries.length,
+            activeEntries: 0,
+            legacyOpenAICodexEntries,
+            reason: "no active branch",
+          },
+          backupLabel: "openai-codex-repair",
+          write: () => writeTranscriptEntries({ filePath: params.filePath, entries }),
+        });
       }
       return {
         filePath: params.filePath,
@@ -351,22 +374,21 @@ async function repairBrokenSessionTranscriptFile(params: {
         legacyOpenAICodexEntries,
       };
     }
-    const backupPath = broken
-      ? await writeActiveTranscript({
-          filePath: params.filePath,
-          entries,
-          activePath,
-        })
-      : await writeTranscriptEntries({ filePath: params.filePath, entries });
-    return {
-      filePath: params.filePath,
-      broken: true,
-      repaired: true,
-      originalEntries: entries.length,
-      activeEntries: activePath.entries.length,
-      legacyOpenAICodexEntries,
-      backupPath,
-    };
+    return await publishTranscriptRepair({
+      result: {
+        filePath: params.filePath,
+        broken: true,
+        repaired: false,
+        originalEntries: entries.length,
+        activeEntries: activePath.entries.length,
+        legacyOpenAICodexEntries,
+      },
+      backupLabel: broken ? "branch-repair" : "openai-codex-repair",
+      write: () =>
+        broken
+          ? writeActiveTranscript({ filePath: params.filePath, entries, activePath })
+          : writeTranscriptEntries({ filePath: params.filePath, entries }),
+    });
   } catch (err) {
     return {
       filePath: params.filePath,
@@ -483,11 +505,12 @@ export async function noteSessionTranscriptHealth(params?: {
       ...broken.slice(0, 20).map((result) => {
         const backup = result.backupPath ? ` backup=${shortenHomePath(result.backupPath)}` : "";
         const status = result.repaired ? "repaired" : "needs repair";
+        const error = !result.repaired && result.reason ? ` error=${result.reason}` : "";
         const metadata =
           result.legacyOpenAICodexEntries > 0
             ? ` openai-codex=${result.legacyOpenAICodexEntries}`
             : "";
-        return `- ${shortenHomePath(result.filePath)} ${status} entries=${result.originalEntries}->${result.activeEntries + 1}${metadata}${backup}`;
+        return `- ${shortenHomePath(result.filePath)} ${status} entries=${result.originalEntries}->${result.activeEntries + 1}${metadata}${backup}${error}`;
       }),
     ];
     if (broken.length > 20) {

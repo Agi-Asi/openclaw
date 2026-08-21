@@ -14,10 +14,30 @@ const repairCanonicalSessionKeys = vi.hoisted(() => vi.fn());
 const migrateLegacyMainSessionKeys = vi.hoisted(() => vi.fn());
 const runDoctorSessionSqlite = vi.hoisted(() => vi.fn());
 const withDoctorSqliteMaintenanceLock = vi.hoisted(() => vi.fn());
+const atomicWriteControl = vi.hoisted(() => ({
+  beforeRename: undefined as undefined | ((filePath: string) => Promise<void>),
+}));
 
 vi.mock("../../packages/terminal-core/src/note.js", () => ({
   note,
 }));
+
+vi.mock("../infra/json-files.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../infra/json-files.js")>();
+  return {
+    ...actual,
+    writeTextAtomic: async (...args: Parameters<typeof actual.writeTextAtomic>) => {
+      const [filePath, content, options] = args;
+      return await actual.writeTextAtomic(filePath, content, {
+        ...options,
+        beforeRename: async (params) => {
+          await options?.beforeRename?.(params);
+          await atomicWriteControl.beforeRename?.(filePath);
+        },
+      });
+    },
+  };
+});
 
 vi.mock("./doctor-session-sqlite.js", () => ({
   runDoctorSessionSqlite,
@@ -115,6 +135,7 @@ describe("doctor session transcript repair", () => {
   let root: string;
 
   beforeEach(async () => {
+    atomicWriteControl.beforeRename = undefined;
     note.mockClear();
     repairReservedIncognitoSessionKeys.mockReset().mockReturnValue({ found: 0, repaired: 0 });
     repairCanonicalSessionDeliveryStates
@@ -222,6 +243,94 @@ describe("doctor session transcript repair", () => {
         .filter((entry) => entry.type !== "session")
         .map((entry) => entry.id),
     ).toEqual(["parent", "plain-user", "plain-assistant"]);
+  });
+
+  it.each([
+    {
+      name: "prompt-rewrite branch",
+      entries: [
+        { type: "session", version: 3, id: "session-1", timestamp: "2026-04-25T00:00:00Z" },
+        {
+          type: "message",
+          id: "parent",
+          parentId: null,
+          message: { role: "assistant", content: "previous" },
+        },
+        {
+          type: "message",
+          id: "runtime-user",
+          parentId: "parent",
+          message: {
+            role: "user",
+            content:
+              "visible ask\n\n<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nsecret\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>",
+          },
+        },
+        {
+          type: "message",
+          id: "runtime-assistant",
+          parentId: "runtime-user",
+          message: { role: "assistant", content: "stale" },
+        },
+        {
+          type: "message",
+          id: "plain-user",
+          parentId: "parent",
+          message: { role: "user", content: "visible ask" },
+        },
+        {
+          type: "message",
+          id: "plain-assistant",
+          parentId: "plain-user",
+          message: { role: "assistant", content: "answer" },
+        },
+      ],
+    },
+    {
+      name: "legacy OpenAI Codex metadata",
+      entries: [
+        { type: "session", version: 3, id: "session-1", timestamp: "2026-04-25T00:00:00Z" },
+        {
+          type: "message",
+          id: "legacy-assistant",
+          parentId: null,
+          message: {
+            role: "assistant",
+            provider: "openai-codex",
+            api: "openai-codex-responses",
+            content: [{ type: "text", text: "hello" }],
+          },
+        },
+      ],
+    },
+  ])("preserves and reports $name when atomic publication fails", async ({ entries }) => {
+    const filePath = await writeTranscript(entries);
+    const original = await fs.readFile(filePath, "utf-8");
+    atomicWriteControl.beforeRename = async () => {
+      throw new Error("injected transcript rename failure");
+    };
+
+    await noteSessionTranscriptHealth({
+      sessionDirs: [path.dirname(filePath)],
+      shouldRepair: true,
+    });
+
+    expect(await fs.readFile(filePath, "utf-8")).toBe(original);
+    const backupName = (await fs.readdir(path.dirname(filePath))).find(
+      (entry) => entry.startsWith("session.jsonl.pre-doctor-") && entry.endsWith(".bak"),
+    );
+    expect(backupName).toEqual(expect.any(String));
+    if (!backupName) {
+      throw new Error("expected transcript repair backup");
+    }
+    expect(await fs.readFile(path.join(path.dirname(filePath), backupName), "utf-8")).toBe(
+      original,
+    );
+    const transcriptNote = note.mock.calls.find((call) => call[1] === "Session transcripts")?.[0];
+    expect(transcriptNote).toContain("needs repair");
+    expect(transcriptNote).toContain("backup=");
+    expect(transcriptNote).toContain("injected transcript rename failure");
+    expect(transcriptNote).not.toContain("Repaired 1 transcript file");
   });
 
   it("reports affected transcripts without rewriting outside repair mode", async () => {
