@@ -333,19 +333,10 @@ function resolveCodexForwardCompatModel(ctx: ProviderResolveDynamicModelContext)
     ctx.authProfileMode === undefined &&
     ctx.providerConfig?.auth === undefined
   ) {
-    // Codex owns its account-scoped model catalog. When that catalog is not yet
-    // available, keep the requested identity intact and let the native runtime
-    // decide whether the account can actually use it.
-    templateIds = OPENAI_CODEX_GPT_56_MODEL_IDS;
-    patch = {
-      reasoning: true,
-      input: ["text", "image"],
-      thinkingLevelMap: OPENAI_CODEX_GPT_56_THINKING_LEVEL_MAP,
-      compat: {
-        supportsReasoningEffort: true,
-        supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
-      },
-    };
+    // Codex owns its account-scoped model catalog. Before that catalog is
+    // available, preserve the requested identity without borrowing another
+    // model's advertised capabilities; native Codex validates the real model.
+    templateIds = [];
   } else {
     return undefined;
   }

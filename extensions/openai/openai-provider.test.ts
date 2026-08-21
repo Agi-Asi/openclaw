@@ -1780,8 +1780,8 @@ describe("buildOpenAIProvider", () => {
       id: "gpt-future",
       api: "openai-chatgpt-responses",
       baseUrl: "https://chatgpt.com/backend-api/codex",
-      compat: { supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"] },
     });
+    expect(model?.compat?.supportedReasoningEfforts).toBeUndefined();
     expect(
       provider
         .resolveThinkingProfile?.({
