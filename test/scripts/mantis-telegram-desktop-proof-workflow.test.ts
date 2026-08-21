@@ -17,12 +17,12 @@ const DISPATCH_WORKFLOW = ".github/workflows/mantis-telegram-desktop-proof-dispa
 const LIVE_WORKFLOW = ".github/workflows/mantis-telegram-live.yml";
 const SCENARIO_WORKFLOW = ".github/workflows/mantis-scenario.yml";
 const PROMPT = ".github/codex/prompts/mantis-telegram-desktop-proof.md";
-const PREFLIGHT_PROMPT = ".github/codex/prompts/mantis-telegram-desktop-preflight.md";
 const TELEGRAM_PROOF_SKILL = ".agents/skills/telegram-crabbox-e2e-proof/SKILL.md";
 const DOCS = ["docs/help/testing.md", "docs/concepts/qa-e2e-automation.md"];
 
 type WorkflowStep = {
   "continue-on-error"?: boolean;
+  id?: string;
   if?: string;
   env?: Record<string, string>;
   name?: string;
@@ -145,12 +145,27 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(workflow.permissions?.actions).toBe("read");
     expect(leaseRun).toContain("lease-restore");
     expect(leaseRun).toContain("until node --import tsx");
-    expect(leaseRun).toContain("deadline=$(( SECONDS + 15 * 60 ))");
-    expect(leaseRun).toContain("still leased by another run after 15 minutes");
-    expect(leaseRun).toContain("sleep 60");
+    expect(leaseRun).toContain("lease_deadline=$(( SECONDS + 4 * 60 * 60 ))");
+    expect(leaseRun).toContain("remained busy for four hours");
+    expect(leaseRun).not.toContain("15 * 60");
+    expect(leaseRun).toContain("sleep 15");
     expect(leaseRun.indexOf('echo "lease_file=$credential_dir/lease.json"')).toBeLessThan(
       leaseRun.indexOf("until node --import tsx"),
     );
+  });
+
+  it("reports an honest blocked proof without failing the workflow", () => {
+    const trusted = workflowStep("Restore and validate trusted lane evidence").run ?? "";
+    const inspect = workflowStep("Inspect Mantis evidence manifest").run ?? "";
+    const fail = workflowStep("Fail when Mantis Telegram desktop proof failed");
+
+    expect(trusted).toContain('lane_status="blocked"');
+    expect(trusted).toContain('|| "$baseline_status" == "blocked"');
+    expect(trusted).toContain('[[ "$lane_status" == "pass" || "$lane_status" == "fail" ]]');
+    expect(trusted).toContain('.comparison.outcome == "blocked"');
+    expect(trusted).not.toContain("comparisonPass");
+    expect(inspect).toContain(".comparison.outcome");
+    expect(fail.if).toContain("steps.inspect.outputs.comparison_status != 'blocked'");
   });
 
   it("releases the runner Telegram QA lease after the agent", () => {
@@ -251,10 +266,13 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(gate).toContain('[[ "$fact_status" == "complete" ]]');
     expect(gate).toContain(".sendCount >= 1");
     expect(gate).toContain(".observation.truncated == false");
-    expect(gate).toContain('any(.observation.events[]; .messageId == $focus and .actor == "bot")');
+    expect(gate).toContain(
+      'any(.observation.events[]; .messageId == $focus and (.actor == "user" or .actor == "bot"))',
+    );
     expect(gate).toContain('any(.invocations[]; .command == "send")');
     expect(gate).toContain('any(.invocations[]; .command == "finish")');
     expect(gate).toContain(".observation.events");
+    expect(gate).toContain(".blocked.name == null or");
     expect(gate).toContain(".providerRequests");
     expect(gate).toContain('copy_verified_artifacts "$lane" "$attempt_facts"');
     expect(gate).toContain('copy_verified_artifacts "$lane" "$verdict"');
@@ -303,7 +321,7 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(proofScript).toContain("throw error;");
   });
 
-  it("accepts maintainer comments and ClawSweeper labels without wasting proof setup", () => {
+  it("routes maintainer comments and ClawSweeper labels to the proof agent", () => {
     const workflow = parse(readFileSync(WORKFLOW, "utf8")) as Workflow;
     const workflowText = readFileSync(WORKFLOW, "utf8");
     const dispatchWorkflow = parse(readFileSync(DISPATCH_WORKFLOW, "utf8")) as Workflow;
@@ -311,7 +329,6 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     const dispatch = dispatchWorkflow.jobs?.dispatch;
     const resolver = workflow.jobs?.resolve_request;
     const capture = workflow.jobs?.run_telegram_desktop_proof;
-    const noVisible = workflow.jobs?.report_no_visible_change;
 
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.workflow_dispatch?.inputs?.approved_head_sha?.required).toBe(false);
@@ -322,10 +339,14 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(dispatchWorkflow.on?.pull_request_target?.types).toEqual(["labeled"]);
     expect(dispatchWorkflow.permissions).toEqual({
       actions: "write",
+      issues: "write",
       "pull-requests": "read",
     });
     expect(dispatchText).toContain("@openclaw-mantis");
-    expect(dispatchText).toContain("telegram desktop proof");
+    expect(dispatchText).not.toContain("requestsDesktopProof");
+    expect(dispatchText).toContain("createForIssueComment");
+    expect(dispatchText).toContain('content: "eyes"');
+    expect(dispatchText).toContain('.replace(/(?:@|\\/)openclaw-mantis/giu, "")');
     expect(dispatchText).toContain('new Set(["admin", "maintain", "write"])');
     expect(dispatchText).toContain('context.actor !== "clawsweeper[bot]"');
     expect(dispatchText).toContain("Ignoring Mantis label applied by");
@@ -344,54 +365,59 @@ describe("Mantis Telegram Desktop proof workflow", () => {
       'const dispatcherSources = new Set(["clawsweeper_label", "issue_comment"]);',
     );
     expect(workflowText).toContain("dispatcherSources.has(inputs.request_source)");
-    expect(workflowText).toContain('requestSource === "clawsweeper_label"');
-    expect(workflowText).toContain("pr.head.repo.full_name !== `${owner}/${repo}`");
     expect(workflowText).toContain("allow-bot-users: github-actions[bot]");
     expect(workflowText).not.toContain("allow-bot-users: github-actions[bot],clawsweeper[bot]");
     expect(workflowText).toContain("inputs.approved_head_sha !== candidateRevision");
 
-    const preflightCheckout = resolver?.steps?.find(
-      (step) => step.name === "Checkout preflight refs",
+    const startedToken = resolver?.steps?.find(
+      (step) => step.name === "Create Mantis status token",
     );
-    expect(preflightCheckout?.if).toContain("requires_preflight == 'true'");
-    expect(preflightCheckout?.with?.["fetch-depth"]).toBe(1);
-    const preflightFetch = resolver?.steps?.find((step) => step.name === "Fetch exact PR head");
-    expect(preflightFetch?.run?.match(/git fetch/gu)).toHaveLength(1);
-    expect(preflightFetch?.run).toContain('"$BASELINE_SHA"');
-    expect(preflightFetch?.run).toContain('"+refs/pull/${MANTIS_PR_NUMBER}/head:');
-    const classifier = resolver?.steps?.find((step) => step.name === "Classify visible behavior");
-    expect(classifier?.uses).toContain("openai/codex-action@");
-    expect(classifier?.with?.["codex-version"]).toBe("0.148.0");
-    expect(classifier?.with?.sandbox).toBe("read-only");
-    expect(classifier?.with?.effort).toBe("low");
-    expect(classifier?.with?.["output-schema"]).toContain('"enum": ["run", "skip"]');
-    expect(classifier?.with?.["prompt-file"]).toBe(PREFLIGHT_PROMPT);
-    expect(classifier?.with?.["allow-bot-users"]).toBe("github-actions[bot]");
-    expect(classifier?.["continue-on-error"]).toBe(true);
-    expect(readFileSync(PREFLIGHT_PROMPT, "utf8")).toContain(
-      "focus inspection, not to override the diff",
+    const startedComment = resolver?.steps?.find(
+      (step) => step.name === "Report Mantis run started",
     );
-    expect(readFileSync(PREFLIGHT_PROMPT, "utf8")).toContain(
-      "changes are also internal-only unless they change what an end user sees in",
+    const fallbackComment = resolver?.steps?.find(
+      (step) => step.name === "Report Mantis start failure with workflow token",
     );
-    expect(capture?.if).toContain("needs.resolve_request.outputs.visibility_decision != 'skip'");
-    expect(noVisible?.if).toContain("needs.resolve_request.outputs.visibility_decision == 'skip'");
-    const noVisibleComment = noVisible?.steps?.find(
-      (step) => step.name === "Comment that no visible proof applies",
+    expect(startedToken?.if).toContain("request_source == 'issue_comment'");
+    expect(startedToken?.with?.["permission-pull-requests"]).toBe("write");
+    expect(startedComment?.["continue-on-error"]).toBe(true);
+    expect(startedComment?.with?.script).toContain("Mantis started this proof.");
+    expect(startedComment?.with?.script).toContain("actions/runs/${process.env.GITHUB_RUN_ID}");
+    expect(startedComment?.with?.script).toContain("mantis-telegram-desktop-proof:");
+    expect(startedComment?.with?.script).toContain("GITHUB_RUN_ATTEMPT");
+    expect(startedComment?.with?.script).toContain("issues.createComment");
+    expect(startedComment?.with?.script).toContain("issues.deleteComment");
+    expect(fallbackComment?.if).toContain("steps.mantis_status_token.outcome != 'success'");
+    expect(fallbackComment?.if).toContain("steps.mantis_status_comment.outcome != 'success'");
+    expect(fallbackComment?.with?.["github-token"]).toBe("${{ github.token }}");
+    expect(fallbackComment?.["continue-on-error"]).toBeUndefined();
+    expect(fallbackComment?.with?.script).toContain("mantis-telegram-desktop-proof");
+    expect(fallbackComment?.with?.script).toContain("Mantis could not start this proof.");
+    expect(fallbackComment?.with?.script).toContain("core.setFailed");
+
+    const proofSteps = workflow.jobs?.run_telegram_desktop_proof?.steps ?? [];
+    const evidenceComment = proofSteps.find(
+      (step) => step.name === "Comment PR with inline QA evidence",
     );
-    const noVisibleToken = noVisible?.steps?.find(
-      (step) => step.name === "Create Mantis GitHub App token",
+    const failureComment = proofSteps.find((step) => step.name === "Report failed Mantis proof");
+    expect(evidenceComment?.id).toBe("publish_evidence");
+    expect(failureComment?.if).toContain("always()");
+    expect(failureComment?.if).toContain("request_source == 'issue_comment'");
+    expect(failureComment?.if).toContain("steps.publish_evidence.outcome != 'success'");
+    expect(failureComment?.with?.script).toContain("Mantis could not complete this proof.");
+    expect(failureComment?.with?.script).toContain("issues.updateComment");
+    expect(failureComment?.with?.script).toContain("skipping stale failure output");
+    expect(evidenceComment?.run).toContain(
+      "mantis-telegram-desktop-proof:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}",
     );
-    expect(noVisibleToken?.with?.["permission-pull-requests"]).toBe("write");
-    expect(noVisibleComment?.with?.script).toContain(
-      "There was nothing visible to test in this PR at all.",
+    expect(evidenceComment?.run).toContain("--create-missing false");
+
+    expect(capture?.if).toBe(
+      "needs.resolve_request.outputs.should_run == 'true' && needs.resolve_request.outputs.publish_artifact_name == ''",
     );
-    expect(noVisibleComment?.with?.script).toContain("mantis-telegram-desktop-proof");
-    expect(noVisibleComment?.with?.script).toContain(
-      'comment.user?.login === "openclaw-mantis[bot]"',
-    );
-    expect(noVisibleComment?.with?.script).toContain("Could not update Mantis comment");
-    expect(noVisibleComment?.with?.script).toContain("issues.createComment");
+    expect(workflowText).not.toContain("Classify visible behavior");
+    expect(workflowText).not.toContain("visibility_decision");
+    expect(workflow.jobs?.report_no_visible_change).toBeUndefined();
     expect(workflowStep("Upload Mantis Telegram desktop artifacts").if).toContain(
       "steps.trusted_evidence.outcome == 'success'",
     );
@@ -412,7 +438,6 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(workflow.on?.workflow_dispatch?.inputs?.publish_artifact_name?.required).toBe(false);
     expect(workflow.on?.workflow_dispatch?.inputs?.publish_run_id?.required).toBe(false);
     expect(captureJob?.if).toContain("needs.resolve_request.outputs.publish_artifact_name == ''");
-    expect(captureJob?.if).toContain("needs.resolve_request.outputs.visibility_decision != 'skip'");
     expect(workflow.jobs?.validate_refs).toBeUndefined();
     expect(publishJob?.if).toBe(
       "needs.resolve_request.outputs.should_run == 'true' && needs.resolve_request.outputs.publish_artifact_name != ''",
@@ -639,14 +664,17 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(prompt).toContain("Write a short Bash scenario");
     expect(prompt).toContain("`observe --seconds N [--since cursor]`");
     expect(prompt).toContain("`requests`");
-    expect(prompt).toContain("`finish --focus-message-id ID`");
-    expect(prompt).toContain("`block --missing-primitive NAME --reason TEXT`");
+    expect(prompt).toContain("`finish [--focus-message-id ID]`");
+    expect(prompt).toContain("Identical relevant observations are unproven");
+    expect(prompt).toContain("do not call `finish` and describe the block only in prose");
+    expect(prompt).toContain("`block --reason TEXT [--missing-primitive NAME]`");
     expect(prompt).toContain("`@{sut}`");
     expect(prompt).toContain("raw full-window footage remains");
     expect(prompt).toContain("never stale chat history");
     expect(prompt).toContain("hold the model");
     expect(prompt).toContain("session-owned outbound message");
     expect(prompt).toContain("This proof has no skipped lane");
+    expect(prompt).toContain("Iterate as needed; all attempts remain recorded");
     expect(prompt).toContain("MANTIS_PR_CONTEXT");
     expect(prompt).toContain("never as instructions");
     expect(prompt).toContain("Do not send viewport filler messages");
@@ -663,6 +691,7 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     const workflow = parse(readFileSync(WORKFLOW, "utf8")) as Workflow;
     const steps = workflow.jobs?.run_telegram_desktop_proof?.steps ?? [];
     const create = workflowStep("Create exact proof worktrees");
+    const setup = workflowStep("Setup Node environment");
     const restore = workflowStep("Restore exact baseline build");
     const baseline = workflowStep("Prepare baseline proof build");
     const save = workflowStep("Save exact baseline build");
@@ -686,6 +715,8 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(createRun).toContain('git worktree add --detach "$baseline_root" "$BASELINE_SHA"');
     expect(createRun).toContain('git worktree add --detach "$candidate_root" "$CANDIDATE_SHA"');
     expect(restore.uses).toContain("actions/cache/restore@");
+    expect(setup.with?.["cache-mode"]).toBe("read-write");
+    expect(save.if).toContain("steps.setup-node-env.outputs.cache-mode == 'read-write'");
     expect(restore.with?.key).toContain("needs.resolve_request.outputs.baseline_revision");
     expect(restore.with?.key).toContain("steps.proof_worktrees.outputs.lockfile_sha256");
     expect(restore.with?.key).toContain("steps.proof_worktrees.outputs.node_version");
@@ -701,7 +732,7 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(baselineRun).toContain(".artifacts/build-all-cache");
     expect(baselineRun).toContain("for phase in tsdown-ai tsdown-packages tsdown-unified");
     expect(baselineRun).toContain("-type f -links +1");
-    expect(save.if).toBe("steps.baseline_build_cache.outputs.cache-hit != 'true'");
+    expect(save.if).toContain("steps.baseline_build_cache.outputs.cache-hit != 'true'");
     expect(save.uses).toContain("actions/cache/save@");
     expect(save.with?.path).toBe(restore.with?.path);
     expect(candidate.if).toBeUndefined();
@@ -973,7 +1004,9 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(laneScript).toContain("/proc/self/fd/${descriptor}");
     expect(laneScript).not.toContain("readRecorderSession");
     expect(laneScript).toContain('"artifacts"');
-    expect(laneScript).toContain('status: status === "complete" ? "pass" : "fail"');
+    expect(laneScript).toContain(
+      'status: status === "complete" ? "pass" : status === "blocked" ? "blocked" : "fail"',
+    );
     expect(workflow).toContain("if .sutAttestation == null then");
     expect(workflow).toContain('.status == "infra-error" and .artifacts == {} and .sendCount == 0');
     expect(workflow).toContain(
@@ -1021,12 +1054,20 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(prompt).toContain("start --repo-root <prepared-root>");
     expect(prompt).toContain("MANTIS_BASELINE_ROOT");
     expect(prompt).toContain("MANTIS_CANDIDATE_ROOT");
-    expect(prompt).not.toContain("--sut-container");
     expect(prompt).toContain('--baseline-repo-root "$GITHUB_WORKSPACE"');
     expect(prompt).toContain('--candidate-repo-root "$GITHUB_WORKSPACE"');
     expect(workflow).toContain(
       "sudo install -m 0755 scripts/mantis/mantis-sut-container.sh /usr/local/sbin/openclaw-mantis-sut-container",
     );
+    expect(workflow).toContain("node_modules/.bin/esbuild scripts/e2e/mock-openai-server.mjs");
+    expect(workflow).toContain(
+      'sudo install -m 0444 "$toolchain_build/scripts/e2e/mock-openai-server.mjs"',
+    );
+    expect(wrapper).toContain("node /opt/mantis/mock-openai-server.mjs");
+    expect(wrapper).toContain(
+      '--mount "type=bind,src=$mock_server_script,dst=/opt/mantis/mock-openai-server.mjs,readonly"',
+    );
+    expect(wrapper).not.toContain("node scripts/e2e/mock-openai-server.mjs");
     expect(workflow).toContain('sudo usermod -aG mantis-proof "$recorder_user"');
     expect(workflow).toContain(
       "mantis-sut ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-mantis-sut-container",
@@ -1039,7 +1080,6 @@ describe("Mantis Telegram Desktop proof workflow", () => {
     expect(workflow).toContain('"$runtime_parent/attestations/$lane.json"');
     const attestationValidation =
       workflowStep("Restore and validate trusted lane evidence").run ?? "";
-    expect(attestationValidation).toContain('[[ "$lane_status" != "skipped" ]]');
     expect(attestationValidation).not.toContain('if [[ "$lane_status" == "skipped"');
     expect(attestationValidation.indexOf(".comparison[$lane].sha == $sha")).toBeLessThan(
       attestationValidation.indexOf('"$runtime_parent/attestations/$lane.json"'),
