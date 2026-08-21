@@ -17,7 +17,10 @@ import {
   validateReleaseExecutionPlanArtifact,
   validateReleaseStateArtifact,
 } from "./full-release-validation-policy.mjs";
-import { readFullReleaseValidationLogCheckpointFromGitHub } from "./lib/full-release-validation-log-checkpoint.mjs";
+import {
+  readFullReleaseValidationLogCheckpointFromGitHub,
+  readFullReleaseValidationJobLog,
+} from "./lib/full-release-validation-log-checkpoint.mjs";
 import { execGhRead, plainGhEnv, resolvePlainGhBin } from "./lib/plain-gh.mjs";
 
 const DEFAULT_REPO = process.env.OPENCLAW_RELEASE_REPO || "openclaw/openclaw";
@@ -358,34 +361,8 @@ function findParentJobsAll(parentRunId, repository = DEFAULT_REPO) {
   return jobs;
 }
 
-function parentJobLogArgs(jobId, repository = DEFAULT_REPO, allowEscapeSequences = true) {
-  const args = ["api", `repos/${repository}/actions/jobs/${jobId}/logs`];
-  if (allowEscapeSequences) {
-    args.push("--allow-escape-sequences");
-  }
-  return args;
-}
-
-function isUnknownAllowEscapeSequencesFlag(error) {
-  if (typeof error !== "object" || error === null || !("stderr" in error)) {
-    return false;
-  }
-  const stderr = error.stderr;
-  return (
-    typeof stderr === "string" &&
-    stderr.replace(/\r\n?/gu, "\n").split("\n").includes("unknown flag: --allow-escape-sequences")
-  );
-}
-
 function parentJobLog(jobId, repository = DEFAULT_REPO) {
-  try {
-    return gh(parentJobLogArgs(jobId, repository));
-  } catch (error) {
-    if (!isUnknownAllowEscapeSequencesFlag(error)) {
-      throw error;
-    }
-    return gh(parentJobLogArgs(jobId, repository, false));
-  }
+  return readFullReleaseValidationJobLog(gh, repository, jobId);
 }
 
 function normalizeOptionalRunId(value, label) {

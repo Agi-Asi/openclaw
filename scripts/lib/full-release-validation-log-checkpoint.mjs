@@ -139,6 +139,37 @@ function markerLines(log) {
     .filter((line) => line.startsWith(`${MARKER} `));
 }
 
+function jobLogArgs(repository, jobId, allowEscapeSequences = true) {
+  return [
+    "api",
+    `repos/${repository}/actions/jobs/${jobId}/logs`,
+    ...(allowEscapeSequences ? ["--allow-escape-sequences"] : []),
+  ];
+}
+
+function isUnknownAllowEscapeSequencesFlag(value) {
+  const stderr = typeof value === "string" ? value : (value?.stderr ?? value?.message);
+  return (
+    typeof stderr === "string" &&
+    stderr.replace(/\r\n?/gu, "\n").split("\n").includes("unknown flag: --allow-escape-sequences")
+  );
+}
+
+export function readFullReleaseValidationJobLog(read, repository, jobId) {
+  const retryWithoutFlag = (error) => {
+    if (!isUnknownAllowEscapeSequencesFlag(error)) {
+      throw error;
+    }
+    return read(jobLogArgs(repository, jobId, false));
+  };
+  try {
+    const result = read(jobLogArgs(repository, jobId));
+    return typeof result?.catch === "function" ? result.catch(retryWithoutFlag) : result;
+  } catch (error) {
+    return retryWithoutFlag(error);
+  }
+}
+
 function exactProducerJob(jobs, producer, expected, runAttempt) {
   const matches = (Array.isArray(jobs) ? jobs : []).filter(
     (job) => job?.name === producer.jobName && Number(job?.run_attempt) === Number(runAttempt),

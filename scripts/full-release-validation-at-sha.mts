@@ -16,7 +16,10 @@ import {
   formatReleaseStateOutcome,
   validateReleaseStateArtifact,
 } from "./full-release-validation-policy.mjs";
-import { readFullReleaseValidationLogCheckpointFromGitHub } from "./lib/full-release-validation-log-checkpoint.mjs";
+import {
+  readFullReleaseValidationLogCheckpointFromGitHub,
+  readFullReleaseValidationJobLog,
+} from "./lib/full-release-validation-log-checkpoint.mjs";
 import { execGhRead } from "./lib/plain-gh.mjs";
 
 const WORKFLOW = "full-release-validation.yml";
@@ -701,8 +704,7 @@ export function tryReadReleaseDecisionCheckpoint(
   };
   try {
     const checkpoint = readFullReleaseValidationLogCheckpointFromGitHub({
-      getJobLog: (jobId) =>
-        read(["api", `repos/openclaw/openclaw/actions/jobs/${String(jobId)}/logs`]),
+      getJobLog: (jobId) => readFullReleaseValidationJobLog(read, "openclaw/openclaw", jobId),
       getJobs: () =>
         JSON.parse(
           read([

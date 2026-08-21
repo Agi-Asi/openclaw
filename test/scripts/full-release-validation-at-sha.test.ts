@@ -681,8 +681,18 @@ describe("full-release-validation-at-sha", () => {
         workflowSha,
       },
     }).join("\n");
+    const calls: string[][] = [];
     const runStatusImpl = (_command: string, args: string[]) => {
-      const endpoint = args.at(-1) ?? "";
+      calls.push(args);
+      const endpoint = args.find((arg) => arg.includes("/actions/")) ?? "";
+      if (endpoint.endsWith("/actions/jobs/7/logs") && args.includes("--allow-escape-sequences")) {
+        return {
+          signal: null,
+          status: 1,
+          stderr: "unknown flag: --allow-escape-sequences\n",
+          stdout: "",
+        };
+      }
       const stdout = endpoint.endsWith("/actions/runs/123")
         ? JSON.stringify({
             event: "workflow_dispatch",
@@ -715,6 +725,10 @@ describe("full-release-validation-at-sha", () => {
     expect(
       tryReadReleaseDecisionCheckpoint("123", 2, workflowSha, targetSha, runStatusImpl),
     ).toMatchObject(payload);
+    expect(calls.slice(-2)).toEqual([
+      ["api", "repos/openclaw/openclaw/actions/jobs/7/logs", "--allow-escape-sequences"],
+      ["api", "repos/openclaw/openclaw/actions/jobs/7/logs"],
+    ]);
   });
 
   it("bounds GitHub reads without applying a timeout to workflow dispatch", () => {

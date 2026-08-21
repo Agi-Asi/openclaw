@@ -1,6 +1,11 @@
 type CheckpointKind = "plan" | "decision" | "drain";
 type JsonRecord = Record<string, unknown>;
 
+export function readFullReleaseValidationJobLog<T>(
+  read: (args: string[]) => T,
+  repository: string,
+  jobId: unknown,
+): T;
 export function encodeFullReleaseValidationLogCheckpoint(params: {
   kind: CheckpointKind;
   payload: unknown;

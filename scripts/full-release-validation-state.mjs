@@ -27,6 +27,7 @@ import {
 } from "./full-release-validation-policy.mjs";
 import {
   encodeFullReleaseValidationLogCheckpoint,
+  readFullReleaseValidationJobLog,
   recoverFullReleaseValidationLogCheckpoint,
 } from "./lib/full-release-validation-log-checkpoint.mjs";
 
@@ -146,12 +147,6 @@ async function githubAttemptJobs(runId, runAttempt, signal) {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
-}
-
-async function githubJobLog(jobId, signal) {
-  return runGh(["api", `repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/${jobId}/logs`], {
-    signal,
-  });
 }
 
 async function checkpointProvenance(signal) {
@@ -544,7 +539,12 @@ async function planMode() {
       kind: "plan",
       listJobsForAttempt: (attempt) =>
         githubAttemptJobs(provenance.runId, attempt, abortController.signal),
-      readJobLog: (jobId) => githubJobLog(jobId, abortController.signal),
+      readJobLog: (jobId) =>
+        readFullReleaseValidationJobLog(
+          (args) => runGh(args, { signal: abortController.signal }),
+          process.env.GITHUB_REPOSITORY,
+          jobId,
+        ),
     });
     const restored = validateReleaseExecutionPlanArtifact(recovered.payload, expected);
     writeExecutionPlan(outputPath, restored);

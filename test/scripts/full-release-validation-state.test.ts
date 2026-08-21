@@ -1052,6 +1052,10 @@ if (endpoint.endsWith("/actions/runs/77")) {
 } else if (endpoint.includes("/attempts/1/jobs")) {
   console.log(JSON.stringify({id: 999, name: "Seal release execution plan", run_id: 77, run_attempt: 1, head_sha: process.env.GITHUB_SHA, workflow_name: "Full Release Validation", status: "completed", conclusion: "success"}));
 } else if (endpoint.includes("/actions/jobs/999/logs")) {
+  if (args.includes("--allow-escape-sequences")) {
+    console.error("unknown flag: --allow-escape-sequences");
+    process.exit(1);
+  }
   process.stdout.write(readFileSync(process.env.FRV_CHECKPOINT_LOG, "utf8"));
 } else {
   console.error("unexpected gh call: " + args.join(" "));
