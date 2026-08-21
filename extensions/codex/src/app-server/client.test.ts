@@ -432,25 +432,27 @@ describe("CodexAppServerClient", () => {
     expect(harness.writes).toHaveLength(1);
   });
 
-  it("accepts a newer stable app-server for normal startup validation", async () => {
-    const newerVersion = "0.150.0";
-    const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
-    const { harness, initializing, outbound } = startInitialize();
-    harness.send({
-      id: outbound.id,
-      result: { userAgent: `openclaw/${newerVersion} (macOS; test)` },
-    });
+  it.each(["0.150.0-alpha.1", "0.150.0"])(
+    "accepts a newer app-server version %s for normal startup validation",
+    async (newerVersion) => {
+      const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
+      const { harness, initializing, outbound } = startInitialize();
+      harness.send({
+        id: outbound.id,
+        result: { userAgent: `openclaw/${newerVersion} (macOS; test)` },
+      });
 
-    await expect(initializing).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(
-      "codex app-server is newer than OpenClaw's managed runtime; continuing with normal startup validation",
-      {
-        detectedVersion: newerVersion,
-        validatedVersion: CODEX_APP_SERVER_VERSION,
-      },
-    );
-    expect(harness.writes).toHaveLength(2);
-  });
+      await expect(initializing).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(
+        "codex app-server is newer than OpenClaw's managed runtime; continuing with normal startup validation",
+        {
+          detectedVersion: newerVersion,
+          validatedVersion: CODEX_APP_SERVER_VERSION,
+        },
+      );
+      expect(harness.writes).toHaveLength(2);
+    },
+  );
 
   it("blocks app-server initialize responses without a version", async () => {
     const { harness, initializing, outbound } = startInitialize();

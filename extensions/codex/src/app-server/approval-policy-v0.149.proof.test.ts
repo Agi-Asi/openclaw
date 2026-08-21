@@ -123,7 +123,10 @@ function readCandidateSurface(): CandidateSurface {
     ],
     { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] },
   );
-  return { parent: gitOutput(["rev-parse", "HEAD^"]), diffSha256: sha256(diff) };
+  return {
+    parent: gitOutput(["merge-base", FROZEN_PARENT, "HEAD"]),
+    diffSha256: sha256(diff),
+  };
 }
 
 function verifyApprovalProof(proof: ApprovalProof, candidate = readCandidateSurface()): void {
