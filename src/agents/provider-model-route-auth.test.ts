@@ -342,6 +342,7 @@ describe("provider model route auth", () => {
         provider: "openai",
         resolution: { ...routes, routes: [routes.routes[1]] },
         runtimeAuthOwner: { id: "codex" },
+        allowNativeAuthOnSingleRoute: true,
         sourcePlan: buildProviderModelAuthSourcePlan({ profiles: [] }),
       }),
     ).toEqual({
@@ -352,6 +353,17 @@ describe("provider model route auth", () => {
         runtimePolicy: { compatibleIds: ["openclaw", "codex"] },
       },
     });
+  });
+
+  it("does not infer native ownership for an explicitly authored single route", () => {
+    expect(
+      selectProviderModelRouteAuth({
+        provider: "openai",
+        resolution: { ...routes, routes: [routes.routes[1]] },
+        runtimeAuthOwner: { id: "codex" },
+        sourcePlan: buildProviderModelAuthSourcePlan({ profiles: [] }),
+      }),
+    ).toMatchObject({ kind: "rejected", reason: "configured-auth" });
   });
 
   it.each([
