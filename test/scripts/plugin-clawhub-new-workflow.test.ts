@@ -263,6 +263,8 @@ describe("Plugin ClawHub New workflow", () => {
   it("rehashes and validates tgz identity before exposing the token", () => {
     const publish = job("publish_bootstrap_plugins");
     const names = (publish.steps ?? []).map((entry) => entry.name);
+    const publishStep = step(publish, "Publish exact ClawHub bootstrap artifacts");
+    const publishRun = publishStep.run ?? "";
     expect(names.indexOf("Rehash immutable ClawHub bootstrap artifacts")).toBeLessThan(
       names.indexOf("Write ClawHub token config"),
     );
@@ -284,21 +286,40 @@ describe("Plugin ClawHub New workflow", () => {
     expect(
       step(publish, "Validate packed ClawHub package identities before credentials").run,
     ).toContain("--validate-packed");
-    expect(step(publish, "Publish exact ClawHub bootstrap artifacts").run).toContain(
-      "--publish-packed",
+    expect(publishRun).toContain("--publish-packed");
+    expect(publishRun).toContain("verify_release_tag_target");
+    expect(publishRun).toContain("OPENCLAW_CLAWHUB_RELEASE_GIT_DIR");
+    expect(publishRun).toContain("OPENCLAW_CLAWHUB_RELEASE_TAG");
+    expect(publishRun).toContain("OPENCLAW_CLAWHUB_TARGET_SHA");
+    expect(publishStep.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
+      RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
+      WORKFLOW_FULL_REF: "${{ github.ref }}",
+      WORKFLOW_REF: "${{ github.ref_name }}",
+      WORKFLOW_SHA: "${{ github.workflow_sha }}",
+    });
+    expect(publishRun).toContain(
+      "node .release-harness/scripts/release-tooling-identity.mjs verify",
     );
-    expect(step(publish, "Publish exact ClawHub bootstrap artifacts").run).toContain(
-      "verify_release_tag_target",
+    expect(publishRun).toContain('--workflow-ref "${WORKFLOW_REF}"');
+    expect(publishRun).toContain('--workflow-full-ref "${WORKFLOW_FULL_REF}"');
+    expect(publishRun).toContain('--workflow-sha "${WORKFLOW_SHA}"');
+    expect(publishRun).toContain('--release-publish-run-id "${RELEASE_PUBLISH_RUN_ID}"');
+    expect(publishRun).toContain('--release-publish-run-attempt "${RELEASE_PUBLISH_RUN_ATTEMPT}"');
+    expect(publishRun).not.toContain("--allow-prevalidated-ref");
+
+    const verifierCalls = [
+      ...publishRun.matchAll(/^\s*verify_release_tooling_identity\s*$/gmu),
+    ].map((match) => match.index ?? -1);
+    expect(verifierCalls).toHaveLength(2);
+    const packedPublish = publishRun.indexOf("--publish-packed");
+    const trustedPublisherMutation = publishRun.indexOf(
+      '"${OPENCLAW_CLAWHUB_CLI}" package trusted-publisher set',
     );
-    expect(step(publish, "Publish exact ClawHub bootstrap artifacts").run).toContain(
-      "OPENCLAW_CLAWHUB_RELEASE_GIT_DIR",
-    );
-    expect(step(publish, "Publish exact ClawHub bootstrap artifacts").run).toContain(
-      "OPENCLAW_CLAWHUB_RELEASE_TAG",
-    );
-    expect(step(publish, "Publish exact ClawHub bootstrap artifacts").run).toContain(
-      "OPENCLAW_CLAWHUB_TARGET_SHA",
-    );
+    expect(verifierCalls[0]).toBeLessThan(packedPublish);
+    expect(verifierCalls[1]).toBeGreaterThan(packedPublish);
+    expect(verifierCalls[1]).toBeLessThan(trustedPublisherMutation);
   });
 
   it("preserves configure-only repair and exact registry byte readback", () => {
