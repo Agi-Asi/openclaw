@@ -17,6 +17,7 @@ import {
   scanDirectoryWithSummary,
   type SkillScanFinding,
 } from "../../src/skills/security/scanner.js";
+import { runTasksWithConcurrency } from "../../src/utils/run-with-concurrency.js";
 
 type NpmPackFile = {
   path?: unknown;
@@ -31,12 +32,18 @@ type PublishablePluginPackage = {
   packageName: string;
 };
 
+type CriticalFindingRecord = {
+  line: number;
+  path: string;
+  ruleId: string;
+};
+
 type ScanPackageResult = {
   expectedReviewedCriticalFindings: string[];
   packageName: string;
   packedFileCount: number;
   reviewedCriticalFindings: string[];
-  unexpectedCriticalFindings: string[];
+  unexpectedCriticalFindings: CriticalFindingRecord[];
 };
 
 export type PluginNpmSecurityScanReport = {
@@ -55,19 +62,37 @@ export type PluginNpmSecurityScanReport = {
 };
 
 const execFileAsync = promisify(execFile);
+const MAX_SCANNABLE_FILES_PER_PACKAGE = 10_000;
+const MAX_SCANNABLE_FILE_BYTES = 1024 * 1024;
+const MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE = 64 * 1024 * 1024;
+const PACKAGE_SCAN_CONCURRENCY = 4;
+const DEFAULT_SCANNER_INPUT_LIMITS = {
+  maxFileBytes: MAX_SCANNABLE_FILE_BYTES,
+  maxFiles: MAX_SCANNABLE_FILES_PER_PACKAGE,
+  maxTotalBytes: MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE,
+};
 
 const COMMON_REVIEWED_CRITICAL_FINDING_COUNTS = new Map<string, number>([
   ["@openclaw/acpx:dangerous-exec:src/codex-auth-bridge.ts", 1],
   ["@openclaw/acpx:dangerous-exec:src/runtime-internals/mcp-proxy.mjs", 1],
+  ["@openclaw/acpx:dangerous-exec:src/runtime-internals/mcp-proxy.test.ts", 3],
   ["@openclaw/codex:dangerous-exec:src/app-server/transport-stdio.ts", 1],
   ["@openclaw/codex:dangerous-exec:src/doctor.ts", 1],
   ["@openclaw/discord:dangerous-exec:src/voice/audio.ts", 1],
   ["@openclaw/imessage:dangerous-exec:src/client.ts", 1],
+  ["@openclaw/imessage:dangerous-exec:src/client.test.ts", 3],
   ["@openclaw/llama-cpp-provider:dangerous-exec:src/llama-server-install.ts", 1],
   ["@openclaw/mxc-sandbox:dangerous-exec:src/readiness.ts", 2],
   ["@openclaw/raft:dangerous-exec:src/gateway.ts", 1],
   ["@openclaw/signal:dangerous-exec:src/daemon.ts", 1],
   ["@openclaw/voice-call:dangerous-exec:src/tunnel.ts", 1],
+  ["@openclaw/diagnostics-prometheus:dangerous-exec:src/install-runtime.e2e.test.ts", 2],
+  ["@openclaw/google-meet:dangerous-exec:src/cli-artifacts.test.ts", 1],
+  ["@openclaw/google-meet:dangerous-exec:src/realtime.process.test.ts", 1],
+  ["@openclaw/memory-lancedb:dangerous-exec:memory-lancedb.concurrent.test.ts", 1],
+  ["@openclaw/opencode-go-provider:env-harvesting:opencode-go.live.test.ts", 1],
+  ["@openclaw/openshell-sandbox:dangerous-exec:src/backend.e2e.test.ts", 1],
+  ["@openclaw/openshell-sandbox:dangerous-exec:src/openshell-core.test.ts", 1],
 ]);
 
 const REVIEWED_RELEASE_LAYOUTS = Object.freeze([
@@ -78,6 +103,7 @@ const REVIEWED_RELEASE_LAYOUTS = Object.freeze([
       ["@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/processes.ts", 1],
       ["@openclaw/codex:dangerous-exec:src/node-cli-sessions.ts", 1],
       ["@openclaw/opencode-provider:dangerous-exec:session-catalog.ts", 1],
+      ["@openclaw/opencode-provider:dangerous-exec:session-catalog.test.ts", 1],
     ]),
   },
   {
@@ -85,6 +111,7 @@ const REVIEWED_RELEASE_LAYOUTS = Object.freeze([
     findings: new Map<string, number>([
       ["@openclaw/codex:dangerous-exec:src/app-server/sandbox-exec-server/sandbox-child.ts", 1],
       ["@openclaw/codex:dangerous-exec:src/app-server/transport-process-containment.ts", 1],
+      ["@openclaw/codex:dangerous-exec:src/app-server/transport.process.test.ts", 13],
     ]),
   },
 ]);
@@ -171,7 +198,7 @@ export async function collectNpmPackedFiles(
   return parseNpmPackFiles(stdout, packageName);
 }
 
-function normalizePackedFindingPath(packedPath: string): string {
+export function normalizePackedFindingPath(packedPath: string): string {
   for (const prefix of [
     "dynamic-tools",
     "outbound-payload.test-harness",
@@ -181,7 +208,7 @@ function normalizePackedFindingPath(packedPath: string): string {
     "session-catalog",
     "transport-stdio",
   ]) {
-    if (packedPath.startsWith(`dist/${prefix}-`) && packedPath.endsWith(".js")) {
+    if (new RegExp(`^dist/${prefix}-[A-Za-z0-9_-]{8}\\.js$`, "u").test(packedPath)) {
       return `dist/${prefix}-<hash>.js`;
     }
   }
@@ -235,9 +262,12 @@ function assertPathInside(parentPath: string, childPath: string): void {
 export function stageScannerRelevantPackedFiles(
   packageDir: string,
   packedFiles: readonly string[],
-): string {
+  limits = DEFAULT_SCANNER_INPUT_LIMITS,
+): { fileCount: number; stageDir: string; totalBytes: number } {
   const stageDir = mkdtempSync(join(tmpdir(), "openclaw-plugin-npm-scan-"));
   const realPackageDir = realpathSync(packageDir);
+  let fileCount = 0;
+  let totalBytes = 0;
 
   try {
     for (const packedPath of packedFiles) {
@@ -253,6 +283,17 @@ export function stageScannerRelevantPackedFiles(
       if (!sourceStat.isFile()) {
         throw new Error(`Packed scanner input is not a regular file: ${packedPath}`);
       }
+      if (sourceStat.size > limits.maxFileBytes) {
+        throw new Error(`Packed scanner input exceeds the per-file byte limit: ${packedPath}`);
+      }
+      fileCount += 1;
+      totalBytes += sourceStat.size;
+      if (fileCount > limits.maxFiles) {
+        throw new Error("Packed scanner input exceeds the file-count limit.");
+      }
+      if (totalBytes > limits.maxTotalBytes) {
+        throw new Error("Packed scanner input exceeds the total-byte limit.");
+      }
       const realSource = realpathSync(source);
       assertPathInside(realPackageDir, realSource);
 
@@ -260,7 +301,7 @@ export function stageScannerRelevantPackedFiles(
       mkdirSync(dirname(target), { recursive: true });
       copyFileSync(realSource, target);
     }
-    return stageDir;
+    return { fileCount, stageDir, totalBytes };
   } catch (error) {
     rmSync(stageDir, { recursive: true, force: true });
     throw error;
@@ -313,11 +354,15 @@ async function listPublishablePluginPackages(
   });
 }
 
-function findingKey(packageName: string, stageDir: string, finding: SkillScanFinding): string {
+function findingRecord(stageDir: string, finding: SkillScanFinding): CriticalFindingRecord {
   const packedPath = normalizePackedFindingPath(
     relative(stageDir, finding.file).split(sep).join("/"),
   );
-  return `${packageName}:${finding.ruleId}:${packedPath}`;
+  return { line: finding.line, path: packedPath, ruleId: finding.ruleId };
+}
+
+function findingKey(packageName: string, finding: CriticalFindingRecord): string {
+  return `${packageName}:${finding.ruleId}:${finding.path}`;
 }
 
 export function assertCompleteScannerSummary(
@@ -342,34 +387,43 @@ async function scanPublishablePluginPackage(
     );
   }
 
-  const stageDir = stageScannerRelevantPackedFiles(plugin.packageDir, packedFiles);
+  const staged = stageScannerRelevantPackedFiles(plugin.packageDir, packedFiles);
   try {
-    const summary = await scanDirectoryWithSummary(stageDir, {
-      excludeTestFiles: true,
-      maxFiles: 10_000,
+    const summary = await scanDirectoryWithSummary(staged.stageDir, {
+      excludeTestFiles: false,
+      maxFileBytes: MAX_SCANNABLE_FILE_BYTES,
+      maxFiles: MAX_SCANNABLE_FILES_PER_PACKAGE,
     });
     assertCompleteScannerSummary(plugin.packageName, summary);
+    if (summary.scannedFiles !== staged.fileCount) {
+      throw new Error(
+        `${plugin.packageName}: security scan processed ${summary.scannedFiles} of ${staged.fileCount} staged files.`,
+      );
+    }
     for (const finding of summary.findings) {
       if (finding.severity !== "critical") {
         continue;
       }
-      const key = findingKey(plugin.packageName, stageDir, finding);
+      const record = findingRecord(staged.stageDir, finding);
+      const key = findingKey(plugin.packageName, record);
       if (isReviewedCriticalFinding(key)) {
         reviewedCriticalFindings.push(key);
       } else {
-        unexpectedCriticalFindings.push([key, `${finding.line}`, finding.evidence].join(":"));
+        unexpectedCriticalFindings.push(record);
       }
     }
   } finally {
-    rmSync(stageDir, { recursive: true, force: true });
+    rmSync(staged.stageDir, { recursive: true, force: true });
   }
 
   return {
-    expectedReviewedCriticalFindings,
+    expectedReviewedCriticalFindings: sortStrings(expectedReviewedCriticalFindings),
     packageName: plugin.packageName,
     packedFileCount: packedFiles.length,
-    reviewedCriticalFindings,
-    unexpectedCriticalFindings,
+    reviewedCriticalFindings: sortStrings(reviewedCriticalFindings),
+    unexpectedCriticalFindings: unexpectedCriticalFindings.toSorted((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    ),
   };
 }
 
@@ -416,7 +470,7 @@ export function buildPluginNpmSecurityScanReport(params: {
   for (const result of packageResults) {
     if (result.unexpectedCriticalFindings.length > 0) {
       errors.push(
-        `${result.packageName}: unexpected critical findings: ${result.unexpectedCriticalFindings.join(" | ")}`,
+        `${result.packageName}: unexpected critical findings: ${JSON.stringify(result.unexpectedCriticalFindings)}`,
       );
     }
     if (!layout) {
@@ -438,13 +492,21 @@ export function buildPluginNpmSecurityScanReport(params: {
     (total, result) => total + result.unexpectedCriticalFindings.length,
     0,
   );
+  const sortedPackages = packageResults
+    .map((result) => ({
+      ...result,
+      expectedReviewedCriticalFindings: sortStrings(result.expectedReviewedCriticalFindings),
+      reviewedCriticalFindings: sortStrings(result.reviewedCriticalFindings),
+      unexpectedCriticalFindings: result.unexpectedCriticalFindings.toSorted((left, right) =>
+        JSON.stringify(left).localeCompare(JSON.stringify(right)),
+      ),
+    }))
+    .toSorted((left, right) => left.packageName.localeCompare(right.packageName));
   return {
     candidateSha,
-    errors,
+    errors: sortStrings(errors),
     layout: layout?.id ?? null,
-    packages: packageResults.toSorted((left, right) =>
-      left.packageName.localeCompare(right.packageName),
-    ),
+    packages: sortedPackages,
     schemaVersion: 1,
     status: errors.length === 0 ? "pass" : "fail",
     summary: {
@@ -467,6 +529,11 @@ export async function runPluginNpmSecurityScan(params: {
     gitOutput(toolingDir, ["rev-parse", "HEAD"]),
     listPublishablePluginPackages(candidateDir),
   ]);
-  const packageResults = await Promise.all(packages.map(scanPublishablePluginPackage));
+  const { results: packageResults } = await runTasksWithConcurrency({
+    errorMode: "stop",
+    limit: PACKAGE_SCAN_CONCURRENCY,
+    tasks: packages.map((plugin) => () => scanPublishablePluginPackage(plugin)),
+    throwOnError: true,
+  });
   return buildPluginNpmSecurityScanReport({ candidateSha, packageResults, toolingSha });
 }

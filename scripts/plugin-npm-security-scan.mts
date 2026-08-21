@@ -59,6 +59,25 @@ async function writeReport(outputPath: string, report: PluginNpmSecurityScanRepo
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 }
 
+function sanitizeErrorMessage(
+  error: unknown,
+  args: ReturnType<typeof parseArgs> | undefined,
+): string {
+  let message = error instanceof Error ? error.message : String(error);
+  for (const [path, replacement] of [
+    [args?.candidateRoot, "<candidate>"],
+    [process.cwd(), "<tooling>"],
+  ] as const) {
+    if (path) {
+      message = message.replaceAll(path, replacement);
+    }
+  }
+  return message.replaceAll(
+    /\/(?:private\/)?tmp\/openclaw-plugin-npm-scan-[^/\s:]+/gu,
+    "<scanner-stage>",
+  );
+}
+
 async function main(argv = process.argv.slice(2)): Promise<number> {
   let args: ReturnType<typeof parseArgs> | undefined;
   try {
@@ -88,11 +107,11 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     return report.status === "pass" ? 0 : 1;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = sanitizeErrorMessage(error, args);
     console.error(`Plugin npm security scan failed: ${message}`);
     if (args) {
       await writeReport(args.outputPath, {
-        candidateSha: "",
+        candidateSha: args.candidateSha,
         errors: [message],
         layout: null,
         packages: [],
@@ -103,7 +122,7 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
           reviewedCriticalFindingCount: 0,
           unexpectedCriticalFindingCount: 0,
         },
-        toolingSha: "",
+        toolingSha: args.toolingSha,
       });
     }
     return 1;
