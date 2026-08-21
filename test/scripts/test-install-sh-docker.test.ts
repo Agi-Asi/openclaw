@@ -558,6 +558,44 @@ function extractReadPackTarballFilename(): string {
   return expectDefined(match[1], "pack tarball filename helper capture");
 }
 
+function extractInstallSmokePackHelper(name: string, nextName: string): string {
+  const script = readFileSync(SCRIPT_PATH, "utf8");
+  const start = script.indexOf(`${name}() {`);
+  const end = script.indexOf(`\n\n${nextName}() {`, start);
+  if (start < 0 || end <= start) {
+    throw new Error(`${name} helper was not found`);
+  }
+  return script.slice(start, end);
+}
+
+function runInstallSmokePackHelpers(packJson: unknown, budgetBytes = 204 * 1024 * 1024) {
+  const root = tempDirs.make("openclaw-install-pack-helper-");
+  const packJsonPath = join(root, "pack.json");
+  writeFileSync(packJsonPath, JSON.stringify(packJson), "utf8");
+  const result = spawnSync(
+    "bash",
+    [
+      "--noprofile",
+      "--norc",
+      "-c",
+      `set -euo pipefail
+${extractInstallSmokePackHelper("normalize_npm_pack_json_file", "run_install_smoke_container")}
+${extractInstallSmokePackHelper("assert_pack_unpacked_size_budget", "print_pack_delta_audit")}
+normalize_npm_pack_json_file "$PACK_JSON_PATH"
+assert_pack_unpacked_size_budget "fixture" "$PACK_JSON_PATH"`,
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        OPENCLAW_INSTALL_SMOKE_PACK_UNPACKED_BUDGET_BYTES: String(budgetBytes),
+        PACK_JSON_PATH: packJsonPath,
+      },
+    },
+  );
+  return { normalized: JSON.parse(readFileSync(packJsonPath, "utf8")), result };
+}
+
 function runReadPackTarballFilename(filename: string) {
   return spawnSync(
     "bash",
@@ -1212,8 +1250,36 @@ printf 'status=%s\\n' "$status"
 
     expect(script).toContain("assert_pack_unpacked_size_budget");
     expect(script).toContain('assert_pack_unpacked_size_budget "update" "$pack_json_file"');
-    expect(script).toContain('from "./scripts/lib/npm-pack-budget.mts"');
+    expect(script).toContain("204 * 1024 * 1024");
     expect(script).toContain("install smoke cannot verify pack budget");
+  });
+
+  it("normalizes npm 12 pack output and enforces the budget without tsx", () => {
+    const withinBudget = runInstallSmokePackHelpers({
+      openclaw: {
+        filename: "openclaw-2026.8.1.tgz",
+        unpackedSize: 100,
+        version: "2026.8.1",
+      },
+    });
+    expect(withinBudget.result.status).toBe(0);
+    expect(withinBudget.result.stderr).toBe("");
+    expect(withinBudget.normalized).toEqual([
+      {
+        filename: "openclaw-2026.8.1.tgz",
+        unpackedSize: 100,
+        version: "2026.8.1",
+      },
+    ]);
+
+    const oversized = runInstallSmokePackHelpers(
+      [{ name: "ignored" }, { filename: "candidate.tgz", unpackedSize: 101 }],
+      100,
+    );
+    expect(oversized.result.status).not.toBe(0);
+    expect(oversized.result.stderr).toContain(
+      "candidate.tgz unpackedSize 101 bytes exceeds budget 100 bytes",
+    );
   });
 
   it("keeps npm pack tarball filenames local before serving update artifacts", () => {
@@ -1272,11 +1338,39 @@ printf 'status=%s\\n' "$status"
     expect(script).toContain("--require-bundled-workspace-deps");
   });
 
+  it("keeps frozen payload mode free of candidate build and normalization work", () => {
+    const script = readFileSync(SCRIPT_PATH, "utf8");
+    const prepareStart = script.indexOf("prepare_update_tarball() {");
+    const frozenStart = script.indexOf('if [[ -n "$FROZEN_PAYLOAD_DIR" ]]; then', prepareStart);
+    const packageSpecBranch = script.indexOf('elif [[ -n "$UPDATE_PACKAGE_SPEC" ]]', frozenStart);
+    const frozenBranch = script.slice(frozenStart, packageSpecBranch);
+
+    expect(prepareStart).toBeGreaterThan(0);
+    expect(frozenStart).toBeGreaterThan(0);
+    expect(packageSpecBranch).toBeGreaterThan(frozenStart);
+    expect(frozenBranch).toContain('cp "$FROZEN_PAYLOAD_DIR/candidate.tgz"');
+    expect(frozenBranch).toContain('cp "$FROZEN_PAYLOAD_DIR/candidate-pack.json"');
+    expect(frozenBranch).not.toContain("pnpm build");
+    expect(frozenBranch).not.toContain("package-openclaw-for-docker");
+    expect(frozenBranch).not.toContain("normalize_npm_pack_json_file");
+    expect(script).not.toContain("node --import tsx");
+    expect(script).toContain('if [[ -z "$FROZEN_PAYLOAD_DIR" ]]; then');
+    expect(script).toContain(
+      'require_regular_payload_file "$FROZEN_PAYLOAD_DIR/install.sh" "installer"',
+    );
+    expect(script).toContain(
+      'require_regular_payload_file "$FROZEN_PAYLOAD_DIR/install-cli.sh" "CLI installer"',
+    );
+  });
+
   it("runs candidate tarballs through the installer script instead of direct npm", () => {
     const wrapper = readFileSync(SCRIPT_PATH, "utf8");
     const runner = readFileSync(SMOKE_RUNNER_PATH, "utf8");
 
-    expect(wrapper).toContain('-v "$ROOT_DIR/scripts/install.sh:/tmp/openclaw-install.sh:ro"');
+    expect(wrapper).toContain('-v "$INSTALL_SCRIPT_PATH:/tmp/openclaw-install.sh:ro"');
+    expect(wrapper).toContain(
+      'FROZEN_PAYLOAD_DIR="${OPENCLAW_INSTALL_SMOKE_FROZEN_PAYLOAD_DIR:-}"',
+    );
     expect(runner).toContain("Run official installer one-liner for latest release tarball");
     expect(runner).toContain("run_installer_pipeline");
     expect(runner).toContain('--version "$FRESH_TAG_URL"');
@@ -2115,7 +2209,8 @@ chmod +x "$BUN_INSTALL/bin/openclaw"
     expect(workflow).toContain('OPENCLAW_INSTALL_SMOKE_SKIP_CLI: "0"');
     expect(workflow).toContain("Run Rocky Linux installer smoke");
     expect(workflow).toContain("Run Rocky Linux CLI installer smoke");
-    expect(workflow).toContain("scripts/install-cli.sh:/tmp/install-cli.sh:ro");
+    expect(workflow).toContain("PAYLOAD_DIR: ${{ runner.temp }}/install-smoke-candidate-payload");
+    expect(workflow).toContain("$PAYLOAD_DIR/install-cli.sh:/tmp/install-cli.sh:ro");
     expect(workflow).toContain("bash /tmp/install-cli.sh --prefix /tmp/openclaw-cli");
     expect(workflow).toContain("rockylinux:9@sha256:");
     expect(workflow).toContain("pnpm-workspace.yaml");
@@ -2132,7 +2227,7 @@ chmod +x "$BUN_INSTALL/bin/openclaw"
     expect(releaseChecks).toContain("run_bun_global_install_smoke: true");
   });
 
-  it("runs installer packaging from the trusted workflow revision against a nested candidate", () => {
+  it("packages candidate bytes in isolation and gives consumers only verified artifacts", () => {
     const workflow = parse(readFileSync(INSTALL_SMOKE_WORKFLOW_PATH, "utf8"));
     const cases = [
       {
@@ -2141,7 +2236,6 @@ chmod +x "$BUN_INSTALL/bin/openclaw"
         dockerfile: "./scripts/docker/install-sh-smoke/Dockerfile",
         group: "update",
         producerName: "installer_smoke_update_image",
-        setupName: "Setup Node environment for installer update smoke",
         testName: "Run installer update docker tests",
       },
       {
@@ -2150,7 +2244,6 @@ chmod +x "$BUN_INSTALL/bin/openclaw"
         dockerfile: "./scripts/docker/install-sh-nonroot/Dockerfile",
         group: "nonroot",
         producerName: "installer_smoke_nonroot_image",
-        setupName: "Setup Node environment for installer non-root smoke",
         testName: "Run installer non-root docker tests",
       },
     ] as const;
@@ -2167,8 +2260,8 @@ chmod +x "$BUN_INSTALL/bin/openclaw"
       const producer = workflow.jobs[testCase.producerName];
       const consumer = workflow.jobs[testCase.consumerName];
       expect(workflowStep(producer, "Checkout trusted installer harness").with).toMatchObject({
-        repository: "${{ needs.preflight.outputs.workflow_repository }}",
-        ref: "${{ needs.preflight.outputs.workflow_sha }}",
+        repository: "${{ fromJSON(toJSON(job)).workflow_repository }}",
+        ref: "${{ fromJSON(toJSON(job)).workflow_sha }}",
         "persist-credentials": false,
       });
       const buildStep = workflowStep(producer, testCase.buildName);
@@ -2176,37 +2269,47 @@ chmod +x "$BUN_INSTALL/bin/openclaw"
       expect(buildStep.run).not.toContain("candidate/scripts/docker");
 
       expect(workflowStep(consumer, "Checkout trusted installer harness").with).toMatchObject({
-        repository: "${{ needs.preflight.outputs.workflow_repository }}",
-        ref: "${{ needs.preflight.outputs.workflow_sha }}",
+        repository: "${{ fromJSON(toJSON(job)).workflow_repository }}",
+        ref: "${{ fromJSON(toJSON(job)).workflow_sha }}",
         "persist-credentials": false,
       });
-      expect(workflowStep(consumer, "Checkout candidate CLI").with).toMatchObject({
-        ref: "${{ needs.preflight.outputs.target_sha }}",
-        path: "candidate",
-        "persist-credentials": false,
-      });
-      const setup = workflowStep(consumer, testCase.setupName);
-      expect(setup.uses).toBe("./.github/actions/setup-node-env");
-      expect(setup.with).toMatchObject({
-        "cache-mode": testCase.group === "update" ? "restore" : "off",
-        "install-deps": testCase.group === "update" ? "true" : "false",
-      });
+      expect(
+        consumer.steps.find((entry: { name?: string }) => entry.name === "Checkout candidate CLI"),
+      ).toBeUndefined();
+      expect(
+        consumer.steps.find((entry: { uses?: string }) =>
+          entry.uses?.includes("./.github/actions/setup-node-env"),
+        ),
+      ).toBeUndefined();
+      expect(workflowStep(consumer, "Validate candidate payload artifact binding").run).toContain(
+        'verify-upload "Candidate payload"',
+      );
+      expect(workflowStep(consumer, "Verify candidate payload contents").run).toContain(
+        "install-smoke-candidate-payload.mts verify",
+      );
       const run = workflowStep(consumer, testCase.testName);
       expect(run.env).toMatchObject({
+        OPENCLAW_INSTALL_SMOKE_FROZEN_PAYLOAD_DIR:
+          "${{ runner.temp }}/install-smoke-candidate-payload",
         OPENCLAW_INSTALL_SMOKE_GROUP: testCase.group,
-        OPENCLAW_INSTALL_SMOKE_SOURCE_DIR: "${{ github.workspace }}/candidate",
       });
       expect(run.run).toBe("bash scripts/test-install-sh-docker.sh");
     }
 
-    expect(
-      workflowStep(workflow.jobs.installer_smoke_update, "Run installer update docker tests").env,
-    ).toMatchObject({
-      OPENCLAW_INSTALL_SMOKE_ALLOW_UNRELEASED_CHANGELOG: "${{ inputs.allow_unreleased_changelog }}",
-    });
+    const payload = workflow.jobs.installer_smoke_candidate_payload;
+    expect(payload.needs).toEqual(["preflight"]);
+    expect(workflowStep(payload, "Download exact candidate source archive").run).toContain(
+      "https://codeload.github.com/${TARGET_REPOSITORY}/tar.gz/${TARGET_SHA}",
+    );
+    expect(workflowStep(payload, "Package candidate only inside pinned harness").run).toContain(
+      "--user node",
+    );
+    expect(workflowStep(payload, "Seal candidate payload in clean pinned harness").run).toContain(
+      "--network none",
+    );
     expect(
       workflowStep(workflow.jobs.installer_smoke_update, "Run Rocky Linux installer smoke").run,
-    ).toContain("$PWD/candidate/scripts/install.sh");
+    ).toContain("$PAYLOAD_DIR/install.sh");
   });
 
   it("kills Bun global install smoke commands that ignore TERM after timeout", () => {

@@ -13,21 +13,34 @@ INSTALL_SMOKE_DOCKER_RUN_TIMEOUT="${OPENCLAW_INSTALL_SMOKE_DOCKER_RUN_TIMEOUT:-2
 
 normalize_npm_pack_json_file() {
   local pack_json_file="$1"
-  (
-    cd "$HARNESS_ROOT"
-    node --import tsx --input-type=module - "$pack_json_file" <<'NODE'
+  node --input-type=module - "$pack_json_file" <<'NODE'
 import fs from "node:fs";
-import { resolveNpmJsonEntries } from "./scripts/lib/npm-json-output.mts";
 
 const packJsonFile = process.argv[2];
 const parsed = JSON.parse(fs.readFileSync(packJsonFile, "utf8"));
-const entries = resolveNpmJsonEntries(parsed);
+let entries = [parsed];
+if (Array.isArray(parsed)) {
+  entries = parsed;
+} else if (parsed && typeof parsed === "object") {
+  const looksLikeEntry =
+    (typeof parsed.id === "string") ||
+    (typeof parsed.name === "string") ||
+    (typeof parsed.version === "string") ||
+    (typeof parsed.filename === "string");
+  if (!looksLikeEntry) {
+    const keyedEntries = Object.values(parsed).filter(
+      (entry) => entry && typeof entry === "object" && !Array.isArray(entry),
+    );
+    if (keyedEntries.length > 0) {
+      entries = keyedEntries;
+    }
+  }
+}
 if (entries.length === 0) {
   throw new Error("npm pack output did not contain a package result");
 }
 fs.writeFileSync(packJsonFile, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
 NODE
-  )
 }
 
 run_install_smoke_container() {
@@ -97,29 +110,51 @@ console.log(
 assert_pack_unpacked_size_budget() {
   local label="$1"
   local pack_json_file="$2"
-  (
-    cd "$HARNESS_ROOT"
-    node --import tsx --input-type=module - "$label" "$pack_json_file" <<'NODE'
+  node --input-type=module - "$label" "$pack_json_file" <<'NODE'
 import { readFileSync } from "node:fs";
-import { collectPackUnpackedSizeErrors } from "./scripts/lib/npm-pack-budget.mts";
 
 const label = process.argv[2];
 const packJsonFile = process.argv[3];
 const raw = readFileSync(packJsonFile, "utf8") || "[]";
 const parsed = JSON.parse(raw);
 const budgetOverride = process.env.OPENCLAW_INSTALL_SMOKE_PACK_UNPACKED_BUDGET_BYTES;
-const budgetBytes = budgetOverride ? Number(budgetOverride) : undefined;
-if (budgetOverride && !Number.isFinite(budgetBytes)) {
+const budgetBytes = budgetOverride ? Number(budgetOverride) : 204 * 1024 * 1024;
+if (!Number.isFinite(budgetBytes)) {
   throw new Error(
     `OPENCLAW_INSTALL_SMOKE_PACK_UNPACKED_BUDGET_BYTES must be numeric, got ${JSON.stringify(
       budgetOverride,
     )}`,
   );
 }
-const errors = collectPackUnpackedSizeErrors(parsed, {
-  budgetBytes,
-  missingDataMessage: `${label} npm pack output did not include unpackedSize; install smoke cannot verify pack budget.`,
-});
+const entries = Array.isArray(parsed) ? parsed : [parsed];
+const errors = [];
+let checkedCount = 0;
+for (const [index, entry] of entries.entries()) {
+  if (
+    !entry ||
+    typeof entry !== "object" ||
+    Array.isArray(entry) ||
+    typeof entry.unpackedSize !== "number" ||
+    !Number.isFinite(entry.unpackedSize)
+  ) {
+    continue;
+  }
+  checkedCount += 1;
+  if (entry.unpackedSize > budgetBytes) {
+    const resultLabel =
+      typeof entry.filename === "string" && entry.filename.trim()
+        ? entry.filename.trim()
+        : `pack result #${index + 1}`;
+    errors.push(
+      `${resultLabel} unpackedSize ${entry.unpackedSize} bytes exceeds budget ${budgetBytes} bytes. Investigate duplicate channel shims, copied extension trees, or other accidental pack bloat before release.`,
+    );
+  }
+}
+if (entries.length > 0 && checkedCount === 0) {
+  errors.push(
+    `${label} npm pack output did not include unpackedSize; install smoke cannot verify pack budget.`,
+  );
+}
 for (const error of errors) {
   console.error(`ERROR: ${error}`);
 }
@@ -127,7 +162,6 @@ if (errors.length > 0) {
   process.exit(1);
 }
 NODE
-  )
 }
 
 print_pack_delta_audit() {
@@ -242,6 +276,7 @@ UPDATE_SKIP_LOCAL_BUILD="${OPENCLAW_INSTALL_SMOKE_UPDATE_SKIP_LOCAL_BUILD:-0}"
 UPDATE_HOST_ALIAS="${OPENCLAW_INSTALL_SMOKE_UPDATE_HOST:-host.docker.internal}"
 UPDATE_PORT="${OPENCLAW_INSTALL_SMOKE_UPDATE_PORT:-}"
 UPDATE_EXPECT_VERSION="${OPENCLAW_INSTALL_SMOKE_UPDATE_EXPECT_VERSION:-}"
+FROZEN_PAYLOAD_DIR="${OPENCLAW_INSTALL_SMOKE_FROZEN_PAYLOAD_DIR:-}"
 LATEST_DIR="$(mktemp -d)"
 LATEST_FILE="${LATEST_DIR}/latest"
 UPDATE_DIR="$(mktemp -d)"
@@ -257,11 +292,41 @@ NPM_CACHE_DIR="${OPENCLAW_INSTALL_SMOKE_NPM_CACHE_DIR:-}"
 NPM_CACHE_OWNED=0
 NPM_CACHE_PREPARED=0
 NPM_CACHE_DOCKER_ARGS=()
-INSTALL_SCRIPT_DOCKER_ARGS=(
-  -v "$ROOT_DIR/scripts/install.sh:/tmp/openclaw-install.sh:ro"
-  -v "$ROOT_DIR/scripts/install-cli.sh:/tmp/openclaw-install-cli.sh:ro"
-)
+INSTALL_SCRIPT_PATH="$ROOT_DIR/scripts/install.sh"
+CLI_INSTALL_SCRIPT_PATH="$ROOT_DIR/scripts/install-cli.sh"
 SMOKE_RUNNER_ENV_ARGS=()
+
+require_regular_payload_file() {
+  local file_path="$1"
+  local label="$2"
+  if [[ ! -f "$file_path" || -L "$file_path" ]]; then
+    echo "ERROR: frozen install-smoke ${label} must be a regular file: ${file_path}" >&2
+    exit 1
+  fi
+}
+
+if [[ -n "$FROZEN_PAYLOAD_DIR" ]]; then
+  FROZEN_PAYLOAD_DIR="$(cd "$FROZEN_PAYLOAD_DIR" && pwd)"
+  if [[ -n "$UPDATE_PACKAGE_SPEC" ]]; then
+    echo "ERROR: frozen install-smoke payload cannot be combined with OPENCLAW_INSTALL_SMOKE_UPDATE_PACKAGE_SPEC" >&2
+    exit 1
+  fi
+  require_regular_payload_file "$FROZEN_PAYLOAD_DIR/candidate.tgz" "package"
+  require_regular_payload_file "$FROZEN_PAYLOAD_DIR/candidate-pack.json" "package metadata"
+  require_regular_payload_file "$FROZEN_PAYLOAD_DIR/install.sh" "installer"
+  require_regular_payload_file "$FROZEN_PAYLOAD_DIR/install-cli.sh" "CLI installer"
+  if [[ -z "$UPDATE_EXPECT_VERSION" ]]; then
+    echo "ERROR: frozen install-smoke payload requires OPENCLAW_INSTALL_SMOKE_UPDATE_EXPECT_VERSION" >&2
+    exit 1
+  fi
+  INSTALL_SCRIPT_PATH="$FROZEN_PAYLOAD_DIR/install.sh"
+  CLI_INSTALL_SCRIPT_PATH="$FROZEN_PAYLOAD_DIR/install-cli.sh"
+fi
+
+INSTALL_SCRIPT_DOCKER_ARGS=(
+  -v "$INSTALL_SCRIPT_PATH:/tmp/openclaw-install.sh:ro"
+  -v "$CLI_INSTALL_SCRIPT_PATH:/tmp/openclaw-install-cli.sh:ro"
+)
 
 for env_name in \
   OPENCLAW_INSTALL_ALLOW_LEGACY_UPDATE_WARNING \
@@ -348,7 +413,14 @@ prepare_update_tarball() {
   local packed_update_version
   pack_json_file="${UPDATE_DIR}/pack.json"
   baseline_pack_json_file="${UPDATE_DIR}/baseline-pack.json"
-  if [[ -n "$UPDATE_PACKAGE_SPEC" ]]; then
+  if [[ -n "$FROZEN_PAYLOAD_DIR" ]]; then
+    # The producer already built and normalized candidate bytes inside an isolated pinned image.
+    # Privileged consumers only copy the verified artifact; they never build or import candidate code.
+    echo "==> Reuse frozen candidate payload for update smoke"
+    cp "$FROZEN_PAYLOAD_DIR/candidate.tgz" "${UPDATE_DIR}/candidate.tgz"
+    cp "$FROZEN_PAYLOAD_DIR/candidate-pack.json" "$pack_json_file"
+    UPDATE_TGZ_FILE="candidate.tgz"
+  elif [[ -n "$UPDATE_PACKAGE_SPEC" ]]; then
     echo "==> Pack update tgz from spec: $UPDATE_PACKAGE_SPEC"
     quiet_npm pack "$UPDATE_PACKAGE_SPEC" --json --pack-destination "$UPDATE_DIR" >"$pack_json_file"
     normalize_npm_pack_json_file "$pack_json_file"
@@ -378,12 +450,14 @@ prepare_update_tarball() {
     )"
     UPDATE_TGZ_FILE="$(basename "$package_tgz")"
   fi
-  if [[ -z "$UPDATE_PACKAGE_SPEC" ]]; then
-    node "$HARNESS_ROOT/scripts/check-openclaw-package-tarball.mjs" \
-      --require-bundled-workspace-deps \
-      "${UPDATE_DIR}/${UPDATE_TGZ_FILE}"
-  else
-    UPDATE_TGZ_FILE="$(read_pack_tarball_filename "$pack_json_file")"
+  if [[ -z "$FROZEN_PAYLOAD_DIR" ]]; then
+    if [[ -z "$UPDATE_PACKAGE_SPEC" ]]; then
+      node "$HARNESS_ROOT/scripts/check-openclaw-package-tarball.mjs" \
+        --require-bundled-workspace-deps \
+        "${UPDATE_DIR}/${UPDATE_TGZ_FILE}"
+    else
+      UPDATE_TGZ_FILE="$(read_pack_tarball_filename "$pack_json_file")"
+    fi
   fi
   print_pack_audit "update" "$pack_json_file"
   assert_pack_unpacked_size_budget "update" "$pack_json_file"
