@@ -340,6 +340,12 @@ lanes are intentionally reserved for the separate `Plugin Prerelease` child so
 PRs, main pushes, and ad hoc broad CI checks do not spend Docker/package time or
 all-plugin runtime time on release-only product coverage.
 
+`Plugin Prerelease` may execute candidate code only in secretless packaging
+jobs. The trusted scanner treats uploaded immutable tarballs as inert data and
+scans the exact post-build bytes; publication must consume those verified bytes
+or require an identical digest. Artifact ingestion stays fail-slow so one
+malformed package records its own error without hiding other package reports.
+
 Use one operator, one transition-only watcher, and at most one investigator for
 the current failed surface. Parent timeout or cancellation leaves adopted exact
 children running; cancel an exact child only by explicit operator action or the
