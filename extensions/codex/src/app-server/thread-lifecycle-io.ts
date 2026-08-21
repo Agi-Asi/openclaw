@@ -285,7 +285,9 @@ export async function resumeExistingCodexThread(
         boundAuthProfileId,
         response.modelProvider ?? requestModelProvider ?? startModelProvider,
       ),
-      reasoningEffort: response.reasoningEffort,
+      ...(response.reasoningEffort !== undefined
+        ? { reasoningEffort: response.reasoningEffort }
+        : {}),
       dynamicToolsFingerprint,
       dynamicToolsContainDeferred,
       webSearchThreadConfigFingerprint,
