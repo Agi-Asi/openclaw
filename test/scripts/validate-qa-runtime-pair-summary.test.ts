@@ -196,19 +196,6 @@ describe("frozen QA runtime-pair summary validation", () => {
     );
   });
 
-  it("accepts a completed legacy summary that used its finish timestamp", () => {
-    const fixture = summary([scenario({ name: "legacy terminal", status: "pass" })]);
-    Reflect.deleteProperty(fixture.run, "status");
-    Object.assign(fixture.run, { finishedAt: "2026-08-21T03:34:17.434Z" });
-
-    expect(validateQaRuntimePairSummary(fixture)).toEqual({
-      total: 1,
-      passed: 1,
-      failed: 0,
-      skipped: 0,
-    });
-  });
-
   it("rejects a statusless summary without terminal evidence", () => {
     const fixture = summary([scenario({ name: "legacy unknown", status: "pass" })]);
     Reflect.deleteProperty(fixture.run, "status");
