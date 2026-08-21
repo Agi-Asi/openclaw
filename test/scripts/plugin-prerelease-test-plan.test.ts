@@ -8,6 +8,12 @@ import { parse } from "yaml";
 import { findLaneByName } from "../../scripts/lib/docker-e2e-plan.mts";
 import { BUNDLED_PLUGIN_INSTALL_UNINSTALL_SHARDS } from "../../scripts/lib/docker-e2e-scenarios.mts";
 import {
+  MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES,
+  MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES,
+  MAX_PUBLISHABLE_PLUGIN_PACKAGES,
+  planPluginNpmSecurityArtifactDownloads,
+} from "../../scripts/lib/plugin-npm-security-scan.mts";
+import {
   PLUGIN_PRERELEASE_REQUIRED_SURFACES,
   assertPluginPrereleaseTestPlanComplete,
   createPluginPrereleaseTestPlan,
@@ -21,7 +27,10 @@ const CHECKOUT_V6 = "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10";
 const UPLOAD_ARTIFACT_V7 = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a";
 
 type WorkflowStep = {
+  "continue-on-error"?: boolean;
   env?: Record<string, string>;
+  id?: string;
+  if?: string;
   name?: string;
   run?: string;
   uses?: string;
@@ -282,6 +291,8 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     const pluginWorkflow = readPluginPrereleaseWorkflow();
     const pluginSource = readFileSync(".github/workflows/plugin-prerelease.yml", "utf8");
     const securityPrepareSource = readFileSync("scripts/plugin-npm-security-prepare.mts", "utf8");
+    const securityScannerSource = readFileSync("scripts/lib/plugin-npm-security-scan.mts", "utf8");
+    const testingSkillSource = readFileSync(".agents/skills/openclaw-testing/SKILL.md", "utf8");
     const resolver = pluginWorkflow.jobs["resolve-candidate"];
     const securityPlan = pluginWorkflow.jobs["plugin-npm-security-plan"];
     const securityPackage = pluginWorkflow.jobs["plugin-npm-security-package"];
@@ -301,6 +312,15 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     );
     const runSecurityScan = securityScan.steps.find(
       (step: WorkflowStep) => step.name === "Scan supplemental inert plugin inputs",
+    );
+    const artifactDownloadPlan = securityScan.steps.find(
+      (step: WorkflowStep) => step.name === "Bound supplemental inert plugin input downloads",
+    );
+    const downloadArtifacts = securityScan.steps.find(
+      (step: WorkflowStep) => step.name === "Download bounded supplemental inert plugin inputs",
+    );
+    const normalizeSingleArtifact = securityScan.steps.find(
+      (step: WorkflowStep) => step.name === "Normalize single supplemental inert plugin input",
     );
     const uploadReport = securityScan.steps.find(
       (step: WorkflowStep) => step.name === "Upload plugin npm security scan report",
@@ -350,6 +370,35 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(runSecurityScan?.run).toContain("--artifact-root");
     expect(runSecurityScan?.run).not.toContain("--candidate-root");
     expect(runSecurityScan?.run).toContain('--candidate-sha "$CANDIDATE_SHA"');
+    expect(artifactDownloadPlan).toMatchObject({
+      "continue-on-error": true,
+      id: "artifact-download-plan",
+    });
+    expect(artifactDownloadPlan?.run).toContain("gh api --paginate --slurp");
+    expect(artifactDownloadPlan?.run).toContain("scripts/plugin-npm-security-artifact-plan.mts");
+    expect(artifactDownloadPlan?.run).toContain('echo "artifact_ids=$artifact_ids"');
+    expect(downloadArtifacts).toMatchObject({
+      "continue-on-error": true,
+      id: "download-bounded-artifacts",
+      if: "steps.artifact-download-plan.outcome == 'success' && steps.artifact-download-plan.outputs.artifact_ids != ''",
+      uses: "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+      with: {
+        "artifact-ids": "${{ steps.artifact-download-plan.outputs.artifact_ids }}",
+        "digest-mismatch": "error",
+        "github-token": "${{ github.token }}",
+        path: "${{ runner.temp }}/plugin-npm-security-packages",
+        repository: "${{ github.repository }}",
+        "run-id": "${{ github.run_id }}",
+      },
+    });
+    expect(downloadArtifacts?.with).not.toHaveProperty("pattern");
+    expect(normalizeSingleArtifact?.if).toBe(
+      "steps.download-bounded-artifacts.outcome == 'success'",
+    );
+    expect(normalizeSingleArtifact?.run).toContain(
+      `[[ "$(jq '.artifacts | length' "$PLAN_PATH")" == "1" ]]`,
+    );
+    expect(normalizeSingleArtifact?.run).toContain('"$ARTIFACT_ROOT/$artifact_name/"');
     expect(uploadReport).toMatchObject({
       if: "always()",
       uses: UPLOAD_ARTIFACT_V7,
@@ -386,6 +435,19 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     );
     expect(securityPrepareSource).not.toContain("GITHUB_OUTPUT: process.env.GITHUB_OUTPUT");
     expect(securityPrepareSource).toContain("resolveCandidatePluginPackageDir");
+    expect(securityPrepareSource).toContain("supplemental inert checked-in npm input");
+    expect(securityPrepareSource).toContain("future publisher redesign");
+    expect(securityPrepareSource).not.toContain("scans its final artifact separately");
+    expect(securityScannerSource).toContain("scanSupplementalInertPluginInput");
+    expect(securityScannerSource).toContain("supplemental inert package input identity mismatch");
+    expect(securityScannerSource).not.toContain("publication artifact identity mismatch");
+    expect(testingSkillSource).toContain(
+      "A future publisher redesign must scan the exact final bytes",
+    );
+    expect(testingSkillSource).toContain("the current\npublisher does not provide that guarantee");
+    expect(testingSkillSource).not.toContain(
+      "The publication workflow must independently scan its exact final artifact",
+    );
     expect(pluginNpmReleaseSource).toContain("plugin-publication-artifact.mjs verify");
     expect(nodeShard.needs).toEqual(["resolve-candidate", "preflight"]);
     expect(runNodeShard?.run).toContain('spawnSync("pnpm", ["test", "--", ...configs]');
@@ -394,6 +456,72 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(releaseSource).not.toContain("plugin_prerelease_node_exclude_patterns_json");
     expect(releaseSource).not.toContain("Plugin prerelease Node exclusions");
     expect(pluginDispatch?.run).not.toContain("node_test_exclude_patterns_json");
+  });
+
+  it("rejects oversized plugin security artifacts before the workflow download action", () => {
+    const candidateSha = "1".repeat(40);
+    const packageEntry = (index: number) => {
+      const id = `plugin-${String(index).padStart(3, "0")}`;
+      return {
+        extensionId: id,
+        packageDir: `extensions/${id}`,
+        packageName: `@openclaw/${id}`,
+        packageVersion: "1.0.0",
+      };
+    };
+    const artifactEntry = (
+      plugin: ReturnType<typeof packageEntry>,
+      index: number,
+      sizeInBytes: number,
+    ) => ({
+      digest: `sha256:${String(index + 1).padStart(64, "0")}`,
+      expired: false,
+      id: index + 1,
+      name: `plugin-npm-security-package-${candidateSha}-${plugin.extensionId}`,
+      size_in_bytes: sizeInBytes,
+    });
+
+    const onePackage = [packageEntry(0)];
+    expect(() =>
+      planPluginNpmSecurityArtifactDownloads({
+        artifactPages: [
+          {
+            artifacts: [
+              artifactEntry(onePackage[0]!, 0, MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES + 1),
+            ],
+          },
+        ],
+        candidateSha,
+        expectedPackages: onePackage,
+      }),
+    ).toThrow("pre-download byte limit");
+
+    const aggregatePackages = Array.from({ length: 5 }, (_, index) => packageEntry(index));
+    const aggregateArtifactBytes =
+      Math.floor(MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES / aggregatePackages.length) + 1;
+    expect(() =>
+      planPluginNpmSecurityArtifactDownloads({
+        artifactPages: [
+          {
+            artifacts: aggregatePackages.map((plugin, index) =>
+              artifactEntry(plugin, index, aggregateArtifactBytes),
+            ),
+          },
+        ],
+        candidateSha,
+        expectedPackages: aggregatePackages,
+      }),
+    ).toThrow("aggregate pre-download byte limit");
+
+    expect(() =>
+      planPluginNpmSecurityArtifactDownloads({
+        artifactPages: [{ artifacts: [] }],
+        candidateSha,
+        expectedPackages: Array.from({ length: MAX_PUBLISHABLE_PLUGIN_PACKAGES + 1 }, (_, index) =>
+          packageEntry(index),
+        ),
+      }),
+    ).toThrow("Expected plugin package inventory is invalid");
   });
 
   it("keeps late candidate GITHUB_OUTPUT writes outside trusted candidate identity", () => {
@@ -427,7 +555,10 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
         readFileSync(githubOutput, "utf8")
           .trim()
           .split("\n")
-          .map((line) => line.split("=", 2)),
+          .map((line): [string, string] => {
+            const [key = "", value = ""] = line.split("=", 2);
+            return [key, value];
+          }),
       );
 
       expect(lateCandidateOutput.get("checkout_revision")).toBe("f".repeat(40));

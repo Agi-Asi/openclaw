@@ -343,9 +343,10 @@ all-plugin runtime time on release-only product coverage.
 `Plugin Prerelease` performs a supplemental scan of checked-in npm package input
 as inert data; it never runs candidate lifecycle, asset, build, install, or
 replacement scanner code. This scan does not approve post-build or publication
-bytes. The publication workflow must independently scan its exact final artifact
-and publish the same digest. Ingestion stays fail-slow so one malformed package
-cannot hide other package reports.
+bytes. A future publisher redesign must scan the exact final bytes and publish
+that identical digest before this can become a publication gate; the current
+publisher does not provide that guarantee. Ingestion stays fail-slow so one
+malformed package cannot hide other package reports.
 
 Use one operator, one transition-only watcher, and at most one investigator for
 the current failed surface. Parent timeout or cancellation leaves adopted exact

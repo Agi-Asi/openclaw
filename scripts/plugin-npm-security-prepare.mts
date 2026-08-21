@@ -48,7 +48,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     const name = argv[index];
     const value = argv[index + 1];
     if (!name?.startsWith("--") || value === undefined || values.has(name)) {
-      throw new Error(`Invalid plugin npm security prepare argument near ${String(name)}.`);
+      throw new Error(`Invalid plugin npm security prepare argument near ${name}.`);
     }
     values.set(name, value);
   }
@@ -166,8 +166,9 @@ async function preparePackage(args: ParsedArgs): Promise<void> {
     mkdirSync(args.outputDir, { recursive: true });
   }
 
-  // Supplemental qualification keeps candidate code inert. Publication builds
-  // and scans its final artifact separately before any registry mutation.
+  // This is supplemental inert checked-in npm input, never a final or
+  // publication artifact. Exact-byte scanning is a future publisher redesign,
+  // not a capability of this workflow.
   const npm = resolveNpmRunner({
     env: {
       CI: "1",

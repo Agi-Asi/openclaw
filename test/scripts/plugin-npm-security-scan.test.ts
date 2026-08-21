@@ -355,7 +355,6 @@ describe("scripts/lib/plugin-npm-security-scan.mts", () => {
       "package directory is not a real directory",
     );
 
-    const packageDir = tempDirs.make("openclaw-plugin-npm-security-symlink-");
     const outsideFile = join(outsideDir, "outside.ts");
     writeFileSync(outsideFile, "export const value = 1;\n", "utf8");
 

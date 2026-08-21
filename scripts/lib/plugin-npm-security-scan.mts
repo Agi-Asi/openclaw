@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   isScannable,
   scanDirectoryWithSummary,
@@ -81,6 +82,8 @@ export const MAX_PLUGIN_PACKAGE_MANIFEST_BYTES = 256 * 1024;
 export const MAX_PLUGIN_SCAN_FINDINGS_PER_PACKAGE = 10_000;
 export const MAX_PLUGIN_SCAN_TOTAL_FINDINGS = 50_000;
 export const MAX_PLUGIN_SCAN_REPORT_BYTES = 1024 * 1024;
+export const MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES = 128 * 1024 * 1024;
+export const MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_PLUGIN_SECURITY_ARTIFACT_METADATA_BYTES = 64 * 1024;
 const MAX_PLUGIN_TARBALL_BYTES = 128 * 1024 * 1024;
 const MAX_PLUGIN_TARBALL_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -536,6 +539,104 @@ function artifactDirectoryName(candidateSha: string, extensionId: string): strin
   return `${PLUGIN_SECURITY_ARTIFACT_PREFIX}${candidateSha}-${extensionId}`;
 }
 
+export type PluginNpmSecurityArtifactDownloadPlan = {
+  artifacts: Array<{
+    digest: string;
+    id: number;
+    name: string;
+    sizeInBytes: number;
+  }>;
+  expectedArtifactCount: number;
+  totalBytes: number;
+};
+
+export function planPluginNpmSecurityArtifactDownloads(params: {
+  artifactPages: unknown;
+  candidateSha: string;
+  expectedPackages: unknown;
+}): PluginNpmSecurityArtifactDownloadPlan {
+  if (!/^[0-9a-f]{40}$/u.test(params.candidateSha)) {
+    throw new Error("Plugin security artifact download candidate identity is invalid.");
+  }
+  const expectedPackages = parseExpectedPackages(params.expectedPackages);
+  const expectedNames = new Set(
+    expectedPackages.map((plugin) =>
+      artifactDirectoryName(params.candidateSha, plugin.extensionId),
+    ),
+  );
+  const expectedPrefix = `${PLUGIN_SECURITY_ARTIFACT_PREFIX}${params.candidateSha}-`;
+  if (
+    !Array.isArray(params.artifactPages) ||
+    params.artifactPages.length === 0 ||
+    params.artifactPages.length > 100
+  ) {
+    throw new Error("Plugin security artifact metadata pages are invalid.");
+  }
+
+  const artifacts: PluginNpmSecurityArtifactDownloadPlan["artifacts"] = [];
+  const seenIds = new Set<number>();
+  const seenNames = new Set<string>();
+  let totalBytes = 0;
+  for (const page of params.artifactPages) {
+    if (!isRecord(page) || !Array.isArray(page.artifacts) || page.artifacts.length > 100) {
+      throw new Error("Plugin security artifact metadata page is invalid.");
+    }
+    for (const entry of page.artifacts) {
+      if (!isRecord(entry) || typeof entry.name !== "string") {
+        throw new Error("Plugin security artifact metadata entry is invalid.");
+      }
+      if (!entry.name.startsWith(expectedPrefix)) {
+        continue;
+      }
+      if (!expectedNames.has(entry.name)) {
+        throw new Error("Plugin security artifact metadata contains an unexpected package.");
+      }
+      if (
+        !Number.isSafeInteger(entry.id) ||
+        (entry.id as number) <= 0 ||
+        !Number.isSafeInteger(entry.size_in_bytes) ||
+        (entry.size_in_bytes as number) <= 0 ||
+        entry.expired !== false ||
+        typeof entry.digest !== "string" ||
+        !/^sha256:[0-9a-f]{64}$/u.test(entry.digest)
+      ) {
+        throw new Error("Plugin security artifact metadata entry is invalid.");
+      }
+      const id = entry.id as number;
+      const sizeInBytes = entry.size_in_bytes as number;
+      if (seenIds.has(id) || seenNames.has(entry.name)) {
+        throw new Error("Plugin security artifact metadata contains a duplicate package.");
+      }
+      if (sizeInBytes > MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_BYTES) {
+        throw new Error("Plugin security artifact exceeds the pre-download byte limit.");
+      }
+      totalBytes += sizeInBytes;
+      if (
+        !Number.isSafeInteger(totalBytes) ||
+        totalBytes > MAX_PLUGIN_SECURITY_WORKFLOW_ARTIFACT_TOTAL_BYTES
+      ) {
+        throw new Error("Plugin security artifacts exceed the aggregate pre-download byte limit.");
+      }
+      seenIds.add(id);
+      seenNames.add(entry.name);
+      artifacts.push({
+        digest: entry.digest,
+        id,
+        name: entry.name,
+        sizeInBytes,
+      });
+    }
+  }
+  if (artifacts.length > MAX_PUBLISHABLE_PLUGIN_PACKAGES) {
+    throw new Error("Plugin security artifact metadata exceeds the package-count limit.");
+  }
+  return {
+    artifacts: artifacts.toSorted((left, right) => compareCodeUnits(left.name, right.name)),
+    expectedArtifactCount: expectedPackages.length,
+    totalBytes,
+  };
+}
+
 function sanitizeArtifactIngestionError(
   expectedPackage: PublishablePluginPackage,
   error: unknown,
@@ -754,7 +855,7 @@ export function assertCompleteScannerSummary(
   }
 }
 
-async function scanPublishablePluginArtifact(
+async function scanSupplementalInertPluginInput(
   plugin: PluginNpmSecurityArtifact,
 ): Promise<ScanPackageResult> {
   const reviewedCriticalFindings: string[] = [];
@@ -768,7 +869,7 @@ async function scanPublishablePluginArtifact(
       staged.inspection.packageManifest.version !== plugin.packageVersion ||
       staged.inspection.tarballSha256 !== plugin.tarballSha256
     ) {
-      throw new Error(`${plugin.packageName}: publication artifact identity mismatch.`);
+      throw new Error(`${plugin.packageName}: supplemental inert package input identity mismatch.`);
     }
     for (const packedFile of staged.packedFiles) {
       expectedReviewedCriticalFindings.push(
@@ -970,7 +1071,7 @@ export async function scanPublishablePluginPackages(
         plugin ? sanitizePackageScanError(plugin, error) : "Unknown package: package scan failed.",
       );
     },
-    tasks: packages.map((plugin) => () => scanPublishablePluginArtifact(plugin)),
+    tasks: packages.map((plugin) => () => scanSupplementalInertPluginInput(plugin)),
   });
   return {
     packageResults: results.filter((result): result is ScanPackageResult => result !== undefined),

@@ -426,12 +426,60 @@ jobs:
       - name: Install trusted scanner dependencies
         run: pnpm install --frozen-lockfile --prefer-offline --ignore-scripts
 
-      - name: Download supplemental inert plugin inputs
+      - name: Bound supplemental inert plugin input downloads
+        id: artifact-download-plan
+        continue-on-error: true
+        env:
+          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.checkout_revision }}
+          EXPECTED_PACKAGES_JSON: ${{ needs.plugin-npm-security-plan.outputs.packages_json }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/plugin-npm-security-artifact-api.json"
+          plan="$RUNNER_TEMP/plugin-npm-security-artifact-download-plan.json"
+          gh api --paginate --slurp \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100&direction=asc" \
+            > "$metadata"
+          node --import tsx scripts/plugin-npm-security-artifact-plan.mts \
+            --artifact-metadata-json "$metadata" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --expected-packages-json "$EXPECTED_PACKAGES_JSON" \
+            --output "$plan"
+          artifact_ids="$(jq -r '[.artifacts[].id | tostring] | join(",")' "$plan")"
+          echo "artifact_ids=$artifact_ids" >> "$GITHUB_OUTPUT"
+
+      # The pinned action validates server digests and downloads ID-bound artifacts
+      # in batches of five only after the trusted metadata plan enforces byte bounds.
+      - name: Download bounded supplemental inert plugin inputs
+        id: download-bounded-artifacts
+        if: steps.artifact-download-plan.outcome == 'success' && steps.artifact-download-plan.outputs.artifact_ids != ''
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: plugin-npm-security-package-${{ needs.resolve-candidate.outputs.checkout_revision }}-*
+          artifact-ids: ${{ steps.artifact-download-plan.outputs.artifact_ids }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
           path: ${{ runner.temp }}/plugin-npm-security-packages
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Normalize single supplemental inert plugin input
+        if: steps.download-bounded-artifacts.outcome == 'success'
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/plugin-npm-security-packages
+          PLAN_PATH: ${{ runner.temp }}/plugin-npm-security-artifact-download-plan.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(jq '.artifacts | length' "$PLAN_PATH")" == "1" ]] || exit 0
+          artifact_name="$(jq -r '.artifacts[0].name' "$PLAN_PATH")"
+          staging="$RUNNER_TEMP/plugin-npm-security-single-artifact"
+          mkdir -p "$staging" "$ARTIFACT_ROOT/$artifact_name"
+          find "$ARTIFACT_ROOT" -mindepth 1 -maxdepth 1 -type f -exec mv {} "$staging/" \;
+          find "$staging" -mindepth 1 -maxdepth 1 -type f -exec mv {} "$ARTIFACT_ROOT/$artifact_name/" \;
 
       - name: Scan supplemental inert plugin inputs
         env:
