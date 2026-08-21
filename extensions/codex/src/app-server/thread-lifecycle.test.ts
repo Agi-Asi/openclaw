@@ -3218,7 +3218,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
     vi.restoreAllMocks();
   });
 
-  it("materializes a model-locked canonical branch with frozen agent instructions", async () => {
+  it("keeps the probed native effort when the outer model supports a different effort", async () => {
     const sourceThreadId = "thread-source";
     const probeThreadId = "thread-probe";
     const finalThreadId = "thread-final";
@@ -3365,7 +3365,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       config: {
         project_doc_max_bytes: 131_072,
         allow_login_shell: false,
-        model_reasoning_effort: "max",
+        model_reasoning_effort: "low",
         shell_environment_policy: {
           experimental_use_profile: false,
           set: { GH_TOKEN: "", GITHUB_TOKEN: "" },
@@ -3396,7 +3396,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       threadId: finalThreadId,
       model: "native-effective",
       modelProvider: "native-provider",
-      reasoningEffort: "max",
+      reasoningEffort: "low",
       preserveNativeModel: true,
       agentWorkspaceDeveloperInstructions,
       conversationSourceTransferComplete: true,
@@ -3408,7 +3408,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       threadId: finalThreadId,
       model: "native-effective",
       modelProvider: "native-provider",
-      reasoningEffort: "max",
+      reasoningEffort: "low",
       preserveNativeModel: true,
       agentWorkspaceDeveloperInstructions,
       conversationSourceTransferComplete: true,
@@ -3427,18 +3427,18 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
     expect(request.mock.calls[1]?.[1]).toMatchObject({
       developerInstructions: agentWorkspaceDeveloperInstructions,
-      config: { model_reasoning_effort: "max" },
+      config: { model_reasoning_effort: "low" },
     });
     expect(resumed).toMatchObject({
       threadId: finalThreadId,
-      reasoningEffort: "max",
+      reasoningEffort: "low",
       preserveNativeModel: true,
       conversationSourceTransferComplete: true,
       lifecycle: { action: "resumed" },
     });
     await expect(testCodexAppServerBindingStore.read(identity)).resolves.toMatchObject({
       appServerRuntimeFingerprint: buildCodexAppServerConnectionFingerprint(commonParams.appServer),
-      reasoningEffort: "max",
+      reasoningEffort: "low",
     });
   });
 

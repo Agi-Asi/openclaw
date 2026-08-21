@@ -45,10 +45,7 @@ import {
   throwIfCodexThreadLifecycleAborted,
   tryReuseCodexLiveThread,
 } from "./thread-lifecycle-warm.js";
-import {
-  resolveAttemptReasoningEffort,
-  resolveCodexAppServerThreadModelSelection,
-} from "./thread-model-selection.js";
+import { resolveCodexAppServerThreadModelSelection } from "./thread-model-selection.js";
 import { materializePendingSupervisionBranch } from "./thread-supervision.js";
 
 export async function startOrResumeThread(
@@ -654,10 +651,7 @@ export async function startOrResumeThread(
           startModelProvider,
           supervisedReasoningEffort:
             binding.connectionScope === "supervision"
-              ? (resolveAttemptReasoningEffort(
-                  params.params,
-                  binding.model ?? startModelSelection.model ?? params.params.modelId,
-                ) ?? undefined)
+              ? (binding.reasoningEffort ?? undefined)
               : undefined,
           userMcpServersConfigPatch,
           dynamicToolsFingerprint,

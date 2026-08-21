@@ -41,7 +41,6 @@ import {
 } from "./thread-lifecycle-errors.js";
 import type { CodexThreadLifecycleTimingTracker } from "./thread-lifecycle-timing.js";
 import type { CodexAppServerThreadLifecycleBinding } from "./thread-lifecycle-types.js";
-import { resolveAttemptReasoningEffort } from "./thread-model-selection.js";
 import { buildDeveloperInstructions } from "./thread-prompt.js";
 import {
   attestCodexRestrictedToolSurfaceMcpServersDisabled,
@@ -184,7 +183,7 @@ export async function materializePendingSupervisionBranch(
       environmentSelection: params.environmentSelection,
       model: nativeModel,
       modelProvider: nativeModelProvider,
-      reasoningEffort: resolveAttemptReasoningEffort(nativeAttempt, nativeModel),
+      reasoningEffort: probeResponse.reasoningEffort,
       hostSystemAgentActive: params.hostSystemAgentActive,
       restrictedToolSurfaceInheritedMcpServerNames:
         params.restrictedToolSurfaceInheritedMcpServerNames,
