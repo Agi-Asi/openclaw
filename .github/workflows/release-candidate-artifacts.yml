@@ -1,0 +1,354 @@
+name: Release Candidate Artifacts
+run-name: Release Candidate Artifacts ${{ inputs.dispatch_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      dispatch_id:
+        description: Unique caller nonce used to locate this exact producer run
+        required: true
+        type: string
+      release_plan_lock_base64:
+        description: Base64-encoded canonical ReleasePlanLock bytes
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  pull-requests: read
+
+concurrency:
+  group: release-candidate-artifacts-${{ inputs.dispatch_id }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  validate_release_plan:
+    name: Validate immutable release plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      allow_frozen_target_scenario_omissions: ${{ steps.plan.outputs.allow_frozen_target_scenario_omissions }}
+      allow_unreleased_changelog: ${{ steps.plan.outputs.allow_unreleased_changelog }}
+      candidate_sha: ${{ steps.plan.outputs.candidate_sha }}
+      release_plan_digest: ${{ steps.plan.outputs.release_plan_digest }}
+      release_profile: ${{ steps.plan.outputs.release_profile }}
+    steps:
+      - name: Checkout trusted receipt tooling
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate ReleasePlanLock
+        id: plan
+        env:
+          DISPATCH_ID: ${{ inputs.dispatch_id }}
+          RELEASE_PLAN_LOCK_BASE64: ${{ inputs.release_plan_lock_base64 }}
+          WORKFLOW_FULL_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { parseReleasePlanLockJson } from "./scripts/release-plan-contract.mjs";
+
+          const dispatchId = process.env.DISPATCH_ID ?? "";
+          if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(dispatchId)) {
+            throw new Error("dispatch_id must be one safe unique caller nonce");
+          }
+          const encoded = process.env.RELEASE_PLAN_LOCK_BASE64 ?? "";
+          if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) {
+            throw new Error("release_plan_lock_base64 must contain one canonical base64 payload");
+          }
+          const bytes = Buffer.from(encoded, "base64");
+          if (bytes.toString("base64") !== encoded) {
+            throw new Error("release_plan_lock_base64 is not canonical base64");
+          }
+          const lock = parseReleasePlanLockJson(bytes.toString("utf8"));
+          if (lock.plan.tooling.sha !== process.env.WORKFLOW_SHA) {
+            throw new Error("ReleasePlan tooling SHA must equal the candidate producer workflow SHA");
+          }
+          if (lock.plan.tooling.ref !== process.env.WORKFLOW_FULL_REF) {
+            throw new Error("ReleasePlan tooling ref must equal the candidate producer workflow ref");
+          }
+          const outputPath = process.env.GITHUB_OUTPUT;
+          if (!outputPath) {
+            throw new Error("GITHUB_OUTPUT is required");
+          }
+          const frozenTarget = lock.plan.target_context_ref !== lock.plan.candidate_sha;
+          fs.appendFileSync(
+            outputPath,
+            [
+              `allow_frozen_target_scenario_omissions=${frozenTarget}`,
+              `allow_unreleased_changelog=${lock.plan.purpose === "main-qualification"}`,
+              `candidate_sha=${lock.plan.candidate_sha}`,
+              `release_plan_digest=${lock.digest}`,
+              `release_profile=${lock.plan.validation.profile}`,
+              "",
+            ].join("\n"),
+          );
+          NODE
+
+  candidate_artifacts:
+    name: Produce package, plugin registry, and Docker image
+    needs: validate_release_plan
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      pull-requests: read
+    uses: ./.github/workflows/openclaw-live-and-e2e-checks-reusable.yml
+    with:
+      ref: ${{ needs.validate_release_plan.outputs.candidate_sha }}
+      prepare_only: true
+      include_repo_e2e: false
+      include_release_path_suites: false
+      include_openwebui: false
+      include_live_suites: false
+      enable_prepublish_plugin_registry: true
+      allow_frozen_target_scenario_omissions: ${{ needs.validate_release_plan.outputs.allow_frozen_target_scenario_omissions == 'true' }}
+      allow_unreleased_changelog: ${{ needs.validate_release_plan.outputs.allow_unreleased_changelog == 'true' }}
+      release_test_profile: ${{ needs.validate_release_plan.outputs.release_profile }}
+      shared_image_artifact_namespace: release-candidate
+      shared_image_policy: no-push-artifact
+
+  root_image:
+    name: Produce root Dockerfile image
+    needs: validate_release_plan
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      archive_sha256: ${{ steps.image_artifact.outputs.archive_sha256 }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_name: ${{ steps.image_artifact.outputs.artifact_name }}
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
+      DOCKER_BUILD_SUMMARY: "false"
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.validate_release_plan.outputs.candidate_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Checkout trusted image artifact helper
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .release-harness
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Blacksmith Docker Builder
+        uses: useblacksmith/setup-docker-builder@6ff44f8e5255f9d8aa31ef22f7e57a2d926b7da0 # v1
+        with:
+          max-cache-size-mb: 800000
+
+      - name: Build root Dockerfile image
+        env:
+          IMAGE_REF: openclaw-release-candidate-root:${{ needs.validate_release_plan.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --kill-after=30s 45m docker buildx build \
+            --progress=plain \
+            --load \
+            --build-arg OPENCLAW_EXTENSIONS=matrix \
+            --tag "$IMAGE_REF" \
+            --file ./Dockerfile \
+            .
+
+      - name: Pack root Dockerfile image artifact
+        id: image_artifact
+        env:
+          IMAGE_REF: openclaw-release-candidate-root:${{ needs.validate_release_plan.outputs.candidate_sha }}
+          TARGET_SHA: ${{ needs.validate_release_plan.outputs.candidate_sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="${RUNNER_TEMP}/release-candidate-root-image"
+          artifact_name="release-candidate-root-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          bash .release-harness/scripts/docker/shared-image-artifact.sh \
+            pack "$artifact_dir" release-candidate-root "$TARGET_SHA" "$WORKFLOW_SHA" "$IMAGE_REF"
+          archive_sha256="$(
+            jq -er '.archive.sha256 | select(type == "string" and test("^[a-f0-9]{64}$"))' \
+              "$artifact_dir/shared-image-artifact.json"
+          )"
+          {
+            echo "archive_sha256=$archive_sha256"
+            echo "artifact_name=$artifact_name"
+            echo "artifact_path=$artifact_dir"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload root Dockerfile image artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.image_artifact.outputs.artifact_name }}
+          path: ${{ steps.image_artifact.outputs.artifact_path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  candidate_receipt:
+    name: Emit immutable candidate receipt
+    needs: [validate_release_plan, candidate_artifacts, root_image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout trusted receipt tooling
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Verify exact producer workflow attempt
+        id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_RUN_TITLE: Release Candidate Artifacts ${{ inputs.dispatch_id }}
+          EXPECTED_WORKFLOW_PATH: .github/workflows/release-candidate-artifacts.yml
+          EXPECTED_WORKFLOW_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_json="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+          )"
+          workflow_id="$(
+            jq -er \
+              --arg attempt "$GITHUB_RUN_ATTEMPT" \
+              --arg path "$EXPECTED_WORKFLOW_PATH" \
+              --arg run_id "$GITHUB_RUN_ID" \
+              --arg sha "$EXPECTED_WORKFLOW_SHA" \
+              --arg title "$EXPECTED_RUN_TITLE" \
+              '
+                select(
+                  (.id | tostring) == $run_id and
+                  (.run_attempt | tostring) == $attempt and
+                  .event == "workflow_dispatch" and
+                  .display_title == $title and
+                  .path == $path and
+                  .head_sha == $sha
+                )
+                | .workflow_id
+              ' <<< "$run_json"
+          )"
+          workflow_json="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}"
+          )"
+          jq -e \
+            --arg id "$workflow_id" \
+            --arg path "$EXPECTED_WORKFLOW_PATH" \
+            '(.id | tostring) == $id and .path == $path and .state == "active"' \
+            <<< "$workflow_json" >/dev/null
+          echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
+
+      - name: Create canonical CandidateReceiptLock
+        env:
+          DOCKER_IMAGE_ARCHIVE_SHA256: ${{ needs.candidate_artifacts.outputs.shared_image_archive_sha256 }}
+          DOCKER_IMAGE_ARTIFACT_DIGEST: ${{ needs.candidate_artifacts.outputs.shared_image_artifact_digest }}
+          DOCKER_IMAGE_ARTIFACT_ID: ${{ needs.candidate_artifacts.outputs.shared_image_artifact_id }}
+          DOCKER_IMAGE_ARTIFACT_NAME: ${{ needs.candidate_artifacts.outputs.shared_image_artifact_name }}
+          PACKAGE_ARTIFACT_DIGEST: ${{ needs.candidate_artifacts.outputs.package_artifact_digest }}
+          PACKAGE_ARTIFACT_ID: ${{ needs.candidate_artifacts.outputs.package_artifact_id }}
+          PACKAGE_ARTIFACT_NAME: ${{ needs.candidate_artifacts.outputs.package_artifact_name }}
+          PACKAGE_SHA256: ${{ needs.candidate_artifacts.outputs.package_sha256 }}
+          PLUGIN_REGISTRY_ARTIFACT_DIGEST: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_digest }}
+          PLUGIN_REGISTRY_ARTIFACT_ID: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_id }}
+          PLUGIN_REGISTRY_ARTIFACT_NAME: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_artifact_name }}
+          PLUGIN_REGISTRY_MANIFEST_SHA256: ${{ needs.candidate_artifacts.outputs.prepublish_plugin_registry_manifest_sha256 }}
+          RELEASE_PLAN_DIGEST: ${{ needs.validate_release_plan.outputs.release_plan_digest }}
+          ROOT_IMAGE_ARCHIVE_SHA256: ${{ needs.root_image.outputs.archive_sha256 }}
+          ROOT_IMAGE_ARTIFACT_DIGEST: ${{ needs.root_image.outputs.artifact_digest }}
+          ROOT_IMAGE_ARTIFACT_ID: ${{ needs.root_image.outputs.artifact_id }}
+          ROOT_IMAGE_ARTIFACT_NAME: ${{ needs.root_image.outputs.artifact_name }}
+          WORKFLOW_ID: ${{ steps.producer.outputs.workflow_id }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/candidate-receipt
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import {
+            canonicalCandidateReceiptLockJson,
+            createCandidateReceiptLock,
+          } from "./scripts/release-candidate-receipt-contract.mjs";
+
+          const required = (name) => {
+            const value = process.env[name] ?? "";
+            if (!value) {
+              throw new Error(`${name} is required`);
+            }
+            return value;
+          };
+          const prefixedDigest = (name) => {
+            const value = required(name);
+            return value.startsWith("sha256:") ? value : `sha256:${value}`;
+          };
+          const artifact = (prefix, contentDigestName) => ({
+            artifact_digest: prefixedDigest(`${prefix}_ARTIFACT_DIGEST`),
+            artifact_id: required(`${prefix}_ARTIFACT_ID`),
+            artifact_name: required(`${prefix}_ARTIFACT_NAME`),
+            content_digest: prefixedDigest(contentDigestName),
+          });
+          const lock = createCandidateReceiptLock({
+            schema: "openclaw.candidate-receipt.v1",
+            release_plan_digest: required("RELEASE_PLAN_DIGEST"),
+            producer: {
+              repository: required("GITHUB_REPOSITORY"),
+              workflow_path: ".github/workflows/release-candidate-artifacts.yml",
+              workflow_id: required("WORKFLOW_ID"),
+              workflow_sha: required("WORKFLOW_SHA"),
+              run_id: required("GITHUB_RUN_ID"),
+              run_attempt: required("GITHUB_RUN_ATTEMPT"),
+            },
+            artifacts: {
+              docker_image: artifact("DOCKER_IMAGE", "DOCKER_IMAGE_ARCHIVE_SHA256"),
+              package: artifact("PACKAGE", "PACKAGE_SHA256"),
+              plugin_registry: artifact(
+                "PLUGIN_REGISTRY",
+                "PLUGIN_REGISTRY_MANIFEST_SHA256",
+              ),
+              root_image: artifact("ROOT_IMAGE", "ROOT_IMAGE_ARCHIVE_SHA256"),
+            },
+          });
+          fs.writeFileSync(
+            ".artifacts/candidate-receipt/candidate-receipt-lock.json",
+            canonicalCandidateReceiptLockJson(lock),
+            "ascii",
+          );
+          NODE
+
+      - name: Upload CandidateReceiptLock
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-candidate-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/candidate-receipt/candidate-receipt-lock.json
+          if-no-files-found: error
+          retention-days: 7
