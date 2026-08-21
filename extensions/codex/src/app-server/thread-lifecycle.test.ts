@@ -3412,12 +3412,14 @@ describe("Codex app-server supervised branch lifecycle", () => {
       if (method === "thread/start") {
         const config = (requestParams as { config?: Record<string, unknown> }).config;
         const reasoningEffort = config?.model_reasoning_effort;
-        return nativeThreadResult(
+        const response = nativeThreadResult(
           finalThreadId,
           "native-effective",
           "native-provider",
           typeof reasoningEffort === "string" ? reasoningEffort : null,
         );
+        const { reasoningEffort: _reasoningEffort, ...withoutReasoningEffort } = response;
+        return withoutReasoningEffort;
       }
       if (method === "thread/resume") {
         const config = (requestParams as { config?: Record<string, unknown> }).config;

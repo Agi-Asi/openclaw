@@ -76,6 +76,7 @@ import {
   assertCodexBindingMayBeReplaced,
   isCodexAppServerNativeAuthProfile,
   normalizeCodexAppServerBindingModelProvider,
+  resolveCodexBindingReasoningEffort,
   sessionBindingIdentity,
   type CodexAppServerAuthProfileLookup,
   type CodexAppServerBindingIdentity,
@@ -953,7 +954,10 @@ async function runBoundTurn(params: {
           cwd: response.thread.cwd ?? workspaceDir,
           authProfileId: binding.authProfileId,
           model: response.model ?? modelSelection?.model ?? binding.model,
-          reasoningEffort: response.reasoningEffort,
+          reasoningEffort: resolveCodexBindingReasoningEffort(
+            response.reasoningEffort,
+            binding.reasoningEffort,
+          ),
           modelProvider: normalizeCodexAppServerBindingModelProvider({
             authProfileId: binding.authProfileId,
             modelProvider:

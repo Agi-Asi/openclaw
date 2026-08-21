@@ -28,11 +28,12 @@ import type {
   CodexTurnEnvironmentParams,
   JsonObject,
 } from "./protocol.js";
-import type {
-  CodexAppServerBindingIdentity,
-  CodexAppServerBindingStore,
-  CodexAppServerPendingSupervisionBranch,
-  CodexAppServerThreadBinding,
+import {
+  resolveCodexBindingReasoningEffort,
+  type CodexAppServerBindingIdentity,
+  type CodexAppServerBindingStore,
+  type CodexAppServerPendingSupervisionBranch,
+  type CodexAppServerThreadBinding,
 } from "./session-binding.js";
 import {
   CodexThreadBindingConflictAfterCleanupError,
@@ -230,6 +231,10 @@ export async function materializePendingSupervisionBranch(
       modelProvider: nativeModelProvider,
       operation: "thread/start response",
     });
+    const nativeReasoningEffort = resolveCodexBindingReasoningEffort(
+      startResponse.reasoningEffort,
+      probeResponse.reasoningEffort,
+    );
     if (params.restrictedToolSurface) {
       await params.lifecycleTiming.measure("restricted-tool-surface-mcp-attestation", () =>
         attestCodexRestrictedToolSurfaceMcpServersDisabled(
@@ -302,7 +307,7 @@ export async function materializePendingSupervisionBranch(
           ...params.bindingPatch,
           model: nativeModel,
           modelProvider: bindingModelProvider,
-          reasoningEffort: startResponse.reasoningEffort,
+          reasoningEffort: nativeReasoningEffort,
           historyCoveredThrough,
         },
       });
@@ -363,7 +368,7 @@ export async function materializePendingSupervisionBranch(
       pendingSupervisionBranch: undefined,
       model: nativeModel,
       modelProvider: bindingModelProvider,
-      reasoningEffort: startResponse.reasoningEffort,
+      reasoningEffort: nativeReasoningEffort,
       historyCoveredThrough,
       lifecycle: { action: "forked" },
     };
