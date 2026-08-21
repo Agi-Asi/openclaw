@@ -9,6 +9,7 @@ import {
   parseReleasePublicationEligibilityReceiptJson,
   RELEASE_PUBLICATION_ELIGIBILITY_CANONICALIZATION,
   RELEASE_PUBLICATION_ELIGIBILITY_MAX_AGE_MS,
+  RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH,
   verifyReleasePublicationEligibilityReceipt,
 } from "../../scripts/release-publication-eligibility-contract.mjs";
 
@@ -17,7 +18,7 @@ const releasePlanLock = JSON.parse(
 ) as VerifiedReleasePlanLock;
 const provenance = {
   repository: releasePlanLock.plan.tooling.repository,
-  workflow_path: releasePlanLock.plan.tooling.workflow_path,
+  workflow_path: RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH,
   workflow_ref: releasePlanLock.plan.tooling.ref,
   workflow_sha: releasePlanLock.plan.tooling.sha,
   run_id: "123456",
@@ -193,7 +194,22 @@ describe("release publication eligibility receipt contract", () => {
         wrongToolingReceipt.provenance,
         Date.parse("2026-08-21T00:00:03.000Z"),
       ),
-    ).toThrow("ReleasePlan tooling");
+    ).toThrow("producer and ReleasePlan tooling");
+    const wrongProducerReceipt = createReleasePublicationEligibilityReceipt({
+      ...body,
+      provenance: {
+        ...provenance,
+        workflow_path: releasePlanLock.plan.tooling.workflow_path,
+      },
+    });
+    expect(() =>
+      verifyReleasePublicationEligibilityReceipt(
+        wrongProducerReceipt,
+        releasePlanLock,
+        wrongProducerReceipt.provenance,
+        Date.parse("2026-08-21T00:00:03.000Z"),
+      ),
+    ).toThrow("producer and ReleasePlan tooling");
     expect(() =>
       createReleasePublicationEligibilityReceipt({
         ...body,

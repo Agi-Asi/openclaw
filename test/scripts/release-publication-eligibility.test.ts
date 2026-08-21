@@ -12,6 +12,7 @@ import {
   parseReleasePublicationEligibilityReceiptJson,
   RELEASE_PUBLICATION_CLAWHUB_REGISTRY,
   RELEASE_PUBLICATION_ELIGIBILITY_MAX_AGE_MS,
+  RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH,
   RELEASE_PUBLICATION_NPM_REGISTRY,
   type ReleasePublicationEligibilityReceipt,
 } from "../../scripts/release-publication-eligibility-contract.mjs";
@@ -38,7 +39,7 @@ function verified(lock: ReleasePlanLock): VerifiedReleasePlanLock {
 function provenance(lock: ReleasePlanLock) {
   return {
     repository: lock.plan.tooling.repository,
-    workflow_path: lock.plan.tooling.workflow_path,
+    workflow_path: RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH,
     workflow_ref: lock.plan.tooling.ref,
     workflow_sha: lock.plan.tooling.sha,
     run_id: "123456",

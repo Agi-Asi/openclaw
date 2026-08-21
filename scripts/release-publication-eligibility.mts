@@ -33,6 +33,7 @@ import {
   RELEASE_PUBLICATION_CLAWHUB_REGISTRY,
   RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE,
   RELEASE_PUBLICATION_ELIGIBILITY_MAX_AGE_MS,
+  RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH,
   RELEASE_PUBLICATION_NPM_REGISTRY,
   verifyReleasePublicationEligibilityReceipt,
   type ReleasePublicationEligibilityProvenance,
@@ -925,7 +926,7 @@ export async function runReleasePublicationEligibilityCli(
   }
   const provenance: ReleasePublicationEligibilityProvenance = {
     repository: lock.plan.tooling.repository,
-    workflow_path: lock.plan.tooling.workflow_path,
+    workflow_path: RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH,
     workflow_ref: lock.plan.tooling.ref,
     workflow_sha: lock.plan.tooling.sha,
     run_id: requiredOption(args, "--run-id"),

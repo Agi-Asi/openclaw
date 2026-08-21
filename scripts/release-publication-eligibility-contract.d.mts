@@ -60,6 +60,7 @@ export type ReleasePublicationEligibilityReceiptBody = Omit<
 export const RELEASE_PUBLICATION_ELIGIBILITY_CANONICALIZATION: "ascii-sorted-compact-json-trailing-newline-v1";
 export const RELEASE_PUBLICATION_ELIGIBILITY_MAX_AGE_MS: number;
 export const RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE: "validation-start-only";
+export const RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH: ".github/workflows/release-publication-eligibility.yml";
 export const RELEASE_PUBLICATION_NPM_REGISTRY: "https://registry.npmjs.org";
 export const RELEASE_PUBLICATION_CLAWHUB_REGISTRY: "https://clawhub.ai";
 

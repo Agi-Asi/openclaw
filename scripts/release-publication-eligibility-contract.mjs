@@ -9,6 +9,8 @@ export const RELEASE_PUBLICATION_ELIGIBILITY_CANONICALIZATION =
 export const RELEASE_PUBLICATION_ELIGIBILITY_MAX_AGE_MS = 5 * 60_000;
 const RELEASE_PUBLICATION_ELIGIBILITY_MAX_BYTES = 512 * 1024;
 export const RELEASE_PUBLICATION_ELIGIBILITY_EVIDENCE_SCOPE = "validation-start-only";
+export const RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH =
+  ".github/workflows/release-publication-eligibility.yml";
 export const RELEASE_PUBLICATION_NPM_REGISTRY = "https://registry.npmjs.org";
 export const RELEASE_PUBLICATION_CLAWHUB_REGISTRY = "https://clawhub.ai";
 
@@ -504,11 +506,11 @@ export function verifyReleasePublicationEligibilityReceipt(
   }
   if (
     provenance.repository !== lock.plan.tooling.repository ||
-    provenance.workflow_path !== lock.plan.tooling.workflow_path ||
+    provenance.workflow_path !== RELEASE_PUBLICATION_ELIGIBILITY_WORKFLOW_PATH ||
     provenance.workflow_ref !== lock.plan.tooling.ref ||
     provenance.workflow_sha !== lock.plan.tooling.sha
   ) {
-    fail("publication eligibility provenance does not match ReleasePlan tooling");
+    fail("publication eligibility provenance does not match its producer and ReleasePlan tooling");
   }
   const expectedNpm = lock.plan.inventory.packages
     .filter((entry) => entry.targets.includes("npm"))
