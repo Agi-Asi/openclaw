@@ -335,6 +335,11 @@ export class ExecApprovalManager<TPayload = ExecApprovalRequestPayload> {
       const inserted = insertOperatorApproval({
         approval: {
           id: record.id,
+          resolutionRef: buildApprovalResolutionRef({
+            approvalId: record.id,
+            approvalKind: this.approvalKind,
+            instanceId: record.instanceId,
+          }),
           kind: this.approvalKind,
           presentation: presentation!,
           requester: {
@@ -412,6 +417,7 @@ export class ExecApprovalManager<TPayload = ExecApprovalRequestPayload> {
       resolutionRef: buildApprovalResolutionRef({
         approvalId: record.id,
         approvalKind: this.approvalKind,
+        instanceId: record.instanceId,
       }),
       kind: this.approvalKind,
       status,
