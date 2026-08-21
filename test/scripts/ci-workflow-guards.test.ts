@@ -93,6 +93,10 @@ function evaluateWorkflowExpression(
     repository: string;
     runnerBackend?: "" | "blacksmith" | "github" | "hybrid";
     runAttempt: number;
+    inputs?: {
+      dispatchId?: string;
+      releaseGate?: boolean;
+    };
   },
 ) {
   if (typeof expression !== "string") {
@@ -112,6 +116,7 @@ function evaluateWorkflowExpression(
       Array.isArray(haystack)
         ? haystack.includes(needle)
         : String(haystack).includes(String(needle)),
+    endsWith: (value: unknown, suffix: unknown) => String(value).endsWith(String(suffix)),
     fromJSON: (value: string) => JSON.parse(value) as unknown,
     github: {
       event_name: context.eventName,
@@ -127,7 +132,12 @@ function evaluateWorkflowExpression(
             }
           : {},
     },
+    inputs: {
+      dispatch_id: context.inputs?.dispatchId ?? "",
+      release_gate: context.inputs?.releaseGate ?? false,
+    },
     matrix: context.matrix ?? {},
+    startsWith: (value: unknown, prefix: unknown) => String(value).startsWith(String(prefix)),
     vars: {
       OPENCLAW_CI_RUNNER_BACKEND: context.runnerBackend ?? "",
     },
@@ -1405,15 +1415,20 @@ ${actionRun}`;
 }
 
 describe("ci workflow guards", () => {
-  it("retains pending same-SHA QA calls in the shared concurrency group", () => {
+  it("separates Matrix and Buzz workflow calls without dropping same-lane queueing", () => {
     const workflowPath = ".github/workflows/qa-live-transports-convex.yml";
     const workflowSource = readFileSync(workflowPath, "utf8");
     const workflow = parse(workflowSource);
 
     expect(workflow.concurrency).toEqual({
-      group: "qa-lab-all-lanes-${{ github.event_name != 'schedule' && inputs.ref || github.sha }}",
+      group:
+        "qa-lab-${{ github.event_name == 'workflow_call' && inputs.run_buzz && !inputs.run_matrix && 'buzz' || github.event_name == 'workflow_call' && inputs.run_matrix && !inputs.run_buzz && 'matrix' || 'all' }}-${{ github.event_name != 'schedule' && inputs.ref || github.sha }}",
       "cancel-in-progress": false,
       queue: "max",
+    });
+    expect(workflow.jobs.run_live_buzz.concurrency).toEqual({
+      group: "qa-live-buzz-shared",
+      "cancel-in-progress": false,
     });
   });
 
@@ -1744,6 +1759,60 @@ NODE
         `${jobName} retries must escape stalled Blacksmith macOS capacity`,
       ).toContain("github.run_attempt > 1");
     }
+  });
+
+  it("routes only trusted first-attempt Full Release Validation iOS to Blacksmith", () => {
+    const runsOn = readCiWorkflow().jobs["ios-build"]["runs-on"];
+    const frvInputs = {
+      dispatchId: "full-release-validation-32441524595-1-ci",
+      releaseGate: false,
+    };
+    const canonicalDispatch = {
+      eventName: "workflow_dispatch",
+      inputs: frvInputs,
+      repository: "openclaw/openclaw",
+      runAttempt: 1,
+    } as const;
+
+    expect(evaluateWorkflowExpression(runsOn, canonicalDispatch)).toBe(
+      "blacksmith-12vcpu-macos-26",
+    );
+    expect(
+      evaluateWorkflowExpression(runsOn, {
+        ...canonicalDispatch,
+        runnerBackend: "hybrid",
+      }),
+    ).toBe("blacksmith-12vcpu-macos-26");
+    expect(
+      evaluateWorkflowExpression(runsOn, {
+        ...canonicalDispatch,
+        runAttempt: 2,
+      }),
+    ).toBe("macos-26");
+    expect(
+      evaluateWorkflowExpression(runsOn, {
+        ...canonicalDispatch,
+        inputs: { dispatchId: "", releaseGate: false },
+      }),
+    ).toBe("macos-26");
+    expect(
+      evaluateWorkflowExpression(runsOn, {
+        ...canonicalDispatch,
+        inputs: { ...frvInputs, releaseGate: true },
+      }),
+    ).toBe("macos-26");
+    expect(
+      evaluateWorkflowExpression(runsOn, {
+        ...canonicalDispatch,
+        runnerBackend: "github",
+      }),
+    ).toBe("macos-26");
+    expect(
+      evaluateWorkflowExpression(runsOn, {
+        ...canonicalDispatch,
+        repository: "example/openclaw",
+      }),
+    ).toBe("macos-26");
   });
 
   it("keeps Testbox pull request validation off leased runner capacity", () => {
