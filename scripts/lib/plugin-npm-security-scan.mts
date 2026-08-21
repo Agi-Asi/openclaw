@@ -21,6 +21,7 @@ import { runTasksWithConcurrency } from "../../src/utils/run-with-concurrency.js
 
 type NpmPackFile = {
   path?: unknown;
+  size?: unknown;
 };
 
 type NpmPackResult = {
@@ -62,11 +63,19 @@ export type PluginNpmSecurityScanReport = {
 };
 
 const execFileAsync = promisify(execFile);
+const MAX_PACKED_FILES_PER_PACKAGE = 20_000;
+const MAX_PACKED_FILE_BYTES = 64 * 1024 * 1024;
+const MAX_PACKED_TOTAL_BYTES_PER_PACKAGE = 256 * 1024 * 1024;
 const MAX_SCANNABLE_FILES_PER_PACKAGE = 10_000;
 const MAX_SCANNABLE_FILE_BYTES = 1024 * 1024;
 const MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE = 64 * 1024 * 1024;
+const NPM_PACK_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+const NPM_PACK_TIMEOUT_MS = 60_000;
 const PACKAGE_SCAN_CONCURRENCY = 4;
 const DEFAULT_SCANNER_INPUT_LIMITS = {
+  maxPackedFileBytes: MAX_PACKED_FILE_BYTES,
+  maxPackedFiles: MAX_PACKED_FILES_PER_PACKAGE,
+  maxPackedTotalBytes: MAX_PACKED_TOTAL_BYTES_PER_PACKAGE,
   maxFileBytes: MAX_SCANNABLE_FILE_BYTES,
   maxFiles: MAX_SCANNABLE_FILES_PER_PACKAGE,
   maxTotalBytes: MAX_SCANNABLE_TOTAL_BYTES_PER_PACKAGE,
@@ -157,7 +166,7 @@ export function resolveReviewedSourceLayout(
   );
 }
 
-function parseNpmPackFiles(raw: string, packageName: string): string[] {
+export function parseNpmPackFiles(raw: string, packageName: string): string[] {
   const parsed = JSON.parse(raw) as unknown;
   const entries = resolveNpmJsonEntries(parsed);
   if (entries.length !== 1) {
@@ -169,33 +178,82 @@ function parseNpmPackFiles(raw: string, packageName: string): string[] {
     throw new Error(`${packageName}: npm pack --dry-run did not return a files list.`);
   }
 
-  return result.files
-    .map((entry) => (entry as NpmPackFile).path)
-    .filter((packedPath): packedPath is string => typeof packedPath === "string")
-    .toSorted();
+  if (result.files.length > MAX_PACKED_FILES_PER_PACKAGE) {
+    throw new Error(`${packageName}: npm pack files exceed the file-count limit.`);
+  }
+
+  const packedPaths: string[] = [];
+  const seenPaths = new Set<string>();
+  let totalBytes = 0;
+  for (const [index, entry] of result.files.entries()) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`${packageName}: npm pack file entry ${index} is malformed.`);
+    }
+    const { path, size } = entry as NpmPackFile;
+    if (typeof path !== "string" || !path) {
+      throw new Error(`${packageName}: npm pack file entry ${index} has an invalid path.`);
+    }
+    if (!Number.isSafeInteger(size) || (size as number) < 0) {
+      throw new Error(`${packageName}: npm pack file entry ${index} has an invalid size.`);
+    }
+    if (seenPaths.has(path)) {
+      throw new Error(`${packageName}: npm pack returned a duplicate path: ${path}`);
+    }
+    if ((size as number) > MAX_PACKED_FILE_BYTES) {
+      throw new Error(`${packageName}: npm pack file exceeds the per-file byte limit: ${path}`);
+    }
+    seenPaths.add(path);
+    packedPaths.push(path);
+    totalBytes += size as number;
+    if (totalBytes > MAX_PACKED_TOTAL_BYTES_PER_PACKAGE) {
+      throw new Error(`${packageName}: npm pack files exceed the total-byte limit.`);
+    }
+  }
+  return packedPaths.toSorted();
 }
 
 export async function collectNpmPackedFiles(
   packageDir: string,
   packageName: string,
 ): Promise<string[]> {
-  const { stdout } = await execFileAsync(
-    "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
-    {
+  const npmArgs = ["pack", "--dry-run", "--json", "--ignore-scripts"];
+  // The release workflow is Linux: cap npm before it can materialize an
+  // attacker-controlled pack. Other hosts retain the Node/output/time caps.
+  const command =
+    process.platform === "linux"
+      ? {
+          args: [
+            "--as=1073741824",
+            "--cpu=60",
+            "--fsize=268435456",
+            "--nofile=256",
+            "--",
+            "npm",
+            ...npmArgs,
+          ],
+          file: "prlimit",
+        }
+      : { args: npmArgs, file: "npm" };
+  try {
+    const { stdout } = await execFileAsync(command.file, command.args, {
       cwd: packageDir,
       encoding: "utf8",
       env: {
         ...process.env,
+        NODE_OPTIONS: "--max-old-space-size=512",
         npm_config_audit: "false",
         npm_config_fund: "false",
         npm_config_ignore_scripts: "true",
         npm_config_update_notifier: "false",
       },
-      maxBuffer: 128 * 1024 * 1024,
-    },
-  );
-  return parseNpmPackFiles(stdout, packageName);
+      killSignal: "SIGKILL",
+      maxBuffer: NPM_PACK_MAX_BUFFER_BYTES,
+      timeout: NPM_PACK_TIMEOUT_MS,
+    });
+    return parseNpmPackFiles(stdout, packageName);
+  } catch {
+    throw new Error(`${packageName}: npm pack enumeration failed within its resource limits.`);
+  }
 }
 
 export function normalizePackedFindingPath(packedPath: string): string {
@@ -263,10 +321,18 @@ export function stageScannerRelevantPackedFiles(
   packageDir: string,
   packedFiles: readonly string[],
   limits = DEFAULT_SCANNER_INPUT_LIMITS,
-): { fileCount: number; stageDir: string; totalBytes: number } {
+): {
+  fileCount: number;
+  packedFileCount: number;
+  packedTotalBytes: number;
+  stageDir: string;
+  totalBytes: number;
+} {
   const stageDir = mkdtempSync(join(tmpdir(), "openclaw-plugin-npm-scan-"));
   const realPackageDir = realpathSync(packageDir);
   let fileCount = 0;
+  let packedFileCount = 0;
+  let packedTotalBytes = 0;
   let totalBytes = 0;
 
   try {
@@ -274,14 +340,27 @@ export function stageScannerRelevantPackedFiles(
       if (!isSafePackedPath(packedPath)) {
         throw new Error(`npm pack returned an unsafe path: ${packedPath}`);
       }
-      if (!isScannable(packedPath)) {
-        continue;
-      }
-
       const source = resolve(realPackageDir, packedPath);
       const sourceStat = lstatSync(source);
       if (!sourceStat.isFile()) {
         throw new Error(`Packed scanner input is not a regular file: ${packedPath}`);
+      }
+      packedFileCount += 1;
+      packedTotalBytes += sourceStat.size;
+      if (sourceStat.size > limits.maxPackedFileBytes) {
+        throw new Error(`Packed input exceeds the per-file byte limit: ${packedPath}`);
+      }
+      if (packedFileCount > limits.maxPackedFiles) {
+        throw new Error("Packed input exceeds the file-count limit.");
+      }
+      if (packedTotalBytes > limits.maxPackedTotalBytes) {
+        throw new Error("Packed input exceeds the total-byte limit.");
+      }
+
+      const realSource = realpathSync(source);
+      assertPathInside(realPackageDir, realSource);
+      if (!isScannable(packedPath)) {
+        continue;
       }
       if (sourceStat.size > limits.maxFileBytes) {
         throw new Error(`Packed scanner input exceeds the per-file byte limit: ${packedPath}`);
@@ -294,14 +373,11 @@ export function stageScannerRelevantPackedFiles(
       if (totalBytes > limits.maxTotalBytes) {
         throw new Error("Packed scanner input exceeds the total-byte limit.");
       }
-      const realSource = realpathSync(source);
-      assertPathInside(realPackageDir, realSource);
-
       const target = join(stageDir, ...packedPath.split("/"));
       mkdirSync(dirname(target), { recursive: true });
       copyFileSync(realSource, target);
     }
-    return { fileCount, stageDir, totalBytes };
+    return { fileCount, packedFileCount, packedTotalBytes, stageDir, totalBytes };
   } catch (error) {
     rmSync(stageDir, { recursive: true, force: true });
     throw error;
@@ -379,7 +455,7 @@ async function scanPublishablePluginPackage(
 ): Promise<ScanPackageResult> {
   const reviewedCriticalFindings: string[] = [];
   const expectedReviewedCriticalFindings: string[] = [];
-  const unexpectedCriticalFindings: string[] = [];
+  const unexpectedCriticalFindings: CriticalFindingRecord[] = [];
   const packedFiles = await collectNpmPackedFiles(plugin.packageDir, plugin.packageName);
   for (const packedFile of packedFiles) {
     expectedReviewedCriticalFindings.push(
@@ -419,7 +495,7 @@ async function scanPublishablePluginPackage(
   return {
     expectedReviewedCriticalFindings: sortStrings(expectedReviewedCriticalFindings),
     packageName: plugin.packageName,
-    packedFileCount: packedFiles.length,
+    packedFileCount: staged.packedFileCount,
     reviewedCriticalFindings: sortStrings(reviewedCriticalFindings),
     unexpectedCriticalFindings: unexpectedCriticalFindings.toSorted((left, right) =>
       JSON.stringify(left).localeCompare(JSON.stringify(right)),
@@ -439,12 +515,13 @@ function expectedRequiredFindingsForPackage(
 export function buildPluginNpmSecurityScanReport(params: {
   candidateSha: string;
   packageResults: ScanPackageResult[];
+  scanErrors?: readonly string[];
   toolingSha: string;
 }): PluginNpmSecurityScanReport {
   const { candidateSha, packageResults, toolingSha } = params;
   const allReviewedFindings = packageResults.flatMap((result) => result.reviewedCriticalFindings);
   const layout = resolveReviewedSourceLayout(allReviewedFindings);
-  const errors: string[] = [];
+  const errors: string[] = sortStrings(params.scanErrors ?? []);
 
   if (!layout) {
     errors.push("Reviewed critical findings do not match exactly one supported release layout.");
@@ -518,6 +595,41 @@ export function buildPluginNpmSecurityScanReport(params: {
   };
 }
 
+function sanitizePackageScanError(plugin: PublishablePluginPackage, error: unknown): string {
+  let message = error instanceof Error ? error.message : "Unknown package scan failure.";
+  for (const [path, replacement] of [
+    [plugin.packageDir, "<candidate-package>"],
+    [tmpdir(), "<tmp>"],
+  ] as const) {
+    message = message.replaceAll(path, replacement);
+  }
+  message = message
+    .replaceAll(/\/(?:private\/)?tmp\/openclaw-plugin-npm-scan-[^/\s:]+/gu, "<scanner-stage>")
+    .replaceAll(/(^|[\s:(])\/[^ \t\n\r:,)\]}]+/gu, "$1<path>");
+  return `${plugin.packageName}: package scan failed: ${message}`;
+}
+
+export async function scanPublishablePluginPackages(
+  packages: readonly PublishablePluginPackage[],
+): Promise<{ packageResults: ScanPackageResult[]; scanErrors: string[] }> {
+  const scanErrors: string[] = [];
+  const { results } = await runTasksWithConcurrency({
+    errorMode: "continue",
+    limit: PACKAGE_SCAN_CONCURRENCY,
+    onTaskError: (error, index) => {
+      const plugin = packages[index];
+      scanErrors.push(
+        plugin ? sanitizePackageScanError(plugin, error) : "Unknown package: package scan failed.",
+      );
+    },
+    tasks: packages.map((plugin) => () => scanPublishablePluginPackage(plugin)),
+  });
+  return {
+    packageResults: results.filter((result): result is ScanPackageResult => result !== undefined),
+    scanErrors: sortStrings(scanErrors),
+  };
+}
+
 export async function runPluginNpmSecurityScan(params: {
   candidateDir: string;
   toolingDir: string;
@@ -529,11 +641,11 @@ export async function runPluginNpmSecurityScan(params: {
     gitOutput(toolingDir, ["rev-parse", "HEAD"]),
     listPublishablePluginPackages(candidateDir),
   ]);
-  const { results: packageResults } = await runTasksWithConcurrency({
-    errorMode: "stop",
-    limit: PACKAGE_SCAN_CONCURRENCY,
-    tasks: packages.map((plugin) => () => scanPublishablePluginPackage(plugin)),
-    throwOnError: true,
+  const { packageResults, scanErrors } = await scanPublishablePluginPackages(packages);
+  return buildPluginNpmSecurityScanReport({
+    candidateSha,
+    packageResults,
+    scanErrors,
+    toolingSha,
   });
-  return buildPluginNpmSecurityScanReport({ candidateSha, packageResults, toolingSha });
 }
