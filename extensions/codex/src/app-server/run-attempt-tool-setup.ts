@@ -200,7 +200,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   const canResolveAnyScheduledCreatorAuthority =
     canResolveScheduledConfiguredMcpCreatorAuthority ||
     requiresScheduledCodexAppAuthority ||
-    (nativeToolSurfaceEnabled === true && sandbox?.enabled !== true);
+    (nativeToolSurfaceEnabled && sandbox?.enabled !== true);
   let toolBridge: ReturnType<typeof createCodexDynamicToolBridge> | undefined;
   let creatorAuthorityPromise:
     | Promise<{

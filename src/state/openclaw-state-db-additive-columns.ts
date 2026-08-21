@@ -37,6 +37,11 @@ export const CLAW_LAZY_ADDITIVE_STATE_COLUMN_DEFINITIONS = [
   { columnName: "setup_id", dataType: "TEXT", tableName: "device_bootstrap_tokens" },
   { columnName: "cwd", dataType: "TEXT", tableName: "session_groups" },
   { columnName: "worktree", dataType: "INTEGER", tableName: "session_groups" },
+  {
+    columnName: "tool_bindings_json",
+    dataType: "TEXT",
+    tableName: "cron_job_runtime_authorities",
+  },
   { columnName: "workspace_dir", dataType: "TEXT", tableName: "installed_plugin_index" },
   { columnName: "allowed_hosts", dataType: "TEXT", tableName: "secret_store_entries" },
   {
@@ -53,6 +58,7 @@ function isFirstUseAdditiveStateColumn({
   return (
     (tableName === "device_bootstrap_tokens" && columnName === "setup_id") ||
     (tableName === "skill_workshop_proposals" && columnName === "claim_released_time") ||
+    (tableName === "cron_job_runtime_authorities" && columnName === "tool_bindings_json") ||
     (tableName === "worker_session_placement_moves" &&
       (columnName === "abandon_source" || columnName === "target_machine_class")) ||
     (tableName === "session_groups" && (columnName === "cwd" || columnName === "worktree"))

@@ -1628,6 +1628,7 @@ CREATE TABLE IF NOT EXISTS cron_job_runtime_authorities (
   store_key TEXT NOT NULL,
   job_id TEXT NOT NULL,
   authority_json TEXT,
+  tool_bindings_json TEXT,
   authority_input_fingerprint TEXT,
   recovery_required INTEGER NOT NULL,
   PRIMARY KEY (store_key, job_id),

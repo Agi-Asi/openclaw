@@ -401,6 +401,7 @@ export interface CronJobRuntimeAuthorities {
   job_id: string;
   recovery_required: number;
   store_key: string;
+  tool_bindings_json: string | null;
 }
 
 export interface CronJobScratch {

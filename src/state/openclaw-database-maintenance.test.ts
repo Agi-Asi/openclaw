@@ -185,6 +185,7 @@ describe("OpenClaw database maintenance schema validation", () => {
       "device_bootstrap_tokens.setup_id TEXT",
       "session_groups.cwd TEXT",
       "session_groups.worktree INTEGER",
+      "cron_job_runtime_authorities.tool_bindings_json TEXT",
       "installed_plugin_index.workspace_dir TEXT",
       "secret_store_entries.allowed_hosts TEXT",
       "skill_workshop_proposals.claim_released_time INTEGER",

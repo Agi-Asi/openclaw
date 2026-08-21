@@ -752,6 +752,45 @@ describe("cron store", () => {
     const row = database.prepare("SELECT job_json FROM cron_jobs WHERE job_id = ?").get(job.id) as {
       job_json: string;
     };
+    const authorityRow = database
+      .prepare(
+        "SELECT store_key, authority_json, authority_input_fingerprint, recovery_required, tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?",
+      )
+      .get(job.id) as {
+      store_key: string;
+      authority_json: string;
+      authority_input_fingerprint: string;
+      recovery_required: number;
+      tool_bindings_json: string;
+    };
+    expect(JSON.parse(authorityRow.authority_json)).toEqual({
+      version: 1,
+      runtimeId: "codex",
+      namespace: "codex.apps",
+      payload: { apps: [{ id: "calendar" }] },
+    });
+    database
+      .prepare(
+        `INSERT INTO cron_job_runtime_authorities
+          (store_key, job_id, authority_json, authority_input_fingerprint, recovery_required)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (store_key, job_id) DO UPDATE SET
+           authority_json = excluded.authority_json,
+           authority_input_fingerprint = excluded.authority_input_fingerprint,
+           recovery_required = excluded.recovery_required`,
+      )
+      .run(
+        authorityRow.store_key,
+        job.id,
+        authorityRow.authority_json,
+        authorityRow.authority_input_fingerprint,
+        authorityRow.recovery_required,
+      );
+    expect(
+      database
+        .prepare("SELECT tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?")
+        .get(job.id),
+    ).toEqual({ tool_bindings_json: authorityRow.tool_bindings_json });
     const downgradedJob = JSON.parse(row.job_json) as Record<string, unknown>;
     delete downgradedJob.runtimeAuthority;
     delete downgradedJob.runtimeAuthorityRecoveryRequired;
@@ -764,6 +803,35 @@ describe("cron store", () => {
     expect(reloaded?.description).toBe("edited by an older build");
     expect(reloaded?.runtimeAuthority).toEqual(job.runtimeAuthority);
     expect(reloaded?.runtimeAuthorityRecoveryRequired).toBeUndefined();
+  });
+
+  it("rejects stale bindings after an older writer replaces authority_json", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("downgrade-stale-bindings");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    await saveCronStore(storePath, authorityStore);
+
+    const database = openOpenClawStateDatabase().db;
+    database
+      .prepare("UPDATE cron_job_runtime_authorities SET authority_json = ? WHERE job_id = ?")
+      .run(
+        JSON.stringify({
+          version: 1,
+          runtimeId: "codex",
+          namespace: "codex.apps",
+          payload: { apps: [{ id: "mail" }] },
+        }),
+        job.id,
+      );
+
+    const reloaded = (await loadCronStore(storePath)).jobs[0];
+    expect(reloaded?.runtimeAuthority).toBeUndefined();
+    expect(reloaded?.runtimeAuthorityRecoveryRequired).toBe(true);
+    expect(
+      database
+        .prepare("SELECT recovery_required FROM cron_job_runtime_authorities WHERE job_id = ?")
+        .get(job.id),
+    ).toEqual({ recovery_required: 1 });
   });
 
   it("stores authority outside job_json and restores it after reopen", async () => {
@@ -782,14 +850,24 @@ describe("cron store", () => {
     expect(parentJson).not.toHaveProperty("runtimeAuthorityRecoveryRequired");
     const child = database
       .prepare(
-        "SELECT authority_json, authority_input_fingerprint, recovery_required FROM cron_job_runtime_authorities WHERE job_id = ?",
+        "SELECT authority_json, authority_input_fingerprint, recovery_required, tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?",
       )
       .get(job.id) as {
       authority_json: string;
       authority_input_fingerprint: string;
       recovery_required: number;
+      tool_bindings_json: string;
     };
-    expect(JSON.parse(child.authority_json)).toEqual(job.runtimeAuthority);
+    const { toolBindings: expectedToolBindings, ...expectedPersistedAuthority } = expectDefined(
+      job.runtimeAuthority,
+      "runtime authority test invariant",
+    );
+    expect(JSON.parse(child.authority_json)).toEqual(expectedPersistedAuthority);
+    expect(JSON.parse(child.tool_bindings_json)).toEqual({
+      version: 1,
+      authoritySha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      bindings: expectedToolBindings,
+    });
     expect(child.authority_input_fingerprint).toMatch(/^v1:[a-f0-9]{64}$/u);
     expect(child.recovery_required).toBe(0);
 

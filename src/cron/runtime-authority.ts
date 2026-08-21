@@ -12,6 +12,12 @@ const CRON_RUNTIME_AUTHORITY_KEYS = new Set([
   "payload",
   "toolBindings",
 ]);
+const CRON_PERSISTED_RUNTIME_AUTHORITY_KEYS = new Set([
+  "version",
+  "runtimeId",
+  "namespace",
+  "payload",
+]);
 const CRON_RUNTIME_AUTHORITY_MAX_TOOL_BINDINGS = 16;
 
 type JsonPrimitive = string | number | boolean | null;
@@ -119,7 +125,9 @@ function deepFreezeJson(value: JsonValue): JsonValue {
   return value;
 }
 
-function normalizeToolBindings(value: unknown): readonly CronScheduledToolBinding[] | undefined {
+export function normalizeCronScheduledToolBindings(
+  value: unknown,
+): readonly CronScheduledToolBinding[] | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -183,7 +191,7 @@ export function normalizeCronRuntimeAuthority(value: unknown): CronRuntimeAuthor
   const runtimeId = normalizeAuthorityId(value.runtimeId);
   const namespace = normalizeAuthorityId(value.namespace);
   const payload = cloneJsonObject(value.payload);
-  const toolBindings = normalizeToolBindings(value.toolBindings);
+  const toolBindings = normalizeCronScheduledToolBindings(value.toolBindings);
   if (!runtimeId || !namespace || !payload || (value.toolBindings !== undefined && !toolBindings)) {
     return undefined;
   }
@@ -198,6 +206,37 @@ export function normalizeCronRuntimeAuthority(value: unknown): CronRuntimeAuthor
     return undefined;
   }
   return Object.freeze(normalized);
+}
+
+type CronPersistedRuntimeAuthority = Omit<CronRuntimeAuthority, "toolBindings">;
+
+/** Reads the downgrade-stable authority shape understood by older binaries. */
+export function normalizeCronPersistedRuntimeAuthority(
+  value: unknown,
+): CronPersistedRuntimeAuthority | undefined {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).some((key) => !CRON_PERSISTED_RUNTIME_AUTHORITY_KEYS.has(key))
+  ) {
+    return undefined;
+  }
+  return normalizeCronRuntimeAuthority(value);
+}
+
+/** Separates newer binding metadata from the older authority JSON envelope. */
+export function serializeCronRuntimeAuthority(
+  value: CronRuntimeAuthority,
+): CronPersistedRuntimeAuthority | undefined {
+  const normalized = normalizeCronRuntimeAuthority(value);
+  if (!normalized) {
+    return undefined;
+  }
+  return normalizeCronPersistedRuntimeAuthority({
+    version: normalized.version,
+    runtimeId: normalized.runtimeId,
+    namespace: normalized.namespace,
+    payload: normalized.payload,
+  });
 }
 
 export function cloneCronRuntimeAuthority(
