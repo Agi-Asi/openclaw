@@ -332,6 +332,7 @@ export type ToolEventRecipientRegistry = {
   add: (runId: string, connId: string) => void;
   get: (runId: string) => ReadonlySet<string> | undefined;
   markFinal: (runId: string) => void;
+  pruneExpired: (now?: number) => void;
 };
 
 export type SessionEventSubscriberRegistry = {
@@ -632,11 +633,10 @@ export function createSessionMessageSubscriberRegistry(
 function createToolEventRecipientRegistryForStore(
   store: ChatRunRecordStore,
 ): ToolEventRecipientRegistry {
-  const prune = () => {
+  const pruneExpired = (now = Date.now()) => {
     if (store.runs.size === 0) {
       return;
     }
-    const now = Date.now();
     for (const [runId, record] of store.runs) {
       const entry = record.toolRecipient;
       if (!entry) {
@@ -668,7 +668,7 @@ function createToolEventRecipientRegistryForStore(
         updatedAt: now,
       };
     }
-    prune();
+    pruneExpired(now);
   };
 
   const get = (runId: string) => {
@@ -676,8 +676,9 @@ function createToolEventRecipientRegistryForStore(
     if (!entry) {
       return undefined;
     }
-    entry.updatedAt = Date.now();
-    prune();
+    const now = Date.now();
+    entry.updatedAt = now;
+    pruneExpired(now);
     return entry.connIds;
   };
 
@@ -686,9 +687,10 @@ function createToolEventRecipientRegistryForStore(
     if (!entry) {
       return;
     }
-    entry.finalizedAt = Date.now();
-    prune();
+    const now = Date.now();
+    entry.finalizedAt = now;
+    pruneExpired(now);
   };
 
-  return { add, get, markFinal };
+  return { add, get, markFinal, pruneExpired };
 }
