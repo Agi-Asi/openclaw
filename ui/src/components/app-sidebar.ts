@@ -6,7 +6,6 @@ import type {
   WorktreesBranchesResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
-import type { SessionsListResult } from "../api/types.ts";
 import { isSessionRouteId, pathForRoute } from "../app-route-paths.ts";
 import { beginNativeWindowDragFromTopInset } from "../app/native-window-drag.ts";
 import { t } from "../i18n/index.ts";
@@ -22,7 +21,6 @@ import "./theme-mode-toggle.ts";
 import "./tooltip.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
 import type { CatalogProjectGrouping } from "../lib/sessions/catalog-project-grouping.ts";
-import { appendSessionResults } from "../lib/sessions/reconcile.ts";
 import { showToast } from "../lib/toast.ts";
 import { SubscriptionsController } from "../lit/subscriptions-controller.ts";
 import { SETTINGS_SEARCH_TARGETS } from "../pages/config/settings-targets.ts";
@@ -56,7 +54,6 @@ import {
   loadStoredHiddenSessionCatalogIds,
   loadStoredSidebarCatalogGrouping,
   SIDEBAR_HIDDEN_SESSION_CATALOGS_CHANGED_EVENT,
-  SIDEBAR_SESSION_PAGE_SIZE,
   setStoredSessionCatalogHidden,
   storeSidebarCatalogGrouping,
   type SidebarRecentSession,
@@ -258,7 +255,6 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
 
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
-    this.hydrateExpandedSessionGroups();
     if (!this.narration) {
       if (this.sidebarLiveActivity) {
         this.ensureNarrationController();
@@ -268,94 +264,6 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
     }
     this.sessionNavigationState = undefined;
     this.projectedSessionRows = undefined;
-  }
-
-  private sidebarSessionGroupQuery(category: string, limit: number) {
-    return {
-      agentId: this.expandedAgentId(),
-      archivedFilter: this.sessionsStatusFilter,
-      category,
-      includeDerivedTitles: true,
-      includeLastMessage: true,
-      involvingMe: this.sessionInvolvingMeFilterActive || undefined,
-      limit,
-      ownerId: this.sessionOwnerFilterId ?? undefined,
-    } as const;
-  }
-
-  private async ensureSidebarSessionGroup(category: string, limit: number): Promise<void> {
-    const sessions = this.context?.sessions;
-    const query = this.sidebarSessionGroupQuery(category, limit);
-    if (!sessions || this.context?.gateway.snapshot.phase !== "connected") {
-      return;
-    }
-    let snapshot = sessions.listSnapshot(query);
-    if (snapshot.error && snapshot.error === this.sessionData.sessionMutationError) {
-      return;
-    }
-    if (!snapshot.result) {
-      if (snapshot.loading || this.sessionData.sessionsResult?.hasMore !== true) {
-        return;
-      }
-      await sessions.refreshList({ ...query, force: true });
-      if (
-        sessions !== this.context?.sessions ||
-        JSON.stringify(query) !== JSON.stringify(this.sidebarSessionGroupQuery(category, limit))
-      ) {
-        return;
-      }
-      snapshot = sessions.listSnapshot(query);
-    }
-    if (snapshot.error) {
-      this.sessionData.sessionMutationError = snapshot.error;
-      this.requestUpdate();
-      return;
-    }
-    if (snapshot.result) {
-      this.mergeSidebarSessionGroupResult(snapshot.result);
-    }
-  }
-
-  private sidebarSessionGroupHasMore(category: string): boolean {
-    const sessions = this.context?.sessions;
-    const limit =
-      this.sessionData.visibleSessionLimits.get(`category:${category}`) ??
-      SIDEBAR_SESSION_PAGE_SIZE;
-    return (
-      sessions?.listSnapshot(this.sidebarSessionGroupQuery(category, limit)).result?.hasMore ===
-      true
-    );
-  }
-
-  private mergeSidebarSessionGroupResult(result: SessionsListResult): void {
-    const base = this.sessionData.sessionsResult;
-    if (!base) {
-      return;
-    }
-    // Category rows extend the presentation only; the global cursor metadata
-    // remains authoritative for the ungrouped list's independent pagination.
-    const sessions = appendSessionResults(base, result).sessions;
-    if (sessions.length === base.sessions.length) {
-      return;
-    }
-    this.sessionData.sessionsResult = { ...base, count: sessions.length, sessions };
-    this.requestUpdate();
-  }
-
-  private hydrateExpandedSessionGroups(): void {
-    if (this.sessionsGrouping !== "category" || this.sessionData.sessionsResult?.hasMore !== true) {
-      return;
-    }
-    const sections = this.zonedVisibleSections(
-      this.selectedAgentSessionRows(this.getSessionNavigationState()),
-    ).sections;
-    for (const section of sections) {
-      const category = section.category;
-      if (!category || this.collapsedSessionSections.has(section.id)) {
-        continue;
-      }
-      void this.ensureSidebarSessionGroup(category, section.visibleLimit);
-    }
   }
 
   private visibleNarrationRowsInOrder(): SidebarRecentSession[] {
@@ -468,16 +376,7 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
   }
 
   toggleSection(sectionId: string): void {
-    const expanding = this.collapsedSessionSections.has(sectionId);
     this.sessionOrganizer.toggleSection(sectionId);
-    if (expanding && sectionId.startsWith("category:")) {
-      const category = sectionId.slice("category:".length).trim();
-      const limit =
-        this.sessionData.visibleSessionLimits.get(sectionId) ?? SIDEBAR_SESSION_PAGE_SIZE;
-      if (category) {
-        void this.ensureSidebarSessionGroup(category, limit);
-      }
-    }
   }
 
   handleSessionListDragOver(event: DragEvent): void {
@@ -500,10 +399,8 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
     this.sessionData.setVisibleSessionLimit(sectionId, limit);
   }
 
-  loadMoreSidebarSessions(category?: string, limit?: number): Promise<void> {
-    return category
-      ? this.ensureSidebarSessionGroup(category, limit ?? SIDEBAR_SESSION_PAGE_SIZE)
-      : this.sessionData.loadMoreSidebarSessions();
+  loadMoreSidebarSessions(): Promise<void> {
+    return this.sessionData.loadMoreSidebarSessions();
   }
 
   dismissSessionMutationError(): void {
@@ -592,7 +489,6 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
       empty: visibleSessions.length === 0,
       sections,
       nativeSessionsHaveMore: this.sessionData.sessionsResult?.hasMore === true,
-      categorySessionsHaveMore: (category) => this.sidebarSessionGroupHasMore(category),
       catalogRenderer: this.catalogRenderer,
       catalogs: {
         catalogs,

@@ -14,9 +14,9 @@ import {
 const suite = createSessionManagementE2eSuite();
 
 suite.define(() => {
-  it("pages an expanded custom group independently of the global session window", async () => {
+  it("loads the global next page outside Other and regroups appended rows", async () => {
     const baseTime = Date.parse("2026-07-01T16:00:00.000Z");
-    const jesseRows = Array.from({ length: 11 }, (_, index) =>
+    const jesseRows = Array.from({ length: 10 }, (_, index) =>
       sessionRow(`agent:main:jesse-${index}`, `Jesse session ${index + 1}`, baseTime - index, {
         category: "Jesse",
       }),
@@ -28,9 +28,6 @@ suite.define(() => {
           `agent:main:other-${index}`,
           `Other session ${index + 1}`,
           baseTime - 100 - index,
-          {
-            category: "Other",
-          },
         ),
       ),
     ];
@@ -46,33 +43,31 @@ suite.define(() => {
     const page = await context.newPage();
     await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), {
       key: collapsedSessionSectionsStorageKey,
-      value: JSON.stringify(["category:Jesse", "category:Other"]),
+      value: JSON.stringify(["category:Jesse", "ungrouped"]),
     });
     const gateway = await installMockGateway(page, {
       methodResponses: {
         "sessions.list": {
           cases: [
-            { match: { category: "Jesse", limit: 20 }, response: sessionsListResponse(jesseRows) },
             {
-              match: { category: "Jesse", limit: 10 },
-              response: sessionsListResponse(jesseRows.slice(0, 10), {
-                hasMore: true,
-                nextOffset: 10,
-                totalCount: 11,
+              match: { limit: 60, offset: 60 },
+              response: sessionsListResponse(jesseRows.slice(1), {
+                offset: 60,
+                totalCount: 69,
               }),
             },
             {
               response: sessionsListResponse(firstPage, {
                 hasMore: true,
                 nextOffset: 60,
-                totalCount: 70,
+                totalCount: 69,
               }),
             },
           ],
         },
       },
       featureMethods: ["chat.metadata", "chat.startup", "sessions.groups.list"],
-      sessionGroups: ["Jesse", "Other"],
+      sessionGroups: ["Jesse"],
       sessionKey: "agent:main:jesse-0",
     });
 
@@ -81,30 +76,25 @@ suite.define(() => {
       const group = page.locator('[data-session-section="category:Jesse"]');
       await group.waitFor({ state: "visible", timeout: 10_000 });
       await expect.poll(() => group.locator(".sidebar-recent-session").count()).toBe(0);
-      await captureUiProof(page, "sidebar-jesse-group-collapsed.png");
+      const globalPagination = page.locator(
+        ".sidebar-recent-sessions > .sidebar-session-pagination",
+      );
+      await expect.poll(() => globalPagination.count()).toBe(1);
+      await captureUiProof(page, "sidebar-global-pagination.png");
+
+      await globalPagination.getByRole("button", { name: "Load more sessions" }).click();
+      await expect
+        .poll(async () =>
+          (await gateway.getRequests("sessions.list")).some((request) => {
+            const params = requireRecord(request.params);
+            return params.offset === 60 && params.limit === 60 && params.category === undefined;
+          }),
+        )
+        .toBe(true);
+      await expect.poll(() => globalPagination.count()).toBe(0);
 
       await group.getByRole("button", { name: "Jesse", exact: true }).click();
       await expect.poll(() => group.locator(".sidebar-recent-session").count()).toBe(10);
-      await expect
-        .poll(async () =>
-          (await gateway.getRequests("sessions.list")).some((request) => {
-            const params = requireRecord(request.params);
-            return params.category === "Jesse" && params.limit === 10;
-          }),
-        )
-        .toBe(true);
-      await captureUiProof(page, "sidebar-jesse-group-first-page.png");
-
-      await group.getByRole("button", { name: "Show more" }).click();
-      await expect.poll(() => group.locator(".sidebar-recent-session").count()).toBe(11);
-      await expect
-        .poll(async () =>
-          (await gateway.getRequests("sessions.list")).some((request) => {
-            const params = requireRecord(request.params);
-            return params.category === "Jesse" && params.limit === 20;
-          }),
-        )
-        .toBe(true);
       await captureUiProof(page, "sidebar-jesse-group-complete.png");
     } finally {
       await context.close();

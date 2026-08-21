@@ -166,7 +166,7 @@ describe("lazy protocol validators", () => {
       { archived: false },
       { archived: true },
       { archived: "all" },
-      { involvingMe: true, category: "Jesse" },
+      { involvingMe: true },
     ]);
     expectRejected(validateSessionsListParams, [{ archived: "archived" }, { involvingMe: "yes" }]);
   });
