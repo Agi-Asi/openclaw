@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isRecord } from "./lib/record-shared.mjs";
 import {
   canonicalReleaseJson,
@@ -44,7 +45,6 @@ const RUN_CONCLUSIONS = new Set([
   "success",
   "timed_out",
 ]);
-const SUCCESS_CONCLUSIONS = new Set(["neutral", "skipped", "success"]);
 const JOB_STATUSES = new Set(["completed", "in_progress", "queued"]);
 const REQUIRED_ARTIFACTS = Object.freeze({
   decision: { entry: "full-release-decision.json" },
@@ -52,6 +52,8 @@ const REQUIRED_ARTIFACTS = Object.freeze({
   "execution-plan": { entry: "full-release-execution-plan.json" },
   "release-plan-lock": { entry: "release-plan-lock.json" },
 });
+const verifiedArtifactEvidence = new WeakSet();
+const verifiedReceipts = new WeakMap();
 const compareAscii = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 function fail(message) {
@@ -101,6 +103,10 @@ function digest(value, label) {
     fail(`${label} must be sha256:<64 lowercase hex characters>`);
   }
   return value;
+}
+
+function exactBytesDigest(value) {
+  return `sha256:${createHash("sha256").update(value, "ascii").digest("hex")}`;
 }
 
 function runId(value, label) {
@@ -473,6 +479,7 @@ function verifyDecisionAndDrain(executionPlan, decision, drain) {
   verifyStateBinding(decision, executionPlan, "release validation decision");
   verifyStateBinding(drain, executionPlan, "release validation diagnostic drain");
   if (
+    executionPlan.parent_run_attempt > decision.parent_run_attempt ||
     decision.parent_run_attempt > drain.parent_run_attempt ||
     Date.parse(executionPlan.started_at) > Date.parse(decision.observed_at) ||
     Date.parse(decision.observed_at) > Date.parse(drain.observed_at)
@@ -485,8 +492,7 @@ function verifyDecisionAndDrain(executionPlan, decision, drain) {
     if (planned.mode === "blocking") {
       if (
         decisionGroup.status !== "completed" ||
-        decisionGroup.conclusion === null ||
-        !SUCCESS_CONCLUSIONS.has(decisionGroup.conclusion) ||
+        decisionGroup.conclusion !== "success" ||
         decisionGroup.completed_at === null ||
         Date.parse(decisionGroup.completed_at) > Date.parse(decision.observed_at)
       ) {
@@ -498,7 +504,7 @@ function verifyDecisionAndDrain(executionPlan, decision, drain) {
       }
       for (const job of blockingJobs) {
         requireTerminalJob(job, decision.observed_at, `blocking job ${planned.id}/${job.name}`);
-        if (!SUCCESS_CONCLUSIONS.has(job.conclusion)) {
+        if (job.conclusion !== "success") {
           fail(`blocking job failed release policy: ${planned.id}/${job.name}`);
         }
       }
@@ -521,7 +527,7 @@ function verifyDecisionAndDrain(executionPlan, decision, drain) {
     }
     if (planned.mode === "blocking") {
       if (
-        !SUCCESS_CONCLUSIONS.has(drainGroup.conclusion) ||
+        drainGroup.conclusion !== "success" ||
         drainGroup.conclusion !== decisionGroup.conclusion
       ) {
         fail(`blocking group changed after Decision: ${planned.id}`);
@@ -541,7 +547,7 @@ function verifyDecisionAndDrain(executionPlan, decision, drain) {
         fail(`blocking job changed after Decision: ${planned.id}/${changedJob}`);
       }
       for (const job of drainJobs) {
-        if (!SUCCESS_CONCLUSIONS.has(job.conclusion)) {
+        if (job.conclusion !== "success") {
           fail(`blocking job changed after Decision: ${planned.id}/${job.name}`);
         }
       }
@@ -572,19 +578,74 @@ function artifactAttempt(kind, executionPlan, decision, drain) {
   return executionPlan.parent_run_attempt;
 }
 
+export function verifyReleaseValidationArtifactEvidence(value, authenticate) {
+  const label = "release validation artifact evidence";
+  const artifact = object(value, label);
+  exactKeys(
+    artifact,
+    [
+      "kind",
+      "artifact_id",
+      "artifact_name",
+      "entry_name",
+      "run_id",
+      "run_attempt",
+      "archive_digest",
+      "content_digest",
+      "created_at",
+      "url",
+      "entry_bytes",
+    ],
+    label,
+  );
+  const artifactId = runId(artifact.artifact_id, `${label}.artifact_id`);
+  const parentRunId = runId(artifact.run_id, `${label}.run_id`);
+  if (typeof artifact.entry_bytes !== "string") {
+    fail(`${label}.entry_bytes must be a canonical JSON string`);
+  }
+  parseCanonicalReleaseJson(artifact.entry_bytes, {
+    label: `${label}.entry_bytes`,
+    maxBytes: RELEASE_VALIDATION_RECEIPT_MAX_BYTES,
+  });
+  const result = Object.freeze({
+    kind: ascii(artifact.kind, `${label}.kind`),
+    artifact_id: artifactId,
+    artifact_name: ascii(artifact.artifact_name, `${label}.artifact_name`),
+    entry_name: ascii(artifact.entry_name, `${label}.entry_name`),
+    run_id: parentRunId,
+    run_attempt: positiveInteger(artifact.run_attempt, `${label}.run_attempt`),
+    archive_digest: digest(artifact.archive_digest, `${label}.archive_digest`),
+    content_digest: digest(artifact.content_digest, `${label}.content_digest`),
+    created_at: timestamp(artifact.created_at, `${label}.created_at`),
+    url: exactArtifactUrl(artifact.url, parentRunId, artifactId, `${label}.url`),
+    entry_bytes: artifact.entry_bytes,
+  });
+  if (result.content_digest !== exactBytesDigest(result.entry_bytes)) {
+    fail(`${label}.content_digest differs from the exact canonical entry bytes`);
+  }
+  if (typeof authenticate !== "function" || authenticate(result) !== true) {
+    fail(`${label} was not authenticated by its evidence verifier`);
+  }
+  verifiedArtifactEvidence.add(result);
+  return result;
+}
+
 function validateSourceArtifacts(value, sources) {
   if (!Array.isArray(value) || value.length !== 4) {
     fail("release validation source_artifacts must contain exactly four source artifacts");
   }
-  const expectedDigests = {
-    decision: releaseCanonicalDigest(sources.decision),
-    "diagnostic-drain": releaseCanonicalDigest(sources.diagnosticDrain),
-    "execution-plan": releaseCanonicalDigest(sources.executionPlan),
-    "release-plan-lock": releaseCanonicalDigest(sources.releasePlanLock),
+  const expectedBytes = {
+    decision: canonicalReleaseJson(sources.decision),
+    "diagnostic-drain": canonicalReleaseJson(sources.diagnosticDrain),
+    "execution-plan": canonicalReleaseJson(sources.executionPlan),
+    "release-plan-lock": canonicalReleaseJson(sources.releasePlanLock),
   };
   const artifacts = sortedUnique(
     value.map((entry, index) => {
       const label = `release validation source_artifacts[${index}]`;
+      if (!isRecord(entry) || !verifiedArtifactEvidence.has(entry)) {
+        fail(`${label} must be authenticated artifact evidence`);
+      }
       const artifact = object(entry, label);
       exactKeys(
         artifact,
@@ -599,6 +660,7 @@ function validateSourceArtifacts(value, sources) {
           "content_digest",
           "created_at",
           "url",
+          "entry_bytes",
         ],
         label,
       );
@@ -633,7 +695,8 @@ function validateSourceArtifacts(value, sources) {
             sources.diagnosticDrain,
           ) ||
         result.entry_name !== REQUIRED_ARTIFACTS[kind].entry ||
-        result.content_digest !== expectedDigests[kind]
+        result.content_digest !== exactBytesDigest(expectedBytes[kind]) ||
+        artifact.entry_bytes !== expectedBytes[kind]
       ) {
         fail(`${label} coordinates differ from its source object`);
       }
@@ -713,6 +776,17 @@ function sameLineagePolicy(left, right) {
   );
 }
 
+function authenticatedReceipt(value, label) {
+  if (!isRecord(value) || !verifiedReceipts.has(value)) {
+    fail(`${label} must be an authenticated release validation receipt`);
+  }
+  const receipt = validateReleaseValidationReceipt(value);
+  if (verifiedReceipts.get(value) !== releaseValidationReceiptDigest(receipt)) {
+    fail(`${label} changed after it was authenticated`);
+  }
+  return receipt;
+}
+
 function buildLineage({ parentReceipt, rootReceipt, validation, startedAt }) {
   if (parentReceipt === undefined) {
     if (rootReceipt !== undefined) {
@@ -720,7 +794,7 @@ function buildLineage({ parentReceipt, rootReceipt, validation, startedAt }) {
     }
     return { generation: 0, root_receipt_digest: null, parent_receipt_digest: null };
   }
-  const parent = validateReleaseValidationReceipt(parentReceipt);
+  const parent = authenticatedReceipt(parentReceipt, "release validation parent receipt");
   if (!sameLineagePolicy({ validation }, parent)) {
     fail("release validation parent receipt uses a different intent policy");
   }
@@ -732,7 +806,10 @@ function buildLineage({ parentReceipt, rootReceipt, validation, startedAt }) {
   if (parent.lineage.generation === 0) {
     root = parent;
     if (rootReceipt !== undefined) {
-      const suppliedRoot = validateReleaseValidationReceipt(rootReceipt);
+      const suppliedRoot = authenticatedReceipt(
+        rootReceipt,
+        "release validation supplied root receipt",
+      );
       if (releaseValidationReceiptDigest(suppliedRoot) !== parentDigest) {
         fail("release validation supplied root differs from the generation-zero parent");
       }
@@ -741,7 +818,7 @@ function buildLineage({ parentReceipt, rootReceipt, validation, startedAt }) {
     if (rootReceipt === undefined) {
       fail("release validation non-root parent requires the actual root receipt");
     }
-    root = validateReleaseValidationReceipt(rootReceipt);
+    root = authenticatedReceipt(rootReceipt, "release validation root receipt");
     if (
       root.lineage.generation !== 0 ||
       releaseValidationReceiptDigest(root) !== parent.lineage.root_receipt_digest
@@ -874,7 +951,9 @@ export function sealReleaseValidationReceipt(input) {
       startedAt: executionPlan.started_at,
     }),
   };
-  return validateReleaseValidationReceipt(receipt);
+  const result = validateReleaseValidationReceipt(receipt);
+  verifiedReceipts.set(result, releaseValidationReceiptDigest(result));
+  return result;
 }
 
 function validateReceiptGroup(value, index, toolingSha) {
@@ -929,6 +1008,16 @@ function validateReceiptGroup(value, index, toolingSha) {
     )
   ) {
     fail(`${label} is not terminal or differs from tooling`);
+  }
+  const blockingJobs = jobs.filter((job) => job.policy === "blocking");
+  if (
+    (result.mode === "blocking" &&
+      (result.conclusion !== "success" ||
+        blockingJobs.length === 0 ||
+        blockingJobs.some((job) => job.conclusion !== "success"))) ||
+    (result.mode === "diagnostic" && blockingJobs.length > 0)
+  ) {
+    fail(`${label} violates blocking or diagnostic policy`);
   }
   return result;
 }
@@ -1212,6 +1301,10 @@ export function validateReleaseValidationReceipt(value) {
     normalizedSourceAttempts.execution_plan.schema !== EXECUTION_PLAN_SCHEMA ||
     normalizedSourceAttempts.decision.schema !== DECISION_SCHEMA ||
     normalizedSourceAttempts.diagnostic_drain.schema !== DRAIN_SCHEMA ||
+    normalizedSourceAttempts.execution_plan.parent_run_attempt >
+      normalizedSourceAttempts.decision.parent_run_attempt ||
+    normalizedSourceAttempts.decision.parent_run_attempt >
+      normalizedSourceAttempts.diagnostic_drain.parent_run_attempt ||
     normalizedSourceAttempts.decision.source_parent_run_attempt !==
       normalizedSourceAttempts.execution_plan.parent_run_attempt ||
     normalizedSourceAttempts.diagnostic_drain.source_parent_run_attempt !==
@@ -1310,6 +1403,7 @@ export function verifyReleaseValidationReceipt(receiptValue, input) {
   if (canonicalReleaseJson(receipt) !== canonicalReleaseJson(expected)) {
     fail("release validation receipt differs from its validated source objects");
   }
+  verifiedReceipts.set(receipt, releaseValidationReceiptDigest(receipt));
   return receipt;
 }
 

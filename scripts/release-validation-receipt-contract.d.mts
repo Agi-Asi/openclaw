@@ -5,6 +5,9 @@ import type {
   ReleaseValidationPurpose,
 } from "./release-validation-intent.mjs";
 
+declare const verifiedArtifactEvidenceBrand: unique symbol;
+declare const verifiedReceiptBrand: unique symbol;
+
 export type ReleaseValidationReceiptDigest = `sha256:${string}`;
 export type ReleaseValidationRunConclusion =
   | "action_required"
@@ -90,6 +93,13 @@ export type ReleaseValidationSourceArtifact = {
   url: string;
 };
 
+export type ReleaseValidationVerifiedArtifactEvidence = Readonly<
+  ReleaseValidationSourceArtifact & {
+    entry_bytes: string;
+    readonly [verifiedArtifactEvidenceBrand]: true;
+  }
+>;
+
 export type ReleaseValidationSourceAttempt = {
   schema: string;
   digest: ReleaseValidationReceiptDigest;
@@ -166,15 +176,19 @@ export type ReleaseValidationReceipt = {
   };
 };
 
+export type ReleaseValidationVerifiedReceipt = ReleaseValidationReceipt & {
+  readonly [verifiedReceiptBrand]: true;
+};
+
 export type ReleaseValidationReceiptSealInput = {
   releasePlanLock: ReleasePlanLock;
   executionPlan: ReleaseValidationExecutionPlanSource;
   decision: ReleaseValidationStateSource;
   diagnosticDrain: ReleaseValidationStateSource;
-  sourceArtifacts: ReleaseValidationSourceArtifact[];
+  sourceArtifacts: ReleaseValidationVerifiedArtifactEvidence[];
   sealedAt: string;
-  parentReceipt?: ReleaseValidationReceipt;
-  rootReceipt?: ReleaseValidationReceipt;
+  parentReceipt?: ReleaseValidationVerifiedReceipt;
+  rootReceipt?: ReleaseValidationVerifiedReceipt;
 };
 
 export type ReleaseValidationReceiptLocator = {
@@ -206,21 +220,27 @@ export function validateReleaseValidationStateSource(
   value: unknown,
   mode: "decision" | "diagnostic-drain",
 ): ReleaseValidationStateSource;
+export function verifyReleaseValidationArtifactEvidence(
+  value: unknown,
+  authenticate: (
+    evidence: Readonly<ReleaseValidationSourceArtifact & { entry_bytes: string }>,
+  ) => boolean,
+): ReleaseValidationVerifiedArtifactEvidence;
 export function sealReleaseValidationReceipt(
   input: ReleaseValidationReceiptSealInput,
-): ReleaseValidationReceipt;
+): ReleaseValidationVerifiedReceipt;
 export function validateReleaseValidationReceipt(value: unknown): ReleaseValidationReceipt;
 export function verifyReleaseValidationReceiptLineage(
   receiptValue: unknown,
   lineage?: {
-    parentReceipt?: ReleaseValidationReceipt;
-    rootReceipt?: ReleaseValidationReceipt;
+    parentReceipt?: ReleaseValidationVerifiedReceipt;
+    rootReceipt?: ReleaseValidationVerifiedReceipt;
   },
 ): ReleaseValidationReceipt["lineage"];
 export function verifyReleaseValidationReceipt(
   receiptValue: unknown,
   input: ReleaseValidationReceiptSealInput,
-): ReleaseValidationReceipt;
+): ReleaseValidationVerifiedReceipt;
 export function canonicalReleaseValidationReceiptJson(value: unknown): string;
 export function releaseValidationReceiptDigest(value: unknown): ReleaseValidationReceiptDigest;
 export function parseReleaseValidationReceiptJson(text: string): ReleaseValidationReceipt;
