@@ -32,6 +32,11 @@ on:
         required: false
         default: "24.x"
         type: string
+      investigation_node_options:
+        description: Temporary RSS investigation NODE_OPTIONS
+        required: false
+        default: ""
+        type: string
       deep_profile:
         description: Run the deep-profile lane with CPU/heap/trace artifacts
         required: false
@@ -219,6 +224,7 @@ jobs:
             include_filters: "scenario:agent-cold-warm-message"
             expected_release_entries: "agent-cold-warm-message:mock-openai-provider"
     env:
+      NODE_OPTIONS: ${{ inputs.investigation_node_options }}
       KOVA_REF: ${{ needs.resolve_target.outputs.kova_ref }}
       KOVA_OPENCLAW_CONFIG_CONTRACT: ${{ needs.resolve_target.outputs.kova_config_contract }}
       KOVA_HOME: ${{ github.workspace }}/.artifacts/kova/home/${{ matrix.lane }}
