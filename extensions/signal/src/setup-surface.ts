@@ -179,6 +179,7 @@ async function prepareManagedSignalLink(params: {
     }
 
     signal.throwIfAborted();
+    await params.options?.beforePersistentEffect?.();
     try {
       const settled = linkClient
         .request(

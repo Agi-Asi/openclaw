@@ -154,6 +154,30 @@ describe("Signal hosted setup linking", () => {
     ).toBe(false);
   });
 
+  it("revalidates hosted authority immediately before device linking", async () => {
+    const guardError = new Error("verified inference changed");
+    const beforePersistentEffect = vi
+      .fn<() => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(guardError);
+    mocks.rpc.mockResolvedValueOnce([]).mockResolvedValueOnce({
+      deviceLinkUri: "sgnl://linkdevice?uuid=test&pub_key=test",
+    });
+    const prompt = createPrompter();
+
+    await expect(
+      prepareSignal({
+        prompter: prompt.prompter,
+        beforePersistentEffect,
+      }),
+    ).rejects.toBe(guardError);
+
+    expect(beforePersistentEffect).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc.mock.calls.map(([method]) => method)).toEqual(["listAccounts", "startLink"]);
+    expect(prompt.qrCode).not.toHaveBeenCalled();
+    expect(mocks.linkStop).toHaveBeenCalledOnce();
+  });
+
   it("reuses a selected local signal-cli account without starting another link", async () => {
     mocks.rpc.mockResolvedValueOnce([{ number: "+15555550125" }, { number: "+15555550123" }]);
     const prompt = createPrompter({ selectedAccount: "+15555550125" });
