@@ -78,13 +78,15 @@ jobs:
       - name: Require trusted workflow source
         env:
           APPROVED_WORKFLOW_SHA: ${{ inputs.bootstrap_workflow_sha }}
+          GH_TOKEN: ${{ github.token }}
           PRETAG_VALIDATION: ${{ inputs.pretag_validation }}
-          WORKFLOW_REF: ${{ github.ref }}
-          WORKFLOW_SHA: ${{ github.sha }}
+          WORKFLOW_FULL_REF: ${{ github.ref }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "${WORKFLOW_SHA}" ]] || {
-            echo "Trusted workflow checkout does not match github.sha." >&2
+            echo "Trusted workflow checkout does not match github.workflow_sha." >&2
             exit 1
           }
           if [[ "${PRETAG_VALIDATION}" != "true" ]]; then
@@ -98,9 +100,9 @@ jobs:
               echo "Plugin ClawHub bootstrap requires an exact approved workflow SHA." >&2
               exit 1
             }
-            if [[ "${WORKFLOW_REF}" == "refs/heads/main" ]]; then
+            if [[ "${WORKFLOW_FULL_REF}" == "refs/heads/main" ]]; then
               :
-            elif [[ "${WORKFLOW_REF}" =~ ^refs/tags/release-publish/([a-f0-9]{12})-[1-9][0-9]*$ && "${APPROVED_WORKFLOW_SHA:0:12}" == "${BASH_REMATCH[1]}" ]]; then
+            elif [[ "${WORKFLOW_FULL_REF}" =~ ^refs/tags/release-publish/([a-f0-9]{12})-[1-9][0-9]*$ && "${APPROVED_WORKFLOW_SHA:0:12}" == "${BASH_REMATCH[1]}" ]]; then
               :
             else
               echo "Plugin ClawHub bootstrap requires trusted main or the protected SHA-pinned release-publish tag." >&2
@@ -111,10 +113,11 @@ jobs:
               exit 1
             }
           else
-            [[ "${WORKFLOW_REF}" == "refs/heads/main" ]] || {
-              echo "Plugin ClawHub pre-tag validation must be dispatched from trusted main." >&2
-              exit 1
-            }
+            node scripts/release-tooling-identity.mjs verify \
+              --repository "${GITHUB_REPOSITORY}" \
+              --workflow-ref "${WORKFLOW_REF}" \
+              --workflow-full-ref "${WORKFLOW_FULL_REF}" \
+              --workflow-sha "${WORKFLOW_SHA}"
             if [[ -n "${APPROVED_WORKFLOW_SHA}" && "${WORKFLOW_SHA}" != "${APPROVED_WORKFLOW_SHA}" ]]; then
               echo "Plugin ClawHub pre-tag validation workflow SHA does not match the requested trusted-main SHA." >&2
               exit 1

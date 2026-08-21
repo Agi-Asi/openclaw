@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
+import { verifyReleaseToolingIdentity } from "../../scripts/release-tooling-identity.mjs";
+
+const TOOLING_SHA = "a".repeat(40);
+const OTHER_TOOLING_SHA = "b".repeat(40);
+const TOOLING_REF = `release-publish/${TOOLING_SHA.slice(0, 12)}-12345`;
+const TOOLING_FULL_REF = `refs/tags/${TOOLING_REF}`;
 
 type Step = {
   env?: Record<string, string>;
@@ -71,8 +77,15 @@ describe("Plugin ClawHub New workflow", () => {
     const resolve = job("resolve_bootstrap_plan");
     const checkout = step(resolve, "Checkout");
     expect(checkout.with?.ref).toBe("${{ github.sha }}");
-    const guard = step(resolve, "Require trusted workflow source").run ?? "";
-    expect(guard).toContain('WORKFLOW_REF}" == "refs/heads/main"');
+    const guardStep = step(resolve, "Require trusted workflow source");
+    const guard = guardStep.run ?? "";
+    expect(guardStep.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      WORKFLOW_FULL_REF: "${{ github.ref }}",
+      WORKFLOW_REF: "${{ github.ref_name }}",
+      WORKFLOW_SHA: "${{ github.workflow_sha }}",
+    });
+    expect(guard).toContain('WORKFLOW_FULL_REF}" == "refs/heads/main"');
     expect(guard).toContain('GITHUB_ACTOR}" == "github-actions[bot]"');
     expect(guard).toContain("refs/tags/release-publish/");
     expect(guard).toContain(
@@ -88,6 +101,16 @@ describe("Plugin ClawHub New workflow", () => {
   });
 
   it("supports a secretless pre-tag validation mode without tag or parent approval", () => {
+    const resolve = job("resolve_bootstrap_plan");
+    const guardRun = step(resolve, "Require trusted workflow source").run ?? "";
+    expect(guardRun).toContain("node scripts/release-tooling-identity.mjs verify");
+    expect(guardRun).toContain('--workflow-ref "${WORKFLOW_REF}"');
+    expect(guardRun).toContain('--workflow-full-ref "${WORKFLOW_FULL_REF}"');
+    expect(guardRun).toContain('--workflow-sha "${WORKFLOW_SHA}"');
+    expect(guardRun).not.toContain("--allow-prevalidated-ref");
+    expect(guardRun).not.toContain("--release-publish-run-id");
+    expect(guardRun).not.toContain("--release-publish-run-attempt");
+
     const resolveRun = step(job("resolve_bootstrap_plan"), "Resolve checked-out ref").run ?? "";
     expect(resolveRun).toContain('[[ "${PRETAG_VALIDATION}" == "true" ]]');
     expect(resolveRun).toContain(
@@ -117,6 +140,77 @@ describe("Plugin ClawHub New workflow", () => {
     const publish = job("publish_bootstrap_plugins");
     expect(publish.if).toContain("inputs.pretag_validation != true");
     expect(publish.if).toContain("inputs.dry_run != true");
+    expect(JSON.stringify(resolve)).not.toContain("secrets.");
+    expect(JSON.stringify(resolve)).not.toContain("--publish-packed");
+    expect(JSON.stringify(resolve)).not.toContain("trusted-publisher set");
+  });
+
+  it("accepts only an exact live lightweight protected tooling tag for no-write planning", () => {
+    const runGh = vi.fn(() =>
+      JSON.stringify({
+        ref: TOOLING_FULL_REF,
+        object: { sha: TOOLING_SHA, type: "commit" },
+      }),
+    );
+    expect(
+      verifyReleaseToolingIdentity({
+        repository: "openclaw/openclaw",
+        runGh,
+        workflowFullRef: TOOLING_FULL_REF,
+        workflowRef: TOOLING_REF,
+        workflowSha: TOOLING_SHA,
+      }),
+    ).toMatchObject({ route: "protected-tag", sha: TOOLING_SHA });
+    expect(runGh).toHaveBeenCalledWith([
+      "api",
+      `repos/openclaw/openclaw/git/ref/tags/${TOOLING_REF}`,
+      "--method",
+      "GET",
+    ]);
+  });
+
+  it.each([
+    [
+      "moved tag",
+      {
+        runGh: () =>
+          JSON.stringify({
+            ref: TOOLING_FULL_REF,
+            object: { sha: OTHER_TOOLING_SHA, type: "commit" },
+          }),
+      },
+      "missing, moved, annotated, or bound to the wrong SHA",
+    ],
+    [
+      "annotated tag",
+      {
+        runGh: () =>
+          JSON.stringify({
+            ref: TOOLING_FULL_REF,
+            object: { sha: OTHER_TOOLING_SHA, type: "tag" },
+          }),
+      },
+      "missing, moved, annotated, or bound to the wrong SHA",
+    ],
+    [
+      "wrong SHA prefix",
+      {
+        workflowFullRef: `refs/tags/release-publish/${OTHER_TOOLING_SHA.slice(0, 12)}-12345`,
+        workflowRef: `release-publish/${OTHER_TOOLING_SHA.slice(0, 12)}-12345`,
+      },
+      "SHA prefix does not match",
+    ],
+    ["same-name branch", { workflowFullRef: `refs/heads/${TOOLING_REF}` }, "exact tag full ref"],
+  ])("rejects a $0 for no-write planning", (_label, overrides, expectedError) => {
+    expect(() =>
+      verifyReleaseToolingIdentity({
+        repository: "openclaw/openclaw",
+        workflowFullRef: TOOLING_FULL_REF,
+        workflowRef: TOOLING_REF,
+        workflowSha: TOOLING_SHA,
+        ...overrides,
+      }),
+    ).toThrow(expectedError);
   });
 
   it("requires an exact attested parent tuple for approved dry-run validation", () => {
