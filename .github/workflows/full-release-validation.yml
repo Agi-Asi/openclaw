@@ -1098,13 +1098,12 @@ jobs:
 
       # Parent reruns hide prior-attempt artifacts. This exact-key cache is immutable;
       # a miss fails closed instead of reconstructing or redispatching child identities.
-      - name: Restore immutable release execution plan for parent rerun
-        if: ${{ github.run_attempt != 1 }}
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - name: Cache immutable release execution plan
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ${{ runner.temp }}/full-release-execution-plan
           key: full-release-execution-plan-v1-${{ github.run_id }}
-          fail-on-cache-miss: true
+          fail-on-cache-miss: ${{ github.run_attempt != 1 }}
 
       - name: Seal immutable release execution plan
         id: plan
@@ -1227,13 +1226,6 @@ jobs:
             )"
           fi
           node scripts/full-release-validation-state.mjs plan
-
-      - name: Preserve immutable release execution plan for parent reruns
-        if: ${{ github.run_attempt == 1 && steps.plan.outcome == 'success' }}
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ${{ runner.temp }}/full-release-execution-plan
-          key: full-release-execution-plan-v1-${{ github.run_id }}
 
       - name: Upload immutable release execution plan
         if: always()
