@@ -551,7 +551,7 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
                     if (isDispatchOperationAborted()) {
                       return;
                     }
-                    if (shouldRouteToOriginating) {
+                    if (context?.deliveryIntentId || shouldRouteToOriginating) {
                       const result = await sendPayloadAsync(
                         normalizedPayload,
                         context?.abortSignal,

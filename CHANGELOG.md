@@ -69,6 +69,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- **Codex async delivery:** put same-channel async agent messages into durable outbound custody before acknowledging them, preserving stable replay deduplication across restarts.
 - **Codex managed runtime:** update the official Codex plugin to app-server 0.149.0 so prerelease publication keeps its required latest-dependency guarantee.
 - **Codex CLI session resume security:** terminate option parsing before the externally supplied session id so option-shaped identifiers cannot enable Codex CLI flags.
 - **Onboarding model browsing:** keep preferred-provider model discovery scoped to the selected provider, preserve route variants, and avoid loading unrelated provider setup surfaces. Fixes #125363. Thanks @shakkernerd.

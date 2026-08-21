@@ -141,7 +141,17 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       deliveryIntentId?: string;
     },
   ) => {
-    if (!shouldRouteToOriginating || !routeReplyChannel || !routeReplyTo || !routeReplyRuntime) {
+    const runtime =
+      routeReplyRuntime ?? (options?.deliveryIntentId ? await loadRouteReplyRuntime() : undefined);
+    if (
+      (!shouldRouteToOriginating && !options?.deliveryIntentId) ||
+      !routeReplyChannel ||
+      !routeReplyTo ||
+      !runtime
+    ) {
+      if (options?.deliveryIntentId) {
+        throw new Error("durable block reply route unavailable");
+      }
       return null;
     }
     markInboundDedupeReplayUnsafe();
@@ -153,7 +163,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       (ctx.CommandSource === "native"
         ? (resolveCommandTurnTargetSessionKey(ctx) ?? ctx.SessionKey)
         : ctx.SessionKey);
-    const result = await routeReplyRuntime.routeReply({
+    const result = await runtime.routeReply({
       payload,
       channel: routeReplyChannel,
       to: routeReplyTo,
@@ -201,7 +211,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
   ) => {
     // Keep the runtime guard explicit because this helper is called from nested
     // reply callbacks where TypeScript cannot narrow shouldRouteToOriginating.
-    if (!routeReplyRuntime || !routeReplyChannel || !routeReplyTo) {
+    if (!routeReplyRuntime && !deliveryIntentId) {
       return null;
     }
     const effectiveAbortSignal = abortSignal ?? state.getDispatchAbortSignal();

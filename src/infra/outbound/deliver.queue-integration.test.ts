@@ -32,6 +32,12 @@ import { acceptedPreparedOutboundEntries } from "./prepared-batch.js";
 
 let deliverOutboundPayloads: typeof import("./deliver.js").deliverOutboundPayloads;
 
+const blockReplyCompletionRetention = {
+  idPrefix: "block-reply:v1:",
+  maxAgeMs: 24 * 60 * 60_000,
+  maxEntries: 2_000,
+} as const;
+
 function createPartialSendFailure() {
   return vi
     .fn()
@@ -505,6 +511,53 @@ describe("deliverOutboundPayloads queue integration: mid-batch failure with send
     ).toBe("completed");
     await expect(deliverOutboundPayloads(params)).resolves.toEqual([]);
     expect(sendMatrix).toHaveBeenCalledOnce();
+  });
+
+  it("recovers one pending block intent once and dedupes completed producer replays", async () => {
+    process.env.OPENCLAW_STATE_DIR = tmpDir;
+    const deliveryIntentId = "block-reply:v1:codex-app-server:thread-1:turn-1:restart-dedupe";
+    await enqueueDeliveryOnce(
+      {
+        channel: "matrix",
+        to: "!room:example",
+        payloads: [{ text: "durable background update" }],
+        queuePolicy: "required",
+        completionRetention: blockReplyCompletionRetention,
+      },
+      deliveryIntentId,
+      tmpDir,
+    );
+    const sendMatrix = vi.fn().mockResolvedValue({ messageId: "recovered-block-message" });
+    const deliver = vi.fn<DeliverFn>(async (params) =>
+      deliverOutboundPayloads({ ...params, deps: { matrix: sendMatrix } }),
+    );
+
+    await drainMatrixReconnect({ deliver, stateDir: tmpDir });
+    await recoverPendingDeliveries({
+      cfg: {} as OpenClawConfig,
+      deliver,
+      log: createRecoveryLog(),
+      stateDir: tmpDir,
+    });
+    await expect(
+      deliverOutboundPayloads({
+        cfg: {} as OpenClawConfig,
+        channel: "matrix",
+        to: "!room:example",
+        payloads: [{ text: "regenerated duplicate" }],
+        deps: { matrix: sendMatrix },
+        queuePolicy: "required",
+        deliveryIntentId,
+        completionRetention: blockReplyCompletionRetention,
+        reusePendingDeliveryIntent: true,
+      }),
+    ).resolves.toEqual([]);
+
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(sendMatrix).toHaveBeenCalledOnce();
+    expect(
+      getDeliveryQueueEntryStatus(OUTBOUND_DELIVERY_QUEUE_NAME, deliveryIntentId, tmpDir),
+    ).toBe("completed");
   });
 
   it("retains a completed stable receipt after fully successful best-effort delivery", async () => {
