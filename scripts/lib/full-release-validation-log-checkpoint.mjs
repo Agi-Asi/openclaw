@@ -45,21 +45,16 @@ function encodeBase64url(bytes) {
 }
 
 function decodeBase64url(value, label) {
-  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/u.test(value))
     throw new Error(`${label} is not canonical base64url`);
-  }
   const decoded = Buffer.from(value, "base64url");
-  if (encodeBase64url(decoded) !== value) {
-    throw new Error(`${label} is not canonical base64url`);
-  }
+  if (encodeBase64url(decoded) !== value) throw new Error(`${label} is not canonical base64url`);
   return decoded;
 }
 
 function normalizeKind(value) {
   const kind = requiredString(value, "checkpoint kind");
-  if (!CHECKPOINT_KINDS.has(kind)) {
-    throw new Error(`checkpoint kind is invalid: ${kind}`);
-  }
+  if (!CHECKPOINT_KINDS.has(kind)) throw new Error(`checkpoint kind is invalid: ${kind}`);
   return kind;
 }
 

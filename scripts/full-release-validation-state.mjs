@@ -179,6 +179,15 @@ function emitCheckpoint(kind, payload, provenance) {
   }
 }
 
+async function emitOptionalCheckpoint(kind, payload, signal) {
+  try {
+    const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+    emitCheckpoint(kind, payload, await checkpointProvenance(boundedSignal));
+  } catch (error) {
+    console.error(`[frv] ${kind} checkpoint unavailable: ${String(error?.message ?? error)}`);
+  }
+}
+
 function issue(kind, child, message, extra = {}) {
   return {
     child: child.key,
@@ -568,9 +577,7 @@ async function planMode() {
     trustedWorkflow: trustedWorkflowFromInputs(planInputs),
   });
   const stop = () => {
-    if (finished) {
-      return;
-    }
+    if (finished) return abortController.abort(new Error("execution plan checkpoint cancelled"));
     abortController.abort(new Error("execution plan collection cancelled"));
     plan = buildReleaseExecutionPlanArtifact({
       blockers: plan.blockers,
@@ -614,10 +621,10 @@ async function planMode() {
   });
   writeExecutionPlan(outputPath, plan);
   validateReleaseExecutionPlanArtifact(plan, expected);
-  if (expected.targetSha) {
-    emitCheckpoint("plan", plan, await checkpointProvenance(abortController.signal));
-  }
   finished = true;
+  if (expected.targetSha) {
+    await emitOptionalCheckpoint("plan", plan, abortController.signal);
+  }
   if ((reuse.blockers?.length ?? 0) > 0 || (reuse.errors?.length ?? 0) > 0) {
     throw new Error("release execution plan could not bind reusable evidence");
   }
@@ -681,9 +688,7 @@ async function collectMode(mode) {
     return payload;
   };
   const stop = () => {
-    if (finished) {
-      return;
-    }
+    if (finished) return abortController.abort(new Error(`${mode} checkpoint cancelled`));
     abortController.abort(new Error(`${mode} collector cancelled`));
     const decision = classifyReleaseSnapshot({
       cancelled: true,
@@ -811,12 +816,12 @@ async function collectMode(mode) {
           (decision.state !== "qualifying" && decision.activeRunIds.length === 0);
     if (done) {
       const payload = writePayload(decision, { cancelledRunIds, requested: false });
-      if (expected.targetSha) {
-        emitCheckpoint(mode, payload, await checkpointProvenance(abortController.signal));
-      }
       finished = true;
       process.exitCode =
         payload.state === "passed" ? 0 : payload.state === "orchestration_error" ? 2 : 1;
+      if (expected.targetSha) {
+        await emitOptionalCheckpoint(mode, payload, abortController.signal);
+      }
       return;
     }
     await abortableSleep(pollIntervalMs, abortController.signal);
