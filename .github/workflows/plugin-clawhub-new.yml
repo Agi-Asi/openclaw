@@ -977,6 +977,7 @@ jobs:
           SOURCE_REF: ${{ needs.resolve_bootstrap_plan.outputs.ref_revision }}
           SOURCE_REPO: ${{ github.repository }}
           OPENCLAW_CLAWHUB_CLI: ${{ steps.clawhub_cli.outputs.cli }}
+          RELEASE_PUBLISH_PARENT_STATE_POLICY: ${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}
           RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -1004,7 +1005,8 @@ jobs:
               --workflow-full-ref "${WORKFLOW_FULL_REF}" \
               --workflow-sha "${WORKFLOW_SHA}" \
               --release-publish-run-id "${RELEASE_PUBLISH_RUN_ID}" \
-              --release-publish-run-attempt "${RELEASE_PUBLISH_RUN_ATTEMPT}"
+              --release-publish-run-attempt "${RELEASE_PUBLISH_RUN_ATTEMPT}" \
+              --release-publish-parent-state-policy "${RELEASE_PUBLISH_PARENT_STATE_POLICY}"
           }
 
           while IFS= read -r plugin; do

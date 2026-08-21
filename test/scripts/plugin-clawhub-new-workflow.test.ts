@@ -387,6 +387,8 @@ describe("Plugin ClawHub New workflow", () => {
     expect(publishRun).toContain("OPENCLAW_CLAWHUB_TARGET_SHA");
     expect(publishStep.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
+      RELEASE_PUBLISH_PARENT_STATE_POLICY:
+        "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active' || 'manual-recovery') || '' }}",
       RELEASE_PUBLISH_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
       RELEASE_PUBLISH_RUN_ID: "${{ inputs.release_publish_run_id }}",
       WORKFLOW_FULL_REF: "${{ github.ref }}",
@@ -401,6 +403,9 @@ describe("Plugin ClawHub New workflow", () => {
     expect(publishRun).toContain('--workflow-sha "${WORKFLOW_SHA}"');
     expect(publishRun).toContain('--release-publish-run-id "${RELEASE_PUBLISH_RUN_ID}"');
     expect(publishRun).toContain('--release-publish-run-attempt "${RELEASE_PUBLISH_RUN_ATTEMPT}"');
+    expect(publishRun).toContain(
+      '--release-publish-parent-state-policy "${RELEASE_PUBLISH_PARENT_STATE_POLICY}"',
+    );
     expect(publishRun).not.toContain("--allow-prevalidated-ref");
 
     const verifierCalls = [
