@@ -1,5 +1,4 @@
 // Setup-only signal-cli JSON-RPC transport bound to one child process.
-import { createInterface } from "node:readline";
 import { generateSecureUuid } from "openclaw/plugin-sdk/core";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import type { SignalRpcOptions } from "./client.js";
@@ -30,7 +29,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024;
 
 class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
-  private readonly lines;
+  private responseBuffer = Buffer.alloc(0);
   private pending: PendingRequest | undefined;
   private terminalError: Error | undefined;
 
@@ -38,8 +37,7 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
     private readonly process: SignalJsonRpcProcess,
     private readonly abortSignal?: AbortSignal,
   ) {
-    this.lines = createInterface({ input: process.stdout });
-    this.lines.on("line", this.handleLine);
+    process.stdout.on("data", this.handleChunk);
     process.stdin.on("error", this.fail);
     process.stdout.on("error", this.fail);
     void process.exited.then((exit) => this.fail(new Error(formatSignalDaemonExit(exit))));
@@ -65,8 +63,10 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
       DEFAULT_MAX_RESPONSE_BYTES,
     );
     const response = new Promise<unknown>((resolve, reject) => {
+      this.responseBuffer = Buffer.alloc(0);
       const timer = setTimeout(() => {
         this.pending = undefined;
+        this.responseBuffer = Buffer.alloc(0);
         reject(new Error(`signal-cli jsonRpc timeout (${method})`));
       }, timeoutMs);
       timer.unref?.();
@@ -95,7 +95,9 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
 
   async stop(): Promise<void> {
     this.abortSignal?.removeEventListener("abort", this.onAbort);
-    this.lines.close();
+    this.process.stdout.off("data", this.handleChunk);
+    this.process.stdin.off("error", this.fail);
+    this.process.stdout.off("error", this.fail);
     await this.process.stop();
   }
 
@@ -105,13 +107,37 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
 
   private readonly onAbort = () => void this.process.stop();
 
+  private readonly handleChunk = (chunk: Buffer | string) => {
+    const pending = this.pending;
+    if (!pending) {
+      return;
+    }
+    const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    let offset = 0;
+    while (offset < data.length && this.pending === pending) {
+      const newline = data.indexOf(0x0a, offset);
+      const end = newline === -1 ? data.length : newline;
+      const segment = data.subarray(offset, end);
+      if (this.responseBuffer.length + segment.length > pending.maxResponseBytes) {
+        this.fail(new Error("signal-cli jsonRpc response exceeded size limit"));
+        return;
+      }
+      if (segment.length > 0) {
+        this.responseBuffer = Buffer.concat([this.responseBuffer, segment]);
+      }
+      if (newline === -1) {
+        return;
+      }
+      const line = this.responseBuffer.toString("utf8").replace(/\r$/u, "");
+      this.responseBuffer = Buffer.alloc(0);
+      this.handleLine(line);
+      offset = newline + 1;
+    }
+  };
+
   private readonly handleLine = (line: string) => {
     const pending = this.pending;
     if (!pending || !line.trim()) {
-      return;
-    }
-    if (Buffer.byteLength(line) > pending.maxResponseBytes) {
-      this.fail(new Error("signal-cli jsonRpc response exceeded size limit"));
       return;
     }
     let parsed: unknown;
@@ -145,6 +171,7 @@ class SignalLinkRpcProcessClient implements SignalLinkRpcClient {
       return;
     }
     this.terminalError = error;
+    this.responseBuffer = Buffer.alloc(0);
     const pending = this.pending;
     this.pending = undefined;
     if (pending) {

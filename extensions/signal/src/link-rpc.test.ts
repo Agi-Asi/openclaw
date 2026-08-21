@@ -102,4 +102,15 @@ describe("SignalLinkRpcClient", () => {
 
     await expect(response).rejects.toThrow("response exceeded size limit");
   });
+
+  it("bounds fragmented unterminated output before line framing", async () => {
+    const client = createSignalLinkRpcClient({ cliPath: "signal-cli" });
+    const response = client.request("listAccounts", undefined, { maxResponseBytes: 64 });
+
+    fixture.process.stdout.emit("data", "x".repeat(40));
+    fixture.process.stdout.emit("data", "x".repeat(25));
+
+    await expect(response).rejects.toThrow("response exceeded size limit");
+    expect(fixture.process.stop).toHaveBeenCalledOnce();
+  });
 });
