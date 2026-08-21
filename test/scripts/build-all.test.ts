@@ -452,7 +452,6 @@ describe("resolveBuildAllSteps", () => {
     for (const profile of [
       "gatewayWatch",
       "qaRuntime",
-      "repoE2eRuntime",
       "sourcePerformance",
       "cliStartup",
     ] as const) {
@@ -472,6 +471,20 @@ describe("resolveBuildAllSteps", () => {
         OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
       });
     }
+  });
+
+  it("keeps repository E2E runtime declarations for package compatibility proofs", () => {
+    const steps = resolveBuildAllSteps("repoE2eRuntime");
+    expect(steps.map((step) => step.label)).toEqual(
+      expect.arrayContaining([
+        "tsdown-ai",
+        "tsdown-packages",
+        "tsdown-unified",
+        "write-plugin-sdk-entry-dts",
+        "check-plugin-sdk-exports",
+      ]),
+    );
+    expect(steps.some((step) => step.label === "tsdown")).toBe(false);
   });
 
   it("skips global declarations on CI artifacts and self-builds the plugin-sdk gate", () => {
@@ -552,7 +565,7 @@ describe("resolveBuildAllSteps", () => {
       });
     }
 
-    for (const profile of ["gatewayWatch", "qaRuntime", "repoE2eRuntime"]) {
+    for (const profile of ["gatewayWatch", "qaRuntime"]) {
       const tsdown = resolveBuildAllSteps(profile).find((step) => step.label === "tsdown");
       if (!tsdown) {
         throw new Error(`Missing ${profile} tsdown step`);
@@ -562,6 +575,16 @@ describe("resolveBuildAllSteps", () => {
         "OPENCLAW_PRESERVE_CLI_STARTUP_METADATA",
       );
     }
+
+    const repoE2eTsdown = resolveBuildAllSteps("repoE2eRuntime").find(
+      (step) => step.label === "tsdown-unified",
+    );
+    if (!repoE2eTsdown) {
+      throw new Error("Missing repoE2eRuntime tsdown-unified step");
+    }
+    expect(resolveBuildAllStep(repoE2eTsdown, { env: {} }).options.env).not.toHaveProperty(
+      "OPENCLAW_PRESERVE_CLI_STARTUP_METADATA",
+    );
   });
 
   it("uses a minimal built runtime profile for gateway watch regression", () => {
@@ -591,13 +614,17 @@ describe("resolveBuildAllSteps", () => {
   it("uses a repo E2E runtime profile with private QA runtime and Control UI assets", () => {
     expect(resolveBuildAllSteps("repoE2eRuntime").map((step) => step.label)).toEqual([
       "plugins:assets:build",
-      "tsdown",
+      "tsdown-ai",
+      "tsdown-packages",
+      "tsdown-unified",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",
       "plugins:assets:copy",
       "runtime-postbuild",
       "build-stamp",
       "runtime-postbuild-stamp",
+      "write-plugin-sdk-entry-dts",
+      "check-plugin-sdk-exports",
       "ui:build",
     ]);
   });
@@ -664,11 +691,7 @@ describe("resolveBuildAllSteps", () => {
         throw new Error(`Missing ${profile} runtime-postbuild step`);
       }
 
-      expect(
-        expectDefined(BUILD_ALL_PROFILE_STEP_ENV[profile], `${profile} build step env`)[
-          "runtime-postbuild"
-        ],
-      ).toBeUndefined();
+      expect(BUILD_ALL_PROFILE_STEP_ENV[profile]?.["runtime-postbuild"]).toBeUndefined();
       expect(
         resolveBuildAllStep(runtimePostbuild, {
           env: { OPENCLAW_RUNTIME_POSTBUILD_STATIC_ASSETS: "1" },

@@ -341,13 +341,17 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
   ],
   repoE2eRuntime: [
     "plugins:assets:build",
-    "tsdown",
+    "tsdown-ai",
+    "tsdown-packages",
+    "tsdown-unified",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
     "plugins:assets:copy",
     "runtime-postbuild",
     "build-stamp",
     "runtime-postbuild-stamp",
+    "write-plugin-sdk-entry-dts",
+    "check-plugin-sdk-exports",
     "ui:build",
   ],
   sourcePerformance: [
@@ -401,11 +405,6 @@ export const BUILD_ALL_PROFILE_STEP_ENV: Record<string, Record<string, NodeJS.Pr
     },
   },
   qaRuntime: {
-    tsdown: {
-      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
-    },
-  },
-  repoE2eRuntime: {
     tsdown: {
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
     },
