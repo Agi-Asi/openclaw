@@ -16,7 +16,7 @@ import {
   trackSessionEntryCacheWrite,
 } from "./session-accessor.sqlite-entry-cache.js";
 import {
-  sqliteLifecycleSessionEntriesEqual,
+  sqliteLifecycleSessionEntriesEqual as lifecycleEntriesEqual,
   sqliteLifecycleTargetSnapshotsEqual,
   sqliteSessionEntriesEqual,
   sqliteSessionSnapshotRowsEqual,
@@ -206,13 +206,15 @@ export function assertSessionEntrySelectionUnchanged(
   expected: SqliteSessionEntrySelectionSnapshot,
   current: SqliteSessionEntrySelectionSnapshot,
   operationLabel: string,
+  preserveOwnerProjection = false,
 ): void {
+  const entriesEqual = preserveOwnerProjection ? lifecycleEntriesEqual : sqliteSessionEntriesEqual;
   const selectedMatches =
     expected.selected?.row.session_key === current.selected?.row.session_key &&
-    sqliteSessionEntriesEqual(expected.selected?.entry, current.selected?.entry);
+    entriesEqual(expected.selected?.entry, current.selected?.entry);
   if (
     !selectedMatches ||
-    !sqliteSessionSnapshotRowsEqual(expected.selectedRows, current.selectedRows)
+    !sqliteSessionSnapshotRowsEqual(expected.selectedRows, current.selectedRows, entriesEqual)
   ) {
     throw new SqliteSessionMutationConflictError(operationLabel);
   }
@@ -515,7 +517,7 @@ function sqliteLifecycleTargetMatchesExpectedEntry(
   }
   return operation === "deleted"
     ? sqliteSessionEntriesEqual(current, expectedEntry)
-    : sqliteLifecycleSessionEntriesEqual(current, expectedEntry);
+    : lifecycleEntriesEqual(current, expectedEntry);
 }
 
 export function assertLifecycleTargetUnchanged(

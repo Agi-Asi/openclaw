@@ -9,6 +9,7 @@ import {
   applySessionEntryLifecycleMutation,
   assignSessionOwner,
   loadSessionEntry,
+  updateSessionEntry,
   upsertSessionEntryCore,
 } from "./session-accessor.js";
 
@@ -196,6 +197,55 @@ describe("SQLite session owner assignment", () => {
           assignedAt: 2,
         },
         sessionId: "session-owned-lifecycle-removal",
+      });
+    });
+  });
+
+  it("allows an owner-preserving entry patch after assigning an owner", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const scope = {
+        agentId: "main",
+        env: state.env,
+        sessionKey: "agent:main:owned-reply-patch",
+      };
+      await upsertSessionEntryCore(scope, {
+        sessionId: "session-owned-reply-patch",
+        updatedAt: 1,
+      });
+      let releasePatch: () => void = () => undefined;
+      const patchGate = new Promise<void>((resolve) => {
+        releasePatch = resolve;
+      });
+      let markPatchStarted: () => void = () => undefined;
+      const patchStarted = new Promise<void>((resolve) => {
+        markPatchStarted = resolve;
+      });
+      const patch = updateSessionEntry(
+        scope,
+        async () => {
+          markPatchStarted();
+          await patchGate;
+          return { label: "updated", updatedAt: 3 };
+        },
+        { preserveOwnerProjection: true },
+      );
+
+      await patchStarted;
+      assignSessionOwner(scope, {
+        owner: { type: "human", id: "profile-owner" },
+        assignedBy: { type: "human", id: "profile-assigner" },
+        assignedAt: 2,
+      });
+      releasePatch();
+
+      await expect(patch).resolves.toMatchObject({
+        label: "updated",
+        owner: {
+          actor: { type: "human", id: "profile-owner" },
+          assignedBy: { type: "human", id: "profile-assigner" },
+          assignedAt: 2,
+        },
+        sessionId: "session-owned-reply-patch",
       });
     });
   });

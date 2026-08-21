@@ -497,7 +497,12 @@ export async function patchSessionEntryCore(
     ReturnType<typeof readSessionEntrySelectionSnapshot>
   >({
     assertSnapshotUnchanged: (prepared, fresh) =>
-      assertSessionEntrySelectionUnchanged(prepared, fresh, "session-entry.patch"),
+      assertSessionEntrySelectionUnchanged(
+        prepared,
+        fresh,
+        "session-entry.patch",
+        options.preserveOwnerProjection,
+      ),
     existingEntry: (snapshot) => snapshot.selected?.entry,
     legacyKeys: (snapshot) => snapshot.selected?.legacyKeys ?? [],
     options,
@@ -630,7 +635,9 @@ async function patchSqliteSessionEntrySnapshot<TSnapshot>(
         }),
       );
       currentIdentity = readSessionIdentitySnapshot(writeDatabase, identityKeys);
-      result = cloneSessionEntry(next);
+      result = cloneSessionEntry(
+        options.preserveOwnerProjection ? { ...next, owner: selectedPreviousEntry.owner } : next,
+      );
     }, toDatabaseOptions(resolved));
     emitCommittedSessionIdentityDiff(previousIdentity, currentIdentity);
     return { maintenancePlans, result };

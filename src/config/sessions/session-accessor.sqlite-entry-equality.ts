@@ -50,13 +50,13 @@ export function sqliteLifecycleSessionEntriesEqual(
 export function sqliteSessionSnapshotRowsEqual(
   left: Array<{ entry: SessionEntry; sessionKey: string }>,
   right: Array<{ entry: SessionEntry; sessionKey: string }>,
+  entriesEqual: SessionEntryComparator = sqliteSessionEntriesEqual,
 ): boolean {
   return (
     left.length === right.length &&
     left.every(
       (row, index) =>
-        row.sessionKey === right[index]?.sessionKey &&
-        sqliteSessionEntriesEqual(row.entry, right[index]?.entry),
+        row.sessionKey === right[index]?.sessionKey && entriesEqual(row.entry, right[index]?.entry),
     )
   );
 }
