@@ -1,14 +1,13 @@
 import { isDeepStrictEqual } from "node:util";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { listAgentEntries } from "../agents/agent-scope-config.js";
-import type { AuthProfilePersistenceReceipt } from "../agents/auth-profiles.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { resolveOnboardingSetupTarget } from "../commands/onboard-agent-target.js";
 import * as firstAgentOnboarding from "../commands/onboard-first-agent.js";
 import type { OnboardMode, OnboardOptions } from "../commands/onboard-types.js";
 import { hasResolvedRosterBeforeMigrations } from "../config/agent-roster-provenance.js";
 import { ConfigMutationConflictError } from "../config/config.js";
-import { createMergePatch, applyMergePatch } from "../config/merge-patch.js";
+import { applyMergePatch, createMergePatch } from "../config/merge-patch.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveGatewayProbeAuthSafeWithSecretInputs } from "../gateway/probe-auth.js";
@@ -24,7 +23,10 @@ import { resolveUserPath } from "../utils.js";
 import { t } from "./i18n/index.js";
 import { runWizardWithPromptNavigation } from "./navigation-prompter.js";
 import type { WizardPrompter } from "./prompts.js";
-import { offerLiveModelVerification } from "./setup.inference-verification.js";
+import {
+  offerLiveModelVerification,
+  publishSetupModelAuthCandidate,
+} from "./setup.inference-verification.js";
 import {
   detectSetupMigrationSources,
   listSetupMigrationOptions,
@@ -565,7 +567,7 @@ async function runSetupWizardOnce(
 
   let liveModelVerified = false;
   let setupConfigPersisted = false;
-  let unpublishedAuthPersistence: AuthProfilePersistenceReceipt | undefined;
+  let authCandidateToPublish: SetupModelAuthCandidate | undefined;
   // keepExistingModelConfig is latched before auth setup, so this distinguishes
   // a route supplied by the import from one configured normally after the import.
   if (
@@ -577,14 +579,7 @@ async function runSetupWizardOnce(
     const verificationTarget = resolveOnboardingSetupTarget(nextConfig);
     const verification = await offerLiveModelVerification({
       config: nextConfig,
-      ...(stagedModelAuth
-        ? {
-            initialCandidate: {
-              ...stagedModelAuth,
-              config: nextConfig,
-            },
-          }
-        : {}),
+      ...(stagedModelAuth ? { initialCandidate: { ...stagedModelAuth, config: nextConfig } } : {}),
       opts,
       prompter,
       runtime,
@@ -603,26 +598,20 @@ async function runSetupWizardOnce(
         nextConfig,
         createMergePatch(stagedModelAuth.config, preModelAuthConfig),
       ) as OpenClawConfig;
-    } else if (!verification.verified && stagedModelAuth) {
-      // Declining an optional probe is not a failed verification; keep the
-      // provider/model choice the user just made and persist it once here.
-      unpublishedAuthPersistence = await stagedModelAuth.persistAuthProfiles();
+    } else if (!verification.verified) {
+      authCandidateToPublish = stagedModelAuth;
     }
-  } else if (stagedModelAuth) {
-    // Non-interactive setup has no live-verification step by contract.
-    unpublishedAuthPersistence = await stagedModelAuth.persistAuthProfiles();
+  } else {
+    authCandidateToPublish = stagedModelAuth;
   }
 
   if (!setupConfigPersisted) {
-    // Persist gateway/roster decisions only after the interactive verification boundary.
-    try {
-      nextConfig = await writeSetupConfigFile(nextConfig, {
-        allowConfigSizeDrop: false,
-      });
-    } catch (error) {
-      unpublishedAuthPersistence?.rollback();
-      throw error;
-    }
+    // This is the first publication boundary for both staged auth and setup config.
+    const writeConfig = async (config: OpenClawConfig) =>
+      await writeSetupConfigFile(config, { allowConfigSizeDrop: false });
+    nextConfig = authCandidateToPublish
+      ? await publishSetupModelAuthCandidate(authCandidateToPublish, nextConfig, writeConfig)
+      : await writeConfig(nextConfig);
   }
 
   prompter.disableBackNavigation?.();
