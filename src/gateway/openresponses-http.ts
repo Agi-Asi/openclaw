@@ -270,17 +270,6 @@ function writeSseEvent(res: ServerResponse, event: StreamingEvent) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
-function resolveResponsePayloadText(result: unknown): string {
-  const payloads = (result as { payloads?: Array<{ text?: string }> } | null)?.payloads;
-  return Array.isArray(payloads)
-    ? payloads
-        .flatMap((payload) =>
-          typeof payload.text === "string" && payload.text ? [payload.text] : [],
-        )
-        .join("\n\n")
-    : "";
-}
-
 type ResolvedResponsesLimits = {
   maxBodyBytes: number;
   maxUrlParts: number;
@@ -790,11 +779,11 @@ export async function handleOpenResponsesHttpRequest(
         return true;
       }
 
-      const assistantText = resolveResponsePayloadText(result);
+      const assistantText = resolveOpenAiHttpResultText(result);
       const usage = extractUsageFromResult(result);
       if (resolveOpenAiHttpAgentRunTerminalOutcome(result).reason !== "completed") {
         const failed = createResponseResource({
-          id: responseId,
+          ...responseIdentity,
           model,
           status: "failed",
           output: [],
@@ -969,7 +958,7 @@ export async function handleOpenResponsesHttpRequest(
     const failedUsage = finalUsage;
     if (finalization.status === "failed") {
       const failedResponse = createResponseResource({
-        id: responseId,
+        ...responseIdentity,
         model,
         status: "failed",
         output: [],
@@ -1263,33 +1252,18 @@ export async function handleOpenResponsesHttpRequest(
         return;
       }
 
-      if (isFailedOpenAiAgentRun(result)) {
-        terminalLifecyclePhase = "error";
-        rememberResponseSession();
-        finalizeFailedResponse(
-          createResponseResource({
-            ...responseIdentity,
-            model,
-            status: "failed",
-            output: [],
-            error: { code: "api_error", message: "internal error" },
-            usage: extractUsageFromResult(result),
-          }),
-        );
-        return;
-      }
-
       finalUsage = extractUsageFromResult(result);
       const priorFinalization = readFinalization();
       const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, terminalOutcome);
       terminalOutcome = outcome;
       if (outcome.reason !== "completed") {
+        terminalLifecyclePhase = "error";
         requestFinalize("failed");
         return;
       }
       if (priorFinalization?.status === "failed" && terminalStreamFailed) {
         const failedResponse = createResponseResource({
-          id: responseId,
+          ...responseIdentity,
           model,
           status: "failed",
           output: [],
