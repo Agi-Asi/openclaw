@@ -1795,9 +1795,12 @@ NODE
     };
     const runCase = (options?: {
       childAttempt?: number;
+      ghStatus?: number;
       parentAttempt?: number;
       parentRun?: Record<string, unknown>;
       provideParent?: boolean;
+      releaseGate?: boolean;
+      runnerBackend?: string;
     }) => {
       const root = tempDirs.make("openclaw-frv-parent-");
       const binDir = path.join(root, "bin");
@@ -1809,6 +1812,7 @@ NODE
         "set -euo pipefail",
         'printf "%s\\n" "$*" >> "$GH_CALLS"',
         'printf "%s\\n" "$MOCK_GH_RESPONSE"',
+        'exit "${MOCK_GH_STATUS:-0}"',
       ]);
       const provideParent = options?.provideParent ?? true;
       const parentAttempt = options?.parentAttempt ?? 1;
@@ -1817,15 +1821,18 @@ NODE
         cwd: root,
         env: {
           ...process.env,
+          CI_RUNNER_BACKEND: options?.runnerBackend ?? "",
           GH_CALLS: callsPath,
           GITHUB_OUTPUT: outputPath,
           GITHUB_REF_NAME: "main",
           GITHUB_REPOSITORY: "openclaw/openclaw",
           GITHUB_RUN_ATTEMPT: String(options?.childAttempt ?? 1),
           MOCK_GH_RESPONSE: JSON.stringify(parentRun),
+          MOCK_GH_STATUS: String(options?.ghStatus ?? 0),
           PARENT_RUN_ATTEMPT: provideParent ? String(parentAttempt) : "",
           PARENT_RUN_ID: provideParent ? String(baseRun.id) : "",
           PATH: `${binDir}:${process.env.PATH ?? ""}`,
+          RELEASE_GATE: options?.releaseGate ? "true" : "false",
           TARGET_REF: targetSha,
           WORKFLOW_SHA: workflowSha,
         },
@@ -1861,9 +1868,15 @@ NODE
     expect(generic.outputs.trusted_first_attempt).toBe("false");
     expect(generic.calls).toBe("");
 
-    for (const rerun of [runCase({ childAttempt: 2 }), runCase({ parentAttempt: 2 })]) {
-      expect(rerun.result.status, rerun.result.stderr).toBe(0);
-      expect(rerun.outputs.trusted_first_attempt).toBe("false");
+    for (const hostedFallback of [
+      runCase({ childAttempt: 2 }),
+      runCase({ parentAttempt: 2 }),
+      runCase({ releaseGate: true }),
+      runCase({ runnerBackend: "github" }),
+    ]) {
+      expect(hostedFallback.result.status, hostedFallback.result.stderr).toBe(0);
+      expect(hostedFallback.outputs.trusted_first_attempt).toBe("false");
+      expect(hostedFallback.calls).toBe("");
     }
 
     for (const parentRun of [
@@ -1875,9 +1888,15 @@ NODE
       { ...baseRun, status: "completed", conclusion: "success" },
     ]) {
       const rejected = runCase({ parentRun });
-      expect(rejected.result.status, JSON.stringify(parentRun)).toBe(1);
+      expect(rejected.result.status, JSON.stringify(parentRun)).toBe(0);
       expect(rejected.outputs.trusted_first_attempt).toBe("false");
+      expect(rejected.result.stderr).toContain("::warning::");
     }
+
+    const apiFailure = runCase({ ghStatus: 1 });
+    expect(apiFailure.result.status, apiFailure.result.stderr).toBe(0);
+    expect(apiFailure.outputs.trusted_first_attempt).toBe("false");
+    expect(apiFailure.result.stderr).toContain("::warning::");
   });
 
   it("routes only trusted first-attempt Full Release Validation iOS to Blacksmith", () => {

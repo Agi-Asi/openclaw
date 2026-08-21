@@ -152,31 +152,44 @@ jobs:
       - name: Validate Full Release Validation parent
         id: frv_parent
         env:
+          CI_RUNNER_BACKEND: ${{ vars.OPENCLAW_CI_RUNNER_BACKEND }}
           GH_TOKEN: ${{ github.token }}
           PARENT_RUN_ATTEMPT: ${{ inputs.full_release_validation_run_attempt }}
           PARENT_RUN_ID: ${{ inputs.full_release_validation_run_id }}
+          RELEASE_GATE: ${{ inputs.release_gate }}
           TARGET_REF: ${{ inputs.target_ref }}
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           echo "trusted_first_attempt=false" >> "$GITHUB_OUTPUT"
 
+          # Parent authentication only unlocks the attempt-one fast route. Any
+          # hosted-policy case must remain independent of the parent API.
+          if [[ "$GITHUB_RUN_ATTEMPT" != "1" || "$CI_RUNNER_BACKEND" == "github" || "$RELEASE_GATE" == "true" ]]; then
+            exit 0
+          fi
           if [[ -z "$PARENT_RUN_ID" && -z "$PARENT_RUN_ATTEMPT" ]]; then
             exit 0
           fi
           if [[ ! "$PARENT_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$PARENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::Full Release Validation parent run ID and attempt must be positive integers." >&2
-            exit 1
+            echo "::warning::Full Release Validation parent identity is malformed; routing iOS to GitHub-hosted macOS." >&2
+            exit 0
+          fi
+          if [[ "$PARENT_RUN_ATTEMPT" != "1" ]]; then
+            exit 0
           fi
           if [[ ! "$TARGET_REF" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Full Release Validation parent routing requires an exact target SHA." >&2
-            exit 1
+            echo "::warning::Full Release Validation parent routing requires an exact target SHA; routing iOS to GitHub-hosted macOS." >&2
+            exit 0
           fi
 
-          parent_run="$(
+          if ! parent_run="$(
             gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/runs/${PARENT_RUN_ID}/attempts/${PARENT_RUN_ATTEMPT}"
-          )"
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${PARENT_RUN_ID}/attempts/${PARENT_RUN_ATTEMPT}" 2>&1
+          )"; then
+            echo "::warning::Could not authenticate the Full Release Validation parent through the Actions API; routing iOS to GitHub-hosted macOS." >&2
+            exit 0
+          fi
           expected_title="Full Release Validation ${TARGET_REF}"
           if ! jq -e \
             --arg branch "$GITHUB_REF_NAME" \
@@ -194,18 +207,20 @@ jobs:
               and .head_branch == $branch
               and .repository.full_name == $repository
               and .display_title == $title
-              and .status == "in_progress"
-              and .conclusion == null
             ' <<< "$parent_run" >/dev/null; then
-            echo "::error::Full Release Validation parent identity did not match this CI target and workflow." >&2
+            echo "::warning::Full Release Validation parent identity did not match this CI target and workflow; routing iOS to GitHub-hosted macOS." >&2
             jq '{id, run_attempt, event, path, head_sha, head_branch, repository: .repository.full_name, display_title, status, conclusion}' \
               <<< "$parent_run" >&2 || true
-            exit 1
+            exit 0
           fi
 
-          if [[ "$PARENT_RUN_ATTEMPT" == "1" && "$GITHUB_RUN_ATTEMPT" == "1" ]]; then
-            echo "trusted_first_attempt=true" >> "$GITHUB_OUTPUT"
+          if ! jq -e '.status == "in_progress" and .conclusion == null' \
+            <<< "$parent_run" >/dev/null; then
+            echo "::warning::Full Release Validation parent is no longer active; routing iOS to GitHub-hosted macOS." >&2
+            exit 0
           fi
+
+          echo "trusted_first_attempt=true" >> "$GITHUB_OUTPUT"
 
       - name: Validate release-gate dispatch
         if: github.event_name == 'workflow_dispatch' && inputs.release_gate
