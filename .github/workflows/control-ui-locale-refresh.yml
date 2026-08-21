@@ -215,7 +215,7 @@ jobs:
           LOCALE: ${{ matrix.locale }}
         run: |
           set -euo pipefail
-          pnpm ui:i18n:sync -- --locale "${LOCALE}"
+          pnpm ui:i18n:sync --locale "${LOCALE}"
 
       - name: Prepare locale artifact
         env:
