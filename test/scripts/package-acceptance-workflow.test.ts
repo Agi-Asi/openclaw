@@ -1963,35 +1963,6 @@ describe("package acceptance workflow", () => {
     ]);
   });
 
-  it("binds normal ClawHub dispatch, approval, and waiting to tooling SHA", () => {
-    const publishRun =
-      workflowStep(workflowJob(RELEASE_PUBLISH_WORKFLOW, "publish"), "Dispatch publish workflows")
-        .run ?? "";
-    const waitForRun = shellFunctionSource(publishRun, "wait_for_run");
-    const appendClawHubArgs = shellFunctionSource(publishRun, "append_clawhub_dispatch_args");
-    const normalDispatch = publishRun.match(
-      /plugin_clawhub_run_id="\$\(dispatch_workflow_at_ref[\s\S]*?\)"\n/u,
-    )?.[0];
-
-    expect(normalDispatch).toContain('"${PARENT_WORKFLOW_SHA}"');
-    expect(normalDispatch).not.toContain('"${TARGET_SHA}"');
-    expect(publishRun).toContain(
-      'wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${PARENT_WORKFLOW_SHA}"',
-    );
-    expect(publishRun).not.toContain(
-      'wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${TARGET_SHA}"',
-    );
-    expect(waitForRun).toContain(
-      'approve_pending_deployments "${workflow}" "${run_id}" "${expected_sha}"',
-    );
-    expect(appendClawHubArgs).toContain(
-      "'.[$target].inputs | to_entries[] | [.key, .value] | @tsv'",
-    );
-    expect(readFileSync("scripts/lib/openclaw-release-clawhub-plan.ts", "utf8")).toMatch(
-      /normal: createDispatchTarget\(\{[\s\S]*?ref: bootstrapWorkflowRef,[\s\S]*?targetRef: releaseSha,/u,
-    );
-  });
-
   it("compares dependency evidence zip contents independently of archive timestamps", () => {
     const orchestration = workflowStep(
       workflowJob(RELEASE_PUBLISH_WORKFLOW, "publish"),
@@ -7170,7 +7141,6 @@ describe("package artifact reuse", () => {
       ".github/workflows/plugin-clawhub-new.yml",
       "publish_bootstrap_plugins",
     );
-    const publishOrchestration = workflowStep(releasePublishJob, "Dispatch publish workflows");
     const postpublishEvidence = workflowStep(releasePublishJob, "Upload postpublish evidence");
 
     expect(packageJson.scripts).toMatchObject({
@@ -7197,103 +7167,35 @@ describe("package artifact reuse", () => {
       "approve_plugins_clawhub_release",
     ]);
     expect(clawHubPublish.uses).toBe(
-      "openclaw/clawhub/.github/workflows/package-publish.yml@a42cd2f73d6afb769b271d463fc111669cb7a499",
+      "openclaw/clawhub/.github/workflows/package-publish.yml@d8096dfc039e86ab942ddf9ef117d04849fd84c1",
     );
     expect(clawHubPublish.permissions).toMatchObject({
       actions: "read",
       contents: "read",
       "id-token": "write",
     });
-    expect(clawHubPublish.with?.trusted_tooling_identity_json).toBe(
-      "${{ needs.preview_plugins_clawhub.outputs.trusted_tooling_identity_json }}",
-    );
+    expect(clawHubPublish.with?.trusted_tooling_identity_json).toBeUndefined();
     const clawHubPreview = workflowJob(PLUGIN_CLAWHUB_RELEASE_WORKFLOW, "preview_plugins_clawhub");
-    expect(clawHubPreview.outputs?.trusted_tooling_identity_json).toBe(
-      "${{ steps.tooling_identity.outputs.json }}",
-    );
-    const toolingIdentity = workflowStep(clawHubPreview, "Capture trusted tooling identity");
-    expect(toolingIdentity.env).toMatchObject({
-      CALLER_FULL_REF: "${{ github.ref }}",
-      CALLER_REF: "${{ github.ref_name }}",
-      CALLER_RUN_ATTEMPT: "${{ github.run_attempt }}",
-      CALLER_RUN_ID: "${{ github.run_id }}",
-      CALLER_SHA: "${{ github.sha }}",
-      PARENT_RUN_ATTEMPT: "${{ inputs.release_publish_run_attempt }}",
-      PARENT_RUN_ID: "${{ inputs.release_publish_run_id }}",
-      PARENT_STATE_POLICY:
-        "${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active-or-success' || 'recovery-active-or-success-or-failure') || '' }}",
-      TOOLING_FULL_REF: "${{ inputs.release_publish_full_ref }}",
-      TOOLING_REF: "${{ inputs.release_publish_branch }}",
-      TOOLING_SHA: "${{ inputs.release_publish_workflow_sha }}",
-    });
-    for (const field of [
-      "version: 2",
-      "repository: $repository",
-      "workflow: $workflow",
-      "runId: $runId",
-      "runAttempt: $runAttempt",
-      "ref: $ref",
-      "fullRef: $fullRef",
-      "sha: $sha",
-      "toolingRef: $toolingRef",
-      "toolingFullRef: $toolingFullRef",
-      "toolingSha: $toolingSha",
-      "parentRepository: $parentRepository",
-      "parentWorkflow: $parentWorkflow",
-      "parentRunId: $parentRunId",
-      "parentRunAttempt: $parentRunAttempt",
-      "parentRef: $parentRef",
-      "parentFullRef: $parentFullRef",
-      "parentSha: $parentSha",
-      "parentStatePolicy: $parentStatePolicy",
-    ]) {
-      expect(toolingIdentity.run).toContain(field);
-    }
-    expect(toolingIdentity.run).toContain(
-      "Trusted release parent run id, attempt, and state policy must be provided together.",
-    );
-    expect(publishOrchestration.env?.PARENT_WORKFLOW_FULL_REF).toBe("${{ github.ref }}");
-    expect(publishOrchestration.run).toContain(
-      '-f release_publish_full_ref="${PARENT_WORKFLOW_FULL_REF}"',
-    );
-    expect(publishOrchestration.run).toContain(
-      '-f release_publish_workflow_sha="${PARENT_WORKFLOW_SHA}"',
-    );
-    expect(publishOrchestration.run).toContain(
-      '-f release_publish_run_attempt="${GITHUB_RUN_ATTEMPT}"',
-    );
     expect(
       readWorkflow(PLUGIN_CLAWHUB_RELEASE_WORKFLOW).on?.workflow_dispatch?.inputs
         ?.release_publish_run_attempt,
-    ).toMatchObject({ required: false, type: "string" });
-    const oidcSourceValidation = workflowStep(
-      clawHubPreview,
-      "Validate OIDC source matches workflow ref",
+    ).toBeUndefined();
+    expect(
+      readWorkflow(PLUGIN_CLAWHUB_RELEASE_WORKFLOW).on?.workflow_dispatch?.inputs
+        ?.release_publish_full_ref,
+    ).toBeUndefined();
+    expect(
+      readWorkflow(PLUGIN_CLAWHUB_RELEASE_WORKFLOW).on?.workflow_dispatch?.inputs
+        ?.release_publish_workflow_sha,
+    ).toBeUndefined();
+    expect(clawHubPreview.outputs?.trusted_tooling_identity_json).toBeUndefined();
+    const publishOrchestration = workflowStep(releasePublishJob, "Dispatch publish workflows");
+    expect(publishOrchestration.env?.PARENT_WORKFLOW_FULL_REF).toBeUndefined();
+    expect(publishOrchestration.run).toContain(
+      'wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${TARGET_SHA}"',
     );
-    expectTextToIncludeAll(oidcSourceValidation.run, [
-      "Split-ref ClawHub publication requires ref to be the exact candidate SHA.",
-      "Split-ref ClawHub publication tooling identity does not match the executing workflow.",
-      "Split-ref ClawHub publication requires the exact parent run id and attempt.",
-    ]);
-    const clawHubPlanSource = readFileSync("scripts/lib/openclaw-release-clawhub-plan.ts", "utf8");
-    expect(clawHubPlanSource).toContain("clawHubWorkflowRef: bootstrapWorkflowRef");
-    expect(clawHubPlanSource).toMatch(
-      /normal: createDispatchTarget\(\{[\s\S]*?ref: bootstrapWorkflowRef,[\s\S]*?targetRef: releaseSha,/u,
-    );
-    const frozenCandidateWorkflow = parse(
-      execFileSync("git", ["show", "2d25f59b4a5:.github/workflows/plugin-clawhub-release.yml"], {
-        encoding: "utf8",
-      }),
-    ) as Workflow;
-    expect(
-      frozenCandidateWorkflow.on?.workflow_dispatch?.inputs?.release_publish_full_ref,
-    ).toBeUndefined();
-    expect(
-      frozenCandidateWorkflow.on?.workflow_dispatch?.inputs?.release_publish_workflow_sha,
-    ).toBeUndefined();
-    expect(
-      frozenCandidateWorkflow.on?.workflow_dispatch?.inputs?.release_publish_run_attempt,
-    ).toBeUndefined();
+    expect(publishOrchestration.run).not.toContain("release_publish_full_ref");
+    expect(publishOrchestration.run).not.toContain("release_publish_workflow_sha");
     expect(clawHubBootstrapValidation.environment).toBe("clawhub-plugin-bootstrap");
     expect(clawHubBootstrapPublish.environment).toBe("clawhub-plugin-bootstrap");
 

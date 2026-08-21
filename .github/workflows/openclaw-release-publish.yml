@@ -962,7 +962,6 @@ jobs:
           CHILD_WORKFLOW_REF: ${{ github.ref_name }}
           PARENT_WORKFLOW_SHA: ${{ github.sha }}
           PARENT_WORKFLOW_BRANCH: ${{ github.ref_name }}
-          PARENT_WORKFLOW_FULL_REF: ${{ github.ref }}
           RELEASE_TAG: ${{ inputs.tag }}
           PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
           FULL_RELEASE_VALIDATION_RUN_ID: ${{ inputs.full_release_validation_run_id }}
@@ -2284,16 +2283,9 @@ jobs:
           if [[ "$(jq -r '.normal.shouldDispatch' "${clawhub_plan_path}")" == "true" ]]; then
             clawhub_dispatch_args=()
             append_clawhub_dispatch_args normal
-            if [[ "${PARENT_WORKFLOW_FULL_REF}" == "refs/heads/main" ||
-              "${PARENT_WORKFLOW_FULL_REF}" =~ ^refs/tags/release-publish/[a-f0-9]{12}-[1-9][0-9]*$ ]]; then
-              clawhub_dispatch_args+=(
-                -f release_publish_full_ref="${PARENT_WORKFLOW_FULL_REF}"
-                -f release_publish_workflow_sha="${PARENT_WORKFLOW_SHA}"
-              )
-            fi
             plugin_clawhub_run_id="$(dispatch_workflow_at_ref \
               "$(jq -r '.normal.ref' "${clawhub_plan_path}")" \
-              "${PARENT_WORKFLOW_SHA}" \
+              "${TARGET_SHA}" \
               "$(jq -r '.normal.workflow' "${clawhub_plan_path}")" \
               "${clawhub_dispatch_args[@]}")"
           else
@@ -2374,7 +2366,7 @@ jobs:
             if [[ -n "${plugin_clawhub_run_id}" ]]; then
               clawhub_result="$RUNNER_TEMP/clawhub-result.txt"
               wait_run_pid=""
-              wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${PARENT_WORKFLOW_SHA}" "${clawhub_result}"
+              wait_for_run_background plugin-clawhub-release.yml "${plugin_clawhub_run_id}" "${TARGET_SHA}" "${clawhub_result}"
               clawhub_pid="${wait_run_pid}"
             fi
             if [[ -n "${plugin_clawhub_bootstrap_run_id}" ]]; then

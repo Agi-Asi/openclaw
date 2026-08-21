@@ -24,23 +24,9 @@ on:
         description: Approved OpenClaw Release Publish workflow run id
         required: false
         type: string
-      release_publish_run_attempt:
-        description: Exact approved OpenClaw Release Publish workflow run attempt
-        required: false
-        type: string
       release_publish_branch:
         description: Branch name of the approving OpenClaw Release Publish workflow run
         required: false
-        type: string
-      release_publish_full_ref:
-        description: Exact full ref of the approving OpenClaw Release Publish workflow tooling
-        required: false
-        default: ""
-        type: string
-      release_publish_workflow_sha:
-        description: Exact workflow SHA of the approving OpenClaw Release Publish tooling
-        required: false
-        default: ""
         type: string
       dry_run:
         description: Validate the full ClawHub artifact handoff without publishing.
@@ -75,7 +61,6 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       bootstrap_matrix: ${{ steps.plan.outputs.bootstrap_matrix }}
       missing_trusted_publisher_matrix: ${{ steps.plan.outputs.missing_trusted_publisher_matrix }}
-      trusted_tooling_identity_json: ${{ steps.tooling_identity.outputs.json }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -107,89 +92,9 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Capture trusted tooling identity
-        id: tooling_identity
-        env:
-          CALLER_FULL_REF: ${{ github.ref }}
-          CALLER_REF: ${{ github.ref_name }}
-          CALLER_RUN_ATTEMPT: ${{ github.run_attempt }}
-          CALLER_RUN_ID: ${{ github.run_id }}
-          CALLER_SHA: ${{ github.sha }}
-          PARENT_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
-          PARENT_RUN_ID: ${{ inputs.release_publish_run_id }}
-          PARENT_STATE_POLICY: ${{ inputs.release_publish_run_id != '' && (github.actor == 'github-actions[bot]' && 'active-or-success' || 'recovery-active-or-success-or-failure') || '' }}
-          TOOLING_FULL_REF: ${{ inputs.release_publish_full_ref }}
-          TOOLING_REF: ${{ inputs.release_publish_branch }}
-          TOOLING_SHA: ${{ inputs.release_publish_workflow_sha }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${TOOLING_FULL_REF}${TOOLING_SHA}" ]]; then
-            echo "json=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          [[ -n "$TOOLING_FULL_REF" && -n "$TOOLING_REF" && -n "$TOOLING_SHA" ]] || {
-            echo "Trusted release tooling ref, full ref, and SHA must be provided together." >&2
-            exit 1
-          }
-          [[ -n "$PARENT_RUN_ID" && -n "$PARENT_RUN_ATTEMPT" && -n "$PARENT_STATE_POLICY" ]] || {
-            echo "Trusted release parent run id, attempt, and state policy must be provided together." >&2
-            exit 1
-          }
-          identity="$(
-            jq -cn \
-              --arg repository "$GITHUB_REPOSITORY" \
-              --arg workflow ".github/workflows/plugin-clawhub-release.yml" \
-              --arg runId "$CALLER_RUN_ID" \
-              --arg runAttempt "$CALLER_RUN_ATTEMPT" \
-              --arg ref "$CALLER_REF" \
-              --arg fullRef "$CALLER_FULL_REF" \
-              --arg sha "$CALLER_SHA" \
-              --arg toolingRef "$TOOLING_REF" \
-              --arg toolingFullRef "$TOOLING_FULL_REF" \
-              --arg toolingSha "$TOOLING_SHA" \
-              --arg parentRepository "$GITHUB_REPOSITORY" \
-              --arg parentWorkflow ".github/workflows/openclaw-release-publish.yml" \
-              --arg parentRunId "$PARENT_RUN_ID" \
-              --arg parentRunAttempt "$PARENT_RUN_ATTEMPT" \
-              --arg parentRef "$TOOLING_REF" \
-              --arg parentFullRef "$TOOLING_FULL_REF" \
-              --arg parentSha "$TOOLING_SHA" \
-              --arg parentStatePolicy "$PARENT_STATE_POLICY" \
-              '{
-                version: 2,
-                repository: $repository,
-                workflow: $workflow,
-                runId: $runId,
-                runAttempt: $runAttempt,
-                ref: $ref,
-                fullRef: $fullRef,
-                sha: $sha,
-                toolingRef: $toolingRef,
-                toolingFullRef: $toolingFullRef,
-                toolingSha: $toolingSha,
-                parentRepository: $parentRepository,
-                parentWorkflow: $parentWorkflow,
-                parentRunId: $parentRunId,
-                parentRunAttempt: $parentRunAttempt,
-                parentRef: $parentRef,
-                parentFullRef: $parentFullRef,
-                parentSha: $parentSha,
-                parentStatePolicy: $parentStatePolicy
-              }'
-          )"
-          echo "json=${identity}" >> "$GITHUB_OUTPUT"
-
       - name: Validate OIDC source matches workflow ref
         env:
-          RELEASE_PUBLISH_FULL_REF: ${{ inputs.release_publish_full_ref }}
-          RELEASE_PUBLISH_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
-          RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
-          RELEASE_PUBLISH_TOOLING_REF: ${{ inputs.release_publish_branch }}
-          RELEASE_PUBLISH_TOOLING_SHA: ${{ inputs.release_publish_workflow_sha }}
-          TARGET_REF: ${{ inputs.ref }}
           TARGET_SHA: ${{ steps.ref.outputs.sha }}
-          WORKFLOW_FULL_REF: ${{ github.ref }}
-          WORKFLOW_REF: ${{ github.ref_name }}
           WORKFLOW_SHA: ${{ github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
@@ -199,22 +104,10 @@ jobs:
               echo "Dry-run publish target differs from workflow ref; allowing validation-only dispatch."
               exit 0
             fi
-            [[ "$TARGET_REF" =~ ^[a-f0-9]{40}$ && "$TARGET_REF" == "$TARGET_SHA" ]] || {
-              echo "Split-ref ClawHub publication requires ref to be the exact candidate SHA." >&2
-              exit 1
-            }
-            [[ "$RELEASE_PUBLISH_TOOLING_REF" == "$WORKFLOW_REF" &&
-              "$RELEASE_PUBLISH_FULL_REF" == "$WORKFLOW_FULL_REF" &&
-              "$RELEASE_PUBLISH_TOOLING_SHA" == "$WORKFLOW_SHA" ]] || {
-              echo "Split-ref ClawHub publication tooling identity does not match the executing workflow." >&2
-              exit 1
-            }
-            [[ "$RELEASE_PUBLISH_RUN_ID" =~ ^[1-9][0-9]*$ &&
-              "$RELEASE_PUBLISH_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || {
-              echo "Split-ref ClawHub publication requires the exact parent run id and attempt." >&2
-              exit 1
-            }
-            echo "Using trusted workflow tooling with separately bound candidate ${TARGET_SHA}."
+            echo "Plugin ClawHub OIDC publishes must run from the same ref that is being published." >&2
+            echo "The ref input is only supported for dry_run=true." >&2
+            echo "For real publishes, dispatch this workflow with --ref pointing at the target release tag/ref and omit the ref input." >&2
+            exit 1
           fi
 
       - name: Validate ref is on a trusted publish branch
@@ -392,9 +285,6 @@ jobs:
           ALLOW_COMPLETED_SUCCESSFUL_PARENT: "true"
           GH_TOKEN: ${{ github.token }}
           RELEASE_PUBLISH_RUN_ID: ${{ inputs.release_publish_run_id }}
-          EXPECTED_RUN_ATTEMPT: ${{ inputs.release_publish_run_attempt }}
-          EXPECTED_WORKFLOW_FULL_REF: ${{ inputs.release_publish_full_ref || github.ref }}
-          EXPECTED_WORKFLOW_SHA: ${{ inputs.release_publish_workflow_sha || github.sha }}
           EXPECTED_WORKFLOW_BRANCH: ${{ inputs.release_publish_branch || github.ref_name }}
         run: |
           set -euo pipefail
@@ -411,7 +301,7 @@ jobs:
             direct_recovery=true
             echo "Direct Plugin ClawHub Release recovery with release_publish_run_id; relying on this workflow's clawhub-plugin-release environment approval."
           fi
-          RUN_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_PUBLISH_RUN_ID}" --jq '{workflowName: .name, headBranch: .head_branch, headSha: .head_sha, event, status, conclusion, url: .html_url, runAttempt: .run_attempt, repository: .repository.full_name, path}')"
+          RUN_JSON="$(gh run view "$RELEASE_PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,status,conclusion,url)"
           printf '%s' "$RUN_JSON" | DIRECT_RELEASE_RECOVERY="${direct_recovery}" node scripts/validate-release-publish-approval.mjs
 
   pack_plugins_clawhub_artifacts:
@@ -498,7 +388,7 @@ jobs:
     needs:
       [preview_plugins_clawhub, pack_plugins_clawhub_artifacts, approve_plugins_clawhub_release]
     if: always() && github.event_name == 'workflow_dispatch' && needs.preview_plugins_clawhub.outputs.has_candidates == 'true' && needs.pack_plugins_clawhub_artifacts.result == 'success' && (inputs.dry_run == true || needs.approve_plugins_clawhub_release.result == 'success')
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@a42cd2f73d6afb769b271d463fc111669cb7a499
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@d8096dfc039e86ab942ddf9ef117d04849fd84c1
     permissions:
       actions: read
       contents: read
@@ -521,7 +411,6 @@ jobs:
       source_path: ${{ matrix.plugin.packageDir }}
       inspector_artifact_name: ${{ matrix.plugin.artifactName }}-inspector
       publish_json_artifact_name: ${{ matrix.plugin.artifactName }}-publish-json
-      trusted_tooling_identity_json: ${{ needs.preview_plugins_clawhub.outputs.trusted_tooling_identity_json }}
 
   verify_published_clawhub_package:
     needs: [preview_plugins_clawhub, publish_plugins_clawhub]
