@@ -27,6 +27,11 @@ on:
         required: false
         default: "3"
         type: string
+      investigation_node_version:
+        description: Temporary RSS investigation Node version
+        required: false
+        default: "24.x"
+        type: string
       deep_profile:
         description: Run the deep-profile lane with CPU/heap/trace artifacts
         required: false
@@ -299,6 +304,7 @@ jobs:
         if: steps.lane.outputs.run == 'true'
         uses: ./.github/actions/setup-node-env
         with:
+          node-version: ${{ inputs.investigation_node_version || '24.x' }}
           install-bun: "false"
 
       - name: Prepare systemd user session
