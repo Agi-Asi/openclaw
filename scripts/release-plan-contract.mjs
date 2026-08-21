@@ -140,12 +140,50 @@ function canonicalize(value, path = "$", ancestors = new Set()) {
   }
 }
 
-function canonicalAsciiJson(value) {
+export function canonicalReleaseJson(value) {
   const json = `${JSON.stringify(canonicalize(value))}\n`;
   if (!/^[\x20-\x7e]+\n$/u.test(json)) {
     fail("canonical JSON must be printable ASCII with exactly one trailing newline");
   }
   return json;
+}
+
+export function releaseCanonicalDigest(value) {
+  return `sha256:${createHash("sha256").update(canonicalReleaseJson(value), "ascii").digest("hex")}`;
+}
+
+export function parseCanonicalReleaseJson(
+  text,
+  { label = "release JSON", maxBytes = RELEASE_PLAN_MAX_BYTES, validate = (value) => value } = {},
+) {
+  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > maxBytes) {
+    fail(`${label} is missing or too large`);
+  }
+  if (!/^[\x20-\x7e]+\n$/u.test(text)) {
+    fail(`${label} must be compact printable ASCII with exactly one trailing LF`);
+  }
+  const document = parseDocument(text, { strict: true, uniqueKeys: true });
+  if (document.errors.length > 0) {
+    const duplicate = document.errors.find((error) =>
+      error.message.includes("keys must be unique"),
+    );
+    fail(
+      duplicate
+        ? `${label} contains a duplicate key`
+        : `${label} is invalid: ${document.errors[0].message}`,
+    );
+  }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${label} is invalid JSON`, { cause: error });
+  }
+  const validated = validate(value);
+  if (text !== canonicalReleaseJson(validated)) {
+    fail(`${label} does not use canonical bytes`);
+  }
+  return validated;
 }
 
 function validatePackages(value) {
@@ -338,18 +376,18 @@ export function validateReleasePlan(value) {
     fail(`release plan tooling workflow_path must be ${WORKFLOW_PATH}`);
   }
   validateToolingRoute(plan.purpose, plan.tooling.ref, plan.tooling.sha);
-  if (Buffer.byteLength(canonicalAsciiJson(plan), "ascii") > RELEASE_PLAN_MAX_BYTES) {
+  if (Buffer.byteLength(canonicalReleaseJson(plan), "ascii") > RELEASE_PLAN_MAX_BYTES) {
     fail(`release plan exceeds ${RELEASE_PLAN_MAX_BYTES} bytes`);
   }
   return plan;
 }
 
 export function canonicalReleasePlanJson(value) {
-  return canonicalAsciiJson(validateReleasePlan(value));
+  return canonicalReleaseJson(validateReleasePlan(value));
 }
 
 export function releasePlanDigest(value) {
-  return `sha256:${createHash("sha256").update(canonicalReleasePlanJson(value), "ascii").digest("hex")}`;
+  return releaseCanonicalDigest(validateReleasePlan(value));
 }
 
 export function createReleasePlanLock(value) {
@@ -379,36 +417,13 @@ export function validateReleasePlanLock(value) {
 }
 
 export function canonicalReleasePlanLockJson(value) {
-  return canonicalAsciiJson(validateReleasePlanLock(value));
+  return canonicalReleaseJson(validateReleasePlanLock(value));
 }
 
 export function parseReleasePlanLockJson(text) {
-  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > RELEASE_PLAN_MAX_BYTES + 4096) {
-    fail("release plan lock JSON is missing or too large");
-  }
-  if (!/^[\x20-\x7e]+\n$/u.test(text)) {
-    fail("release plan lock JSON must be compact printable ASCII with exactly one trailing LF");
-  }
-  const document = parseDocument(text, { strict: true, uniqueKeys: true });
-  if (document.errors.length > 0) {
-    const duplicate = document.errors.find((error) =>
-      error.message.includes("keys must be unique"),
-    );
-    fail(
-      duplicate
-        ? "release plan JSON contains a duplicate key"
-        : `release plan lock JSON is invalid: ${document.errors[0].message}`,
-    );
-  }
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error("release plan lock JSON is invalid JSON", { cause: error });
-  }
-  const lock = validateReleasePlanLock(value);
-  if (text !== canonicalReleasePlanLockJson(lock)) {
-    fail("release plan lock JSON does not use canonical bytes");
-  }
-  return lock;
+  return parseCanonicalReleaseJson(text, {
+    label: "release plan lock JSON",
+    maxBytes: RELEASE_PLAN_MAX_BYTES + 4096,
+    validate: validateReleasePlanLock,
+  });
 }
