@@ -3017,7 +3017,9 @@ describe("package acceptance workflow", () => {
       key: "full-release-execution-plan-v1-${{ github.run_id }}",
     });
     expect(planPreserve.uses).toBe(ACTIONS_CACHE_SAVE_V5);
-    expect(planPreserve.with?.key).toBe("full-release-execution-plan-v1-${{ github.run_id }}");
+    expect(planPreserve.with?.key).toBe(
+      "full-release-execution-plan-v1-${{ github.run_id }}",
+    );
     expect(planUpload.if).toBe("always()");
     expect(planUpload.with?.name).toBe("full-release-execution-plan-${{ github.run_id }}");
     expect(manifestStep.env).not.toHaveProperty("EVIDENCE_MANIFEST");
@@ -3084,7 +3086,7 @@ describe("package acceptance workflow", () => {
       (job.steps ?? []).filter((step) => step.uses?.startsWith("actions/download-artifact@")),
     );
 
-    expect(downloadSteps).toHaveLength(6);
+    expect(downloadSteps).toHaveLength(5);
     for (const step of downloadSteps) {
       expect(step.uses).toBe(DOWNLOAD_ARTIFACT_V8);
     }
