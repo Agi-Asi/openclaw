@@ -95,7 +95,10 @@ function parseLinkedSignalNumber(value: unknown): string {
   return number;
 }
 
-async function noteSignalLinkFallback(prompter: WizardPrompter) {
+async function noteSignalLinkFallback(prompter: WizardPrompter, signal: AbortSignal) {
+  if (signal.aborted) {
+    throw new WizardCancelledError();
+  }
   await prompter.note(
     [
       "Automatic Signal linking could not complete. Continue with the account number, then link it manually:",
@@ -131,8 +134,6 @@ async function prepareManagedSignalLink(params: {
     return undefined;
   }
 
-  await params.options?.beforePersistentEffect?.();
-  signal.throwIfAborted();
   let linkClient: SignalLinkRpcClient | undefined;
   try {
     let accounts: string[];
@@ -149,20 +150,25 @@ async function prepareManagedSignalLink(params: {
           maxResponseBytes: SIGNAL_LINK_RPC_MAX_BYTES,
         }),
       );
-      if (accounts.length === 0) {
+    } catch {
+      await noteSignalLinkFallback(params.prompter, signal);
+      return undefined;
+    }
+    if (accounts.length === 0) {
+      signal.throwIfAborted();
+      await params.options?.beforePersistentEffect?.();
+      signal.throwIfAborted();
+      try {
         deviceLinkUri = parseSignalLinkUri(
           await linkClient.request("startLink", undefined, {
             timeoutMs: 35_000,
             maxResponseBytes: SIGNAL_LINK_RPC_MAX_BYTES,
           }),
         );
+      } catch {
+        await noteSignalLinkFallback(params.prompter, signal);
+        return undefined;
       }
-    } catch {
-      if (signal.aborted) {
-        throw new WizardCancelledError();
-      }
-      await noteSignalLinkFallback(params.prompter);
-      return undefined;
     }
 
     if (accounts.length > 0) {
@@ -174,12 +180,13 @@ async function prepareManagedSignalLink(params: {
           });
     }
     if (!deviceLinkUri) {
-      await noteSignalLinkFallback(params.prompter);
+      await noteSignalLinkFallback(params.prompter, signal);
       return undefined;
     }
 
     signal.throwIfAborted();
     await params.options?.beforePersistentEffect?.();
+    signal.throwIfAborted();
     try {
       const settled = linkClient
         .request(
@@ -199,10 +206,7 @@ async function prepareManagedSignalLink(params: {
         settled,
       });
     } catch {
-      if (signal.aborted) {
-        throw new WizardCancelledError();
-      }
-      await noteSignalLinkFallback(params.prompter);
+      await noteSignalLinkFallback(params.prompter, signal);
       return undefined;
     }
   } finally {

@@ -196,12 +196,38 @@ describe("Signal hosted setup linking", () => {
     expect(result?.credentialValues?.signalNumber).toBe("+15555550125");
   });
 
+  it("keeps existing-account selection cancellable before a persistent effect", async () => {
+    const controller = new AbortController();
+    const beforePersistentEffect = vi.fn(async () => {});
+    mocks.rpc.mockResolvedValueOnce([{ number: "+15555550123" }, { number: "+15555550125" }]);
+    const prompt = createPrompter();
+    prompt.select.mockImplementationOnce(async () => {
+      const cancelled = new WizardCancelledError();
+      controller.abort(cancelled);
+      throw cancelled;
+    });
+
+    await expect(
+      prepareSignal({
+        prompter: prompt.prompter,
+        signal: controller.signal,
+        beforePersistentEffect,
+      }),
+    ).rejects.toBeInstanceOf(WizardCancelledError);
+
+    expect(beforePersistentEffect).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(prompt.qrCode).not.toHaveBeenCalled();
+    expect(mocks.linkStop).toHaveBeenCalledOnce();
+  });
+
   it("rejects stale hosted authority before starting device linking", async () => {
     const guardError = new Error("verified inference changed");
     const beforePersistentEffect = vi.fn(async () => {
       throw guardError;
     });
     const prompt = createPrompter();
+    mocks.rpc.mockResolvedValueOnce([]);
 
     await expect(
       prepareSignal({
@@ -211,9 +237,10 @@ describe("Signal hosted setup linking", () => {
     ).rejects.toBe(guardError);
 
     expect(beforePersistentEffect).toHaveBeenCalledOnce();
-    expect(mocks.createLinkClient).not.toHaveBeenCalled();
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.createLinkClient).toHaveBeenCalledOnce();
+    expect(mocks.rpc.mock.calls.map(([method]) => method)).toEqual(["listAccounts"]);
     expect(prompt.qrCode).not.toHaveBeenCalled();
+    expect(mocks.linkStop).toHaveBeenCalledOnce();
   });
 
   it.each([
