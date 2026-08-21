@@ -12,7 +12,8 @@ export function formatGatewayClosedDiagnostic(err: unknown): string | undefined 
   if (!isGatewayTransportError(err) || err.kind !== "closed" || err.code === undefined) {
     return undefined;
   }
-  return `Gateway connect failed: ${sanitizeTerminalText(err.message.split("\n", 1)[0] ?? "")}`;
+  const message = redactSensitiveText(err.message.split("\n", 1)[0] ?? "");
+  return `Gateway connect failed: ${sanitizeTerminalText(message)}`;
 }
 
 const formatKv = (line: string, rich: boolean) => {
