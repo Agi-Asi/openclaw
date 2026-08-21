@@ -7,7 +7,6 @@ Docs: https://docs.openclaw.ai
 ### Changes
 
 - **Secret egress host binding:** bind each shared-store secret to exact HTTPS destination hosts across CLI, Gateway RPC, and Control UI so unbound sentinel substitution fails closed before plaintext egress.
-- **Plugin release security scan:** add a trusted supplemental scan of inert npm plugin package inputs without running candidate code, with bounded fail-slow handling for malformed artifacts, archive bytes, findings, memory, and reports.
 - **Release validation:** defer beta candidate Parallels smoke to postpublish `release:beta-smoke` by default, keep stable/full prepublish coverage, and bound nested release workflow monitors with explicit job timeouts.
 - **macOS app profiles:** isolate named app instances across state, preferences, Keychain, Gateway services, and duplicate-instance ownership while keeping host-global login and node services untouched.
 - **Developer workflow:** remove the obsolete scoped-commit helper and use standard Git commands in isolated worktrees.
