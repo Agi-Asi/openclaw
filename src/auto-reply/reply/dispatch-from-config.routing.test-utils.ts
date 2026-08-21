@@ -15,6 +15,7 @@ import {
   ttsMocks,
 } from "./dispatch-from-config.shared.test-harness.js";
 import {
+  automaticDirectReplyConfig,
   automaticGroupReplyConfig,
   dispatchReplyFromConfig,
   setNoAbort,
@@ -22,6 +23,7 @@ import {
   firstToolResultPayload,
   firstRouteReplyCall,
   installThreadingTestPlugin,
+  requireBlockReplyHandler,
   requireToolResultHandler,
   globalBeforeAll0,
   describe0BeforeEach0,
@@ -329,6 +331,73 @@ describe("dispatchReplyFromConfig", () => {
     expect(routeCall?.channel).toBe("imessage");
     expect(routeCall?.policyConversationType).toBe("direct");
     expect(routeCall?.to).toBe("imessage:+15550001111");
+  });
+
+  it("passes a stable block delivery intent to routed durable delivery", async () => {
+    setNoAbort();
+    mocks.routeReply.mockClear();
+    installThreadingTestPlugin({ id: "telegram" });
+    const dispatcher = createDispatcher();
+    const deliveryIntentId = "block-reply:v1:codex-app-server:thread-1:turn-1:item-1";
+    const ctx = buildTestCtx({
+      Provider: "slack",
+      OriginatingChannel: "telegram",
+      OriginatingTo: "telegram:999",
+    });
+    const replyResolver = async (_ctx: MsgContext, opts?: GetReplyOptions) => {
+      await requireBlockReplyHandler(opts?.onBlockReply)(
+        { text: "durable background update" },
+        { deliveryIntentId },
+      );
+      return undefined;
+    };
+
+    await dispatchReplyFromConfig({
+      ctx,
+      cfg: automaticDirectReplyConfig,
+      dispatcher,
+      replyResolver,
+    });
+
+    expect(mocks.routeReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { text: "durable background update" },
+        replyKind: "block",
+        deliveryIntentId,
+      }),
+    );
+  });
+
+  it("returns durable routed block failures to the producing runtime", async () => {
+    setNoAbort();
+    mocks.routeReply.mockReset().mockResolvedValue({
+      ok: false,
+      delivered: false,
+      error: "durable queue unavailable",
+    });
+    installThreadingTestPlugin({ id: "telegram" });
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "slack",
+      OriginatingChannel: "telegram",
+      OriginatingTo: "telegram:999",
+    });
+    const replyResolver = async (_ctx: MsgContext, opts?: GetReplyOptions) => {
+      await requireBlockReplyHandler(opts?.onBlockReply)(
+        { text: "retry this update" },
+        { deliveryIntentId: "block-reply:v1:codex-app-server:thread-1:turn-1:item-2" },
+      );
+      return undefined;
+    };
+
+    await expect(
+      dispatchReplyFromConfig({
+        ctx,
+        cfg: automaticDirectReplyConfig,
+        dispatcher,
+        replyResolver,
+      }),
+    ).rejects.toThrow("durable queue unavailable");
   });
 
   it("routes media-only tool results when summaries are suppressed", async () => {

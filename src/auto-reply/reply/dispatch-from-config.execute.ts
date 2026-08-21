@@ -557,6 +557,7 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
                         context?.abortSignal,
                         false,
                         "block",
+                        context?.deliveryIntentId,
                       );
                       state.recordRoutedBlockReplyDelivery(normalizedPayload, result);
                       if (result?.delivered === true && !state.suppressAutomaticSourceDelivery) {

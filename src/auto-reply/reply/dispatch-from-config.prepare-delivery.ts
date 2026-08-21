@@ -138,6 +138,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       kind?: ReplyDispatchKind;
       responsePrefixContext?: ResponsePrefixContext;
       sessionKey?: string;
+      deliveryIntentId?: string;
     },
   ) => {
     if (!shouldRouteToOriginating || !routeReplyChannel || !routeReplyTo || !routeReplyRuntime) {
@@ -175,6 +176,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       replyKind: options?.kind ?? "final",
       runId: state.params.replyOptions?.runId,
       responsePrefixContext: options?.responsePrefixContext,
+      deliveryIntentId: options?.deliveryIntentId,
     });
     // Routed sends settle here: the transport result is the settlement. This is
     // the single routed choke point, so every routed lane feeds the turn ledger.
@@ -195,6 +197,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
     abortSignal?: AbortSignal,
     mirror?: boolean,
     kind: ReplyDispatchKind = "tool",
+    deliveryIntentId?: string,
   ) => {
     // Keep the runtime guard explicit because this helper is called from nested
     // reply callbacks where TypeScript cannot narrow shouldRouteToOriginating.
@@ -209,9 +212,13 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       abortSignal: effectiveAbortSignal,
       mirror,
       kind,
+      deliveryIntentId,
     });
     if (result && !result.ok) {
       logVerbose(`dispatch-from-config: route-reply failed: ${result.error ?? "unknown error"}`);
+      if (deliveryIntentId) {
+        throw new Error(result.error ?? "durable block reply delivery failed");
+      }
     }
     if (hasAskUserPayload(payload) && !effectiveAbortSignal?.aborted && !result?.delivered) {
       throw new Error("ask_user prompt delivery failed");

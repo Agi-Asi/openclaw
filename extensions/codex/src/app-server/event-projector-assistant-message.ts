@@ -125,6 +125,26 @@ export function createAssistantCommentaryMessage(
   return message;
 }
 
+export function createAssistantAsyncMessage(
+  params: CodexAssistantMessageParams,
+  text: string,
+  itemId: string,
+  timestamp: number,
+): AssistantMessage {
+  const attribution = resolveCodexLocalRuntimeAttribution(params);
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: attribution.api ?? "openai-chatgpt-responses",
+    provider: attribution.provider,
+    model: params.modelId,
+    usage: ZERO_USAGE,
+    stopReason: "stop",
+    timestamp,
+    openclawAsyncDelivery: { itemId },
+  } as AssistantMessage;
+}
+
 export function createAssistantMirrorMessage(
   params: CodexAssistantMessageParams,
   title: string,

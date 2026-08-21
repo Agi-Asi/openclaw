@@ -67,6 +67,14 @@ export function parseAllowedApprovalPoliciesFromCodexRequirements(
   const normalizedPolicies = values
     .map((entry) => normalizeRequirementsApprovalPolicy(entry))
     .filter((entry): entry is CodexAppServerApprovalPolicy => entry !== undefined);
+  if (
+    normalizedPolicies.length === 0 &&
+    values.some((entry) => entry.trim().toLowerCase() === "untrusted")
+  ) {
+    throw new Error(
+      'Codex requirements allowed_approval_policies only permits retired "untrusted"; replace it with "on-request".',
+    );
+  }
   return normalizedPolicies.length > 0 ? new Set(normalizedPolicies) : undefined;
 }
 
@@ -302,6 +310,9 @@ function normalizeRequirementsApprovalPolicy(
   if (normalized === "on-failure") {
     return "on-request";
   }
+  if (normalized === "untrusted") {
+    return undefined;
+  }
   return resolveApprovalPolicy(normalized);
 }
 
@@ -323,9 +334,6 @@ export function selectGuardianApprovalPolicy(
     throw new Error(
       `tools.exec.mode=${execModeRequiringPromptingApprovals} requires Codex app-server prompting approvals`,
     );
-  }
-  if (allowedApprovalPolicies.has("untrusted")) {
-    return "untrusted";
   }
   if (allowedApprovalPolicies.has("never")) {
     return "never";

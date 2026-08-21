@@ -34,7 +34,7 @@ export type CodexAppServerDefaultPolicy = {
   sandbox?: CodexAppServerSandboxMode;
   dangerFullAccessAllowed?: boolean;
 };
-export type CodexAppServerApprovalPolicy = "never" | "on-request" | "untrusted";
+export type CodexAppServerApprovalPolicy = "never" | "on-request";
 export type CodexAppServerApprovalPolicySource = "config" | "env" | "requirements" | "implicit";
 export type CodexAppServerEffectiveApprovalPolicy = CodexApprovalPolicy;
 export type CodexAppServerSandboxMode = "read-only" | "workspace-write" | "danger-full-access";

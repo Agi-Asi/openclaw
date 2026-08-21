@@ -50,6 +50,7 @@ const validModelListEntry = {
   hidden: false,
   isDefault: false,
   defaultReasoningEffort: "medium",
+  multiAgentVersion: "v2",
   supportedReasoningEfforts: [],
 };
 
@@ -123,10 +124,29 @@ describe("listCodexAppServerModels", () => {
           inputModalities: ["text", "image"],
           supportedReasoningEfforts: [],
           defaultReasoningEffort: "medium",
+          multiAgentVersion: "v2",
         },
       ],
       nextCursor: "page-2",
     });
+  });
+
+  it("preserves explicit null while omitting an absent multi-agent version", () => {
+    expect(
+      readModelListResult({
+        data: [{ ...validModelListEntry, multiAgentVersion: null }],
+      }).models[0],
+    ).toHaveProperty("multiAgentVersion", null);
+    expect(
+      readModelListResult({
+        data: [
+          {
+            ...validModelListEntry,
+            multiAgentVersion: undefined,
+          },
+        ],
+      }).models[0],
+    ).not.toHaveProperty("multiAgentVersion");
   });
 
   it.each([
@@ -149,7 +169,7 @@ describe("listCodexAppServerModels", () => {
     const initialize = JSON.parse(harness.writes[0] ?? "{}") as { id?: number };
     harness.send({
       id: initialize.id,
-      result: { userAgent: "openclaw/0.147.0 (macOS; test)" },
+      result: { userAgent: "openclaw/0.149.0 (macOS; test)" },
     });
     await vi.waitFor(() => expect(harness.writes.length).toBeGreaterThanOrEqual(3));
     const list = JSON.parse(harness.writes[2] ?? "{}") as { id?: number; method?: string };
@@ -170,7 +190,7 @@ describe("listCodexAppServerModels", () => {
     const initialize = JSON.parse(harness.writes[0] ?? "{}") as { id?: number };
     harness.send({
       id: initialize.id,
-      result: { userAgent: "openclaw/0.147.0 (macOS; test)" },
+      result: { userAgent: "openclaw/0.149.0 (macOS; test)" },
     });
     await vi.waitFor(() => expect(harness.writes.length).toBeGreaterThanOrEqual(3));
     const list = JSON.parse(harness.writes[2] ?? "{}") as { id?: number; method?: string };
@@ -195,6 +215,7 @@ describe("listCodexAppServerModels", () => {
               { reasoningEffort: "xhigh", description: "deep" },
             ],
             defaultReasoningEffort: "medium",
+            multiAgentVersion: "v2",
             supportsPersonality: false,
             additionalSpeedTiers: [],
             isDefault: true,
@@ -215,6 +236,7 @@ describe("listCodexAppServerModels", () => {
           inputModalities: ["text", "image"],
           supportedReasoningEfforts: ["low", "xhigh"],
           defaultReasoningEffort: "medium",
+          multiAgentVersion: "v2",
           isDefault: true,
         },
       ],
@@ -232,7 +254,7 @@ describe("listCodexAppServerModels", () => {
     const initialize = JSON.parse(harness.writes[0] ?? "{}") as { id?: number };
     harness.send({
       id: initialize.id,
-      result: { userAgent: "openclaw/0.147.0 (macOS; test)" },
+      result: { userAgent: "openclaw/0.149.0 (macOS; test)" },
     });
     await vi.waitFor(() => expect(harness.writes.length).toBeGreaterThanOrEqual(3));
     const firstList = JSON.parse(harness.writes[2] ?? "{}") as {
@@ -312,7 +334,7 @@ describe("listCodexAppServerModels", () => {
     const initialize = JSON.parse(harness.writes[0] ?? "{}") as { id?: number };
     harness.send({
       id: initialize.id,
-      result: { userAgent: "openclaw/0.147.0 (macOS; test)" },
+      result: { userAgent: "openclaw/0.149.0 (macOS; test)" },
     });
     await vi.waitFor(() => expect(harness.writes.length).toBeGreaterThanOrEqual(3));
     const firstList = JSON.parse(harness.writes[2] ?? "{}") as { id?: number };

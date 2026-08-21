@@ -96,6 +96,14 @@ export function projectNormalizedToolItem(params: {
 
 export class CodexEventProjection {
   private reviewCount = 0;
+  private activeGuardianReview:
+    | {
+        reviewId?: string;
+        targetItemId?: string | null;
+        threadId: string;
+        turnId: string;
+      }
+    | undefined;
 
   constructor(
     private readonly threadId: string,
@@ -114,13 +122,22 @@ export class CodexEventProjection {
     this.reviewCount += 1;
     const review = isJsonObject(params.review) ? params.review : undefined;
     const action = isJsonObject(params.action) ? params.action : undefined;
+    const reviewId = readString(params, "reviewId");
+    const targetItemId = readNullableString(params, "targetItemId");
+    const threadId = readString(params, "threadId") ?? this.threadId;
+    const turnId = readString(params, "turnId") ?? this.turnId;
+    if (method.endsWith("/started")) {
+      this.activeGuardianReview = { reviewId, targetItemId, threadId, turnId };
+    }
     this.emitAgentEvent({
       stream: "codex_app_server.guardian",
       data: {
         method,
         phase: method.endsWith("/started") ? "started" : "completed",
-        reviewId: readString(params, "reviewId"),
-        targetItemId: readNullableString(params, "targetItemId"),
+        threadId,
+        turnId,
+        reviewId,
+        targetItemId,
         decisionSource: readString(params, "decisionSource"),
         status: review ? readString(review, "status") : undefined,
         riskLevel: review ? readString(review, "riskLevel") : undefined,
@@ -130,12 +147,31 @@ export class CodexEventProjection {
         command: guardianActionCommand(action),
       },
     });
+    if (method.endsWith("/completed")) {
+      this.activeGuardianReview = undefined;
+    }
   }
 
   handleGuardianWarning(params: JsonObject): void {
     this.emitAgentEvent({
       stream: "codex_app_server.guardian",
       data: { phase: "warning", message: readString(params, "message") },
+    });
+  }
+
+  handleStrictReviewRequired(params: JsonObject): void {
+    this.emitAgentEvent({
+      stream: "codex_app_server.guardian",
+      data: {
+        method: "autoApprovalReview/strictReviewRequired",
+        phase: "strict_review_required",
+        threadId:
+          readString(params, "threadId") ?? this.activeGuardianReview?.threadId ?? this.threadId,
+        turnId: readString(params, "turnId") ?? this.activeGuardianReview?.turnId ?? this.turnId,
+        reviewId: this.activeGuardianReview?.reviewId,
+        targetItemId: this.activeGuardianReview?.targetItemId,
+        startedAtMs: asFiniteNumber(params.startedAtMs),
+      },
     });
   }
 

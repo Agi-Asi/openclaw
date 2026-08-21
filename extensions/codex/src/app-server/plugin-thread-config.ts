@@ -31,6 +31,7 @@ import {
   readCodexConfigForAppAdmission,
   readCodexThreadAdmissibleAccountApps,
   refreshCodexPluginAppInventory,
+  resolveCodexPluginThreadAppCacheKey,
   resolveCodexExplicitAppEnablement,
   resolveCodexPluginAppThreadAdmission,
   resolveCodexThreadConfigAppsForRecord,
@@ -106,6 +107,7 @@ type BuildCodexPluginThreadConfigParams = {
   pluginConfig?: unknown;
   request: CodexPluginRuntimeRequest;
   configCwd?: string;
+  threadId?: string;
   appCache?: CodexAppInventoryCache;
   appCacheKey: string;
   metadataCache?: CodexPluginMetadataCache;
@@ -156,6 +158,15 @@ export async function buildCodexPluginThreadConfig(
   params: BuildCodexPluginThreadConfigParams,
 ): Promise<CodexPluginThreadConfig> {
   const appCache = params.appCache ?? defaultCodexAppInventoryCache;
+  const threadAppCacheKey = resolveCodexPluginThreadAppCacheKey(params);
+  const threadRequest: CodexPluginRuntimeRequest = (method, requestParams, options) =>
+    params.request(
+      method,
+      (method === "app/installed" || method === "app/read") && params.threadId
+        ? { ...requestParams, threadId: params.threadId }
+        : requestParams,
+      options,
+    );
   let inputFingerprint = buildCodexPluginThreadConfigInputFingerprint({
     pluginConfig: params.pluginConfig,
     appCacheKey: params.appCacheKey,
@@ -174,9 +185,9 @@ export async function buildCodexPluginThreadConfig(
       ? await readCodexPluginInventory({
           pluginConfig: params.pluginConfig,
           policy,
-          request: params.request,
+          request: threadRequest,
           appCache,
-          appCacheKey: params.appCacheKey,
+          appCacheKey: threadAppCacheKey,
           configCwd: params.configCwd,
           metadataCache: params.metadataCache,
           nowMs: params.nowMs,
@@ -198,9 +209,9 @@ export async function buildCodexPluginThreadConfig(
     inventory = await readCodexPluginInventory({
       pluginConfig: params.pluginConfig,
       policy,
-      request: params.request,
+      request: threadRequest,
       appCache,
-      appCacheKey: params.appCacheKey,
+      appCacheKey: threadAppCacheKey,
       configCwd: params.configCwd,
       metadataCache: params.metadataCache,
       nowMs: params.nowMs,
@@ -218,9 +229,9 @@ export async function buildCodexPluginThreadConfig(
     }
     const activation = await ensureCodexPluginActivation({
       identity: record.policy,
-      request: params.request,
+      request: threadRequest,
       appCache,
-      appCacheKey: params.appCacheKey,
+      appCacheKey: threadAppCacheKey,
       configCwd: params.configCwd,
       metadataCache: params.metadataCache,
       deferAppInventoryRefresh: true,
@@ -253,9 +264,9 @@ export async function buildCodexPluginThreadConfig(
     inventory = await readCodexPluginInventory({
       pluginConfig: params.pluginConfig,
       policy,
-      request: params.request,
+      request: threadRequest,
       appCache,
-      appCacheKey: params.appCacheKey,
+      appCacheKey: threadAppCacheKey,
       configCwd: params.configCwd,
       metadataCache: params.metadataCache,
       nowMs: params.nowMs,
@@ -274,9 +285,9 @@ export async function buildCodexPluginThreadConfig(
     inventory = await readCodexPluginInventory({
       pluginConfig: params.pluginConfig,
       policy,
-      request: params.request,
+      request: threadRequest,
       appCache,
-      appCacheKey: params.appCacheKey,
+      appCacheKey: threadAppCacheKey,
       configCwd: params.configCwd,
       metadataCache: params.metadataCache,
       nowMs: params.nowMs,

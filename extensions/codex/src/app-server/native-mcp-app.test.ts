@@ -30,6 +30,7 @@ describe("Codex native MCP Apps", () => {
       }
       if (method === "mcpServer/resource/read") {
         return {
+          originCallId: params.originCallId,
           contents: [
             {
               uri: params.uri,
@@ -80,10 +81,72 @@ describe("Codex native MCP Apps", () => {
     });
     expect(request).toHaveBeenCalledWith("mcpServer/resource/read", {
       threadId: "thread-1",
+      originCallId: "call-options",
       server: "sample",
       uri: "ui://sample/options.html",
+      connectorId: "sample",
     });
   });
+
+  it.each([
+    { label: "a different", responseOriginCallId: "call-other" },
+    { label: "no", responseOriginCallId: undefined },
+    { label: "a null", responseOriginCallId: null },
+  ])(
+    "omits the app preview when Codex returns $label MCP origin call",
+    async ({ responseOriginCallId }) => {
+      const request = vi.fn(async (method: string) => {
+        if (method === "mcpServerStatus/list") {
+          return {
+            data: [
+              {
+                name: "sample",
+                tools: { show_options: { description: "Show options", inputSchema: {} } },
+              },
+            ],
+          };
+        }
+        if (method === "mcpServer/resource/read") {
+          return {
+            ...(responseOriginCallId !== undefined ? { originCallId: responseOriginCallId } : {}),
+            contents: [
+              {
+                uri: "ui://sample/options.html",
+                mimeType: "text/html;profile=mcp-app",
+                text: "<html><body>Sample</body></html>",
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected request: ${method}`);
+      });
+      const prepare = createCodexNativeMcpAppResultDetailsPreparer({
+        client: { request, getInstanceId: () => "client-1" } as unknown as CodexAppServerClient,
+        threadId: "thread-1",
+        attempt: createAttempt(),
+      });
+
+      await expect(
+        prepare?.({
+          id: "call-options",
+          type: "mcpToolCall",
+          server: "sample",
+          tool: "show_options",
+          status: "completed",
+          appContext: { connectorId: "sample", resourceUri: "ui://sample/options.html" },
+          arguments: {},
+          result: { content: [{ type: "text", text: "Found options." }] },
+        } as never),
+      ).resolves.toBeUndefined();
+      expect(request).toHaveBeenCalledWith("mcpServer/resource/read", {
+        threadId: "thread-1",
+        originCallId: "call-options",
+        server: "sample",
+        uri: "ui://sample/options.html",
+        connectorId: "sample",
+      });
+    },
+  );
 
   it("does not prepare native app views unless MCP Apps are enabled", () => {
     expect(

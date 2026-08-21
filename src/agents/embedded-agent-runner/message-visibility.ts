@@ -195,6 +195,13 @@ export function isIntermediateAssistantTranscriptMessage(message: unknown): bool
   if (record.stopReason !== undefined && record.stopReason !== "stop") {
     return false;
   }
+  const asyncDelivery = record.openclawAsyncDelivery;
+  if (asyncDelivery && typeof asyncDelivery === "object" && !Array.isArray(asyncDelivery)) {
+    const itemId = (asyncDelivery as { itemId?: unknown }).itemId;
+    if (typeof itemId === "string" && itemId.trim().length > 0) {
+      return true;
+    }
+  }
   const phase = resolveAssistantMessagePhase(message);
   if (phase !== undefined) {
     return phase === "commentary";
