@@ -10,7 +10,7 @@ export function legacyPackageAcceptanceCompat(version) {
 }
 
 export function clawhubReleaseSecurityMode(version) {
-  // 2026.6.35 shipped before the ClawHub release-security endpoint existed.
+  // The frozen 2026.6.35 candidate predates the ClawHub release-security endpoint.
   return version === "2026.6.35" ? "absent" : "required";
 }
 
