@@ -141,8 +141,10 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     publish,
     observerError: () => sessionEventSubscriptionError,
     decorate: decorateRows,
+    observeCanonicalRows(result, requestRevision) {
+      mutations.observeCanonicalOwners(result, requestRevision);
+    },
     onCanonicalList(result) {
-      mutations.observeCanonicalOwners(result);
       mutations.settlePrepared(result);
       canonicalListRevision += 1;
     },
@@ -184,6 +186,7 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     readState: () => state,
     publish,
     refreshReplacement: (agentId) => roster.refreshReplacement(agentId),
+    listRequestRevision: () => roster.requestRevision,
     publishedRow: (key) => roster.publishedRow(key),
     redecorateLists: () => roster.redecorateLists(),
     notifyCreated(key) {

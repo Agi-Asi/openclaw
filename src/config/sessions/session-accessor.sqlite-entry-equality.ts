@@ -13,20 +13,33 @@ export function sqliteSessionEntriesEqual(
     return left === right;
   }
   const {
-    owner: _leftOwner,
     participants: _leftParticipants,
     participantCount: _leftParticipantCount,
     ...leftEntry
   } = left;
   const {
-    owner: _rightOwner,
     participants: _rightParticipants,
     participantCount: _rightParticipantCount,
     ...rightEntry
   } = right;
-  // Collaboration metadata is a separately mutable SQLite projection. It must
-  // not invalidate logical-session compare-and-swap or leak into entry_json writes.
+  // Participant display metadata is a separately mutable projection. Owner
+  // remains part of the generic fence because detached replacements must fail
+  // when responsibility changes after their snapshot.
   return JSON.stringify(leftEntry) === JSON.stringify(rightEntry);
+}
+
+export function sqliteLifecycleSessionEntriesEqual(
+  left: SessionEntry | undefined,
+  right: SessionEntry | undefined,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  const { owner: _leftOwner, ...leftEntry } = left;
+  const { owner: _rightOwner, ...rightEntry } = right;
+  // Lifecycle writes preserve the separately stored owner columns, so an owner
+  // assignment must not invalidate their logical-entry snapshot.
+  return sqliteSessionEntriesEqual(leftEntry, rightEntry);
 }
 
 export function sqliteSessionSnapshotRowsEqual(
@@ -49,7 +62,12 @@ export function sqliteLifecycleTargetSnapshotsEqual(
 ): boolean {
   return (
     expected.primary?.key === current.primary?.key &&
-    sqliteSessionEntriesEqual(expected.primary?.entry, current.primary?.entry) &&
-    sqliteSessionSnapshotRowsEqual(expected.rows, current.rows)
+    sqliteLifecycleSessionEntriesEqual(expected.primary?.entry, current.primary?.entry) &&
+    expected.rows.length === current.rows.length &&
+    expected.rows.every(
+      (row, index) =>
+        row.sessionKey === current.rows[index]?.sessionKey &&
+        sqliteLifecycleSessionEntriesEqual(row.entry, current.rows[index]?.entry),
+    )
   );
 }

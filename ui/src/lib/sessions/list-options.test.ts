@@ -151,6 +151,77 @@ describe("session list replacement options", () => {
     sessions.dispose();
   });
 
+  it("retains the confirmed owner until the matching managed list catches up", async () => {
+    const key = "agent:main:managed-owner";
+    const otherKey = "agent:main:other";
+    const ada = { type: "human" as const, id: "profile-ada", label: "Ada" };
+    const bob = { type: "human" as const, id: "profile-bob", label: "Bob" };
+    const oldOwner = { actor: bob, assignedBy: ada, assignedAt: 10 };
+    const assignedOwner = { actor: ada, assignedBy: ada, assignedAt: 20 };
+    const staleManagedResponse = deferred<SessionsListResult>();
+    const managedReplacement = deferred<SessionsListResult>();
+    const managedScope = { agentId: "main", search: "managed-owner" };
+    let managedCalls = 0;
+    let primaryCalls = 0;
+    const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === "sessions.assignOwner") {
+        return { ok: true, key, owner: assignedOwner };
+      }
+      if (method !== "sessions.list") {
+        throw new Error(`Unexpected request: ${method}`);
+      }
+      const managed =
+        typeof params === "object" &&
+        params !== null &&
+        "search" in params &&
+        params.search === managedScope.search;
+      if (!managed) {
+        primaryCalls += 1;
+        return sessionsResult([{ key: otherKey, kind: "direct", updatedAt: 30 }], 30);
+      }
+      managedCalls += 1;
+      if (managedCalls === 2) {
+        return await staleManagedResponse.promise;
+      }
+      if (managedCalls === 3) {
+        return await managedReplacement.promise;
+      }
+      return {
+        ...sessionsResult([{ key, kind: "direct", updatedAt: 10, owner: oldOwner }], 10),
+        owners: [ada, bob],
+      };
+    });
+    const sessions = createSessions({ request } as unknown as GatewayBrowserClient, key);
+    const stop = sessions.subscribeList(managedScope, () => undefined);
+
+    await sessions.refreshList({ ...managedScope, force: true });
+    const staleRefresh = sessions.refreshList({ ...managedScope, force: true });
+    await vi.waitFor(() => expect(managedCalls).toBe(2));
+    await expect(sessions.assignOwner(key, ada, { agentId: "main" })).resolves.toEqual(
+      assignedOwner,
+    );
+    await vi.waitFor(() => expect(primaryCalls).toBeGreaterThanOrEqual(1));
+    const queuedManagedRefresh = sessions.refreshList({ ...managedScope, force: true });
+
+    staleManagedResponse.resolve({
+      ...sessionsResult([{ key, kind: "direct", updatedAt: 10, owner: oldOwner }], 10),
+      owners: [ada, bob],
+    });
+    await vi.waitFor(() => expect(managedCalls).toBe(3));
+    expect(sessions.listSnapshot(managedScope).result?.sessions[0]?.owner).toEqual(assignedOwner);
+    expect(sessions.listSnapshot(managedScope).result?.owners).toBeUndefined();
+
+    managedReplacement.resolve({
+      ...sessionsResult([{ key, kind: "direct", updatedAt: 20, owner: assignedOwner }], 20),
+      owners: [ada],
+    });
+    await Promise.all([staleRefresh, queuedManagedRefresh]);
+    expect(sessions.listSnapshot(managedScope).result?.sessions[0]?.owner).toEqual(assignedOwner);
+    expect(sessions.listSnapshot(managedScope).result?.owners).toEqual([ada]);
+    stop();
+    sessions.dispose();
+  });
+
   it("preserves sidebar metadata hydration when refreshing after session patches", async () => {
     const key = "agent:main:untitled";
     const request = vi.fn(async (method: string, _params?: unknown) => {

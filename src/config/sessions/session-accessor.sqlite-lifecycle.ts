@@ -29,6 +29,7 @@ import type {
 } from "./session-accessor.sqlite-contract.js";
 import {
   sqliteLifecycleTargetSnapshotsEqual,
+  sqliteLifecycleSessionEntriesEqual,
   sqliteSessionEntriesEqual,
 } from "./session-accessor.sqlite-entry-equality.js";
 import {
@@ -607,7 +608,7 @@ function shouldDeleteSqliteSessionEntryLifecycle(
   }
   if (
     params.expectedEntry !== undefined &&
-    !sqliteSessionEntriesEqual(entry, params.expectedEntry)
+    !sqliteLifecycleSessionEntriesEqual(entry, params.expectedEntry)
   ) {
     return false;
   }

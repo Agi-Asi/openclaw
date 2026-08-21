@@ -22,7 +22,7 @@ import {
   readSessionStateDeleteSnapshot,
   sqliteSessionStateDeleteSnapshotsEqual,
 } from "./session-accessor.sqlite-delete-snapshot.js";
-import { sqliteSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
+import { sqliteLifecycleSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
 import {
   deleteSessionEntryRows,
   readExactSessionEntryJson,
@@ -54,7 +54,7 @@ export function shouldRemoveSessionEntry(
   }
   if (
     removal.expectedEntry !== undefined &&
-    !sqliteSessionEntriesEqual(entry, removal.expectedEntry)
+    !sqliteLifecycleSessionEntriesEqual(entry, removal.expectedEntry)
   ) {
     return false;
   }
@@ -718,7 +718,7 @@ export function assertPlannedLifecycleArtifactEntriesUnchanged(
 ): void {
   for (const planned of entries) {
     const current = readExactSessionEntryRow(database, planned.sessionKey)?.entry;
-    if (!sqliteSessionEntriesEqual(current, planned.expectedEntry)) {
+    if (!sqliteLifecycleSessionEntriesEqual(current, planned.expectedEntry)) {
       throw new Error(`SQLite lifecycle cleanup entry changed for ${planned.sessionKey}`);
     }
   }

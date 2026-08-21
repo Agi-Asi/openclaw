@@ -3,6 +3,7 @@ import type { SessionsListResult } from "../../api/types.ts";
 
 type ConfirmedOwnerClaim = {
   owner: SessionOwner;
+  requestRevision: number;
   sessionId?: string;
 };
 
@@ -20,13 +21,15 @@ export function createSessionOwnerAssignmentOverlay() {
   const claims = new Map<string, ConfirmedOwnerClaim>();
 
   return {
-    confirm(key: string, owner: SessionOwner, sessionId?: string): ConfirmedOwnerClaim {
-      const claim = { owner, ...(sessionId ? { sessionId } : {}) };
+    confirm(
+      key: string,
+      owner: SessionOwner,
+      requestRevision: number,
+      sessionId?: string,
+    ): ConfirmedOwnerClaim {
+      const claim = { owner, requestRevision, ...(sessionId ? { sessionId } : {}) };
       claims.set(key, claim);
       return claim;
-    },
-    isCurrent(key: string, claim: ConfirmedOwnerClaim): boolean {
-      return claims.get(key) === claim;
     },
     retire(key: string): void {
       claims.delete(key);
@@ -56,13 +59,14 @@ export function createSessionOwnerAssignmentOverlay() {
       });
       return changed ? { ...result, sessions, owners: undefined } : result;
     },
-    observeCanonical(result: SessionsListResult | null): void {
+    observeCanonical(result: SessionsListResult | null, requestRevision: number): void {
       for (const row of result?.sessions ?? []) {
         const claim = claims.get(row.key);
         if (
           claim &&
           ((claim.sessionId && row.sessionId && claim.sessionId !== row.sessionId) ||
-            ownersMatch(row.owner, claim.owner))
+            ownersMatch(row.owner, claim.owner) ||
+            requestRevision > claim.requestRevision)
         ) {
           claims.delete(row.key);
         }

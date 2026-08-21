@@ -32,6 +32,7 @@ type SessionRosterRefreshHost = {
   publish: (state: SessionState, errorSource?: "session-observer" | "operation") => void;
   observerError: () => string | null;
   decorate: (result: SessionsListResult | null) => SessionsListResult | null;
+  observeCanonicalRows: (result: SessionsListResult | null, requestRevision: number) => void;
   onCanonicalList: (result: SessionsListResult | null) => void;
 };
 
@@ -93,6 +94,7 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
   let lastListOptions: SessionListOptions = {};
   let hasForegroundListOptions = false;
   let hasSeededListOptions = false;
+  let requestRevision = 0;
   const observesPageLifecycle =
     typeof document !== "undefined" && typeof globalThis.addEventListener === "function";
   let pageActive = !observesPageLifecycle || document.visibilityState !== "hidden";
@@ -160,10 +162,12 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
         };
         publishManagedList(entry, { ...entry.snapshot, loading: true, error: null });
         try {
+          const currentRequestRevision = ++requestRevision;
           const result = await requestSessionListParams(scope.client, requestParams);
           if (!isCurrent()) {
             return;
           }
+          host.observeCanonicalRows(result, currentRequestRevision);
           const previous = entry.snapshot.result;
           const nextResult =
             result && next.append && requestParams.offset && previous
@@ -213,8 +217,13 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
       return null;
     }
     try {
+      const currentRequestRevision = ++requestRevision;
       const result = await requestSessionList(scope.client, options);
-      return host.connection.isCurrent(scope) ? host.decorate(result ?? null) : null;
+      if (!host.connection.isCurrent(scope)) {
+        return null;
+      }
+      host.observeCanonicalRows(result ?? null, currentRequestRevision);
+      return host.decorate(result ?? null);
     } catch (error) {
       if (!host.connection.isCurrent(scope)) {
         return null;
@@ -250,10 +259,12 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
       );
     }
     try {
+      const currentRequestRevision = ++requestRevision;
       const result = await requestSessionList(scope.client, requestOptions);
       if (!host.connection.isCurrent(scope)) {
         return;
       }
+      host.observeCanonicalRows(result ?? null, currentRequestRevision);
       const currentState = host.readState();
       let nextResult =
         result && append && requestOptions.offset && currentState.result
@@ -501,6 +512,9 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
     },
     refresh,
     refreshReplacement,
+    get requestRevision() {
+      return requestRevision;
+    },
     /** The row as currently published. The archived/all sidebars render their
      * own snapshot, so a displayed row can be absent from the primary state.
      * Lists refresh independently, so when both hold the row the primary one

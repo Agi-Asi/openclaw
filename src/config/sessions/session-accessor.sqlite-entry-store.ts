@@ -16,6 +16,7 @@ import {
   trackSessionEntryCacheWrite,
 } from "./session-accessor.sqlite-entry-cache.js";
 import {
+  sqliteLifecycleSessionEntriesEqual,
   sqliteLifecycleTargetSnapshotsEqual,
   sqliteSessionEntriesEqual,
   sqliteSessionSnapshotRowsEqual,
@@ -511,7 +512,7 @@ function sqliteLifecycleTargetMatchesExpectedEntry(
   if (!current || !expectedEntry) {
     return current === expectedEntry;
   }
-  return sqliteSessionEntriesEqual(current, expectedEntry);
+  return sqliteLifecycleSessionEntriesEqual(current, expectedEntry);
 }
 
 export function assertLifecycleTargetUnchanged(

@@ -47,6 +47,7 @@ type SessionMutationsHost = {
   readState: () => SessionState;
   publish: (state: SessionState, errorSource?: "session-observer" | "operation") => void;
   refreshReplacement: (agentId?: string | null) => Promise<void>;
+  listRequestRevision: () => number;
   publishedRow: (key: string) => GatewaySessionRow | undefined;
   redecorateLists: () => void;
   notifyCreated: (key: string) => void;
@@ -613,19 +614,15 @@ export function createSessionMutations(host: SessionMutationsHost) {
       }
       const normalizedKey = result.key.trim();
       const publishedRow = host.publishedRow(normalizedKey);
-      const claim = ownerAssignments.confirm(normalizedKey, result.owner, publishedRow?.sessionId);
+      ownerAssignments.confirm(
+        normalizedKey,
+        result.owner,
+        host.listRequestRevision(),
+        publishedRow?.sessionId,
+      );
       patchRowLocal(result.key, { owner: result.owner });
       host.redecorateLists();
-      void host.refreshReplacement(options.agentId).then(() => {
-        if (!ownerAssignments.isCurrent(normalizedKey, claim)) {
-          return;
-        }
-        // A replacement that still disagrees is authoritative (for example,
-        // another window reassigned the session). Drop the overlay, then load
-        // once more without an older request ahead of it.
-        ownerAssignments.retire(normalizedKey);
-        void host.refreshReplacement(options.agentId);
-      });
+      void host.refreshReplacement(options.agentId);
       return result.owner;
     } catch (error) {
       if (host.connection.isCurrent(scope)) {
@@ -699,8 +696,8 @@ export function createSessionMutations(host: SessionMutationsHost) {
       return changed ? { ...result, sessions } : result;
     },
     applyConfirmedOwners: (result: SessionsListResult | null) => ownerAssignments.decorate(result),
-    observeCanonicalOwners: (result: SessionsListResult | null) =>
-      ownerAssignments.observeCanonical(result),
+    observeCanonicalOwners: (result: SessionsListResult | null, requestRevision: number) =>
+      ownerAssignments.observeCanonical(result, requestRevision),
     observeArchiveState(key: string, archived: boolean | null, row?: GatewaySessionRow): void {
       const normalizedKey = key.trim();
       if (!normalizedKey || archived === null) {

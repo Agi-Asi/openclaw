@@ -33,7 +33,10 @@ import type {
   SessionEntryReplacementUpdate,
   SessionEntryStatus,
 } from "./session-accessor.sqlite-contract.js";
-import { sqliteSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
+import {
+  sqliteLifecycleSessionEntriesEqual,
+  sqliteSessionEntriesEqual,
+} from "./session-accessor.sqlite-entry-equality.js";
 import {
   deleteLegacySessionEntryRows,
   deleteSessionEntryRows,
@@ -304,7 +307,7 @@ export async function applySessionEntryLifecycleMutation(params: {
           removal,
           params.allowCanonicalRepair,
         );
-        if (!sqliteSessionEntriesEqual(entry, removal.expectedEntry)) {
+        if (!sqliteLifecycleSessionEntriesEqual(entry, removal.expectedEntry)) {
           const replacedInSameMutation = projected.upsertedEntries.some(
             (upsert) => upsert.sessionKey === removal.sessionKey,
           );
@@ -353,7 +356,7 @@ export async function applySessionEntryLifecycleMutation(params: {
               : readExactSessionEntryRow(transactionDb, sessionKey)
             )?.entry;
         const expectedCurrentEntry = expectedEntry ?? sameKeyRemoval?.expectedEntry;
-        if (!sqliteSessionEntriesEqual(currentEntry, expectedCurrentEntry)) {
+        if (!sqliteLifecycleSessionEntriesEqual(currentEntry, expectedCurrentEntry)) {
           if (sameKeyRemoval) {
             throw new Error(`SQLite session entry has stale lifecycle state for ${sessionKey}`);
           }
@@ -407,7 +410,7 @@ export async function applySessionEntryLifecycleMutation(params: {
           removal,
           params.allowCanonicalRepair,
         );
-        if (!sqliteSessionEntriesEqual(entry, removal.expectedEntry)) {
+        if (!sqliteLifecycleSessionEntriesEqual(entry, removal.expectedEntry)) {
           throw new Error(
             `SQLite session entry changed before lifecycle removal for ${removal.sessionKey}`,
           );
