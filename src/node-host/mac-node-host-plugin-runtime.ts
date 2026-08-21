@@ -11,11 +11,7 @@ import { createPluginRuntime } from "../plugins/runtime/index.js";
 import {
   type BundledNodeHostPlugin,
   MAC_NODE_HOST_PLUGIN_DEFINITIONS,
-  MAC_NODE_HOST_PLUGIN_DEFAULTS,
-  MAC_NODE_HOST_PLUGIN_IDS,
 } from "./mac-node-host-plugin-definitions.js";
-
-export { MAC_NODE_HOST_PLUGIN_DEFAULTS, MAC_NODE_HOST_PLUGIN_IDS };
 
 /** Builds the non-CUA plugin command registry entirely from signed bundle code. */
 export function createMacNodeHostPluginRegistry(

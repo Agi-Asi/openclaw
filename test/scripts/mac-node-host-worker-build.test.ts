@@ -40,9 +40,23 @@ describe("macOS node-host worker build", () => {
     const source = fs.readFileSync(sourcePath, "utf8");
     const generated = createMacNodeHostWorkerBuildPlugin().transform(source, sourcePath);
 
-    expect(generated).not.toContain("extensions/cua-computer");
-    expect(generated).not.toContain("extensions/linux-node");
-    expect(generated).toContain("extensions/browser");
-    expect(generated).toContain("extensions/file-transfer");
+    const pluginIds = [...(generated?.matchAll(/extensions\/(.+?)\/index\.js/g) ?? [])].map(
+      (match) => match[1],
+    );
+    expect(pluginIds).toEqual([
+      "acpx",
+      "anthropic",
+      "browser",
+      "codex",
+      "file-transfer",
+      "google-meet",
+      "logbook",
+      "ollama",
+      "opencode",
+      "teams-meetings",
+      "zoom-meetings",
+    ]);
+    expect(pluginIds).not.toContain("cua-computer");
+    expect(pluginIds).not.toContain("linux-node");
   });
 });

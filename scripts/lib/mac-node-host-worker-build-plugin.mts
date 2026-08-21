@@ -43,13 +43,9 @@ export function createMacNodeHostWorkerBuildPlugin(rootDir = process.cwd()) {
         ([, enabledByDefault], index) =>
           `{ definition: plugin${index}, enabledByDefault: ${enabledByDefault} }`,
       );
-      const ids = PLUGIN_SPECS.map(([pluginId]) => pluginId);
-      const defaults = Object.fromEntries(PLUGIN_SPECS);
       return [
         ...imports,
         `export const MAC_NODE_HOST_PLUGIN_DEFINITIONS = [${definitions.join(",")}];`,
-        `export const MAC_NODE_HOST_PLUGIN_IDS = ${JSON.stringify(ids)};`,
-        `export const MAC_NODE_HOST_PLUGIN_DEFAULTS = ${JSON.stringify(defaults)};`,
       ].join("\n");
     },
   };

@@ -3,11 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BundledNodeHostPlugin } from "./mac-node-host-plugin-definitions.js";
-import {
-  createMacNodeHostPluginRegistry,
-  MAC_NODE_HOST_PLUGIN_DEFAULTS,
-  MAC_NODE_HOST_PLUGIN_IDS,
-} from "./mac-node-host-plugin-runtime.js";
+import { createMacNodeHostPluginRegistry } from "./mac-node-host-plugin-runtime.js";
 
 const tempRoots: string[] = [];
 
@@ -64,27 +60,6 @@ describe("macOS bundled node-host plugin runtime", () => {
       plugin("zoom-meetings", "zoommeetings.chrome"),
     ]);
 
-    expect(MAC_NODE_HOST_PLUGIN_IDS).not.toContain("cua-computer");
-    expect(MAC_NODE_HOST_PLUGIN_IDS).not.toContain("linux-node");
-    expect(MAC_NODE_HOST_PLUGIN_IDS).toEqual([
-      "acpx",
-      "anthropic",
-      "browser",
-      "codex",
-      "file-transfer",
-      "google-meet",
-      "logbook",
-      "ollama",
-      "opencode",
-      "teams-meetings",
-      "zoom-meetings",
-    ]);
-    for (const id of MAC_NODE_HOST_PLUGIN_IDS) {
-      const manifest = JSON.parse(
-        fs.readFileSync(path.join("extensions", id, "openclaw.plugin.json"), "utf8"),
-      ) as { enabledByDefault?: boolean };
-      expect(MAC_NODE_HOST_PLUGIN_DEFAULTS[id]).toBe(manifest.enabledByDefault === true);
-    }
     expect(availableCommands(registry, {})).toEqual([
       "googlemeet.chrome",
       "ollama.chat",

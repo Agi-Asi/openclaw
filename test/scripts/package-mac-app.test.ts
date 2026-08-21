@@ -1716,6 +1716,88 @@ describe("package-mac-app plist stamping", () => {
     expect(workerBlock).toContain("OpenClawNodeHostWorker");
   });
 
+  it("builds the elevation node-host worker from the repository root", () => {
+    const packageScript = readFileSync(scriptPath, "utf8");
+    const functionStart = packageScript.indexOf("stage_elevation_node_host_worker()");
+    const functionEnd = packageScript.indexOf(
+      "sparkle_canonical_build_from_version()",
+      functionStart,
+    );
+    expect(functionStart).toBeGreaterThanOrEqual(0);
+    expect(functionEnd).toBeGreaterThan(functionStart);
+    const workerFunction = packageScript.slice(functionStart, functionEnd);
+    const repoRoot = tempDirs.make("openclaw-worker-repo-root-");
+    const outerRoot = tempDirs.make("openclaw-worker-outer-root-");
+    const appRoot = path.join(repoRoot, "OpenClaw.app");
+    const toolsDir = tempDirs.make("openclaw-worker-tools-");
+    const cwdLog = path.join(repoRoot, "worker-build-cwd.log");
+    const sourceCommit = "a".repeat(40);
+
+    writeFileSync(
+      path.join(toolsDir, "node"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'if [[ "${1:-}" == "--import" ]]; then',
+        '  pwd >"$OPENCLAW_TEST_CWD_LOG"',
+        '  mkdir -p "$OPENCLAW_TEST_REPO_ROOT/apps/macos/.build/node-host-worker"',
+        '  printf "%s\\n" "export {};" >"$OPENCLAW_TEST_REPO_ROOT/apps/macos/.build/node-host-worker/node-host-worker.mjs"',
+        "else",
+        '  printf \'{"kind":"openclaw-macos-node-host-worker","schemaVersion":1,"sourceCommit":"%s","version":"test"}\\n\' "$OPENCLAW_TEST_SOURCE_COMMIT"',
+        "fi",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      path.join(toolsDir, "jq"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'if [[ "${1:-}" == "-n" ]]; then printf "%s\\n" "{}"; else cat >/dev/null; fi',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      path.join(toolsDir, "shasum"),
+      ["#!/usr/bin/env bash", 'printf "%064d  %s\\n" 0 "${@: -1}"', ""].join("\n"),
+      "utf8",
+    );
+    chmodSync(path.join(toolsDir, "node"), 0o755);
+    chmodSync(path.join(toolsDir, "jq"), 0o755);
+    chmodSync(path.join(toolsDir, "shasum"), 0o755);
+
+    const result = runHelper(`
+      set -euo pipefail
+      ROOT_DIR=${JSON.stringify(repoRoot)}
+      APP_ROOT=${JSON.stringify(appRoot)}
+      BUILD_GIT_COMMIT=${JSON.stringify(sourceCommit)}
+      OPENCLAW_TEST_REPO_ROOT=${JSON.stringify(repoRoot)}
+      OPENCLAW_TEST_CWD_LOG=${JSON.stringify(cwdLog)}
+      OPENCLAW_TEST_SOURCE_COMMIT=${JSON.stringify(sourceCommit)}
+      export OPENCLAW_TEST_REPO_ROOT OPENCLAW_TEST_CWD_LOG OPENCLAW_TEST_SOURCE_COMMIT
+      PATH=${JSON.stringify(`${toolsDir}:/usr/bin:/bin`)}
+      ${workerFunction}
+      cd ${JSON.stringify(outerRoot)}
+      stage_elevation_node_host_worker
+    `);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(cwdLog, "utf8").trim()).toBe(repoRoot);
+    expect(
+      existsSync(
+        path.join(
+          appRoot,
+          "Contents",
+          "Resources",
+          "OpenClawNodeHostWorker",
+          "node-host-worker.mjs",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("does not mask required Info.plist stamp failures", () => {
     const script = readFileSync(scriptPath, "utf8");
     const stampBlock = script.slice(

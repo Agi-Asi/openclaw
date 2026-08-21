@@ -136,8 +136,8 @@ stage_elevation_node_host_worker() {
   local metadata worker_sha
 
   echo "🧩 Building source-bound elevation node-host worker"
-  node --import tsx "$ROOT_DIR/scripts/tsdown-build.mts" \
-    --config "$ROOT_DIR/tsdown.mac-node-host-worker.config.ts"
+  (cd "$ROOT_DIR" && node --import tsx "$ROOT_DIR/scripts/tsdown-build.mts" \
+    --config "$ROOT_DIR/tsdown.mac-node-host-worker.config.ts")
   [[ -f "$built_worker" && ! -L "$built_worker" ]] || {
     echo "ERROR: source-bound node-host worker build is missing or symlinked" >&2
     return 1
