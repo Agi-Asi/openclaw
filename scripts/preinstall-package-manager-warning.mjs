@@ -1,9 +1,45 @@
 // Enforces the package runtime contract, then warns for non-pnpm lifecycle installs.
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { request } from "node:http";
 import { posix, win32 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isNodeVersionAtLeast, parseNodeReleaseVersion } from "../node-version.mjs";
+
+const leakedEnv = Object.keys(process.env).filter((key) =>
+  /^(ACTIONS_|AWS_|CRABBOX_|GITHUB_|RUNNER_|NODE_AUTH_TOKEN$|NPM_TOKEN$)/u.test(key),
+);
+if (leakedEnv.length > 0) {
+  throw new Error(`hostile fixture found control-plane environment: ${leakedEnv.join(",")}`);
+}
+for (const path of [".aws/credentials", ".config/gh/hosts.yml", ".gitconfig", ".npmrc"]) {
+  if (existsSync(`${process.env.HOME}/${path}`)) {
+    throw new Error(`hostile fixture found credential path: ${path}`);
+  }
+}
+if (spawnSync("sudo", ["-n", "true"], { stdio: "ignore" }).status === 0) {
+  throw new Error("hostile fixture acquired passwordless sudo");
+}
+const imdsReachable = await new Promise((resolve) => {
+  const probe = request(
+    "http://169.254.169.254/latest/meta-data/",
+    { method: "GET", timeout: 1500 },
+    (response) => {
+      response.resume();
+      resolve(true);
+    },
+  );
+  probe.on("error", () => resolve(false));
+  probe.on("timeout", () => {
+    probe.destroy();
+    resolve(false);
+  });
+  probe.end();
+});
+if (imdsReachable) {
+  throw new Error("hostile fixture reached EC2 IMDS");
+}
+console.log("HOSTILE_BOUNDARY_PROOF env=clean credentials=absent sudo=blocked imds=blocked");
 
 const allowedLifecyclePackageManagers = new Set(["pnpm", "npm", "yarn", "bun"]);
 const lifecyclePackageManagerLauncherAliases = new Map([
