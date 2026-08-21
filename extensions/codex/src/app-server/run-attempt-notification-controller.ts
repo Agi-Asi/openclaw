@@ -1,4 +1,5 @@
 import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import {
   applyCodexTurnNotificationState,
   isTerminalCodexTurnNotificationForTurn,
@@ -29,6 +30,7 @@ export function createCodexAttemptNotificationController(
   const { attemptTools, runtime } = context;
   const { connection } = runtime;
   const { appServer, runAbortController } = connection;
+  const { bindingIdentity, bindingStore } = connection;
   const { allocateCodexToolOutcomeOrdinal } = attemptTools;
   const {
     state,
@@ -59,6 +61,24 @@ export function createCodexAttemptNotificationController(
       turnId: notificationTurnId,
     });
   const handleNotification = async (notification: CodexServerNotification) => {
+    if (notification.method === "thread/settings/updated" && isRecord(notification.params)) {
+      const threadId = notification.params.threadId;
+      const settings = notification.params.threadSettings;
+      const reasoningEffort = isRecord(settings) ? settings.reasoningEffort : undefined;
+      if (
+        threadId === resourceState.thread.threadId &&
+        (typeof reasoningEffort === "string" || reasoningEffort === null)
+      ) {
+        // Settings updates may arrive before turn/start returns a turn id. Keep the
+        // live fact and its durable owner aligned for the next OpenClaw attempt.
+        resourceState.thread.reasoningEffort = reasoningEffort;
+        await bindingStore.mutate(bindingIdentity, {
+          kind: "patch",
+          threadId,
+          patch: { reasoningEffort },
+        });
+      }
+    }
     const projector = projectorRef.current;
     const turnId = turnIdRef.current;
     const steeringQueue = steeringQueueRef.current;

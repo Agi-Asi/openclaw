@@ -5121,6 +5121,39 @@ describe("runCodexAppServerAttempt", () => {
     const result = await runCodexAppServerAttempt(createRunParams());
     expect(readAttemptTerminal(result)).toMatchObject({ aborted: false, timedOut: false });
   });
+  it("persists native reasoning settings emitted before turn/start returns", async () => {
+    const { sessionFile, workspaceDir } = createRunPaths();
+    await writeExistingBinding(sessionFile, workspaceDir, {
+      dynamicToolsFingerprint: "[]",
+      reasoningEffort: "low",
+    });
+    const harness: ReturnType<typeof createAppServerHarness> = createAppServerHarness(
+      async (method) => {
+        if (method === "thread/resume") {
+          return threadStartResult("thread-existing");
+        }
+        if (method === "turn/start") {
+          await harness.notify({
+            method: "thread/settings/updated",
+            params: {
+              threadId: "thread-existing",
+              threadSettings: { reasoningEffort: "high" },
+            },
+          });
+          await harness.completeTurn({ threadId: "thread-existing", turnId: "turn-1" });
+          return turnStartResult("turn-1", "completed");
+        }
+        return {};
+      },
+    );
+
+    await runCodexAppServerAttempt(createParams(sessionFile, workspaceDir));
+
+    await expect(readCodexAppServerBinding(sessionFile)).resolves.toMatchObject({
+      threadId: "thread-existing",
+      reasoningEffort: "high",
+    });
+  });
   it("does not fail when a buffered terminal notification is followed by client close", async () => {
     let resolveBufferedTerminal!: () => void;
     const bufferedTerminal = new Promise<void>((resolve) => {
