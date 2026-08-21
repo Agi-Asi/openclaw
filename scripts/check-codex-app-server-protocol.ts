@@ -333,7 +333,7 @@ import type {
   CodexErrorNotification,
   CodexGetAccountResponse,
   CodexModelListResponse,
-  CodexStrictReviewRequiredNotification,
+  CodexServerNotification,
   CodexThreadForkParams,
   CodexThreadForkResponse,
   CodexThreadResumeParams,
@@ -492,7 +492,11 @@ declare const generatedMcpResourceReadResponse: McpResourceReadResponse;
 const openClawMcpResourceReadResponse: CodexAppServerRequestResult<"mcpServer/resource/read"> =
   generatedMcpResourceReadResponse;
 declare const generatedStrictReviewRequiredNotification: StrictReviewRequiredNotification;
-const openClawStrictReviewRequiredNotification: CodexStrictReviewRequiredNotification = {
+type OpenClawStrictReviewRequiredNotification = Extract<
+  CodexServerNotification,
+  { method: "autoApprovalReview/strictReviewRequired" }
+>;
+const openClawStrictReviewRequiredNotification: OpenClawStrictReviewRequiredNotification = {
   method: "autoApprovalReview/strictReviewRequired",
   params: generatedStrictReviewRequiredNotification,
 };

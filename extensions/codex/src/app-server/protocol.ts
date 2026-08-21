@@ -508,7 +508,7 @@ export type CodexThreadItem = {
   [key: string]: unknown;
 };
 
-export type CodexStrictReviewRequiredNotification = {
+type CodexStrictReviewRequiredNotification = {
   method: "autoApprovalReview/strictReviewRequired";
   params: JsonObject & {
     threadId: string;
