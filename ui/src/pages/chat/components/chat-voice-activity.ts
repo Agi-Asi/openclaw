@@ -27,6 +27,9 @@ class MicrophoneActivityElement extends HTMLElement {
   private levelSignal: RealtimeTalkLevelSignal | undefined;
   private unsubscribe: (() => void) | null = null;
   private gains: number[] = BAR_GAINS;
+  // `mode="scroll"`: bars render a right-to-left history of levels (newest on
+  // the right) so speech reads as a streaming waveform instead of one meter.
+  private history: number[] | null = null;
 
   set signal(signal: RealtimeTalkLevelSignal | undefined) {
     if (signal === this.levelSignal) {
@@ -58,6 +61,7 @@ class MicrophoneActivityElement extends HTMLElement {
       this.gains = activityBarGains(
         Number.isInteger(requested) && requested > 0 ? requested : BAR_GAINS.length,
       );
+      this.history = this.getAttribute("mode") === "scroll" ? this.gains.map(() => 0) : null;
       for (const [index] of this.gains.entries()) {
         const bar = document.createElement("span");
         bar.className = "agent-chat__voice-activity-bar";
@@ -74,12 +78,15 @@ class MicrophoneActivityElement extends HTMLElement {
 
   private renderLevel(level: number): void {
     this.dataset.level = String(level);
+    if (this.history) {
+      this.history.push(level);
+      this.history.shift();
+    }
     for (const [index, bar] of [...this.children].entries()) {
-      const gain = this.gains[index] ?? 1;
-      (bar as HTMLElement).style.setProperty(
-        "--talk-bar-scale",
-        String(0.18 + level * gain * 0.82),
-      );
+      const scale = this.history
+        ? 0.12 + (this.history[index] ?? 0) * 0.88
+        : 0.18 + level * (this.gains[index] ?? 1) * 0.82;
+      (bar as HTMLElement).style.setProperty("--talk-bar-scale", String(scale));
     }
   }
 }
@@ -115,6 +122,7 @@ type MicrophoneActivityProps = {
   status?: RealtimeTalkStatus;
   inputLevel?: RealtimeTalkLevelSignal;
   bars?: number;
+  mode?: "scroll";
 };
 
 // Class names and data attributes are asserted by the talk e2e suite; the
@@ -127,6 +135,7 @@ export function renderMicrophoneActivity(props: MicrophoneActivityProps): Templa
       data-status=${activeStatus(props.status)}
       data-source="microphone"
       bars=${ifDefined(props.bars)}
+      mode=${ifDefined(props.mode)}
       aria-hidden="true"
       .signal=${props.inputLevel ?? EMPTY_LEVEL_SIGNAL}
     >

@@ -232,7 +232,7 @@ export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
   const label = finalizing
     ? t("chat.composer.dictationFinalizing")
     : active
-      ? t("chat.composer.discardDictation")
+      ? t("chat.composer.dictationStop")
       : (props.idleLabel ?? t("chat.composer.startVoiceInput"));
   const tooltip =
     props.dictation && !(active || finalizing) ? t("chat.composer.voiceGestureHint") : label;
@@ -249,7 +249,9 @@ export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
           @pointerdown=${(event: PointerEvent) => props.onDictationPointerDown?.(event)}
           @click=${(event: MouseEvent) => {
             if (active) {
-              props.dictation?.cancelActive();
+              // Stop = keep the words: capture ends and the transcript lands
+              // in the draft. The only discard path is Escape, by design.
+              void props.dictation?.finishActive();
               return;
             }
             if (props.dictation) {
@@ -266,12 +268,7 @@ export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
           ${finalizing
             ? icons.loader
             : active
-              ? html`
-                  ${icons.x}
-                  <span class="chat-send-btn__dictation-cancel-label"
-                    >${t("common.cancel")}</span
-                  >
-                `
+              ? icons.stop
               : html`
                   ${icons.mic}
                   <span class="agent-chat__control-label">${label}</span>
@@ -362,13 +359,9 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
     hasComposedContent ? activeRunActionDescription : t("chat.composer.emptyHint"),
     activeRunActionLabel,
   );
-  const dictationConfirmAction = props.dictation?.active
+  const dictationSendAction = props.dictation?.active
     ? html`
-        <span
-          class="agent-chat__dictation-label"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
+        <span class="sr-only" role="status" aria-live="polite" aria-atomic="true"
           >${props.dictation.finalizing
             ? t("chat.composer.dictationFinalizing")
             : props.dictation.connecting
@@ -377,16 +370,20 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
                   elapsed: props.dictation.elapsed,
                 })}</span
         >
-        <openclaw-tooltip .content=${t("chat.composer.insertDictation")}>
+        <openclaw-tooltip .content=${t("chat.runControls.sendMessage")}>
           <button
-            class="chat-send-btn chat-send-btn--dictation-confirm"
+            class="chat-send-btn chat-send-btn--send chat-send-btn--dictation-send"
             type="button"
             @pointerdown=${props.onPrimaryActionPointerDown}
-            @click=${() => props.dictation?.finishActive()}
+            @click=${(event: MouseEvent) => {
+              // Send = stop capturing, let the transcript commit into the
+              // draft, then hand the composed message to the normal send path.
+              void props.dictation?.finishActive().then(() => props.onSend(event));
+            }}
             ?disabled=${props.dictation.finalizing}
-            aria-label=${t("chat.composer.insertDictation")}
+            aria-label=${t("chat.runControls.sendMessage")}
           >
-            ${icons.check}
+            ${icons.arrowUp}
           </button>
         </openclaw-tooltip>
       `
@@ -458,7 +455,7 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
       : html`
           ${voiceControl}
           ${props.dictation?.active
-            ? dictationConfirmAction
+            ? dictationSendAction
             : props.canAbort
               ? hasComposedContent
                 ? sendAction

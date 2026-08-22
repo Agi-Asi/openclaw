@@ -458,6 +458,16 @@ const composerBenchHtml = `<!doctype html>
               ["error", "Error"],
             ])}</div><div class="composer-bench__row" data-bench-voice-unavailable hidden><span>Voice</span><span class="composer-bench__muted">Chat only</span></div>` +
             composerBenchDisclosure(
+              "Dictation",
+              "dictate",
+              [
+                ["off", "Off"],
+                ["connecting", "Starting"],
+                ["recording", "Recording"],
+                ["finalizing", "Finishing"],
+              ],
+            ) +
+            composerBenchDisclosure(
               "Microphone",
               "voiceInput",
               [

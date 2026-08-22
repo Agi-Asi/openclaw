@@ -8,6 +8,7 @@ import { renderSessionProgressCard } from "../../../components/session-progress-
 import { t } from "../../../i18n/index.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
 import type { ComposerDictationController } from "../composer-dictation.ts";
+import { insertComposerDictation } from "../composer-dictation.ts";
 import {
   handleChatAttachmentPaste,
   renderAttachmentPreview,
@@ -236,6 +237,20 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
       ? html`<div class="agent-chat__composer-underlaps">${composerAlerts}${offlineHint}</div>`
       : nothing;
   const skillDraftOverlay = renderSkillDraftOverlay(visibleDraft);
+  // Dictation streams into the editor: the live partial previews at the spot
+  // the commit will use (the selection captured at hold start), so the operator
+  // reads their words landing in the draft rather than in a side status row.
+  // The textarea is read-only for the whole capture, so the preview swap never
+  // fights operator edits; release performs the real insert.
+  const dictationPreviewDraft =
+    dictation?.active && dictation.partial
+      ? insertComposerDictation(
+          visibleDraft,
+          dictation.partial,
+          state.dictationSelection?.start ?? visibleDraft.length,
+          state.dictationSelection?.end ?? visibleDraft.length,
+        ).value
+      : visibleDraft;
 
   const queue = renderChatQueue({
     queue: props.queue,
@@ -361,14 +376,10 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                           ${renderMicrophoneActivity({
                             status: dictation.connecting ? "connecting" : "listening",
                             inputLevel: dictation.inputLevel,
-                            bars: 36,
+                            bars: 48,
+                            mode: "scroll",
                           })}
                         </span>
-                        ${dictation.partial
-                          ? html`<span class="agent-chat__dictation-partial"
-                              >${dictation.partial}</span
-                            >`
-                          : nothing}
                       </div>
                     `
                   : nothing}
@@ -424,8 +435,8 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                 <textarea
                   ${ref(state.textareaRef ?? undefined)}
                   class=${skillDraftOverlay === nothing ? "" : "agent-chat__composer-textarea--rich"}
-                  .value=${visibleDraft}
-                  dir=${detectTextDirection(visibleDraft)}
+                  .value=${dictationPreviewDraft}
+                  dir=${detectTextDirection(dictationPreviewDraft)}
                   ?disabled=${!canCompose}
                   ?readonly=${dictation?.locksComposer === true}
                   aria-autocomplete="list"
@@ -462,7 +473,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                     }
                   }}
                   aria-label=${placeholder}
-                  placeholder=${placeholder}
+                  placeholder=${dictation?.active ? "" : placeholder}
                   rows="1"
                 ></textarea>
                 ${skillDraftOverlay}

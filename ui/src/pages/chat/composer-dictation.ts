@@ -449,8 +449,10 @@ export class ComposerDictationController {
     return `${minutes}:${seconds}`;
   }
 
-  finishActive(): void {
-    void this.stop({ commit: true });
+  // Returns the stop promise so callers can sequence work (e.g. send) after
+  // the transcript lands in the draft.
+  finishActive(): Promise<void> {
+    return this.stop({ commit: true });
   }
 
   cancelActive(): void {

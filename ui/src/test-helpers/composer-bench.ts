@@ -16,6 +16,8 @@ import type { SessionToolOverrides } from "../lib/sessions/patch.ts";
 import { renderExecApprovalCard } from "../components/exec-approval-card.ts";
 import { renderBackgroundTasksStatusRow } from "../pages/chat/components/chat-background-tasks-status.ts";
 import { renderChatComposer, resetChatComposerState } from "../pages/chat/components/chat-composer.ts";
+import { getChatComposerState } from "../pages/chat/components/chat-composer-state.ts";
+import type { ComposerDictationController } from "../pages/chat/composer-dictation.ts";
 import { renderChatModelControls } from "../pages/chat/components/chat-model-controls.ts";
 import { renderChatPermissionPicker } from "../pages/chat/components/chat-permission-picker.ts";
 import { renderChatPullRequests } from "../pages/chat/components/chat-pull-requests.ts";
@@ -94,6 +96,7 @@ type BenchState = {
     | "camera-pending"
     | "camera-error"
     | "error";
+  dictate: "off" | "connecting" | "recording" | "finalizing";
   voiceInput:
     | "available"
     | "unsupported"
@@ -165,6 +168,7 @@ const defaults: BenchState = {
   capabilities: "attachments",
   toolOverrides: null,
   voice: "off",
+  dictate: "off",
   voiceInput: "available",
   content: "multiline",
   attachments: "none",
@@ -514,6 +518,71 @@ let newProjectQuery = "";
 let newWorktree = true;
 const realtimeTalkLevel = new RealtimeTalkLevelSignal();
 realtimeTalkLevel.set(0.42);
+
+// Dictation simulation: the bench cannot run a real capture session (no
+// gateway client, getUserMedia is mocked to fail), so it pre-seeds the
+// composer's state slot with a stub controller. `renderChatComposer` keeps it
+// (`state.dictation ??=`), and the real template renders the real mode —
+// border light, scrolling wave, streaming partial, stop/send — end to end.
+const benchDictationLevel = new RealtimeTalkLevelSignal();
+const benchDictationScript =
+  "Tailor the composer spacing so every control stays aligned while I dictate this sentence".split(
+    " ",
+  );
+let benchDictationTimer: number | null = null;
+let benchDictationPartial = "";
+let benchDictationTicks = 0;
+
+function benchDictationController(): ComposerDictationController {
+  const phase = state.dictate;
+  const stub = {
+    active: phase !== "off",
+    connecting: phase === "connecting",
+    finalizing: phase === "finalizing",
+    locksComposer: phase !== "off",
+    partial: phase === "recording" ? benchDictationPartial : "",
+    elapsed: `0:${String(Math.floor(benchDictationTicks / 10) % 60).padStart(2, "0")}`,
+    inputLevel: benchDictationLevel,
+    finishActive: () => {
+      publishState({ dictate: "off" });
+      return Promise.resolve();
+    },
+    cancelActive: () => publishState({ dictate: "off" }),
+    handleClick: () => {},
+    handleContextMenu: () => {},
+    handlePointerDown: () => {},
+    update: () => {},
+    dispose: () => {},
+  };
+  return stub as unknown as ComposerDictationController;
+}
+
+function syncBenchDictation(): void {
+  const recording = state.surface === "chat" && state.dictate === "recording";
+  if (recording && benchDictationTimer === null) {
+    benchDictationTimer = window.setInterval(() => {
+      benchDictationTicks += 1;
+      const speaking = Math.sin(benchDictationTicks / 4) > -0.4;
+      benchDictationLevel.set(
+        speaking ? 0.2 + Math.random() * 0.75 : Math.random() * 0.06,
+      );
+      const spokenWords = Math.floor(benchDictationTicks / 4);
+      const nextPartial = benchDictationScript.slice(0, spokenWords).join(" ");
+      if (nextPartial !== benchDictationPartial) {
+        benchDictationPartial = nextPartial;
+        renderBench();
+      }
+    }, 100);
+  } else if (!recording && benchDictationTimer !== null) {
+    window.clearInterval(benchDictationTimer);
+    benchDictationTimer = null;
+    benchDictationLevel.set(0);
+  }
+  if (state.dictate === "off") {
+    benchDictationPartial = "";
+    benchDictationTicks = 0;
+  }
+}
 const benchCameraStream = new MediaStream();
 const newSessionTextarea = new NewSessionComposerTextareaController();
 const attachmentDraft = new NewSessionAttachmentDraft(renderBench, mirrorAttachmentState);
@@ -1090,6 +1159,19 @@ function renderChatSurface(sessionList: SessionsListResult) {
               onAction: () => publishState({ inset: "none" }),
             }
           : undefined;
+  // Seed the composer's dictation slot before render; `??=` inside keeps the
+  // stub alive across rerenders. Clearing only our own stub (marked) lets the
+  // real controller path own the slot whenever the axis is off.
+  const composerState = getChatComposerState("composer-bench");
+  if (state.dictate !== "off") {
+    const stub = benchDictationController() as ComposerDictationController & {
+      benchStub?: boolean;
+    };
+    stub.benchStub = true;
+    composerState.dictation = stub;
+  } else if ((composerState.dictation as { benchStub?: boolean } | null)?.benchStub) {
+    composerState.dictation = null;
+  }
   const composer = renderChatComposer({
     paneId: "composer-bench",
     sessionKey: "agent:main:main",
@@ -1589,6 +1671,7 @@ function renderBench(): void {
   if (!stage) {
     return;
   }
+  syncBenchDictation();
   const sessionList = sessions();
   stage.style.setProperty("--composer-bench-width", `${state.width}px`);
   stage.dataset.composerBenchSurface = state.surface;
@@ -1660,6 +1743,7 @@ function commitState(next: Partial<BenchState>, markScenarioCustom = true): void
   if (
     next.neighbor !== undefined ||
     next.voice !== undefined ||
+    next.dictate !== undefined ||
     next.voiceInput !== undefined
   ) {
     state.surface = "chat";
@@ -1748,6 +1832,7 @@ function syncControls(): void {
     "usage",
     "neighbor",
     "voice",
+    "dictate",
     "voiceInput",
   ]);
   const newOnlyAxes = new Set<keyof BenchState>(["visibility", "newAction"]);

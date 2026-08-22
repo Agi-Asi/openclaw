@@ -65,3 +65,13 @@ Lane: composer selects (worktree `composer-bench`). Bench files intocados.
 - i18n: `+discardDictation` ("Cancel dictation"), `-dictationReleaseToInsert` (sem usos); baseline+verify ok.
 - Limpeza: CSS morto `chat-send-btn__dictation-time` e `agent-chat__dictation-copy` removidos.
 - Verificação: DOM do estado dictating injetado no bench (:5230) — screenshots dark/light inspecionados (`/tmp/herdr/dict-*.png`); vitest dictation/composer suites: mesmas 5 falhas pré-existentes do checkpoint, 72 pass; tsgo:ui sem erros nos arquivos tocados; stylelint só com os 3 erros pré-existentes.
+
+## Voice mode v2 (iteração)
+
+- Borda: sem tint no frame; só o cometa accent (rastro longo atrás, cabeça brilhante, escuro à frente) com `corner-shape: superellipse(1.5)` no ::after.
+- Wave: modo `scroll` no `openclaw-microphone-activity` — ring buffer de níveis, 48 barras finas, história correndo direita→esquerda (waveform streamando).
+- Texto: partial do ditado streama direto no textarea (preview via `insertComposerDictation` na seleção capturada); placeholder oculto no modo; commit real no stop/release.
+- Ações: **stop** (mesmo elemento do mic; commita o texto no draft) + **send** (commita e envia via `finishActive().then(onSend)`); sem descarte por botão — Esc é o único discard. Status vira sr-only. `finishActive` agora retorna Promise.
+- i18n: `dictationStop` no lugar de `discardDictation`; `insertDictation` removido (sem usos).
+- Bench: novo eixo `dictate` (off/connecting/recording/finalizing) — stub de controller semeado em `getChatComposerState("composer-bench").dictation` (marcado `benchStub`), níveis animados + partial roteirizado; linha "Dictation" no painel (`scripts/control-ui-mock-dev.ts` — requer restart do mock server para o botão aparecer; via URL `?bench={"dictate":"recording"}` já funciona).
+- Verificado em :5230 via URL param: screenshots inspecionados (wave rolando, texto streamando, stop/send, borda). tsgo pulado a pedido (fase de iteração).

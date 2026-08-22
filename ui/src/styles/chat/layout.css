@@ -3041,14 +3041,11 @@ button.chat-pr__diff {
 }
 
 /* Dictation is a temporary mode of the writing surface, not another card in
-   it. A narrow moving edge in the brand accent signals live capture while the
-   editor and its transcript stay stable underneath. Accent, not danger, on
-   purpose: capture is the product's signature action, not a destructive one. */
+   it. The frame itself stays quiet — only a brand-accent light with a soft
+   trail orbits the edge to signal live capture. */
 .agent-chat__input--dictating,
 .agent-chat__input--dictating:focus-within {
   isolation: isolate;
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--chat-composer-hairline));
-  box-shadow: 0 4px 18px rgb(0 0 0 / 6%);
 }
 
 .agent-chat__input--dictating::after {
@@ -3058,13 +3055,19 @@ button.chat-pr__diff {
   inset: -1px;
   padding: 1px;
   border-radius: inherit;
+  /* corner-shape does not travel with border-radius: inherit; restate it so
+     the light hugs the composer's superellipse instead of a rounder ghost. */
+  corner-shape: superellipse(1.5);
+  /* Comet, not a ring: a long fading tail behind a bright head, dark again
+     right in front of it, so the light reads as travelling, not as a tinted
+     border. */
   background: conic-gradient(
     from var(--chat-dictation-edge-angle),
-    transparent 0deg 220deg,
-    color-mix(in srgb, var(--accent) 18%, transparent) 256deg,
-    color-mix(in srgb, var(--accent) 88%, white) 294deg,
-    color-mix(in srgb, var(--accent) 30%, transparent) 326deg,
-    transparent 360deg
+    transparent 0deg 200deg,
+    color-mix(in srgb, var(--accent) 10%, transparent) 252deg,
+    color-mix(in srgb, var(--accent) 45%, transparent) 286deg,
+    color-mix(in srgb, var(--accent) 92%, white) 294deg,
+    transparent 301deg 360deg
   );
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
@@ -3498,9 +3501,9 @@ button.chat-pr__diff {
   padding: 12px 14px 0;
 }
 
-/* Capture mode pares the footer back to the two decisions that matter: cancel
-   the recording or accept the transcript. Draft content and attachments remain
-   in place so entering the mode never discards operator context. */
+/* Capture mode pares the footer back to the two decisions that matter: stop
+   dictating (transcript stays in the draft) or send it. Draft content and
+   attachments remain in place so entering the mode never discards context. */
 .agent-chat__input--dictating .agent-chat__composer-lead,
 .agent-chat__input--dictating .agent-chat__composer-meta,
 .agent-chat__input--dictating .agent-chat__composer-controls,
@@ -3514,17 +3517,6 @@ button.chat-pr__diff {
 
 .agent-chat__input--dictating .agent-chat__composer-trail {
   grid-column: 1;
-}
-
-/* Capture bar: cancel pill on the leading edge, live status centered, accept
-   on the trailing edge — one row, mirroring the reference voice UIs. */
-.agent-chat__input--dictating .agent-chat__composer-trail,
-.agent-chat__input--dictating .agent-chat__composer-actions {
-  width: 100%;
-}
-
-.agent-chat__input--dictating .agent-chat__composer-actions {
-  justify-content: space-between;
 }
 
 /* Keep settings, split view, and run status together in the footer's middle
@@ -4951,16 +4943,14 @@ button.chat-pr__diff {
   user-select: none;
 }
 
-/* Cancel pill while capturing. Same element as the idle mic button — swapping
-   it would release pointer capture mid-hold — so the mode only restyles it. */
+/* Capture button while dictating. Same element as the idle mic — swapping it
+   would release pointer capture mid-hold — so the mode only restyles it.
+   Stop = keep the transcript; Escape is the only discard. */
 .chat-send-btn.chat-send-btn--dictating {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: auto;
+  width: var(--chat-composer-send-size);
   min-width: var(--chat-composer-send-size);
   height: var(--chat-composer-send-size);
-  padding: 0 12px;
+  padding: 5px;
   border-radius: var(--radius-full);
   color: var(--text-strong);
   background: color-mix(in srgb, var(--text) 10%, transparent);
@@ -4978,15 +4968,8 @@ button.chat-pr__diff {
 .chat-send-btn--dictating > svg {
   width: 14px;
   height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2px;
-}
-
-.chat-send-btn__dictation-cancel-label {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
+  fill: currentColor;
+  stroke: none;
 }
 
 .chat-send-btn--dictating .agent-chat__voice-activity-bar {
@@ -4994,30 +4977,18 @@ button.chat-pr__diff {
   box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-/* Accept keeps the send button's station and the brand accent: committing the
-   transcript is this mode's primary action. */
-.agent-chat__input .chat-send-btn--dictation-confirm {
-  background: var(--accent);
-  color: var(--accent-foreground);
-}
-
-.agent-chat__input .chat-send-btn--dictation-confirm:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
 .agent-chat__dictation-status {
   display: grid;
   min-width: 0;
   align-items: center;
   justify-items: center;
-  gap: 6px;
   width: 100%;
   color: var(--accent);
   font-size: 12px;
 }
 
-/* Full-width strip: the level meter is the room's main signal while capturing,
-   so it spans the editor instead of hiding in a pill. */
+/* Full-width strip: the scrolling level history is the room's main signal
+   while capturing, so it spans the editor instead of hiding in a pill. */
 .agent-chat__dictation-wave {
   display: flex;
   align-items: center;
@@ -5027,11 +4998,16 @@ button.chat-pr__diff {
 }
 
 .agent-chat__dictation-wave .agent-chat__voice-activity {
+  gap: 4px;
   width: 100%;
+  height: 24px;
   justify-content: space-between;
 }
 
 .agent-chat__dictation-wave .agent-chat__voice-activity-bar {
+  width: 2.5px;
+  height: 22px;
+  flex: 0 1 2.5px;
   background: color-mix(in srgb, var(--accent) 88%, var(--text));
   box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 24%, transparent);
 }
@@ -5043,24 +5019,6 @@ button.chat-pr__diff {
 .agent-chat__dictation-status--finalizing .agent-chat__voice-activity-bar {
   background: var(--muted);
   box-shadow: none;
-}
-
-.agent-chat__dictation-label {
-  min-width: 0;
-  flex: 1 1 auto;
-  color: var(--muted);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.agent-chat__dictation-partial {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .agent-chat__video-preview {
