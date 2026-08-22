@@ -211,6 +211,7 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     onHistoryKeydown?: (input: ChatInputHistoryKeyInput) => ChatInputHistoryKeyResult;
     onSlashIntent?: () => void | Promise<void>;
     onSend: ChatComposerProps["onSend"];
+    onBackgroundSend?: ChatComposerProps["onBackgroundSend"];
     onCompact?: () => void | Promise<void>;
     onOpenSessionCheckpoints?: () => void | Promise<void>;
     onToggleRealtimeTalk?: () => void;
@@ -448,6 +449,7 @@ export function renderChat(props: ChatProps) {
     onHistoryKeydown: props.onHistoryKeydown,
     onSlashIntent: props.onSlashIntent,
     onSend: props.onSend,
+    onBackgroundSend: props.onBackgroundSend,
     onCompact: props.suggestionComposer ? undefined : props.onCompact,
     onToggleRealtimeTalk: props.suggestionComposer ? undefined : props.onToggleRealtimeTalk,
     onToggleRealtimeCamera: props.onToggleRealtimeCamera,

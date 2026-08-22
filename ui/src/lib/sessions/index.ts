@@ -2,6 +2,7 @@ import type { SessionCatalogPullRequestSummary } from "../../../../packages/gate
 import { GatewayRequestError, type GatewayEventFrame } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { createGatewayConnectionLifecycle } from "../gateway-connection-lifecycle.ts";
+import type { SessionBackgroundTurnOutcome } from "./background-turns.runtime.ts";
 import { scopedAgentListParamsForSession } from "./navigation.ts";
 import {
   readSessionChangedEvent,
@@ -39,6 +40,7 @@ export type {
   SessionListSnapshot,
   SessionMessageSubscription,
 } from "./session-capability.ts";
+export type { SessionBackgroundTurnOutcome } from "./background-turns.runtime.ts";
 export type { SessionPatch } from "./patch.ts";
 export { DEFAULT_SESSION_LIST_QUERY } from "./session-requests.ts";
 export { reconcileSessionRunTerminal, type SessionRunTerminal } from "./reconcile.ts";
@@ -190,6 +192,20 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     },
     retirePullRequestSummary,
   });
+  type BackgroundTurns = ReturnType<
+    (typeof import("./background-turns.runtime.ts"))["createSessionBackgroundTurns"]
+  >;
+  let backgroundTurnListener: ((outcome: SessionBackgroundTurnOutcome) => void) | null = null;
+  let backgroundTurnsPromise: Promise<BackgroundTurns> | null = null;
+  const loadBackgroundTurns = () =>
+    (backgroundTurnsPromise ??= import("./background-turns.runtime.ts").then((runtime) => {
+      const tracker = runtime.createSessionBackgroundTurns(
+        (params) => mutations.createResult(params, { reconciliation: "background" }),
+        gateway,
+      );
+      tracker.subscribe((outcome) => backgroundTurnListener?.(outcome));
+      return tracker;
+    }));
 
   const operations = createSessionScopedOperations({
     connection,
@@ -500,6 +516,13 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     refresh: roster.refresh,
     refreshReplacement: roster.refreshReplacement,
     createResult: mutations.createResult,
+    createBackground: async (params) => (await loadBackgroundTurns()).create(params),
+    onBackgroundTurn(listener) {
+      backgroundTurnListener = listener;
+      return () => {
+        backgroundTurnListener = null;
+      };
+    },
     create: mutations.create,
     recover: mutations.recover,
     patch: mutations.patch,
@@ -550,6 +573,8 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
       groups.dispose();
       hydratedClient = null;
       mutations.dispose();
+      void backgroundTurnsPromise?.then((tracker) => tracker.dispose());
+      backgroundTurnListener = null;
       swarmActivity.clear();
       pullRequestSummaries.clear();
       pullRequestEpochs.clear();

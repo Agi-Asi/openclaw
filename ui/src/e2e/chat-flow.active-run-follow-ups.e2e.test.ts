@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { controlUiSessionPath } from "../test-helpers/control-ui-e2e.ts";
 import {
   chatSessionListResponse,
   createChatFlowE2eSuite,
@@ -98,14 +99,24 @@ suite.define(() => {
     }
   });
 
-  it("steers a queued follow-up with modified Enter in Enter shortcut mode", async () => {
+  it("starts a background session with modified Enter and opens its completion toast", async () => {
     const context = await suite.newBrowserContext({
       locale: "en-US",
       serviceWorkers: "block",
       viewport: { height: 900, width: 1280 },
     });
     const page = await context.newPage();
-    const gateway = await installMockGateway(page);
+    const backgroundSessionKey = "agent:main:dashboard:background-shortcut";
+    const backgroundRunId = "run-background-shortcut";
+    const gateway = await installMockGateway(page, {
+      methodResponses: {
+        "sessions.create": {
+          key: backgroundSessionKey,
+          runStarted: true,
+          runId: backgroundRunId,
+        },
+      },
+    });
 
     try {
       await page.goto(`${suite.server.baseUrl}settings/appearance`);
@@ -119,20 +130,47 @@ suite.define(() => {
       await gateway.waitForRequest("chat.send");
       await page.getByRole("button", { name: "Stop generating" }).waitFor({ timeout: 10_000 });
 
-      const steerText = "steer this keyboard follow-up now";
-      await composer.fill(steerText);
+      const backgroundText = "start this independent keyboard follow-up";
+      await composer.fill(backgroundText);
+      const sourcePath = new URL(page.url()).pathname;
       await composer.press("Control+Enter");
 
-      const firstRunSends = await waitForRequests(gateway, "chat.send", 2);
-      const steerParams = requireRecord(firstRunSends[1]?.params);
-      expect(steerParams).toMatchObject({
-        deliver: false,
-        message: steerText,
-        queueMode: "steer",
-        sessionKey: "main",
+      const create = await gateway.waitForRequest("sessions.create");
+      const createParams = requireRecord(create.params);
+      expect(createParams).toMatchObject({
+        agentId: "main",
+        message: backgroundText,
       });
-      expect(steerParams).not.toHaveProperty("expectedRunId");
-      expect(steerParams).not.toHaveProperty("expectedLeafEntryId");
+      expect(createParams).not.toHaveProperty("parentSessionKey");
+      expect(createParams).not.toHaveProperty("currentSessionKey");
+      await expect.poll(() => composer.inputValue()).toBe("");
+      await expect
+        .poll(() => page.locator(`[data-session-key="${backgroundSessionKey}"]`).count())
+        .toBe(1);
+      expect(new URL(page.url()).pathname).toBe(sourcePath);
+      await page.getByRole("button", { name: "Stop generating" }).waitFor();
+      await expectRequestCountStable(gateway, "chat.send", 1);
+
+      await gateway.emitGatewayEvent("chat", {
+        runId: "run-unrelated",
+        seq: 1,
+        sessionKey: backgroundSessionKey,
+        state: "final",
+      });
+      expect(await page.locator(".app-toast").count()).toBe(0);
+
+      await gateway.emitGatewayEvent("chat", {
+        runId: backgroundRunId,
+        seq: 2,
+        sessionKey: backgroundSessionKey,
+        state: "final",
+      });
+      const toast = page.locator(".app-toast");
+      await toast.getByText("Done").waitFor({ timeout: 10_000 });
+      await toast.getByRole("button", { name: "Open" }).click();
+      await expect
+        .poll(() => new URL(page.url()).pathname)
+        .toBe(controlUiSessionPath(backgroundSessionKey));
     } finally {
       await suite.closeBrowserContext(context);
     }
@@ -211,9 +249,12 @@ suite.define(() => {
 
       const steerText = "steer while the process runs";
       const sendsBeforeSteer = (await gateway.getRequests("chat.send")).length;
-      await gateway.deferNext("chat.send");
       await composer.fill(steerText);
-      await composer.press("Control+Enter");
+      await page.getByRole("button", { name: "Queue message" }).click();
+      const steerRow = page.locator(".chat-queue__item", { hasText: steerText });
+      await steerRow.waitFor();
+      await gateway.deferNext("chat.send");
+      await steerRow.getByRole("button", { name: "Steer queued message" }).click();
       const steerSend = await gateway.waitForRequest("chat.send", { after: sendsBeforeSteer });
       const steerParams = requireRecord(steerSend.params);
       expect(steerParams).toMatchObject({
@@ -430,6 +471,19 @@ suite.define(() => {
       await queuedRow.waitFor({ timeout: 10_000 });
       await queuedRow.getByText("Waiting for current run").waitFor({ timeout: 10_000 });
       await expectRequestCountStable(gateway, "chat.send", 1);
+
+      await gateway.setMethodResponse("sessions.create", {
+        key: "agent:main:dashboard:modifier-background",
+        runStarted: true,
+        runId: "run-modifier-background",
+      });
+      const backgroundText = "start modifier-mode background work";
+      await composer.fill(backgroundText);
+      await composer.press("Control+Shift+Enter");
+      await expect.poll(async () => (await gateway.getRequests("sessions.create")).length).toBe(1);
+      expect(requireRecord((await gateway.getRequests("sessions.create"))[0]?.params).message).toBe(
+        backgroundText,
+      );
     } finally {
       await suite.closeBrowserContext(context);
     }

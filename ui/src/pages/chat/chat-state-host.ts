@@ -140,6 +140,7 @@ export type ChatPageHost = ChatHost &
       options?: unknown,
       submissionAction?: Event,
     ) => Promise<void>;
+    handleSendBackgroundSession: (submissionAction?: Event) => Promise<void>;
     handleAbortChat: (options?: unknown) => Promise<void>;
     removeQueuedMessage: (id: string) => void;
     retryQueuedChatMessage: (id: string) => Promise<void>;

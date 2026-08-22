@@ -146,11 +146,6 @@ export function renderChatComposer(props: ChatComposerProps) {
     refreshCommands: props.onSlashIntent,
   };
   const sendShortcut = normalizeChatSendShortcut(props.sendShortcut);
-  const steerNowEnabled =
-    props.connected &&
-    sendShortcut === "enter" &&
-    showAbortableUi &&
-    props.followUpMode === "queue";
   const gatewayQuestionPrompts =
     props.gatewayQuestionPrompts?.filter(
       (prompt) =>
@@ -264,7 +259,6 @@ export function renderChatComposer(props: ChatComposerProps) {
     commitDraft: (draft) => commitComposerDraft(props, draft),
     syncDraftAfterSend: syncComposerDraftAfterSend,
     showAbortableUi,
-    steerNowEnabled,
   });
 
   const syncComposerValue = (target: HTMLTextAreaElement) => {
@@ -338,7 +332,7 @@ export function renderChatComposer(props: ChatComposerProps) {
     state.composingDraft = null;
     commitComposerDraft(props, draft);
     props.onTypingChange?.(false);
-    props.onSend(undefined, submissionAction);
+    props.onSend(submissionAction);
     syncComposerDraftAfterSend(state.composerTextarea);
   };
   const handleVoicePrimaryAction = () => {
@@ -490,7 +484,11 @@ export function renderChatComposer(props: ChatComposerProps) {
     hasAttachments: !props.suggestionComposer && Boolean(props.attachments?.length),
     isBusy,
     followUpMode: props.followUpMode,
-    steerNowEnabled,
+    backgroundSendShortcut: props.onBackgroundSend
+      ? sendShortcut === "enter"
+        ? t("chat.sendShortcutModifierEnter")
+        : `⇧${t("chat.sendShortcutModifierEnter")}`
+      : undefined,
     suggestionComposer: props.suggestionComposer,
     sending: props.sending,
     voiceActive: props.realtimeTalkActive,

@@ -387,6 +387,13 @@ class OpenClawShell
           this.recoverDeletedActiveSession(sessions.state);
         },
       )
+      .effect(
+        () => this.context?.sessions,
+        (sessions) =>
+          sessions.onBackgroundTurn((outcome) =>
+            this.shellGateway.handleBackgroundTurnOutcome(outcome),
+          ),
+      )
       .watch(
         () => this.context?.runtimeConfig,
         (runtimeConfig, notify) =>

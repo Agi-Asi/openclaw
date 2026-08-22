@@ -22,7 +22,7 @@ export type ChatRunControlsProps = {
   hasAttachments?: boolean;
   isBusy: boolean;
   followUpMode?: ControlUiFollowUpMode;
-  steerNowEnabled: boolean;
+  backgroundSendShortcut?: string;
   suggestionComposer?: boolean;
   sending: boolean;
   voiceActive?: boolean;
@@ -218,10 +218,10 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
         : interruptsActiveRun
           ? t("chat.runControls.sendMessage")
           : t("chat.runControls.queueMessage");
-  const queueSteerShortcutAvailable = props.steerNowEnabled && props.canSend && hasComposedContent;
-  const activeRunActionTooltip = queueSteerShortcutAvailable
-    ? `${activeRunActionLabel} ⏎ · ${t("chat.queue.steer")} ${t("chat.sendShortcutModifierEnter")}`
-    : activeRunActionLabel;
+  const activeRunActionTooltip =
+    props.backgroundSendShortcut && hasComposedContent
+      ? `${activeRunActionLabel} · ${t("chat.runControls.newSession")} ${props.backgroundSendShortcut}`
+      : activeRunActionLabel;
   // Preserve the click identity without mistaking it for a follow-up mode.
   const send = (event: Event) => props.onSend(event);
   const abortAction = props.canAbort

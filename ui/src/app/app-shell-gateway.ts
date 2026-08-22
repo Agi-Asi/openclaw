@@ -10,6 +10,7 @@ import {
   UI_COMMAND_EVENT,
 } from "../components/panel-toggle-contract.ts";
 import { i18n, isSupportedLocale } from "../i18n/index.ts";
+import type { SessionBackgroundTurnOutcome } from "../lib/sessions/index.ts";
 import type { ShellRouteState } from "./app-host-route-state.ts";
 import type { ApplicationContext } from "./context.ts";
 import {
@@ -90,6 +91,11 @@ function diffAgentRoster(
 export class ShellGatewayOwner {
   constructor(private readonly host: ShellGatewayHost) {}
 
+  private noticeRuntime() {
+    return (this.host.criticalNoticeRuntime ??=
+      import("../pages/chat/critical-observer-notice.runtime.ts"));
+  }
+
   reconcileServerUiPrefs(runtimeConfig: ApplicationContext["runtimeConfig"]): void {
     const snapshot = runtimeConfig.state.configSnapshot;
     const context = this.host.context;
@@ -151,10 +157,8 @@ export class ShellGatewayOwner {
       const context = this.host.context;
       if (context) {
         // Recovery digests share the tracker so stale critical notices can announce again.
-        this.host.criticalNoticeRuntime ??=
-          import("../pages/chat/critical-observer-notice.runtime.ts");
         const payload = event.payload;
-        void this.host.criticalNoticeRuntime.then((runtime) =>
+        void this.noticeRuntime().then((runtime) =>
           runtime.handleCriticalObserverDigest({
             payload,
             selectedSessionKey: this.host.activeSessionKey,
@@ -216,6 +220,22 @@ export class ShellGatewayOwner {
     if (!handled && (command.kind === "navigate" || command.kind === "split")) {
       this.host.selectChatSession(command.sessionKey);
     }
+  }
+
+  handleBackgroundTurnOutcome(outcome: SessionBackgroundTurnOutcome): void {
+    const context = this.host.context;
+    if (!context) {
+      return;
+    }
+    void this.noticeRuntime().then((runtime) =>
+      runtime.showBackgroundTurnNotice({
+        outcome,
+        selectedSessionKey: this.host.activeSessionKey,
+        sessionHost: this.host.storedOutboxScopeHost(context),
+        sessions: context.sessions.state.result?.sessions ?? [],
+        onOpen: (sessionKey, agentId) => this.host.selectChatSession(sessionKey, agentId),
+      }),
+    );
   }
 
   scheduleAgentRosterRefresh(): void {

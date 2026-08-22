@@ -4216,7 +4216,9 @@ describe("chat slash menu accessibility", () => {
 
     expect(onDraftChange).toHaveBeenCalledWith("send from enter");
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(container.querySelector("textarea")?.getAttribute("aria-keyshortcuts")).toBe("Enter");
+    expect(container.querySelector("textarea")?.getAttribute("aria-keyshortcuts")).toBe(
+      "Enter Control+Enter Meta+Enter",
+    );
   });
 
   it("requires Ctrl or Meta to send in modifier mode", () => {
@@ -4246,7 +4248,7 @@ describe("chat slash menu accessibility", () => {
     expect(onDraftChange).toHaveBeenCalledWith("compose across lines");
     expect(onSend).toHaveBeenCalledTimes(2);
     expect(container.querySelector("textarea")?.getAttribute("aria-keyshortcuts")).toBe(
-      "Control+Enter Meta+Enter",
+      "Control+Enter Meta+Enter Control+Shift+Enter Meta+Shift+Enter",
     );
   });
 
