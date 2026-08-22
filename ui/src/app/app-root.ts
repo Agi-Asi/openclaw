@@ -105,25 +105,22 @@ export class OpenClawApp extends OpenClawLightDomElement {
     }
   }
 
-  private probeSavedTranscript(): void {
+  private probeSavedTranscript(): Promise<void> {
     if (this.savedTranscriptReady || !this.context || !this.runtime) {
-      return;
+      return Promise.resolve();
     }
     const runtime = this.runtime;
-    const persistedSessionKey = this.context.gateway.snapshot.sessionKey;
-    void import("./saved-transcript-probe.runtime.ts")
+    return import("./saved-transcript-probe.runtime.ts")
       .then((module) =>
         module.probeSavedTranscript({
           basePath: this.context?.basePath,
+          credentialAction: runtime.transcriptProbeAction,
           documentMode: runtime.documentMode,
           focusDocument: this.focusTarget !== null,
-          persistedSessionKey,
           markSavedTranscriptReady: () => {
-            // Routing must start before the handshake returns so the stored
-            // conversation can paint; the first-run watcher still owns its own
-            // redirect decision once the gateway answers.
-            this.savedTranscriptReady = true;
-            runtime.releaseStartupRouteGate();
+            if (this.runtime === runtime) {
+              this.savedTranscriptReady = true;
+            }
           },
         }),
       )
@@ -180,9 +177,12 @@ export class OpenClawApp extends OpenClawLightDomElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    this.savedTranscriptReady = false;
+    this.connectSplashDue = false;
     void import("../components/session-progress-hovercard-registration.ts");
     this.resetLoginSensitivePresentation();
-    this.runtime = bootstrapApplication();
+    const runtime = bootstrapApplication();
+    this.runtime = runtime;
     const focusTarget = this.focusTarget;
     if (focusTarget?.kind === "terminal") {
       this.requestLazyDocument(TERMINAL_PANEL_ELEMENT);
@@ -202,14 +202,17 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // descendants reconnect and rebuild their controller-owned state afterward.
     this.contextProvider.setValue(context);
     this.syncLoginConnection();
-    this.probeSavedTranscript();
     this.armDeferredConnectSplash();
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
-    void this.runtime
-      .start()
-      .then(() => this.resolveFocusDashboard())
+    void this.probeSavedTranscript()
+      .then(() => {
+        if (this.runtime !== runtime) {
+          return;
+        }
+        void runtime.start().then(() => this.resolveFocusDashboard());
+      })
       .catch((error: unknown) => {
         console.error("[openclaw] application start failed", error);
       });
@@ -577,7 +580,8 @@ export class OpenClawApp extends OpenClawLightDomElement {
     const initialConnectPending =
       runtime.documentMode === null &&
       gatewaySnapshot.lastError === null &&
-      (gatewaySnapshot.phase === "starting" ||
+      (gatewaySnapshot.phase === "stopped" ||
+        gatewaySnapshot.phase === "starting" ||
         (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
     const startupProgressVisible = gatewaySnapshot.phase === "starting";
     if (

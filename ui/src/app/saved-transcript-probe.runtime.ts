@@ -2,9 +2,9 @@ import type { ApprovalDocumentMode } from "./approval-deep-link.ts";
 
 type SavedTranscriptProbeHost = {
   readonly basePath: string | undefined;
+  readonly credentialAction: 0 | 2;
   readonly documentMode: ApprovalDocumentMode | null;
   readonly focusDocument: boolean;
-  readonly persistedSessionKey: string;
   markSavedTranscriptReady(): void;
 };
 
@@ -14,18 +14,23 @@ type SavedTranscriptProbeHost = {
 // documents never pay for the session-path parser or the cache in the boot
 // chunk.
 export async function probeSavedTranscript(host: SavedTranscriptProbeHost): Promise<void> {
+  if (host.credentialAction !== 0) {
+    if (host.credentialAction === 2) {
+      const { clearStoredChatSnapshots } =
+        await import("../pages/chat/session-snapshot-invalidation.runtime.ts");
+      await clearStoredChatSnapshots();
+    }
+    return;
+  }
   if (host.documentMode !== null || host.focusDocument) {
     return;
   }
-  // The early paint covers sessions this browser can name without the
-  // gateway: an explicit literal session path, or the persisted last-active
-  // key. Short refs and slugs need RPC resolution and keep today's splash.
+  // Only an explicit literal chat route can name the exact conversation
+  // without gateway defaults or first-run routing.
   const { sessionRefFromPath } = await import("../app-session-route-paths.ts");
   const direct = sessionRefFromPath(globalThis.location?.pathname ?? "", host.basePath ?? "");
   const candidate =
-    direct?.namespace === "chat" && direct.kind === "literal"
-      ? direct.sessionKey
-      : host.persistedSessionKey.trim() || null;
+    direct?.namespace === "chat" && direct.kind === "literal" ? direct.sessionKey : null;
   if (!candidate) {
     return;
   }

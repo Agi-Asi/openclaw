@@ -236,13 +236,7 @@ export type ApplicationRuntime = {
   } | null;
   readonly confirmPendingGatewayConnection: () => void;
   readonly cancelPendingGatewayConnection: () => void;
-  /**
-   * Releases the first-run routing gate before the gateway answers so a
-   * saved-transcript document can start routing (and paint its stored
-   * conversation) during the initial handshake. The setup watcher still owns
-   * its redirect; a no-op when this document never deferred routing.
-   */
-  readonly releaseStartupRouteGate: () => void;
+  readonly transcriptProbeAction: 0 | 2;
   start: () => Promise<void>;
   stop: () => void;
 };
@@ -306,6 +300,13 @@ export function bootstrapApplication(
         }));
 
   const settings = startup.settings;
+  const transcriptCredentialAction =
+    startup.changed ||
+    startup.password !== null ||
+    startup.pendingBootstrapToken !== null ||
+    startup.pendingGatewayUrl !== null
+      ? 2
+      : 0;
   const gateway = createApplicationGateway(
     settings,
     startup.password ?? "",
@@ -553,9 +554,7 @@ export function bootstrapApplication(
     },
     confirmPendingGatewayConnection,
     cancelPendingGatewayConnection,
-    releaseStartupRouteGate: () => {
-      resolveInitialFirstRunDecision?.();
-    },
+    transcriptProbeAction: transcriptCredentialAction,
     start: () => {
       const stopRouter = () => router.stop();
       if (startsApplicationRouter) {

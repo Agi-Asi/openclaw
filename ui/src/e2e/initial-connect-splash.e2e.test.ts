@@ -20,6 +20,8 @@ const allowMissingChromium = process.env.OPENCLAW_UI_E2E_ALLOW_MISSING_CHROMIUM 
 const describeControlUiE2e = chromiumAvailable || !allowMissingChromium ? describe : describe.skip;
 const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
 const viewport = { height: 900, width: 1280 };
+const savedTranscriptPath = "chat/main/telegram/12345";
+const savedTranscriptSessionKey = "agent:main:telegram:12345";
 
 let browser: Browser;
 let server: ControlUiE2eServer;
@@ -114,45 +116,52 @@ async function traceConnectSplashMounts(page: Page): Promise<() => Promise<boole
 // next navigation resolves the saved-conversation paint path. Runs against
 // the same origin of an already-settled document; the record shape mirrors
 // the store's schema.
-async function seedStoredTranscript(page: Page, messages?: unknown[]): Promise<void> {
-  await page.evaluate(async (seedMessages) => {
-    const record = {
-      savedAt: Date.now(),
-      sessionId: null,
-      sessionKey: "agent:main:main",
-      snapshot: {
-        messages: seedMessages ?? [
-          {
-            content: "cached-transcript-marker",
-            role: "assistant",
-            timestamp: 1,
-          },
-        ],
-        pagination: { hasMore: false },
+async function seedStoredTranscript(
+  page: Page,
+  messages?: unknown[],
+  sessionKey = "agent:main:main",
+): Promise<void> {
+  await page.evaluate(
+    async ({ seedMessages, storedSessionKey }) => {
+      const record = {
+        savedAt: Date.now(),
         sessionId: null,
-      },
-    };
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("openclaw-chat-snapshots", 1);
-      request.addEventListener("upgradeneeded", () => {
-        for (const name of Array.from(request.result.objectStoreNames)) {
-          request.result.deleteObjectStore(name);
-        }
-        request.result.createObjectStore("snapshots", { keyPath: "sessionKey" });
+        sessionKey: storedSessionKey,
+        snapshot: {
+          messages: seedMessages ?? [
+            {
+              content: "cached-transcript-marker",
+              role: "assistant",
+              timestamp: 1,
+            },
+          ],
+          pagination: { hasMore: false },
+          sessionId: null,
+        },
+      };
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("openclaw-chat-snapshots", 1);
+        request.addEventListener("upgradeneeded", () => {
+          for (const name of Array.from(request.result.objectStoreNames)) {
+            request.result.deleteObjectStore(name);
+          }
+          request.result.createObjectStore("snapshots", { keyPath: "sessionKey" });
+        });
+        request.addEventListener("success", () => resolve(request.result));
+        request.addEventListener("error", () => reject(request.error ?? new Error("open failed")));
       });
-      request.addEventListener("success", () => resolve(request.result));
-      request.addEventListener("error", () => reject(request.error ?? new Error("open failed")));
-    });
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction("snapshots", "readwrite");
-      transaction.objectStore("snapshots").put(record);
-      transaction.addEventListener("complete", () => resolve());
-      transaction.addEventListener("error", () =>
-        reject(transaction.error ?? new Error("put failed")),
-      );
-    });
-    database.close();
-  }, messages);
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction("snapshots", "readwrite");
+        transaction.objectStore("snapshots").put(record);
+        transaction.addEventListener("complete", () => resolve());
+        transaction.addEventListener("error", () =>
+          reject(transaction.error ?? new Error("put failed")),
+        );
+      });
+      database.close();
+    },
+    { seedMessages: messages, storedSessionKey: sessionKey },
+  );
 }
 
 async function clearStoredTranscripts(page: Page): Promise<void> {
@@ -310,6 +319,9 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
 
   it("does not load the discarded workspace before a first-run setup redirect", async () => {
     const page = await createPage();
+    await page.goto(new URL("favicon.svg", server.baseUrl).href);
+    await seedStoredTranscript(page);
+
     const workspaceModules = new Set([
       "/src/components/app-sidebar.ts",
       "/src/components/browser/browser-panel.ts",
@@ -413,9 +425,9 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await gateway.waitForRequest("connect");
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page);
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
 
-    await page.reload();
+    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
     await gateway.waitForRequest("connect");
     await page.locator("openclaw-app-shell").waitFor();
     expect(await page.locator("openclaw-login-gate").count()).toBe(0);
@@ -483,9 +495,9 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await gateway.waitForRequest("connect");
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page);
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
 
-    await page.reload();
+    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
     await gateway.waitForRequest("connect");
     await page.getByText("cached-transcript-marker").first().waitFor();
     expect(await page.locator("openclaw-login-gate").count()).toBe(0);
@@ -504,6 +516,51 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     expect(await loginGateMounted()).toBe(true);
   });
 
+  it("never paints a prior snapshot when startup supplies different credentials", async () => {
+    const page = await createPage();
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    await page.goto(`${new URL(savedTranscriptPath, server.baseUrl).href}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
+
+    await gateway.deferNext("connect");
+    await page.goto(`${new URL(savedTranscriptPath, server.baseUrl).href}?token=replacement-token`);
+    await gateway.waitForRequest("connect");
+    await page.locator(".connect-splash").waitFor();
+    expect(await page.locator("openclaw-app-shell").count()).toBe(0);
+    expect(await page.getByText("cached-transcript-marker").count()).toBe(0);
+
+    await gateway.rejectDeferred("connect", {
+      code: "UNAUTHORIZED",
+      message: "unauthorized: gateway token mismatch",
+      details: { code: ConnectErrorDetailCodes.AUTH_TOKEN_MISMATCH },
+    });
+    await page.locator("openclaw-login-gate").waitFor();
+    expect(await page.getByText("cached-transcript-marker").count()).toBe(0);
+  });
+
+  it("clears a prior snapshot before a replacement credential connects", async () => {
+    const page = await createPage();
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    await page.goto(`${new URL(savedTranscriptPath, server.baseUrl).href}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
+
+    await gateway.deferNext("connect");
+    await page.goto(`${new URL(savedTranscriptPath, server.baseUrl).href}?token=replacement-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+
+    expect(await page.getByText("cached-transcript-marker").count()).toBe(0);
+  });
+
   it("keeps the painted transcript through a retryable first-handshake failure", async () => {
     const page = await createPage();
     const gateway = await installMockGateway(page, {
@@ -517,9 +574,9 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await gateway.waitForRequest("connect");
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page);
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
 
-    await page.reload();
+    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
     await gateway.waitForRequest("connect");
     await page.getByText("cached-transcript-marker").first().waitFor();
 
@@ -552,9 +609,9 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await gateway.waitForRequest("connect");
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page);
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
 
-    await page.reload();
+    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
     await gateway.waitForRequest("connect");
     await page.getByText("cached-transcript-marker").first().waitFor();
 

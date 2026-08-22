@@ -52,7 +52,7 @@ function contextFor(
     agentId?: string;
   }) => SessionsListResult | null,
   cachedSessions: GatewaySessionRow[] = [],
-  gatewaySnapshot: Partial<ApplicationContext["gateway"]["snapshot"]> = {},
+  persistedSessionKey = "",
 ) {
   const client = {};
   const list = vi.fn(async (options: { search?: string; offset?: number } = {}) =>
@@ -61,7 +61,7 @@ function contextFor(
   const context = {
     basePath: "",
     gateway: {
-      snapshot: { phase: "connected", client, hello: null, sessionKey: "", ...gatewaySnapshot },
+      snapshot: { phase: "connected", client, hello: null, sessionKey: persistedSessionKey },
       subscribe: vi.fn(() => () => undefined),
     },
     agents: { state: { agentsList: { mainKey: "main" } } },
@@ -411,61 +411,52 @@ describe("gateway-backed session route resolution", () => {
     });
   });
 
-  it("resolves an agent-home route from the persisted key before hello", async () => {
-    const { context, list } = contextFor(() => result([]), [], {
+  it("waits for current gateway defaults before resolving an agent-home route", async () => {
+    type GatewayListener = Parameters<ApplicationContext["gateway"]["subscribe"]>[0];
+    let listener: GatewayListener | null = null;
+    let snapshot = {
       phase: "connecting",
       client: null,
       hello: null,
       sessionKey: "agent:roboclaw:main",
-    });
-
-    await expect(
-      loadChatRoute(
-        context,
-        { pathname: "/chat/roboclaw", search: "", hash: "" },
-        "chat",
-        new AbortController().signal,
-      ),
-    ).resolves.toEqual({ kind: "session", sessionKey: "agent:roboclaw:main", face: "chat" });
-    expect(list).not.toHaveBeenCalled();
-  });
-
-  it("resolves the default agent home from a bare persisted alias before hello", async () => {
-    const { context, list } = contextFor(() => result([]), [], {
-      phase: "connecting",
-      client: null,
-      hello: null,
-      sessionKey: "main",
-    });
-
-    await expect(
-      loadChatRoute(
-        context,
-        { pathname: "/chat/main", search: "", hash: "" },
-        "chat",
-        new AbortController().signal,
-      ),
-    ).resolves.toEqual({ kind: "session", sessionKey: "agent:main:main", face: "chat" });
-    expect(list).not.toHaveBeenCalled();
-  });
-
-  it("keeps agent-home routes waiting when the persisted key names another agent", async () => {
-    const { context } = contextFor(() => result([]), [], {
-      phase: "connecting",
-      client: null,
-      hello: null,
-      sessionKey: "agent:research:main",
-    });
-    const controller = new AbortController();
+    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    const context = {
+      basePath: "",
+      gateway: {
+        get snapshot() {
+          return snapshot;
+        },
+        subscribe: (next: GatewayListener) => {
+          listener = next;
+          return () => undefined;
+        },
+      },
+      agents: { state: { agentsList: null } },
+      sessions: { state: { result: result([]) }, list: vi.fn() },
+    } as unknown as ApplicationContext;
     const pending = loadChatRoute(
       context,
       { pathname: "/chat/roboclaw", search: "", hash: "" },
       "chat",
-      controller.signal,
+      new AbortController().signal,
     );
-    controller.abort();
+    await Promise.resolve();
 
-    await expect(pending).rejects.toBe(controller.signal.reason);
+    snapshot = {
+      phase: "connected",
+      client: {},
+      hello: { snapshot: { sessionDefaults: { mainKey: "primary" } } },
+    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    const connectedListener = listener as GatewayListener | null;
+    if (!connectedListener) {
+      throw new Error("expected gateway readiness subscription");
+    }
+    connectedListener(snapshot);
+
+    await expect(pending).resolves.toMatchObject({
+      kind: "session",
+      sessionKey: "agent:roboclaw:primary",
+    });
   });
 
   it("returns slug ties to the existing disambiguation view", async () => {
@@ -632,12 +623,7 @@ describe("gateway-backed session route resolution", () => {
 
   it("trusts a carried short key that matches the persisted last-active session", async () => {
     const key = "agent:roboclaw:12345678-0aaa-4000-8000-000000000001";
-    const { context, list } = contextFor(() => result([]), [], {
-      phase: "connecting",
-      client: null,
-      hello: null,
-      sessionKey: key,
-    });
+    const { context, list } = contextFor(() => result([]), [], key);
     const target = sessionNavigationTarget({
       face: "chat",
       sessionKey: key,
