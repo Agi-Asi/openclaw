@@ -13,11 +13,11 @@ import {
 import { CodexAppServerRpcError, type CodexAppServerClient } from "./client.js";
 import type { CodexAppServerRuntimeOptions } from "./config.js";
 import { buildCodexAppServerConnectionFingerprint } from "./plugin-app-cache-key.js";
-import { mergeCodexThreadConfigs } from "./plugin-thread-config.js";
 import {
   attestCodexPluginThreadApps,
   discardUnattestedCodexPluginThread,
 } from "./plugin-thread-attestation.js";
+import { mergeCodexThreadConfigs } from "./plugin-thread-config.js";
 import {
   assertCodexThreadForkResponse,
   assertCodexThreadStartResponse,
