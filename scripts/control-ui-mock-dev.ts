@@ -288,6 +288,7 @@ const composerBenchHtml = `<!doctype html>
                 ["none", "None"],
                 ["one", "1 item"],
                 ["three", "3 items"],
+                ["six", "6 items"],
               ]),
             ) +
             composerBenchWhen(

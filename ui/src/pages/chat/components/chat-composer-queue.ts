@@ -92,11 +92,23 @@ export function renderChatQueue(props: ChatQueueProps) {
   // it in place; that is what keeps focus on the handle the operator is using.
   return html`
     <div class="chat-queue" role="status" aria-live="polite">
-      ${repeat(
-        visibleQueue,
-        (item) => item.id,
-        (item) => renderChatQueueItem(item, props, reorder),
-      )}
+      <div
+        class="chat-queue__scroll"
+        data-scrollable=${visibleQueue.length > 3 ? "true" : "false"}
+        data-at-start="true"
+        @scroll=${(event: Event) => {
+          const scroll = event.currentTarget;
+          if (scroll instanceof HTMLElement) {
+            scroll.dataset.atStart = String(scroll.scrollTop <= 1);
+          }
+        }}
+      >
+        ${repeat(
+          visibleQueue,
+          (item) => item.id,
+          (item) => renderChatQueueItem(item, props, reorder),
+        )}
+      </div>
     </div>
   `;
 }
@@ -270,7 +282,7 @@ function renderChatQueueItem(
                   >${steerMode ? t("chat.queue.steering") : t("chat.queue.steer")}</span
                 >`
               : nothing}
-            ${stateLabel
+            ${stateLabel && !failed
               ? html`<span
                   class="chat-queue__badge"
                   title=${ifDefined(reconnecting ? item.sendError : undefined)}
@@ -387,7 +399,12 @@ function renderChatQueueItem(
         // it stays inspectable via the badge tooltip. Failed/unconfirmed rows
         // keep the visible error because the user must act on them.
         item.sendError && !reconnecting
-          ? html`<span class="chat-queue__error">${item.sendError}</span>`
+          ? html`<span class="chat-queue__error">
+              ${failed && stateLabel
+                ? html`<span class="chat-queue__badge">${stateLabel}</span>`
+                : nothing}
+              <span class="chat-queue__error-text">${item.sendError}</span>
+            </span>`
           : nothing
       }
     </div>

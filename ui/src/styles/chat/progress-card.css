@@ -260,6 +260,10 @@
   height: 14px;
 }
 
+.session-progress-card__summary-indicator--complete {
+  color: var(--ok);
+}
+
 .session-progress-card__summary-indicator > .session-run-spinner {
   display: block;
   width: 14px;

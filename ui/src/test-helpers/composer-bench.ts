@@ -50,7 +50,7 @@ import "../styles/new-session.css";
 type BenchState = {
   surface: "chat" | "new";
   visibility: "normal" | "draft" | "incognito";
-  queue: "none" | "one" | "three";
+  queue: "none" | "one" | "three" | "six";
   queueOrder: string[];
   queueEdit: "closed" | "editing";
   queueEditingId: string | null;
@@ -135,11 +135,21 @@ type BenchState = {
   theme: "dark" | "light";
 };
 
-const defaultQueueOrder = ["bench-queue-1", "bench-queue-2", "bench-queue-3"];
+const defaultQueueOrder = [
+  "bench-queue-1",
+  "bench-queue-2",
+  "bench-queue-3",
+  "bench-queue-4",
+  "bench-queue-5",
+  "bench-queue-6",
+];
 const queueSeed = [
   "Audit the composer spacing against the desktop reference.",
   "Keep the queue attached to the composer in both themes.",
   "Verify keyboard reordering before the final visual pass.",
+  "Confirm the permission picker keeps its active state.",
+  "Check the attachment rail at narrow widths.",
+  "Capture the final queue interaction pass.",
 ];
 const defaultQueueTexts = Object.fromEntries(
   defaultQueueOrder.map((id, index) => [id, queueSeed[index] ?? ""]),
@@ -422,9 +432,9 @@ const scenarios: BenchScenario[] = [
     state: { content: "one", run: "steering", followUpMode: "steer", queue: "one" },
   },
   {
-    name: "Queue (3) + editing",
-    description: "Three queued messages with the first row in edit mode.",
-    state: { content: "one", run: "running", queue: "three", queueEdit: "editing" },
+    name: "Queue (6) + editing",
+    description: "Six queued messages stress-test internal scrolling and editing.",
+    state: { content: "one", run: "running", queue: "six", queueEdit: "editing" },
   },
   {
     name: "Waiting for approval",
@@ -672,7 +682,14 @@ function attachmentFixtures(value: BenchState["attachments"]): ChatAttachment[] 
 }
 
 function queue(): ChatQueueItem[] {
-  const count = state.queue === "three" ? 3 : state.queue === "one" || state.run === "steering" ? 1 : 0;
+  const count =
+    state.queue === "six"
+      ? 6
+      : state.queue === "three"
+        ? 3
+        : state.queue === "one" || state.run === "steering"
+          ? 1
+          : 0;
   return state.queueOrder.slice(0, count).map((id, index) => {
     const text = state.queueTexts[id] ?? defaultQueueTexts[id];
     return {
@@ -1388,7 +1405,14 @@ function renderChatSurface(sessionList: SessionsListResult) {
     onQueueRemove: (id) => {
       const remaining = state.queueOrder.filter((candidate) => candidate !== id);
       publishState({
-        queue: remaining.length === 0 ? "none" : remaining.length === 1 ? "one" : "three",
+        queue:
+          remaining.length === 0
+            ? "none"
+            : remaining.length === 1
+              ? "one"
+              : remaining.length > 3
+                ? "six"
+                : "three",
         queueOrder: remaining,
         ...(state.queueEditingId === id
           ? { queueEdit: "closed" as const, queueEditingId: null, queueEditingText: "" }

@@ -875,8 +875,8 @@ openclaw-chat-page {
   position: relative;
   z-index: 0;
   box-sizing: border-box;
-  width: calc(100% - 24px);
-  margin: 0 12px
+  width: 100%;
+  margin: 0
     calc(0px - var(--chat-composer-shell-gap) - var(--chat-goal-underlap));
 }
 

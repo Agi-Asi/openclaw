@@ -143,7 +143,12 @@ export function renderSessionProgressCard(
         class="session-progress-card__summary"
         aria-label=${composerCountLabel}
       >
-        <span class="session-progress-card__summary-indicator" aria-hidden="true">
+        <span
+          class="session-progress-card__summary-indicator${complete
+            ? " session-progress-card__summary-indicator--complete"
+            : ""}"
+          aria-hidden="true"
+        >
           ${summaryIndicator}
         </span>
         <span class="session-progress-card__current">${stepLabel}</span>
