@@ -27,11 +27,7 @@ import {
   validateReleaseStateArtifact,
   verifyReleaseStateArtifacts,
 } from "./full-release-validation-policy.mjs";
-import {
-  encodeFullReleaseValidationLogCheckpoint,
-  readFullReleaseValidationJobLog,
-  recoverFullReleaseValidationLogCheckpoint,
-} from "./lib/full-release-validation-log-checkpoint.mjs";
+import { encodeFullReleaseValidationLogCheckpoint } from "./lib/full-release-validation-log-checkpoint.mjs";
 
 export * from "./full-release-validation-policy.mjs";
 
@@ -133,24 +129,6 @@ async function githubJobs(runId, signal) {
     .map((line) => JSON.parse(line));
 }
 
-async function githubAttemptJobs(runId, runAttempt, signal) {
-  return (
-    await runGh(
-      [
-        "api",
-        "--paginate",
-        `repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
-        "--jq",
-        ".jobs[] | @json",
-      ],
-      { signal },
-    )
-  )
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
 async function checkpointProvenance(signal) {
   const runId = requiredString(process.env.GITHUB_RUN_ID, "parent run ID");
   const runAttempt = positiveInteger(process.env.GITHUB_RUN_ATTEMPT, "parent run attempt");
@@ -175,26 +153,53 @@ async function checkpointProvenance(signal) {
   };
 }
 
-function emitCheckpoint(lines) {
+export function emitCheckpoint(lines, write = writeSync) {
   const bytes = Buffer.from(`${lines.join("\n")}\n`, "utf8");
   let offset = 0;
+  let retries = 0;
   while (offset < bytes.length) {
     try {
-      const written = writeSync(process.stdout.fd, bytes, offset, bytes.length - offset);
+      const written = write(process.stdout.fd, bytes, offset, bytes.length - offset);
       if (written === 0) {
         throw new Error("checkpoint stdout write made no progress");
       }
       offset += written;
+      retries = 0;
     } catch (error) {
-      if (error?.code !== "EAGAIN" && error?.code !== "EWOULDBLOCK" && error?.code !== "EINTR") {
+      if (!["EAGAIN", "EWOULDBLOCK", "EINTR"].includes(error?.code) || (retries += 1) > 3) {
         throw error;
       }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, retries);
     }
   }
 }
 
 function checkpointLines(kind, payload, provenance) {
   return provenance ? encodeFullReleaseValidationLogCheckpoint({ kind, payload, provenance }) : [];
+}
+
+function warnDiagnostic(label, error) {
+  console.warn(`warning: ${label}: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+async function bestEffortCheckpointProvenance(signal) {
+  try {
+    return await checkpointProvenance(signal);
+  } catch (error) {
+    warnDiagnostic("could not resolve checkpoint provenance", error);
+    return undefined;
+  }
+}
+
+function emitBestEffortCheckpoint(kind, payload, provenance) {
+  if (!provenance) {
+    return;
+  }
+  try {
+    emitCheckpoint(checkpointLines(kind, payload, provenance));
+  } catch (error) {
+    warnDiagnostic(`could not emit ${kind} checkpoint`, error);
+  }
 }
 
 function issue(kind, child, message, extra = {}) {
@@ -442,10 +447,10 @@ function writeExecutionPlan(path, payload) {
   }
 }
 
-function commitExecutionPlan(path, payload, encodedCheckpointLines) {
-  emitCheckpoint(encodedCheckpointLines);
+function commitExecutionPlan(path, payload, provenance) {
   writeExecutionPlan(path, payload);
   process.exitCode = payload.blockers.length > 0 || payload.errors.length > 0 ? 2 : 0;
+  emitBestEffortCheckpoint("plan", payload, provenance);
 }
 
 function appendSummary(mode, payload) {
@@ -562,22 +567,14 @@ async function planMode() {
   const abortController = new AbortController();
 
   if (process.env.FULL_RELEASE_RESTORE_PLAN === "true") {
-    const provenance = await checkpointProvenance(abortController.signal);
-    const recovered = await recoverFullReleaseValidationLogCheckpoint({
-      currentAttempt,
-      expected: provenance,
-      kind: "plan",
-      listJobsForAttempt: (attempt) =>
-        githubAttemptJobs(provenance.runId, attempt, abortController.signal),
-      readJobLog: (jobId) =>
-        readFullReleaseValidationJobLog(
-          (args) => runGh(args, { signal: abortController.signal }),
-          process.env.GITHUB_REPOSITORY,
-          jobId,
-        ),
-    });
-    const restored = validateReleaseExecutionPlanArtifact(recovered.payload, expected);
-    commitExecutionPlan(outputPath, restored, checkpointLines("plan", restored, provenance));
+    const restored = validateReleaseExecutionPlanArtifact(
+      readArtifact(outputPath, "execution plan"),
+      expected,
+    );
+    const provenance = expected.targetSha
+      ? await bestEffortCheckpointProvenance(abortController.signal)
+      : undefined;
+    commitExecutionPlan(outputPath, restored, provenance);
     return;
   }
   if (currentAttempt !== 1) {
@@ -587,7 +584,7 @@ async function planMode() {
   const planInputs = parsePlanInputs(process.env.FULL_RELEASE_PLAN_INPUTS_JSON);
   const built = buildReleaseExecutionPlan(planInputs);
   const provenance = expected.targetSha
-    ? await checkpointProvenance(abortController.signal)
+    ? await bestEffortCheckpointProvenance(abortController.signal)
     : undefined;
   let finished = false;
   let plan = buildReleaseExecutionPlanArtifact({
@@ -624,13 +621,14 @@ async function planMode() {
     });
     const terminalPlan = validateReleaseExecutionPlanArtifact(plan, expected);
     finished = true;
+    try {
+      commitExecutionPlan(outputPath, terminalPlan, provenance);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 2;
+    }
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
-    commitExecutionPlan(
-      outputPath,
-      terminalPlan,
-      checkpointLines("plan", terminalPlan, provenance),
-    );
     process.exit(process.exitCode);
   };
   process.once("SIGINT", stop);
@@ -653,9 +651,9 @@ async function planMode() {
   });
   const terminalPlan = validateReleaseExecutionPlanArtifact(plan, expected);
   finished = true;
+  commitExecutionPlan(outputPath, terminalPlan, provenance);
   process.removeListener("SIGINT", stop);
   process.removeListener("SIGTERM", stop);
-  commitExecutionPlan(outputPath, terminalPlan, checkpointLines("plan", terminalPlan, provenance));
 }
 
 async function collectMode(mode) {
@@ -699,7 +697,7 @@ async function collectMode(mode) {
   let finished = false;
   const abortController = new AbortController();
   const provenance = expected.targetSha
-    ? await checkpointProvenance(abortController.signal)
+    ? await bestEffortCheckpointProvenance(abortController.signal)
     : undefined;
   let decisionReuse = { blockers: [], children: plan, errors: [] };
 
@@ -718,15 +716,15 @@ async function collectMode(mode) {
       { ...expected, releaseProfile, rerunGroup },
       mode,
     );
-  const commitPayload = (payload, encodedCheckpointLines) => {
+  const commitPayload = (payload) => {
     finished = true;
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
-    emitCheckpoint(encodedCheckpointLines);
     writeResult(outputPath, payload);
     process.exitCode =
       payload.state === "passed" ? 0 : payload.state === "orchestration_error" ? 2 : 1;
+    emitBestEffortCheckpoint(mode, payload, provenance);
     appendSummary(mode, payload);
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
   };
   const stop = () => {
     if (finished) {
@@ -750,7 +748,12 @@ async function collectMode(mode) {
       workflowRef: expected.workflowRef,
     });
     const payload = buildPayload(decision, { cancelledRunIds, requested: true });
-    commitPayload(payload, checkpointLines(mode, payload, provenance));
+    try {
+      commitPayload(payload);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 2;
+    }
     process.exit(process.exitCode);
   };
   process.once("SIGINT", stop);
@@ -859,7 +862,7 @@ async function collectMode(mode) {
           (decision.state !== "qualifying" && decision.activeRunIds.length === 0);
     if (done) {
       const payload = buildPayload(decision, { cancelledRunIds, requested: false });
-      commitPayload(payload, checkpointLines(mode, payload, provenance));
+      commitPayload(payload);
       return;
     }
     await abortableSleep(pollIntervalMs, abortController.signal);

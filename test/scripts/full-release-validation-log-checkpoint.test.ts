@@ -201,33 +201,36 @@ describe("full release validation log checkpoints", () => {
     ).toThrow("header");
   });
 
-  it("searches earlier attempts newest-first and falls past a failed no-marker attempt", async () => {
-    const attempts: number[] = [];
-    const result = await recoverFullReleaseValidationLogCheckpoint({
-      currentAttempt: 4,
-      expected: provenance(4),
-      kind: "plan",
-      listJobsForAttempt: async (attempt) => {
-        attempts.push(attempt);
-        return [
-          {
-            conclusion: attempt === 3 ? "failure" : "success",
-            head_sha: SHA,
-            id: attempt,
-            name: "Seal release execution plan",
-            run_attempt: attempt,
-            run_id: 123,
-            status: "completed",
-            workflow_name: "Full Release Validation",
-          },
-        ];
-      },
-      readJobLog: async (jobId) =>
-        Number(jobId) === 3 ? "failed before emission" : checkpointLog("plan", { source: 2 }, 2),
-    });
-    expect(attempts).toEqual([3, 2]);
-    expect(result).toMatchObject({ payload: { source: 2 }, sourceAttempt: 2 });
-  });
+  it.each(["failure", "cancelled"])(
+    "searches earlier attempts newest-first and falls past a %s no-marker attempt",
+    async (conclusion) => {
+      const attempts: number[] = [];
+      const result = await recoverFullReleaseValidationLogCheckpoint({
+        currentAttempt: 4,
+        expected: provenance(4),
+        kind: "plan",
+        listJobsForAttempt: async (attempt) => {
+          attempts.push(attempt);
+          return [
+            {
+              conclusion: attempt === 3 ? conclusion : "success",
+              head_sha: SHA,
+              id: attempt,
+              name: "Seal release execution plan",
+              run_attempt: attempt,
+              run_id: 123,
+              status: "completed",
+              workflow_name: "Full Release Validation",
+            },
+          ];
+        },
+        readJobLog: async (jobId) =>
+          Number(jobId) === 3 ? "failed before emission" : checkpointLog("plan", { source: 2 }, 2),
+      });
+      expect(attempts).toEqual([3, 2]);
+      expect(result).toMatchObject({ payload: { source: 2 }, sourceAttempt: 2 });
+    },
+  );
 
   it.each([
     "success",
@@ -331,7 +334,7 @@ describe("full release validation log checkpoints", () => {
     const workflow = readFileSync(".github/workflows/full-release-validation.yml", "utf8");
     expect(workflow).not.toContain("Restore immutable release execution plan");
     expect(workflow).toContain("FULL_RELEASE_RESTORE_PLAN: ${{ github.run_attempt != 1 }}");
-    expect(workflow).toContain("if: ${{ always() && steps.plan.outputs.sha256 != '' }}");
+    expect(workflow.match(/if: always\(\)/gu)?.length).toBeGreaterThanOrEqual(4);
     expect(workflow).toContain("overwrite: true");
     expect(
       workflow.match(/scripts\/lib\/full-release-validation-log-checkpoint\.mjs/gu),

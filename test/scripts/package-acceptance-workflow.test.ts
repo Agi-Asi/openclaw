@@ -3006,9 +3006,11 @@ describe("package acceptance workflow", () => {
       "fail-on-cache-miss": "${{ github.run_attempt != 1 }}",
       key: "full-release-execution-plan-v1-${{ github.run_id }}",
     });
-    expect(planUpload.if).toBe("${{ always() && steps.plan.outputs.sha256 != '' }}");
+    expect(planUpload.if).toBe("always()");
     expect(planUpload.with?.name).toBe("full-release-execution-plan-${{ github.run_id }}");
     expect(planUpload.with?.overwrite).toBe(true);
+    expect(decisionUpload.if).toBe("always()");
+    expect(drainUpload.if).toBe("always()");
     expect(manifestStep.env).not.toHaveProperty("EVIDENCE_MANIFEST");
     expect(manifestStep.run).toContain(
       'EVIDENCE_MANIFEST="$(jq -c \'.evidenceReuse.sourceManifest // empty\' "$RELEASE_EXECUTION_PLAN_PATH")"',

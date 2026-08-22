@@ -11,6 +11,7 @@ import {
   buildReleaseStateArtifact,
   classifyReleaseGhTransportError,
   classifyReleaseSnapshot,
+  emitCheckpoint,
   formatReleaseStateOutcome,
   selectReleaseStateArtifacts,
   validateChildBinding,
@@ -183,6 +184,28 @@ describe("full release execution plan", () => {
     expect(
       classifyReleaseGhTransportError(Object.assign(new Error(message), { stderr: message })),
     ).toBe(expected);
+  });
+
+  it.each(["EBADF", "EPIPE"])("surfaces terminal checkpoint write error %s once", (code) => {
+    let writes = 0;
+    expect(() =>
+      emitCheckpoint(["checkpoint"], () => {
+        writes += 1;
+        throw Object.assign(new Error(code), { code });
+      }),
+    ).toThrow(code);
+    expect(writes).toBe(1);
+  });
+
+  it("bounds transient checkpoint write retries without spinning", () => {
+    let writes = 0;
+    expect(() =>
+      emitCheckpoint(["checkpoint"], () => {
+        writes += 1;
+        throw Object.assign(new Error("temporarily unavailable"), { code: "EAGAIN" });
+      }),
+    ).toThrow("temporarily unavailable");
+    expect(writes).toBe(4);
   });
 
   it("keeps required coverage selected when dispatch output is missing", () => {
@@ -1025,52 +1048,13 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
 
   it("adopts the immutable attempt-one plan on an attempt-two collector retry", () => {
     const root = mkdtempSync(join(tmpdir(), "frv-plan-restore-"));
-    const gh = join(root, "gh");
-    const log = join(root, "checkpoint.log");
+    writeCheckpointGh(join(root, "gh"));
     const output = join(root, "full-release-execution-plan.json");
     const sealed = executionPlan({ rerunGroup: "ci" });
-    writeFileSync(
-      log,
-      encodeFullReleaseValidationLogCheckpoint({
-        kind: "plan",
-        payload: sealed,
-        provenance: {
-          runAttempt: 1,
-          runId: "77",
-          targetSha: TARGET_SHA,
-          workflowId: 456,
-          workflowPath: ".github/workflows/full-release-validation.yml",
-          workflowSha: SHA,
-        },
-      }).join("\n"),
-    );
-    writeFileSync(
-      gh,
-      `#!/usr/bin/env node
-import { readFileSync } from "node:fs";
-const args = process.argv.slice(2);
-const endpoint = args.find((arg) => arg.includes("/actions/")) ?? "";
-if (endpoint.endsWith("/actions/runs/77")) {
-  console.log(JSON.stringify({id: 77, event: "workflow_dispatch", run_attempt: 2, head_sha: process.env.GITHUB_SHA, workflow_id: 456, path: ".github/workflows/full-release-validation.yml"}));
-} else if (endpoint.includes("/attempts/1/jobs")) {
-  console.log(JSON.stringify({id: 999, name: "Seal release execution plan", run_id: 77, run_attempt: 1, head_sha: process.env.GITHUB_SHA, workflow_name: "Full Release Validation", status: "completed", conclusion: "success"}));
-} else if (endpoint.includes("/actions/jobs/999/logs")) {
-  if (args.includes("--allow-escape-sequences")) {
-    console.error("unknown flag: --allow-escape-sequences");
-    process.exit(1);
-  }
-  process.stdout.write(readFileSync(process.env.FRV_CHECKPOINT_LOG, "utf8"));
-} else {
-  console.error("unexpected gh call: " + args.join(" "));
-  process.exit(2);
-}
-`,
-    );
-    chmodSync(gh, 0o755);
+    writeFileSync(output, JSON.stringify(sealed));
     const result = spawnSync(process.execPath, [SCRIPT, "plan"], {
       env: {
         ...process.env,
-        FRV_CHECKPOINT_LOG: log,
         FULL_RELEASE_EXECUTION_PLAN_PATH: output,
         FULL_RELEASE_RESTORE_PLAN: "true",
         GITHUB_REF_NAME: "release-ci/tooling",
@@ -1091,6 +1075,48 @@ if (endpoint.endsWith("/actions/runs/77")) {
       parentRunAttempt: 1,
       sha256: sealed.sha256,
     });
+  });
+
+  it("keeps the canonical plan when checkpoint stdout is closed", () => {
+    const root = mkdtempSync(join(tmpdir(), "frv-plan-stdout-failure-"));
+    const githubOutput = join(root, "github-output");
+    const output = join(root, "full-release-execution-plan.json");
+    writeCheckpointGh(join(root, "gh"));
+    const result = spawnSync("/bin/sh", ["-c", 'exec 1>&-; exec "$NODE" "$SCRIPT" plan'], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FULL_RELEASE_EXECUTION_PLAN_PATH: output,
+        FULL_RELEASE_PLAN_INPUTS_JSON: JSON.stringify({
+          children: { normalCi: { result: "skipped", runAttempt: "", runId: "" } },
+          dockerPreflightResult: "skipped",
+          evidenceReuse: false,
+          parentRunAttempt: 1,
+          parentRunId: "77",
+          prepareCandidateResult: "skipped",
+          rerunGroup: "ci",
+          resolveTargetResult: "success",
+          trustedWorkflow: TRUSTED_MAIN,
+          workflowRef: "release-ci/tooling",
+          workflowSha: SHA,
+        }),
+        GITHUB_REF_NAME: "release-ci/tooling",
+        GITHUB_REPOSITORY: "openclaw/openclaw",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "77",
+        GITHUB_SHA: SHA,
+        GITHUB_OUTPUT: githubOutput,
+        NODE: process.execPath,
+        PATH: `${root}:${process.env.PATH}`,
+        RELEASE_PROFILE: "stable",
+        RERUN_GROUP: "ci",
+        SCRIPT,
+        TARGET_SHA,
+      },
+      timeout: 10_000,
+    });
+    const artifact = JSON.parse(readFileSync(output, "utf8"));
+    expect(readFileSync(githubOutput, "utf8")).toContain(`sha256=${artifact.sha256}`);
   });
 
   it("writes the execution plan immediately when SIGTERM interrupts a stalled reuse API", async () => {
@@ -1241,7 +1267,59 @@ sleep 30
     expect(readFileSync(githubOutput, "utf8")).toContain("state=blocked_complete");
   });
 
-  it("does not commit state when checkpoint provenance cannot be resolved", () => {
+  it("keeps the canonical result when GITHUB_OUTPUT cannot be written", () => {
+    const root = mkdtempSync(join(tmpdir(), "frv-state-output-failure-"));
+    const output = join(root, "decision.json");
+    const executionPlanPath = join(root, "full-release-execution-plan.json");
+    writeFileSync(
+      executionPlanPath,
+      JSON.stringify(
+        executionPlan(
+          {
+            children: { normalCi: { result: "skipped", runAttempt: "", runId: "" } },
+            dockerPreflightResult: "skipped",
+            prepareCandidateResult: "skipped",
+            rerunGroup: "ci",
+            resolveTargetResult: "failure",
+          },
+          {
+            expected: {
+              parentRunAttempt: 1,
+              parentRunId: "77",
+              targetSha: "",
+              workflowRef: "release-ci/tooling",
+              workflowSha: SHA,
+            },
+          },
+        ),
+      ),
+    );
+    const result = spawnSync(process.execPath, [SCRIPT, "decision"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FAIL_FAST: "false",
+        FULL_RELEASE_EXECUTION_PLAN_PATH: executionPlanPath,
+        FULL_RELEASE_STATE_PATH: output,
+        GITHUB_REF_NAME: "release-ci/tooling",
+        GITHUB_RUN_ATTEMPT: "2",
+        GITHUB_RUN_ID: "77",
+        GITHUB_SHA: SHA,
+        GITHUB_OUTPUT: root,
+        RELEASE_PROFILE: "stable",
+        RERUN_GROUP: "ci",
+        TARGET_SHA: "",
+      },
+      timeout: 10_000,
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("EISDIR");
+    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({
+      state: "blocked_complete",
+    });
+  });
+
+  it("keeps canonical state when checkpoint provenance cannot be resolved", () => {
     const root = mkdtempSync(join(tmpdir(), "frv-state-provenance-failure-"));
     const gh = join(root, "gh");
     const output = join(root, "decision.json");
@@ -1269,8 +1347,8 @@ sleep 30
       timeout: 10_000,
     });
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("Bad credentials");
-    expect(() => readFileSync(output, "utf8")).toThrow();
+    expect(result.stderr).toContain("warning: could not resolve checkpoint provenance");
+    expect(JSON.parse(readFileSync(output, "utf8"))).toHaveProperty("state");
   });
 
   it("writes an immediate terminal handoff with active identity on SIGTERM", async () => {

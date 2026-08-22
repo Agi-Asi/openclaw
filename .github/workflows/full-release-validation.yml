@@ -1229,7 +1229,7 @@ jobs:
           node scripts/full-release-validation-state.mjs plan
 
       - name: Upload immutable release execution plan
-        if: ${{ always() && steps.plan.outputs.sha256 != '' }}
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: full-release-execution-plan-${{ github.run_id }}
@@ -1280,7 +1280,7 @@ jobs:
           node scripts/full-release-validation-state.mjs "$FULL_RELEASE_STATE_MODE"
 
       - name: Upload release decision
-        if: always() && steps.state.outputs.state != ''
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: full-release-decision-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1347,7 +1347,7 @@ jobs:
         run: *full_release_state
 
       - name: Upload diagnostic drain manifest
-        if: always() && steps.state.outputs.state != ''
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: full-release-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
