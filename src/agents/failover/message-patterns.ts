@@ -59,6 +59,8 @@ const STATUS_INTERNAL_SERVER_ERROR_RE = /\bstatus:\s*internal server error\b/i;
 const STATUS_INTERNAL_SERVER_ERROR_WITH_500_RE =
   /^(?=[\s\S]*\bstatus:\s*internal server error\b)(?=[\s\S]*\bcode["']?\s*[:=]\s*500\b)/i;
 const HTTP_5XX_STATUS_RE = /\bHTTP\s+5\d\d\b/i;
+const INCOMPLETE_TERMINAL_STREAM_RE =
+  /^(?:[a-z][\w.-]* )?stream ended before (?:message_?stop|terminal event|a terminal finish reason)$/i;
 const BILLING_ERROR_HARD_402_RE =
   /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|^\s*402\s+payment/i;
 
@@ -145,6 +147,7 @@ const ERROR_PATTERNS = {
     // Codex and node-fetch expose these exact terminal transport messages.
     // Keep them anchored so unrelated local stream failures do not trigger model failover.
     /^stream disconnected before completion(?::[\s\S]*)?$/i,
+    INCOMPLETE_TERMINAL_STREAM_RE,
     /^premature close of server response while trying to fetch\b/i,
     // Chinese provider error messages (ZhipuAI/GLM, Bailian, Kimi/Moonshot, DeepSeek, etc.)
     "网络错误",
@@ -295,6 +298,9 @@ export function isRateLimitErrorMessage(raw: string): boolean {
 }
 export function isTimeoutErrorMessage(raw: string): boolean {
   return matchesErrorPatterns(raw, ERROR_PATTERNS.timeout);
+}
+export function isIncompleteTerminalStreamMessage(raw: string): boolean {
+  return INCOMPLETE_TERMINAL_STREAM_RE.test(raw.trim());
 }
 
 /**

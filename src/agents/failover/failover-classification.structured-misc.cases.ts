@@ -146,7 +146,6 @@ export const structuredMiscCases = [
     { id: "retry-reset-before-headers", message: "upstream reset before headers" },
     { id: "retry-websocket-closed", message: "WebSocket closed unexpectedly" },
     { id: "retry-websocket-error", message: "WebSocket error" },
-    { id: "retry-anthropic-message-stop", message: "stream ended before message_stop" },
     { id: "retry-http2-no-response", message: "HTTP2 request did not get a response" },
     { id: "retry-delay", message: "retry delay 1000ms" },
     {
@@ -154,6 +153,15 @@ export const structuredMiscCases = [
       message: "provider request ended without a terminal response",
     },
     { id: "retry-rate-limit-hyphen", message: "rate-limit reached" },
+  ]),
+  ...messageRows(retrySource, reason("timeout"), [
+    { id: "retry-anthropic-message-stop", message: "stream ended before message_stop" },
+    { id: "retry-bedrock-message-stop", message: "Bedrock stream ended before messageStop" },
+    { id: "retry-proxy-terminal-event", message: "Proxy stream ended before terminal event" },
+    {
+      id: "retry-google-terminal-finish-reason",
+      message: "Google stream ended before a terminal finish reason",
+    },
   ]),
   ...messageRows(errorsSource, null, [
     {
