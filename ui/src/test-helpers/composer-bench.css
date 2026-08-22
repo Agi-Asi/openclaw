@@ -70,11 +70,14 @@ body {
   mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 100%);
 }
 
-.composer-bench__view-controls {
+.composer-bench__view-controls,
+.composer-bench__scenario {
   --text: #d8d9df;
   --text-strong: #f4f5f8;
   --muted: #a0a3ad;
+}
 
+.composer-bench__view-controls {
   position: fixed;
   top: 16px;
   right: auto;
@@ -111,12 +114,22 @@ body {
 }
 
 .composer-bench__scenario {
+  position: fixed;
+  top: 16px;
+  right: 328px;
+  left: 248px;
+  z-index: 100;
+  box-sizing: border-box;
   display: grid;
+  height: 80px;
   gap: 2px;
-  margin: 5px 0 8px;
-  border-radius: 11px;
+  margin: 0;
+  border: 1px solid rgb(244 245 248 / 8%);
+  border-radius: 14px;
   padding: 7px 8px 8px;
-  background: color-mix(in srgb, var(--text-strong) 4%, transparent);
+  background: rgb(23 25 31 / 90%);
+  box-shadow: 0 14px 40px rgb(0 0 0 / 26%);
+  backdrop-filter: blur(20px) saturate(1.15);
 }
 
 .composer-bench__scenario:focus-visible {
@@ -468,11 +481,16 @@ body {
 }
 
 .composer-bench__stage[data-composer-bench-surface="new"] {
+  padding-top: 112px;
   place-items: start center;
 }
 
 .composer-bench__surface {
   width: min(100%, var(--composer-bench-width, 640px));
+}
+
+.composer-bench__stage[data-composer-bench-width="desktop"] .composer-bench__surface {
+  width: 100%;
 }
 
 .composer-bench__surface .agent-chat__composer-shell {
@@ -573,5 +591,9 @@ body {
 
   .composer-bench__stage {
     padding-inline: 16px 306px;
+  }
+
+  .composer-bench__scenario {
+    right: 296px;
   }
 }

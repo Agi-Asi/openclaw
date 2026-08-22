@@ -176,7 +176,7 @@ const defaults: BenchState = {
   status: "focused",
   newAction: "start",
   neighbor: "none",
-  width: 900,
+  width: 1200,
   theme: "dark",
 };
 
@@ -1681,6 +1681,7 @@ function renderBench(): void {
   const sessionList = sessions();
   stage.style.setProperty("--composer-bench-width", `${state.width}px`);
   stage.dataset.composerBenchSurface = state.surface;
+  stage.dataset.composerBenchWidth = state.width === 1200 ? "desktop" : "custom";
   stage.dataset.composerBenchAttachments = state.attachments;
   stage.dataset.composerProductionOwner =
     state.surface === "chat"

@@ -178,15 +178,6 @@ const composerBenchHtml = `<!doctype html>
         <header class="composer-bench__header">
           <h1>Composer</h1>
         </header>
-        <section class="composer-bench__scenario" data-bench-scenario tabindex="0" aria-label="Composer scenario">
-          <span class="composer-bench__scenario-kind" data-bench-scenario-kind data-visible="false">Stress cases</span>
-          <div class="composer-bench__scenario-nav">
-            <button type="button" data-bench-scenario-prev aria-label="Previous scenario">‹</button>
-            <output data-bench-scenario-name>Custom</output>
-            <button type="button" data-bench-scenario-next aria-label="Next scenario">›</button>
-          </div>
-          <p data-bench-scenario-description>Adjust any control or browse the demo sequence.</p>
-        </section>
         ${composerBenchGroup(
           "composition",
           "Composition",
@@ -485,7 +476,7 @@ const composerBenchHtml = `<!doctype html>
       </aside>
       <main class="composer-bench__stage" data-composer-bench-stage data-composer-production-owner="renderChatComposer"></main>
       <nav class="composer-bench__view-controls" aria-label="View controls">
-        <div class="composer-bench__row composer-bench__row--slider" data-bench-slider="width" role="slider" tabindex="0" aria-label="Width" aria-valuemin="360" aria-valuemax="1200" aria-valuenow="900" aria-valuetext="Desktop"><span>Width</span><output data-bench-width-value>Desktop</output></div>
+        <div class="composer-bench__row composer-bench__row--slider" data-bench-slider="width" role="slider" tabindex="0" aria-label="Width" aria-valuemin="360" aria-valuemax="1200" aria-valuenow="1200" aria-valuetext="Desktop"><span>Width</span><output data-bench-width-value>Desktop</output></div>
         ${composerBenchRow(
           "Theme",
           composerBenchSegmented("theme", [
@@ -494,6 +485,15 @@ const composerBenchHtml = `<!doctype html>
           ]),
         )}
       </nav>
+      <section class="composer-bench__scenario" data-bench-scenario tabindex="0" aria-label="Composer scenario">
+        <span class="composer-bench__scenario-kind" data-bench-scenario-kind data-visible="false">Stress cases</span>
+        <div class="composer-bench__scenario-nav">
+          <button type="button" data-bench-scenario-prev aria-label="Previous scenario">‹</button>
+          <output data-bench-scenario-name>Custom</output>
+          <button type="button" data-bench-scenario-next aria-label="Next scenario">›</button>
+        </div>
+        <p data-bench-scenario-description>Adjust any control or browse the demo sequence.</p>
+      </section>
     </div>
     <script type="module" src="/src/test-helpers/composer-bench.ts"></script>
   </body>

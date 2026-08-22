@@ -119,6 +119,8 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Vertically center every lower composer status band and soften info, danger, and offline borders.
 - [x] Show the canonical reconnect pill on every queued row while offline.
 - [x] Match running tasks to Plan/composer chrome and share one horizontal status row when both appear.
+- [x] Move the scenario sweep into the top rail between the view card and Composer controls.
+- [x] Default Width to Desktop and let its endpoint fill the available bench stage.
 
 ## Observed queue contract
 
