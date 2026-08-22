@@ -94,58 +94,40 @@ export type BuildChatItemsProps = {
 
 function guardianNoticeItem(notice: ChatGuardianNotice): Extract<ChatItem, { kind: "notice" }> {
   const action = notice.command ?? t("chat.systemNotice.guardian.requestedAction");
-  if (notice.kind === "approved") {
-    return {
-      kind: "notice",
-      key: notice.key,
-      icon: "shieldCheck",
-      label: t("chat.systemNotice.guardian.approvedSummary", { action }),
-      text: "",
-      timestamp: notice.timestamp,
-    };
-  }
-  if (notice.kind === "warning" || notice.kind === "reviewing") {
-    const reviewing = notice.kind === "reviewing";
-    return {
-      kind: "notice",
-      key: notice.key,
-      icon: notice.source === "system" ? "cpu" : "shieldCheck",
-      label: reviewing
-        ? t("chat.systemNotice.guardian.requestedAction")
-        : notice.source === "system"
-          ? t("common.system")
-          : t("chat.systemNotice.guardian.warningLabel"),
-      text: reviewing
-        ? action
-        : (notice.message ?? t("chat.systemNotice.guardian.warningFallback")),
-      timestamp: notice.timestamp,
-      ...(reviewing ? {} : { tone: "danger" }),
-    };
-  }
-  if (notice.kind === "strict-review-required") {
-    return {
-      kind: "notice",
-      key: notice.key,
-      icon: "shieldCheck",
-      label: t("chat.systemNotice.guardian.strictReviewRequiredLabel"),
-      text: notice.message ?? t("chat.systemNotice.guardian.strictReviewRequiredSummary"),
-      timestamp: notice.timestamp,
-      tone: "danger",
-    };
-  }
-  return {
+  const item: Extract<ChatItem, { kind: "notice" }> = {
     kind: "notice",
     key: notice.key,
-    icon: "shieldCheck",
-    label: t("chat.systemNotice.guardian.deniedLabel"),
-    text: t("chat.systemNotice.guardian.deniedSummary", {
-      action,
-      risk: notice.riskLevel ?? t("chat.systemNotice.guardian.unknownRisk"),
-      rationale: notice.rationale ?? t("chat.systemNotice.guardian.noRationale"),
-    }),
+    icon: notice.source === "system" ? "cpu" : "shieldCheck",
+    label: "",
+    text: "",
     timestamp: notice.timestamp,
-    tone: "danger",
   };
+  if (notice.kind === "approved") {
+    item.label = t("chat.systemNotice.guardian.approvedSummary", { action });
+  } else if (notice.kind === "reviewing") {
+    item.label = t("chat.systemNotice.guardian.requestedAction");
+    item.text = action;
+  } else {
+    item.tone = "danger";
+    if (notice.kind === "warning") {
+      item.label =
+        notice.source === "system"
+          ? t("common.system")
+          : t("chat.systemNotice.guardian.warningLabel");
+      item.text = notice.message ?? t("chat.systemNotice.guardian.warningFallback");
+    } else if (notice.kind === "strict-review-required") {
+      item.label = t("chat.systemNotice.guardian.strictReviewRequiredLabel");
+      item.text = notice.message ?? t("chat.systemNotice.guardian.strictReviewRequiredSummary");
+    } else {
+      item.label = t("chat.systemNotice.guardian.deniedLabel");
+      item.text = t("chat.systemNotice.guardian.deniedSummary", {
+        action,
+        risk: notice.riskLevel ?? t("chat.systemNotice.guardian.unknownRisk"),
+        rationale: notice.rationale ?? t("chat.systemNotice.guardian.noRationale"),
+      });
+    }
+  }
+  return item;
 }
 
 function isUserChatItem(item: ChatItem): boolean {
