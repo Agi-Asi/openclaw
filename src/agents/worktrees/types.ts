@@ -37,6 +37,13 @@ export type ManagedWorktreeRecord = {
   runEndCleanup?: ManagedWorktreeRunEndCleanup;
 };
 
+export type ManagedWorktreeCreationStage =
+  | "preparing"
+  | "fetching-base"
+  | "checking-out"
+  | "provisioning-files"
+  | "running-setup";
+
 export type CreateManagedWorktreeParams = {
   repoRoot: string;
   name?: string;
@@ -50,6 +57,11 @@ export type CreateManagedWorktreeParams = {
   runSetupScript?: boolean;
   /** Synchronous caller-authority guard checked at allocation commit boundaries. */
   commitGuard?: () => void;
+  /** Synchronous producer-owned stage observer. */
+  onStage?: (stage: ManagedWorktreeCreationStage) => Promise<void> | void;
+  /** Raw process output in producer order. */
+  onOutput?: (chunk: Buffer, stream: "stdout" | "stderr") => void;
+  signal?: AbortSignal;
 };
 
 export type RemoveManagedWorktreeResult = {

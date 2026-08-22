@@ -182,6 +182,37 @@ export function createSessionMutations(host: SessionMutationsHost) {
       // Creation precedes canonical rows; claim placement before any event or
       // list publication can assign this key an ordinary roster position.
       host.notifyCreated(result.key);
+      if (result.startupState) {
+        const state = host.readState();
+        const row: GatewaySessionRow = {
+          key: result.key,
+          kind: "direct",
+          label: requestParams.label,
+          displayName: requestParams.label,
+          hasActiveRun: false,
+          status: "done",
+          updatedAt: result.startupState.updatedAt,
+          startupState: result.startupState,
+        };
+        const currentResult = state.result;
+        const sessions =
+          currentResult?.sessions.filter((session) => session.key !== result.key) ?? [];
+        host.publish({
+          ...state,
+          result: {
+            ...currentResult,
+            count: sessions.length + 1,
+            defaults: currentResult?.defaults ?? {
+              modelProvider: null,
+              model: null,
+              contextTokens: null,
+            },
+            path: currentResult?.path ?? "",
+            sessions: [row, ...sessions],
+            ts: result.startupState.updatedAt,
+          },
+        });
+      }
       if (requestParams.worktree === true || Boolean(requestParams.execNode?.trim())) {
         preparedWorkSessionKeys.add(result.key.trim());
       }
@@ -190,7 +221,9 @@ export function createSessionMutations(host: SessionMutationsHost) {
       } else if (preparedWorkSessionKeys.has(result.key)) {
         host.publish({ ...host.readState() });
       }
-      const reconciliation = host.refreshReplacement(params.agentId);
+      const reconciliation = result.startupState
+        ? Promise.resolve()
+        : host.refreshReplacement(params.agentId);
       if (options.reconciliation === "background") {
         void reconciliation.catch((error: unknown) => {
           if (host.connection.isCurrent(scope)) {

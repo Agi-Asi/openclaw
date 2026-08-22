@@ -1433,6 +1433,7 @@ function installControlUiMockGateway(
       ...(label ? { displayName: label, label } : {}),
       hasActiveRun: response.runStarted === true,
       status: response.runStarted === true ? "running" : "done",
+      ...(isRecord(response.startupState) ? { startupState: response.startupState } : {}),
     });
   }
 

@@ -9,6 +9,8 @@ type ResolvedWorktreeBase = {
 export async function resolveWorktreeBase(
   repoRoot: string,
   baseRef?: string,
+  onFetch?: () => Promise<void> | void,
+  options: Parameters<typeof runGit>[2] = {},
 ): Promise<ResolvedWorktreeBase> {
   if (baseRef) {
     let gitOperand = baseRef;
@@ -16,15 +18,19 @@ export async function resolveWorktreeBase(
       // `worktree add -b` forwards its start point to `git branch`, which parses
       // options again without another `--`; normalize dashed refs before that hop.
       // Force strict lookup so repository config cannot hide ambiguous ref names.
-      const symbolic = await runGit(repoRoot, [
-        "-c",
-        "core.warnAmbiguousRefs=true",
-        "rev-parse",
-        "--symbolic-full-name",
-        "--verify",
-        "--end-of-options",
-        baseRef,
-      ]);
+      const symbolic = await runGit(
+        repoRoot,
+        [
+          "-c",
+          "core.warnAmbiguousRefs=true",
+          "rev-parse",
+          "--symbolic-full-name",
+          "--verify",
+          "--end-of-options",
+          baseRef,
+        ],
+        options,
+      );
       const fullRef = symbolic.stdout.trim();
       if (symbolic.code !== 0) {
         throw commandError("git rev-parse --symbolic-full-name --verify", symbolic);
@@ -48,14 +54,15 @@ export async function resolveWorktreeBase(
     }
     return { gitOperand, recordRef: baseRef, remote: false };
   }
-  const fetched = await runGit(repoRoot, ["fetch", "origin"]);
+  await onFetch?.();
+  const fetched = await runGit(repoRoot, ["fetch", "origin"], options);
+  options.signal?.throwIfAborted();
   if (fetched.code === 0) {
-    const remoteHead = await runGit(repoRoot, [
-      "symbolic-ref",
-      "--quiet",
-      "--short",
-      "refs/remotes/origin/HEAD",
-    ]);
+    const remoteHead = await runGit(
+      repoRoot,
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      options,
+    );
     if (remoteHead.code === 0 && remoteHead.stdout.trim()) {
       const remoteRef = remoteHead.stdout.trim();
       return { gitOperand: remoteRef, recordRef: remoteRef, remote: true };

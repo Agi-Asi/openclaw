@@ -43,6 +43,7 @@ const SESSION_TARGET_FIELDS_BY_METHOD = new Map<string, readonly SessionMutation
   ["sessions.rewind", ["sessionKey"]],
   ["sessions.send", ["key"]],
   ["sessions.steer", ["key"]],
+  ["sessions.startup.resolve", ["key"]],
   ["sessions.branches.switch", ["sessionKey"]],
   ["tools.invoke", ["sessionKey"]],
 ]);
@@ -80,6 +81,7 @@ const REQUIRED_SESSION_TARGET_METHODS = new Set([
   "sessions.reset",
   "sessions.rewind",
   "sessions.send",
+  "sessions.startup.resolve",
   "sessions.steer",
 ]);
 

@@ -30,6 +30,9 @@ type ChatSendInternalOptions = {
   trustedSystemInput?: boolean;
   toolsAllow?: string[];
   skillWorkshopProposalRevision?: SkillWorkshopProposalRevisionConstraint;
+  onDispatchSettled?: (
+    outcome: { ok: true } | { ok: false; error: unknown },
+  ) => Promise<void> | void;
 };
 
 async function handleChatSendWithOptions(
@@ -298,6 +301,7 @@ async function handleChatSendWithOptions(
       },
       turn: preparedUserTurn,
       userTurn,
+      ...(options?.onDispatchSettled ? { onDispatchSettled: options.onDispatchSettled } : {}),
     });
   } catch (err) {
     await handleChatSendSetupError({
@@ -315,8 +319,14 @@ export async function handleChatSend(
   options: GatewayRequestHandlerOptions,
   onAdmissionOwned?: () => Promise<boolean>,
   externalAuthorityAdmission?: ChatSendExternalAuthorityAdmission,
+  internalOptions?: ChatSendInternalOptions,
 ): Promise<void> {
-  await handleChatSendWithOptions(options, onAdmissionOwned, externalAuthorityAdmission);
+  await handleChatSendWithOptions(
+    options,
+    onAdmissionOwned,
+    externalAuthorityAdmission,
+    internalOptions,
+  );
 }
 
 /** Dispatches an internally delegated turn within its caller-owned tool boundary. */

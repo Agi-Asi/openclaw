@@ -1,6 +1,8 @@
 // Store entry shape normalization rejects unsafe persisted metadata before runtime use.
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { Value } from "typebox/value";
+import { SessionStartupStateSchema } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
 import { normalizeSessionIconValue } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { validateSessionId } from "./paths.js";
@@ -69,6 +71,9 @@ export function projectCanonicalSessionEntryShape(value: Record<string, unknown>
     canonicalValue.icon = icon;
   } else {
     delete canonicalValue.icon;
+  }
+  if (!Value.Check(SessionStartupStateSchema, canonicalValue.startupState)) {
+    delete canonicalValue.startupState;
   }
   const legacyPendingText = normalizeOptionalString(pendingFinalDeliveryText);
   const legacySelectedModel = normalizeOptionalString(fallbackNoticeSelectedModel);

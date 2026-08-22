@@ -250,6 +250,7 @@ function sameChatItemsStructuralInput(
     previous.showToolCalls === next.showToolCalls &&
     previous.persistCommentary === next.persistCommentary &&
     previous.runWorking === next.runWorking &&
+    previous.worktreeStartup === next.worktreeStartup &&
     previous.runActive === next.runActive &&
     previous.questionPrompts === next.questionPrompts &&
     previous.loading === next.loading &&

@@ -35,6 +35,14 @@ const externalAuthorityAdmission: ChatSendExternalAuthorityAdmission = {
 export function handleDirectExternalChatSend(
   options: GatewayRequestHandlerOptions,
   onAdmissionOwned?: () => Promise<boolean>,
+  onDispatchSettled?: (
+    outcome: { ok: true } | { ok: false; error: unknown },
+  ) => Promise<void> | void,
 ): Promise<void> {
-  return handleChatSend(options, onAdmissionOwned, externalAuthorityAdmission);
+  return handleChatSend(
+    options,
+    onAdmissionOwned,
+    externalAuthorityAdmission,
+    onDispatchSettled ? { onDispatchSettled } : undefined,
+  );
 }

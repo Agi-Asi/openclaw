@@ -25,7 +25,12 @@ type WorktreeListEntry = {
 export async function runGit(
   cwd: string,
   args: string[],
-  options: { env?: NodeJS.ProcessEnv; input?: string | Uint8Array } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    input?: string | Uint8Array;
+    signal?: AbortSignal;
+    onOutputChunk?: (chunk: Buffer, stream: "stdout" | "stderr") => void;
+  } = {},
 ): Promise<GitResult> {
   return await executeGitCommand(cwd, args, options);
 }

@@ -622,13 +622,21 @@ export class DraftSubmissionFlow {
           message,
           sessionKey: result.key,
         });
-      if (result.initialRun.status === "started") {
+      if (result.initialRun.status === "started" || result.initialRun.status === "initializing") {
         prepareInitialUserMessageHandoff(
           context.initialUserMessage,
           result.key,
           { text: message, attachments, createdAt: submittedAt },
           submissionClient,
-          { runId: result.initialRun.runId, messageSeq: result.initialRun.messageSeq },
+          {
+            runId:
+              result.initialRun.status === "initializing"
+                ? result.initialRun.operationId
+                : result.initialRun.runId,
+            ...(result.initialRun.status === "started"
+              ? { messageSeq: result.initialRun.messageSeq }
+              : {}),
+          },
         );
       }
       await this.draftPersistence.clearSubmittedDraft();

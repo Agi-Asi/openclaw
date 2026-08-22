@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import type { SessionStartupState } from "../../../../../packages/gateway-protocol/src/index.js";
 import "../../../components/elapsed-time.ts";
 import type { ApplicationPlacementStartupStatus } from "../../../app/session-placement-startup.ts";
 import "../../../components/working-phrase.ts";
@@ -72,6 +73,89 @@ export function renderPlacementStartupStatus(
         ></openclaw-elapsed-time>
       </span>
     </div>
+  `;
+}
+
+const WORKTREE_STAGE_LABEL_KEYS = {
+  queued: "chat.worktreeStartup.queued",
+  preparing: "chat.worktreeStartup.preparing",
+  "fetching-base": "chat.worktreeStartup.fetchingBase",
+  "checking-out": "chat.worktreeStartup.checkingOut",
+  "provisioning-files": "chat.worktreeStartup.provisioningFiles",
+  "running-setup": "chat.worktreeStartup.runningSetup",
+} as const satisfies Record<SessionStartupState["stage"], Parameters<typeof t>[0]>;
+
+function worktreeStartupLabel(status: SessionStartupState): string {
+  if (status.status === "initializing") {
+    return t(WORKTREE_STAGE_LABEL_KEYS[status.stage]);
+  }
+  if (status.status === "failed") {
+    return t("chat.worktreeStartup.failed", { error: status.error });
+  }
+  if (status.status === "completed") {
+    return t("chat.worktreeStartup.completed");
+  }
+  return status.result;
+}
+
+export function renderWorktreeStartupStatus(
+  status: SessionStartupState | null | undefined,
+  options: {
+    defaultOpen?: boolean;
+    onCancel?: () => void;
+    onWorkLocal?: () => void;
+  } = {},
+) {
+  if (!status) {
+    return nothing;
+  }
+  const actionable = status.status === "initializing";
+  const hasBody = Boolean(status.output) || actionable;
+  const open =
+    options.defaultOpen ?? (status.status === "initializing" || status.status === "failed");
+  return html`
+    <details class="chat-tool-msg-collapse chat-worktree-startup" ?open=${hasBody && open}>
+      <summary
+        class="chat-inline-disclosure chat-tool-msg-summary chat-tool-row ${status.status ===
+        "failed"
+          ? "chat-tool-msg-summary--error"
+          : ""}"
+        role="status"
+      >
+        <span class="chat-tool-msg-summary__icon">${icons.folder}</span>
+        <span class="chat-tool-msg-summary__label">${worktreeStartupLabel(status)}</span>
+        ${hasBody
+          ? html`<span class="chat-inline-disclosure__chevron" aria-hidden="true"
+              >${icons.chevronDown}</span
+            >`
+          : nothing}
+      </summary>
+      ${hasBody
+        ? html`<div class="chat-tool-msg-body">
+            ${status.output
+              ? html`<div class="chat-worktree-startup__code"><pre>${status.output}</pre></div>`
+              : nothing}
+            ${actionable
+              ? html`<div class="chat-worktree-startup__actions">
+                  ${options.onCancel
+                    ? html`<button class="btn btn--sm" type="button" @click=${options.onCancel}>
+                        ${t("common.cancel")}
+                      </button>`
+                    : nothing}
+                  ${options.onWorkLocal
+                    ? html`<button
+                        class="btn btn--sm btn--primary"
+                        type="button"
+                        @click=${options.onWorkLocal}
+                      >
+                        ${t("chat.worktreeStartup.workLocal")}
+                      </button>`
+                    : nothing}
+                </div>`
+              : nothing}
+          </div>`
+        : nothing}
+    </details>
   `;
 }
 

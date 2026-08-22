@@ -338,7 +338,11 @@ async function canResetFailedWorktreeAdd(
   return branchExists.code === 1;
 }
 
-async function runSetupScript(repoRoot: string, worktreePath: string): Promise<void> {
+async function runSetupScript(
+  repoRoot: string,
+  worktreePath: string,
+  params: Pick<CreateManagedWorktreeParams, "onOutput" | "signal">,
+): Promise<void> {
   const setupScript = path.join(repoRoot, ".openclaw", "worktree-setup.sh");
   const stat = await fs.stat(setupScript).catch(() => undefined);
   if (!stat?.isFile() || (stat.mode & 0o111) === 0) {
@@ -351,6 +355,8 @@ async function runSetupScript(repoRoot: string, worktreePath: string): Promise<v
       OPENCLAW_SOURCE_TREE_PATH: repoRoot,
       OPENCLAW_WORKTREE_PATH: worktreePath,
     },
+    signal: params.signal,
+    onOutputChunk: params.onOutput,
   });
   if (result.code !== 0) {
     throw new Error(
@@ -598,7 +604,9 @@ export class ManagedWorktreeService {
   }
 
   async create(params: CreateManagedWorktreeParams): Promise<ManagedWorktreeRecord> {
+    await params.onStage?.("preparing");
     const repository = await resolveRepository(params.repoRoot);
+    params.signal?.throwIfAborted();
     if (params.ownerId) {
       const ownerKind = params.ownerKind ?? "manual";
       const ownerId = params.ownerId;
@@ -660,6 +668,7 @@ export class ManagedWorktreeService {
     repository: Awaited<ReturnType<typeof resolveRepository>>,
     inferredName: string,
   ): Promise<ManagedWorktreeRecord> {
+    params.signal?.throwIfAborted();
     const root = path.join(await this.worktreesRoot(), repository.fingerprint);
     const name = validateName(
       params.name ??
@@ -708,7 +717,13 @@ export class ManagedWorktreeService {
     if (branchExists.code !== 1) {
       throw commandError("git show-ref --verify", branchExists);
     }
-    const base = await resolveWorktreeBase(repository.repoRoot, params.baseRef);
+    const commandOptions = { signal: params.signal, onOutputChunk: params.onOutput };
+    const base = await resolveWorktreeBase(
+      repository.repoRoot,
+      params.baseRef,
+      async () => await params.onStage?.("fetching-base"),
+      commandOptions,
+    );
     params.commitGuard?.();
     await fs.mkdir(root, { recursive: true });
     let gitBase = base.gitOperand;
@@ -724,7 +739,12 @@ export class ManagedWorktreeService {
       worktreePath,
       gitBase,
     ];
-    let added = await runGit(repository.repoRoot, worktreeAddArgs());
+    await params.onStage?.("checking-out");
+    let added = await runGit(repository.repoRoot, worktreeAddArgs(), commandOptions);
+    if (params.signal?.aborted) {
+      await resetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch);
+      params.signal.throwIfAborted();
+    }
     if (added.code !== 0 && base.remote) {
       if (!(await canResetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch, added))) {
         throw commandError("git worktree add", added);
@@ -732,17 +752,25 @@ export class ManagedWorktreeService {
       await resetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch);
       gitBase = "HEAD";
       recordBase = "HEAD";
-      added = await runGit(repository.repoRoot, worktreeAddArgs());
+      added = await runGit(repository.repoRoot, worktreeAddArgs(), commandOptions);
+      if (params.signal?.aborted) {
+        await resetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch);
+        params.signal.throwIfAborted();
+      }
     }
     if (added.code !== 0) {
       throw commandError("git worktree add", added);
     }
     let provisionedPaths: string[];
     try {
+      await params.onStage?.("provisioning-files");
       provisionedPaths = await provisionIncludedFiles(repository.sourceRoot, worktreePath);
+      params.signal?.throwIfAborted();
       if (runRepositorySetup) {
-        await runSetupScript(repository.sourceRoot, worktreePath);
+        await params.onStage?.("running-setup");
+        await runSetupScript(repository.sourceRoot, worktreePath, params);
       }
+      params.signal?.throwIfAborted();
       params.commitGuard?.();
     } catch (error) {
       try {

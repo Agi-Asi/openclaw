@@ -81,6 +81,7 @@ export function buildGatewaySessionEventFields(params: {
     ...(sessionRow.permissionMode !== undefined && sessionRow.sessionRoot !== undefined
       ? { sessionRoot: sessionRow.sessionRoot }
       : {}),
+    startupState: sessionRow.startupState ?? null,
     forkedFromParent: sessionEntryForkedFromParent(sessionRow) ? true : undefined,
     spawnDepth: sessionRow.spawnDepth,
     subagentRole: sessionRow.subagentRole,

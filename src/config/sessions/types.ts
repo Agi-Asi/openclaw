@@ -7,7 +7,11 @@ import type {
 } from "@openclaw/acp-core/types";
 import { asNonNegativeFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
-import type { SessionRow, SessionRunStatus } from "../../../packages/gateway-protocol/src/index.js";
+import type {
+  SessionRow,
+  SessionRunStatus,
+  SessionStartupState,
+} from "../../../packages/gateway-protocol/src/index.js";
 import type { QueueMode } from "../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
@@ -330,6 +334,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     pluginExtensions?: Record<string, Record<string, SessionPluginJsonValue>>;
     /** Trusted session initialization is incomplete; all work admission stays blocked. */
     initializationPending?: true;
+    /** Durable operator-visible state for Gateway-owned session startup. */
+    startupState?: SessionStartupState;
     /** Top-level SessionEntry mirror slots owned by plugin session extensions. */
     pluginExtensionSlotKeys?: Record<string, Record<string, string>>;
     /** Durable one-shot prompt additions drained before the next agent turn. */

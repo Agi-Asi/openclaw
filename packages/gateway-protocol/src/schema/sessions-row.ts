@@ -1,6 +1,7 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
+import { ChatAttachmentsSchema } from "./logs-chat.js";
 import { NonEmptyString } from "./primitives.js";
 import { SessionClassificationSchema, SessionPeerKindSchema } from "./session-classification.js";
 import { SessionSharingRoleSchema, SessionVisibilitySchema } from "./sessions-sharing-values.js";
@@ -36,6 +37,79 @@ export const SessionOwnerSchema = closedObject({
   assignedBy: Type.Optional(SessionCreatedActorSchema),
   assignedAt: Type.Optional(Type.Number({ minimum: 0 })),
 });
+
+export const SessionStartupStageSchema = Type.Union([
+  Type.Literal("queued"),
+  Type.Literal("preparing"),
+  Type.Literal("fetching-base"),
+  Type.Literal("checking-out"),
+  Type.Literal("provisioning-files"),
+  Type.Literal("running-setup"),
+]);
+
+const SessionStartupInitialTurnSchema = closedObject({
+  message: Type.Optional(Type.String({ maxLength: 100_000 })),
+  attachments: Type.Optional(ChatAttachmentsSchema),
+});
+
+const SessionStartupOutputSchema = Type.String({ maxLength: 16_384 });
+export const SessionStartupStateSchema = Type.Union([
+  closedObject({
+    kind: Type.Literal("managed-worktree"),
+    status: Type.Literal("initializing"),
+    operationId: NonEmptyString,
+    stage: SessionStartupStageSchema,
+    startedAt: Type.Number({ minimum: 0 }),
+    updatedAt: Type.Number({ minimum: 0 }),
+    output: Type.Optional(SessionStartupOutputSchema),
+    initialTurn: Type.Optional(SessionStartupInitialTurnSchema),
+  }),
+  closedObject({
+    kind: Type.Literal("managed-worktree"),
+    status: Type.Literal("failed"),
+    operationId: NonEmptyString,
+    stage: SessionStartupStageSchema,
+    startedAt: Type.Number({ minimum: 0 }),
+    updatedAt: Type.Number({ minimum: 0 }),
+    error: Type.String({ minLength: 1, maxLength: 512 }),
+    retryable: Type.Boolean(),
+    output: Type.Optional(SessionStartupOutputSchema),
+    initialTurn: Type.Optional(SessionStartupInitialTurnSchema),
+  }),
+  closedObject({
+    kind: Type.Literal("managed-worktree"),
+    status: Type.Literal("completed"),
+    operationId: NonEmptyString,
+    stage: Type.Literal("running-setup"),
+    startedAt: Type.Number({ minimum: 0 }),
+    updatedAt: Type.Number({ minimum: 0 }),
+    worktreePath: NonEmptyString,
+    output: Type.Optional(SessionStartupOutputSchema),
+    initialTurn: Type.Optional(SessionStartupInitialTurnSchema),
+  }),
+  closedObject({
+    kind: Type.Literal("managed-worktree"),
+    status: Type.Literal("cancelled"),
+    operationId: NonEmptyString,
+    stage: SessionStartupStageSchema,
+    startedAt: Type.Number({ minimum: 0 }),
+    updatedAt: Type.Number({ minimum: 0 }),
+    output: Type.Optional(SessionStartupOutputSchema),
+    result: NonEmptyString,
+    initialTurn: Type.Optional(SessionStartupInitialTurnSchema),
+  }),
+  closedObject({
+    kind: Type.Literal("managed-worktree"),
+    status: Type.Literal("local"),
+    operationId: NonEmptyString,
+    stage: SessionStartupStageSchema,
+    startedAt: Type.Number({ minimum: 0 }),
+    updatedAt: Type.Number({ minimum: 0 }),
+    output: Type.Optional(SessionStartupOutputSchema),
+    result: NonEmptyString,
+    initialTurn: Type.Optional(SessionStartupInitialTurnSchema),
+  }),
+]);
 
 /** Stable Gateway session row fields; mutation envelopes may add null tombstones. */
 export const SessionRowSchema = Type.Object(
@@ -108,6 +182,7 @@ export const SessionRowSchema = Type.Object(
         repoRoot: Type.String(),
       }),
     ),
+    startupState: Type.Optional(SessionStartupStateSchema),
     execNode: Type.Optional(Type.String()),
     execCwd: Type.Optional(Type.String()),
     spawnedWorkspaceDir: Type.Optional(Type.String()),
@@ -157,6 +232,8 @@ export const SessionRowSchema = Type.Object(
 export type SessionCreatedActor = Static<typeof SessionCreatedActorSchema>;
 export type SessionPermissionMode = Static<typeof SessionPermissionModeSchema>;
 export type SessionOwner = Static<typeof SessionOwnerSchema>;
+export type SessionStartupStage = Static<typeof SessionStartupStageSchema>;
+export type SessionStartupState = Static<typeof SessionStartupStateSchema>;
 export type SessionToolOverrides = Static<typeof SessionToolOverridesSchema>;
 export type SessionRow = Static<typeof SessionRowSchema>;
 export type SessionRunStatus = NonNullable<SessionRow["status"]>;

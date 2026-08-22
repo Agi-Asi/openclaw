@@ -1,5 +1,5 @@
 // Chat-item projection, expansion, reply hydration, and guarded row rendering.
-import { nothing, type TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { classifySessionKind } from "../../../../../src/sessions/classify-session-kind.js";
 import { i18n } from "../../../i18n/index.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
@@ -60,7 +60,7 @@ import {
 } from "./chat-transcript-render-guard.ts";
 import { renderChatTypingIndicator } from "./chat-typing-indicator.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
-import { renderTurnRecapRow } from "./chat-working-indicator.ts";
+import { renderTurnRecapRow, renderWorktreeStartupStatus } from "./chat-working-indicator.ts";
 
 type ChatTranscriptProjection = {
   isDirectThread: boolean;
@@ -151,6 +151,7 @@ export function projectChatTranscript(
     showToolCalls: props.showToolCalls,
     persistCommentary: props.persistCommentary,
     runWorking: Boolean(props.runWorking),
+    worktreeStartup: props.worktreeStartup,
     runActive: Boolean(props.runActive),
     questionPrompts: props.questionPrompts,
     loading: props.loading,
@@ -571,6 +572,26 @@ export function projectChatTranscript(
         : [],
     ),
   );
+  if (props.worktreeStartup) {
+    const userItem = transcriptItems.findLast(
+      (item) => item.kind === "group" && item.role.toLowerCase() === "user",
+    );
+    const userRowIndex = userItem
+      ? transcriptRows.findIndex((row) => row.kind === "item" && row.key === userItem.key)
+      : -1;
+    transcriptRows.splice(userRowIndex + 1, 0, {
+      kind: "content",
+      key: `worktree-startup:${props.worktreeStartup.operationId}`,
+      content: html`<div class="chat-group worktree" data-chat-row-key="worktree-startup">
+        <div class="chat-group-messages">
+          ${renderWorktreeStartupStatus(props.worktreeStartup, {
+            onCancel: props.onCancelWorktreeStartup,
+            onWorkLocal: props.onWorktreeStartupLocal,
+          })}
+        </div>
+      </div>`,
+    });
+  }
   const realtimeConversation = renderRealtimeTalkConversation(props);
   if (realtimeConversation !== nothing) {
     transcriptRows.push({
@@ -587,7 +608,7 @@ export function projectChatTranscript(
     });
   }
   const backgroundTasks =
-    !props.runWorking && !isEmpty && !showLoadingSkeleton
+    !props.worktreeStartup && !props.runWorking && !isEmpty && !showLoadingSkeleton
       ? renderBackgroundTasksStatusRow(props.backgroundTasks)
       : nothing;
   if (backgroundTasks !== nothing) {
@@ -629,6 +650,7 @@ export function projectChatTranscript(
     Boolean(props.runActive),
     Boolean(props.runWorking),
     props.startupStatus?.phase,
+    props.worktreeStartup,
     Boolean(props.waitingApproval),
     props.questionPrompts,
     Boolean(props.autoExpandToolCalls),

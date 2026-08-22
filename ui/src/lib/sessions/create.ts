@@ -1,10 +1,15 @@
-import type { SessionsCreateResult } from "../../../../packages/gateway-protocol/src/index.js";
+import type {
+  SessionStartupState,
+  SessionsCreateResult,
+} from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 
 export type SessionCreateOutcome = {
   key: string;
+  startupState?: SessionStartupState;
   initialRun:
     | { status: "idle" }
+    | { status: "initializing"; operationId: string }
     | { status: "started"; runId?: string; messageSeq?: number }
     | { status: "rejected"; error: string };
 };
@@ -86,6 +91,13 @@ export async function requestSessionCreate(
         status: "rejected",
         error: message || "The session was created, but its first message could not be sent.",
       },
+    };
+  }
+  if (result.startupState?.status === "initializing") {
+    return {
+      key,
+      startupState: result.startupState,
+      initialRun: { status: "initializing", operationId: result.startupState.operationId },
     };
   }
   return { key, initialRun: { status: "idle" } };

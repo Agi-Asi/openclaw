@@ -5,6 +5,7 @@ import type {
   ProgressCard,
   SessionPlacementDiskSpace,
   SessionSharingRole,
+  SessionStartupState,
   SessionSuggestion,
   SessionSuggestionResolution,
 } from "../../../../packages/gateway-protocol/src/index.js";
@@ -97,6 +98,9 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     canAbort?: boolean;
     runStatus?: ChatRunUiStatus | null;
     startupStatus?: ChatRunStartupStatus | null;
+    worktreeStartup?: SessionStartupState | null;
+    onCancelWorktreeStartup?: () => void;
+    onWorktreeStartupLocal?: () => void;
     waitingApproval?: boolean;
     compactionStatus?: CompactionStatus | null;
     fallbackStatus?: FallbackStatus | null;
@@ -328,6 +332,9 @@ export function renderChat(props: ChatProps) {
       persistCommentary: props.persistCommentary,
       runActive: Boolean(props.canAbort),
       runWorking: isChatRunWorking(props),
+      worktreeStartup: props.worktreeStartup,
+      onCancelWorktreeStartup: props.onCancelWorktreeStartup,
+      onWorktreeStartupLocal: props.onWorktreeStartupLocal,
       startupStatus: props.startupStatus,
       waitingApproval: props.waitingApproval,
       questionPrompts: props.gatewayQuestionPrompts,

@@ -335,6 +335,8 @@ export async function createGatewaySession(params: {
   loadGatewayModelCatalog?: () => Promise<ModelCatalogEntry[]>;
   /** Trusted in-process initializer; never populated from public Gateway params. */
   initialEntry?: TrustedInitialSessionEntry;
+  /** Gateway-owned durable startup state for a newly accepted session. */
+  startupState?: SessionEntry["startupState"];
   /** Public callers need admin before reconfiguring an adopted keyed session. */
   allowExistingModelSelection?: boolean;
   /** Admitted operator scopes; omitted only by trusted in-process callers. */
@@ -1127,6 +1129,9 @@ export async function createGatewaySession(params: {
             : {}),
           ...(params.initialEntry?.initializationPending === true
             ? { initializationPending: true }
+            : {}),
+          ...(params.startupState
+            ? { initializationPending: true as const, startupState: params.startupState }
             : {}),
           ...(params.initialEntry?.modelSelectionLocked === true
             ? { modelSelectionLocked: true }

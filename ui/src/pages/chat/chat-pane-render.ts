@@ -21,6 +21,7 @@ import { hasSessionPresenceViewers } from "../../lib/presence-users.ts";
 import { buildAgentMainSessionKey } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
 import { generateUUID } from "../../lib/uuid.ts";
+import { restoreChatApiAttachments } from "./attachment-api.ts";
 import { clearChatHistory } from "./chat-history.ts";
 import { resolveChatMessageAccess } from "./chat-message-access.ts";
 import { requiresChatModelSetup } from "./chat-model-setup.ts";
@@ -58,6 +59,7 @@ import { hasAbortableSessionRun } from "./run-lifecycle.ts";
 import { scheduleChatScroll } from "./scroll.ts";
 import { resolveActiveRunOutputTokens, resolveChatProjectionRunId } from "./tool-stream.ts";
 import { configureToolTitleFetcher } from "./tool-titles.ts";
+import { buildUserChatMessageContentBlocks } from "./user-message-content.ts";
 import { workspaceResultConflictFromPlacement } from "./workspace-conflict.ts";
 
 export class ChatPane extends ChatPaneLayoutRender {
@@ -165,6 +167,24 @@ export class ChatPane extends ChatPaneLayoutRender {
     const placementStartup = this.context.placementStartup.get(state.sessionKey);
     const placementStartupPending =
       placementStartup !== null && placementStartup.phase !== "failed";
+    const worktreeStartup = selectedSession?.startupState ?? null;
+    const worktreeStartupPending = worktreeStartup?.status === "initializing";
+    const startupInitialMessage = worktreeStartup?.initialTurn?.message;
+    const startupAttachments = restoreChatApiAttachments(worktreeStartup?.initialTurn?.attachments);
+    const chatMessages =
+      worktreeStartup?.initialTurn && state.chatMessages.length === 0
+        ? [
+            {
+              role: "user",
+              content: buildUserChatMessageContentBlocks(
+                startupInitialMessage ?? "",
+                startupAttachments,
+              ),
+              timestamp: worktreeStartup.startedAt,
+              __openclaw: { idempotencyKey: `${worktreeStartup.operationId}:user` },
+            },
+          ]
+        : state.chatMessages;
     const sessionParticipationBlocked = this.sessionParticipationTracker.resolve({
       catalog: catalogKey !== null,
       listLoading: state.sessionsLoading,
@@ -202,7 +222,9 @@ export class ChatPane extends ChatPaneLayoutRender {
         ? t("chat.sessionSharing.readOnlyNotice")
         : placementStartupPending
           ? t("newSession.starting")
-          : null;
+          : worktreeStartupPending
+            ? t("chat.startupStatus.preparingWorkspace")
+            : null;
     const typingEnabled =
       multiIdentity &&
       hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
@@ -298,10 +320,48 @@ export class ChatPane extends ChatPaneLayoutRender {
       loading: catalogKey ? this.catalogLoading : state.chatLoading,
       sending:
         placementStartupPending ||
+        worktreeStartupPending ||
         state.chatSending ||
         this.recoveringSession ||
         this.sessionSuggestionAddOperation !== undefined,
       placementStartup,
+      worktreeStartup,
+      onCancelWorktreeStartup:
+        worktreeStartupPending &&
+        state.client &&
+        hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
+        isGatewayMethodAdvertised(gatewaySnapshot, "sessions.startup.resolve") === true
+          ? () => {
+              void state.client
+                ?.request("sessions.startup.resolve", {
+                  key: selectedSession?.key ?? state.sessionKey,
+                  operationId: worktreeStartup.operationId,
+                  action: "cancel",
+                })
+                .catch((error: unknown) => {
+                  state.lastError = formatUiError(error);
+                  state.requestUpdate?.();
+                });
+            }
+          : undefined,
+      onWorktreeStartupLocal:
+        worktreeStartupPending &&
+        state.client &&
+        hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
+        isGatewayMethodAdvertised(gatewaySnapshot, "sessions.startup.resolve") === true
+          ? () => {
+              void state.client
+                ?.request("sessions.startup.resolve", {
+                  key: selectedSession?.key ?? state.sessionKey,
+                  operationId: worktreeStartup.operationId,
+                  action: "work-local",
+                })
+                .catch((error: unknown) => {
+                  state.lastError = formatUiError(error);
+                  state.requestUpdate?.();
+                });
+            }
+          : undefined,
       onRetrySessionPlacementStartup: placementStartup?.retryable
         ? () => this.context.placementStartup.retry(state.sessionKey)
         : undefined,
@@ -321,7 +381,7 @@ export class ChatPane extends ChatPaneLayoutRender {
       onGatewayQuestionSubmit: (id, answers) =>
         submitQuestionPrompt(this.questionPromptState, id, answers),
       onGatewayQuestionSkip: (id) => cancelQuestionPrompt(this.questionPromptState, id),
-      messages: catalogKey ? this.catalogMessages : state.chatMessages,
+      messages: catalogKey ? this.catalogMessages : chatMessages,
       historyPagination:
         historyHasMore || this.loadingOlder
           ? {
@@ -371,7 +431,8 @@ export class ChatPane extends ChatPaneLayoutRender {
           !selectedSessionArchived &&
           !restartRecoveryTombstoned &&
           (!sessionParticipationBlocked || suggestionViewer) &&
-          !placementStartupPending,
+          !placementStartupPending &&
+          !worktreeStartupPending,
       disabledReason: catalogDisabledReason ?? disabledReason,
       disabledBanner: this.sessionDisabledBanner({
         catalogDisabledReason,

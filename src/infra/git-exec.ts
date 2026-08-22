@@ -11,12 +11,19 @@ type GitCommandResult = {
 export async function executeGitCommand(
   cwd: string,
   args: string[],
-  options: { env?: NodeJS.ProcessEnv; input?: string | Uint8Array } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    input?: string | Uint8Array;
+    signal?: AbortSignal;
+    onOutputChunk?: (chunk: Buffer, stream: "stdout" | "stderr") => void;
+  } = {},
 ): Promise<GitCommandResult> {
   return await runCommandWithTimeout(["git", "-C", cwd, ...args], {
     timeoutMs: GIT_TIMEOUT_MS,
     env: options.env,
     input: options.input,
+    signal: options.signal,
+    onOutputChunk: options.onOutputChunk,
   });
 }
 

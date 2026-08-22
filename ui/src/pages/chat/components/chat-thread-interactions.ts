@@ -2,6 +2,7 @@
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
+import type { SessionStartupState } from "../../../../../packages/gateway-protocol/src/index.js";
 import type { SessionsListResult } from "../../../api/types.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
 import { copyMarkdownLabel } from "../../../components/copy-button.ts";
@@ -80,6 +81,9 @@ export type ChatThreadProps = {
   persistCommentary?: boolean;
   runActive?: boolean;
   runWorking?: boolean;
+  worktreeStartup?: SessionStartupState | null;
+  onCancelWorktreeStartup?: () => void;
+  onWorktreeStartupLocal?: () => void;
   startupStatus?: ChatRunStartupStatus | null;
   waitingApproval?: boolean;
   questionPrompts?: readonly QuestionPrompt[];

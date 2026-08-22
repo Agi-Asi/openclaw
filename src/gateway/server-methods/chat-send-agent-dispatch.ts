@@ -80,6 +80,9 @@ type StartChatDispatchParams = {
   };
   turn: ReturnType<typeof prepareChatSendUserTurn>;
   userTurn: ReturnType<typeof createGatewayChatUserTurnController>;
+  onDispatchSettled?: (
+    outcome: { ok: true } | { ok: false; error: unknown },
+  ) => Promise<void> | void;
 };
 
 export function startChatDispatch(params: StartChatDispatchParams): void {
@@ -100,6 +103,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
     timing,
     turn,
     userTurn,
+    onDispatchSettled,
   } = params;
   const { imageOrder } = attachments;
   const {
@@ -211,6 +215,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
     }
     emitServerTiming("first-assistant-event", undefined, dispatchStartedAtMs);
   };
+  let dispatchError: unknown;
   const dispatch = replyDispatch
     .runAgentMediaTranscript(gatewayWorkAdmission, () =>
       measureDiagnosticsTimelineSpan(
@@ -410,6 +415,11 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
               .map((payload) => payload.text?.trim())
               .filter((text): text is string => Boolean(text))
               .join(" | ") || undefined;
+          if (hasReturnedAgentError) {
+            dispatchError = new Error(
+              returnedAgentErrorMessage ?? "agent returned an error payload",
+            );
+          }
           if (
             hasReturnedAgentError &&
             !userTurnRecorder.hasPersisted() &&
@@ -510,7 +520,10 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
         });
       }
     })
-    .catch(dispatchErrorLifecycle.handleError);
+    .catch(async (error: unknown) => {
+      dispatchError = error;
+      await dispatchErrorLifecycle.handleError(error);
+    });
   void (async () => {
     try {
       await dispatch;
@@ -523,6 +536,9 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
         // in chat-send-admission.ts: unreferenced staged media is discarded.
         void discardPreparedInboundMedia(attachments.offloadedRefs);
       }
+      await onDispatchSettled?.(
+        dispatchError === undefined ? { ok: true } : { ok: false, error: dispatchError },
+      );
     }
   })();
   // Title work starts at turn admission, concurrently with the launched run. It must never run

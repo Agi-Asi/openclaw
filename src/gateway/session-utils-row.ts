@@ -551,6 +551,7 @@ export function buildGatewaySessionRow(params: {
       ? { sessionRoot: entry.sessionRoot }
       : {}),
     worktree: entry?.worktree,
+    startupState: entry?.startupState,
     execNode: entry?.execNode,
     execCwd: entry?.execCwd,
     forkedFromParent: sessionEntryForkedFromParent(entry) ? true : undefined,

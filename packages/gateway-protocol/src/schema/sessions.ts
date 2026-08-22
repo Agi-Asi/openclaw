@@ -8,7 +8,7 @@ import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString, SessionLabelString } from "./primitives.js";
 import { SessionsCreateParamsSchema } from "./sessions-create.js";
 import { SessionsRecoverParamsSchema, SessionsRecoverResultSchema } from "./sessions-recover.js";
-import { SessionOwnerSchema } from "./sessions-row.js";
+import { SessionOwnerSchema, SessionStartupStateSchema } from "./sessions-row.js";
 
 export { SessionsCreateParamsSchema };
 export { SessionsRecoverParamsSchema, SessionsRecoverResultSchema };
@@ -42,14 +42,18 @@ export {
   SessionPermissionModeSchema,
   SessionOwnerSchema,
   SessionRowSchema,
+  SessionStartupStageSchema,
   SessionToolOverridesSchema,
   type SessionCreatedActor,
   type SessionOwner,
   type SessionPermissionMode,
   type SessionRow,
   type SessionRunStatus,
+  type SessionStartupStage,
+  type SessionStartupState,
   type SessionToolOverrides,
 } from "./sessions-row.js";
+export { SessionStartupStateSchema } from "./sessions-row.js";
 
 export const SESSION_OBSERVER_HEALTH_VALUES = [
   "on-track",
@@ -499,9 +503,18 @@ export const SessionsCreateResultSchema = Type.Object(
     messageSeq: Type.Optional(Type.Integer({ minimum: 1 })),
     runError: Type.Optional(ErrorShapeSchema),
     worktree: Type.Optional(SessionWorktreeInfoSchema),
+    startupState: Type.Optional(SessionStartupStateSchema),
   },
   { additionalProperties: true },
 );
+
+export const SessionsStartupResolveParamsSchema = closedObject({
+  key: NonEmptyString,
+  operationId: NonEmptyString,
+  action: Type.Union([Type.Literal("cancel"), Type.Literal("work-local")]),
+});
+
+export const SessionsStartupResolveResultSchema = closedObject({ ok: Type.Literal(true) });
 
 /** Sends one message into an existing session. */
 export const SessionsSendParamsSchema = closedObject({
@@ -863,6 +876,8 @@ export type SessionsBranchesSwitchResult = Static<typeof SessionsBranchesSwitchR
 export type SessionWorktreeInfo = Static<typeof SessionWorktreeInfoSchema>;
 export type SessionsCreateParams = Static<typeof SessionsCreateParamsSchema>;
 export type SessionsCreateResult = Static<typeof SessionsCreateResultSchema>;
+export type SessionsStartupResolveParams = Static<typeof SessionsStartupResolveParamsSchema>;
+export type SessionsStartupResolveResult = Static<typeof SessionsStartupResolveResultSchema>;
 export type SessionsRecoverParams = Static<typeof SessionsRecoverParamsSchema>;
 export type SessionsRecoverResult = Static<typeof SessionsRecoverResultSchema>;
 export type SessionsSendParams = Static<typeof SessionsSendParamsSchema>;

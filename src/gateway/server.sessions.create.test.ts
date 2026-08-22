@@ -1706,7 +1706,7 @@ test("sessions.create runs an existing managed worktree cwd for initial and foll
   }
 });
 
-test("sessions.create preserves a committed worktree when initial-turn setup fails", async () => {
+test("sessions.create records a rejected deferred initial turn without losing its worktree", async () => {
   const openClawState = await createOpenClawTestState({
     layout: "state-only",
     prefix: "openclaw-session-worktree-post-commit-failure-",
@@ -1717,21 +1717,30 @@ test("sessions.create preserves a committed worktree when initial-turn setup fai
   const { storePath } = await createSessionStoreDir();
   const key = "agent:main:dashboard:post-commit-worktree";
   let worktreeId: string | undefined;
-  sessionTranscriptReaderMocks.readCount.mockRejectedValueOnce(
-    new Error("synthetic post-commit initial-turn failure"),
-  );
   try {
     const created = await directSessionReq<{
       key: string;
-      runError: { code: string; message: string };
       runStarted: boolean;
       sessionId: string;
+      startupState: {
+        operationId: string;
+        status: string;
+        initialTurn?: { attachments?: unknown[]; message?: string };
+      };
     }>(
       "sessions.create",
       {
         agentId: "main",
         key,
         message: "start the committed session",
+        attachments: [
+          {
+            type: "image",
+            mimeType: "image/png",
+            fileName: "broken.png",
+            content: "not-base64",
+          },
+        ],
         worktree: true,
         worktreeName: "post-commit-worktree",
       },
@@ -1741,17 +1750,38 @@ test("sessions.create preserves a committed worktree when initial-turn setup fai
       ok: true,
       payload: {
         key,
-        runError: {
-          code: "UNAVAILABLE",
-          message: "synthetic post-commit initial-turn failure",
-        },
         runStarted: false,
         sessionId: expect.any(String),
+        startupState: {
+          operationId: expect.any(String),
+          status: "initializing",
+          initialTurn: {
+            message: "start the committed session",
+            attachments: [
+              expect.objectContaining({ fileName: "broken.png", content: "not-base64" }),
+            ],
+          },
+        },
       },
     });
 
+    await waitForFast(
+      () =>
+        expect(loadSessionEntry({ sessionKey: key, storePath })).toMatchObject({
+          sessionId: expect.any(String),
+          startupState: {
+            status: "failed",
+            error: expect.stringContaining("invalid base64 content"),
+            initialTurn: {
+              message: "start the committed session",
+              attachments: [expect.objectContaining({ fileName: "broken.png" })],
+            },
+          },
+          worktree: { id: expect.any(String), branch: "openclaw/post-commit-worktree" },
+        }),
+      { timeout: 5_000 },
+    );
     expect(loadSessionEntry({ sessionKey: key, storePath })).toMatchObject({
-      sessionId: expect.any(String),
       worktree: { id: expect.any(String), branch: "openclaw/post-commit-worktree" },
     });
     const owned = findLiveRegistryWorktreeByOwner(process.env, "session", key);
@@ -1768,6 +1798,84 @@ test("sessions.create preserves a committed worktree when initial-turn setup fai
         allowSnapshotLoss: true,
       });
     }
+    closeOpenClawStateDatabaseForTest();
+    testState.agentConfig = undefined;
+    await openClawState.cleanup();
+  }
+});
+
+test.each([
+  { action: "cancel" as const, expectedStatus: "cancelled" as const },
+  { action: "work-local" as const, expectedStatus: undefined },
+])("sessions.startup.resolve applies $action to the exact pending startup", async (testCase) => {
+  const openClawState = await createOpenClawTestState({
+    layout: "state-only",
+    prefix: `openclaw-session-worktree-${testCase.action}-`,
+  });
+  const workspace = await initializeGitWorkspace(openClawState.root);
+  closeOpenClawStateDatabaseForTest();
+  testState.agentConfig = { workspace };
+  const { storePath } = await createSessionStoreDir();
+  const key = `agent:main:dashboard:worktree-${testCase.action}`;
+  const createStarted = createDeferredCore();
+  const createSpy = vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
+    createStarted.resolve();
+    await new Promise<never>((_resolve, reject) => {
+      const rejectAborted = () => reject(params.signal?.reason ?? new Error("startup aborted"));
+      if (params.signal?.aborted) {
+        rejectAborted();
+        return;
+      }
+      params.signal?.addEventListener("abort", rejectAborted, { once: true });
+    });
+  });
+  if (testCase.action === "work-local") {
+    mockGetReplyFromConfigOnce(async () => ({ text: "continued locally" }));
+  }
+  try {
+    const created = await directSessionReq<{
+      sessionId: string;
+      startupState: { operationId: string; status: string };
+    }>(
+      "sessions.create",
+      {
+        agentId: "main",
+        key,
+        message: "keep this first turn",
+        worktree: true,
+      },
+      { client: { connect: { scopes: ["operator.admin"] } } as never },
+    );
+    expect(created).toMatchObject({
+      ok: true,
+      payload: { startupState: { operationId: expect.any(String), status: "initializing" } },
+    });
+    await createStarted.promise;
+
+    const resolved = await directSessionReq(
+      "sessions.startup.resolve",
+      {
+        key,
+        operationId: created.payload?.startupState.operationId,
+        action: testCase.action,
+      },
+      { client: { connect: { scopes: ["operator.admin"] } } as never },
+    );
+    expect(resolved.ok).toBe(true);
+
+    await waitForFast(
+      () => {
+        const entry = loadSessionEntry({ sessionKey: key, storePath });
+        expect(entry?.initializationPending).toBeUndefined();
+        expect(entry?.startupState?.status).toBe(testCase.expectedStatus);
+        if (testCase.action === "work-local") {
+          expect(entry?.spawnedCwd).toBe(workspace);
+        }
+      },
+      { timeout: 5_000 },
+    );
+  } finally {
+    createSpy.mockRestore();
     closeOpenClawStateDatabaseForTest();
     testState.agentConfig = undefined;
     await openClawState.cleanup();
@@ -1914,7 +2022,7 @@ test.each([
           agentRuntimeOverride?: string;
           authProfileOverride?: string;
         };
-        worktree: { id: string; branch: string };
+        startupState: { status: string };
       }>(
         "sessions.create",
         {
@@ -1928,14 +2036,20 @@ test.each([
       );
 
       expect(created.ok, JSON.stringify(created.error)).toBe(true);
-      worktreeId = created.payload?.worktree.id;
-      expect(created.payload?.worktree.branch).toBe("openclaw/attachment-repair");
+      expect(created.payload?.startupState.status).toBe("initializing");
       expect(created.payload?.entry).toMatchObject(expectedEntry);
       const sessionKey = requireNonEmptyString(created.payload?.key, "created session key");
-      await waitForFast(() => expect(dashboardTitleScheduleMocks.schedule).toHaveBeenCalled());
-      expect(loadSessionEntry({ agentId: "main", sessionKey, storePath })).toMatchObject({
-        displayName: "Attachment Repair",
-      });
+      await waitForFast(
+        () => {
+          expect(dashboardTitleScheduleMocks.schedule).toHaveBeenCalled();
+          expect(loadSessionEntry({ agentId: "main", sessionKey, storePath })).toMatchObject({
+            displayName: "Attachment Repair",
+            worktree: { id: expect.any(String), branch: "openclaw/attachment-repair" },
+          });
+        },
+        { timeout: 5_000 },
+      );
+      worktreeId = loadSessionEntry({ agentId: "main", sessionKey, storePath })?.worktree?.id;
       expect(dashboardTitleGenerationMocks.generate).toHaveBeenCalledWith(
         expect.objectContaining({ timeoutMs: 4_000, ...expectedTitleSelection }),
       );
@@ -2022,12 +2136,12 @@ test.each([
     const workspace = await initializeGitWorkspace(openClawState.root);
     closeOpenClawStateDatabaseForTest();
     testState.agentConfig = { workspace };
-    await createSessionStoreDir();
+    const { storePath } = await createSessionStoreDir();
     const { ws } = await openClient({ scopes: ["operator.admin"] });
     let worktreeId: string | undefined;
     arrange();
     try {
-      const created = await rpcReq<{ worktree: { id: string; branch: string } }>(
+      const created = await rpcReq<{ key: string; startupState: { status: string } }>(
         ws,
         "sessions.create",
         {
@@ -2039,9 +2153,21 @@ test.each([
       );
 
       expect(created.ok, JSON.stringify(created.error)).toBe(true);
-      worktreeId = created.payload?.worktree.id;
-      expect(created.payload?.worktree.branch).toBe("openclaw/investigate-the-raw-fallback-title");
-      expect(dashboardTitleGenerationMocks.generate).toHaveBeenCalledOnce();
+      expect(created.payload?.startupState.status).toBe("initializing");
+      const sessionKey = requireNonEmptyString(created.payload?.key, "created session key");
+      await waitForFast(
+        () => {
+          expect(dashboardTitleGenerationMocks.generate).toHaveBeenCalledOnce();
+          expect(loadSessionEntry({ agentId: "main", sessionKey, storePath })).toMatchObject({
+            worktree: {
+              id: expect.any(String),
+              branch: "openclaw/investigate-the-raw-fallback-title",
+            },
+          });
+        },
+        { timeout: 10_000 },
+      );
+      worktreeId = loadSessionEntry({ agentId: "main", sessionKey, storePath })?.worktree?.id;
     } finally {
       if (worktreeId) {
         await managedWorktrees.remove({
