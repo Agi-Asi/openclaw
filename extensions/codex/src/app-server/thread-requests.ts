@@ -164,7 +164,6 @@ export function buildThreadStartParams(
     environmentSelection?: CodexTurnEnvironmentParams[];
     model?: string | null;
     modelProvider?: string | null;
-    reasoningEffort?: string | null;
     hostSystemAgentActive?: boolean;
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
@@ -217,7 +216,6 @@ export function buildThreadStartParams(
         options.restrictedToolSurfaceInheritedMcpServerNames,
       shellEnvironment: options.shellEnvironment,
       disableLoginShell: options.disableLoginShell,
-      reasoningEffort: options.reasoningEffort,
     }),
     ...resolveCodexThreadEnvironmentSelection(options),
     developerInstructions:
@@ -253,7 +251,6 @@ export function buildThreadResumeParams(
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
     disableLoginShell?: boolean;
-    reasoningEffort?: string | null;
     preserveNativeModel?: boolean;
   },
 ): CodexThreadResumeParams {
@@ -424,7 +421,6 @@ export function buildCodexRuntimeThreadConfigForRun(
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
     disableLoginShell?: boolean;
-    reasoningEffort?: string | null;
   } = {},
 ): JsonObject {
   const ringZeroActive =
@@ -486,7 +482,6 @@ export function buildCodexRuntimeThreadConfigForRun(
       params.authoredContextTokenCap === undefined
         ? undefined
         : { model_context_window: params.authoredContextTokenCap },
-      options.reasoningEffort ? { model_reasoning_effort: options.reasoningEffort } : undefined,
     ) ?? baseConfig;
   const contextConfig = {
     ...runtimeConfig,

@@ -13,6 +13,7 @@ import {
 import { CodexAppServerRpcError, type CodexAppServerClient } from "./client.js";
 import type { CodexAppServerRuntimeOptions } from "./config.js";
 import { buildCodexAppServerConnectionFingerprint } from "./plugin-app-cache-key.js";
+import { mergeCodexThreadConfigs } from "./plugin-thread-config.js";
 import {
   attestCodexPluginThreadApps,
   discardUnattestedCodexPluginThread,
@@ -176,7 +177,12 @@ export async function materializePendingSupervisionBranch(
       dynamicTools: params.dynamicTools,
       appServer: params.appServer,
       developerInstructions: params.developerInstructions,
-      config: params.config,
+      config: mergeCodexThreadConfigs(
+        params.config,
+        probeResponse.reasoningEffort
+          ? { model_reasoning_effort: probeResponse.reasoningEffort }
+          : undefined,
+      ),
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
       nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
@@ -184,7 +190,6 @@ export async function materializePendingSupervisionBranch(
       environmentSelection: params.environmentSelection,
       model: nativeModel,
       modelProvider: nativeModelProvider,
-      reasoningEffort: probeResponse.reasoningEffort,
       hostSystemAgentActive: params.hostSystemAgentActive,
       restrictedToolSurfaceInheritedMcpServerNames:
         params.restrictedToolSurfaceInheritedMcpServerNames,
