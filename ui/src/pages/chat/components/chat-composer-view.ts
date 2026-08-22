@@ -194,16 +194,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           },
         ]
       : []),
-    ...(props.waitingApproval
-      ? [
-          {
-            text: t("chat.waitingForApproval"),
-            tone: "danger" as const,
-            icon: icons.alertTriangle,
-            omitsSecondary: false,
-          },
-        ]
-      : []),
     ...(offlineText
       ? [
           {

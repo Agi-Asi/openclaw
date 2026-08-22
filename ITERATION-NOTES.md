@@ -145,3 +145,4 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - There is no inverse modifier that forces Queue while Steer is selected; Queue is activated through the preference (or inherited server/session mode).
 - Empty Enter during an active run steers the oldest eligible visible row. Each eligible row also exposes a Steer action.
 - A steered row can still be removed while it remains in the local queue; editing and reorder follow the owner locks for in-flight or otherwise non-movable rows.
+- [x] Approval is no longer a composer status-band state; approval-only uses the card, approval + offline uses the card plus one offline band, and the card matches composer width.

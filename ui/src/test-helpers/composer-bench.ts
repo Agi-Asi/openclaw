@@ -440,8 +440,8 @@ const scenarios: BenchScenario[] = [
   },
   {
     name: "Waiting for approval",
-    description: "The run is paused on its real approval surface.",
-    state: { content: "one", run: "approval" },
+    description: "The approval card is the only pending-approval state.",
+    state: { content: "one", run: "approval", neighbor: "approval" },
   },
   {
     name: "Interrupted + members",
@@ -455,8 +455,8 @@ const scenarios: BenchScenario[] = [
   },
   {
     name: "Approval + offline",
-    description: "Approval owns the status lane and summarizes the secondary offline state.",
-    state: { content: "one", run: "approval", status: "offline" },
+    description: "Approval stays above while offline owns the single status band below.",
+    state: { content: "one", run: "approval", status: "offline", neighbor: "approval" },
   },
   {
     name: "Plan active",

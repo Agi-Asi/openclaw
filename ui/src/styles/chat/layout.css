@@ -374,7 +374,7 @@ openclaw-chat-page {
 .chat-inline-approval {
   box-sizing: border-box;
   flex: 0 0 auto;
-  width: calc(100% - 2 * var(--chat-thread-gutter) - 2 * clamp(6px, 1vw, 12px));
+  width: calc(100% - 36px);
   max-width: var(--chat-thread-max-width);
   margin: 8px auto;
 }
@@ -7431,6 +7431,10 @@ button.chat-pr__diff {
 }
 
 @media (max-width: 768px) {
+  .chat-inline-approval {
+    width: calc(100% - 8px);
+  }
+
   .chat-controls__session {
     min-width: 120px;
     max-width: none;
