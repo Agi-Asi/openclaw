@@ -572,7 +572,7 @@ async function planMode() {
       expected,
     );
     let finished = false;
-    let provenance;
+    const checkpoint = { provenance: undefined };
     const stop = () => {
       if (finished) {
         return;
@@ -580,7 +580,7 @@ async function planMode() {
       finished = true;
       abortController.abort(new Error("execution plan restoration cancelled"));
       try {
-        commitExecutionPlan(outputPath, restored, provenance);
+        commitExecutionPlan(outputPath, restored, checkpoint.provenance);
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 2;
@@ -591,11 +591,11 @@ async function planMode() {
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
-    provenance = expected.targetSha
+    checkpoint.provenance = expected.targetSha
       ? await bestEffortCheckpointProvenance(abortController.signal)
       : undefined;
     finished = true;
-    commitExecutionPlan(outputPath, restored, provenance);
+    commitExecutionPlan(outputPath, restored, checkpoint.provenance);
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
     return;
@@ -607,7 +607,7 @@ async function planMode() {
   const planInputs = parsePlanInputs(process.env.FULL_RELEASE_PLAN_INPUTS_JSON);
   const built = buildReleaseExecutionPlan(planInputs);
   let finished = false;
-  let provenance;
+  const checkpoint = { provenance: undefined };
   let plan = buildReleaseExecutionPlanArtifact({
     children: built.children,
     evidenceReuse: evidenceReuseFromInputs(planInputs),
@@ -643,7 +643,7 @@ async function planMode() {
     const terminalPlan = validateReleaseExecutionPlanArtifact(plan, expected);
     finished = true;
     try {
-      commitExecutionPlan(outputPath, terminalPlan, provenance);
+      commitExecutionPlan(outputPath, terminalPlan, checkpoint.provenance);
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       process.exitCode = 2;
@@ -655,7 +655,7 @@ async function planMode() {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  provenance = expected.targetSha
+  checkpoint.provenance = expected.targetSha
     ? await bestEffortCheckpointProvenance(abortController.signal)
     : undefined;
   const reuse = await validateReuse(built.children, planInputs, abortController.signal);
@@ -675,7 +675,7 @@ async function planMode() {
   });
   const terminalPlan = validateReleaseExecutionPlanArtifact(plan, expected);
   finished = true;
-  commitExecutionPlan(outputPath, terminalPlan, provenance);
+  commitExecutionPlan(outputPath, terminalPlan, checkpoint.provenance);
   process.removeListener("SIGINT", stop);
   process.removeListener("SIGTERM", stop);
 }
@@ -720,7 +720,7 @@ async function collectMode(mode) {
   }));
   let finished = false;
   const abortController = new AbortController();
-  let provenance;
+  const checkpoint = { provenance: undefined };
   let decisionReuse = { blockers: [], children: plan, errors: [] };
 
   const buildPayload = (decision, cancellation = {}) =>
@@ -743,7 +743,7 @@ async function collectMode(mode) {
     writeResult(outputPath, payload);
     process.exitCode =
       payload.state === "passed" ? 0 : payload.state === "orchestration_error" ? 2 : 1;
-    emitBestEffortCheckpoint(mode, payload, provenance);
+    emitBestEffortCheckpoint(mode, payload, checkpoint.provenance);
     appendSummary(mode, payload);
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
@@ -781,7 +781,7 @@ async function collectMode(mode) {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  provenance = expected.targetSha
+  checkpoint.provenance = expected.targetSha
     ? await bestEffortCheckpointProvenance(abortController.signal)
     : undefined;
   if (mode === "decision" && executionPlan.evidenceReuse.requested) {
