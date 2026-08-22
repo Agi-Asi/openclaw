@@ -22,6 +22,7 @@ type ExecApprovalCardProps = {
   nowMs: number;
   variant: "inline" | "modal";
   queueCount?: number;
+  unavailableMessage?: string;
   onDecision: (approvalId: string, decision: ExecApprovalDecision) => void | Promise<void>;
 };
 
@@ -210,7 +211,7 @@ export function renderExecApprovalCard(props: ExecApprovalCardProps) {
           class=${grantError ? "exec-approval-error" : "exec-approval-warning"}
           role=${grantError ? "alert" : "note"}
         >
-          ${reviewOnlyMessage}
+          ${props.unavailableMessage ?? reviewOnlyMessage}
         </div>`
       : nothing}
     ${props.error && !grantError

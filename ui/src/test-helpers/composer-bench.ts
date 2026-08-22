@@ -106,7 +106,7 @@ type BenchState = {
     | "busy"
     | "inactive"
     | "failed";
-  content: "empty" | "one" | "multiline" | "giant";
+  content: "empty" | "one" | "multiline" | "skill-inline" | "giant";
   attachments: "none" | "image" | "annotation" | "mixed";
   menu: "closed" | "slash" | "skills";
   status: "focused" | "sending" | "disabled" | "catalog" | "error" | "offline";
@@ -126,6 +126,7 @@ type BenchState = {
     | "session-suggestion"
     | "pull-request"
     | "swarm"
+    | "swarm-failed"
     | "disk-warning"
     | "disk-critical"
     | "workspace-conflict"
@@ -196,6 +197,8 @@ const content: Record<BenchState["content"], string> = {
   empty: "",
   one: "Tailor the composer spacing.",
   multiline: "Tailor the composer spacing.\nKeep the controls aligned.\nPreserve the real send flow.",
+  "skill-inline":
+    "Tailor the composer spacing with $bench_skill_05 before the final pass,\nthen re-check the send flow.",
   giant: Array.from(
     { length: 18 },
     (_, index) => `Line ${index + 1}: inspect wrapping, internal scroll, and footer stability.`,
@@ -399,7 +402,7 @@ type BenchScenario = {
 
 const scenarios: BenchScenario[] = [
   {
-    name: "Empty",
+    name: "Idle",
     description: "A clean composer before the first keystroke.",
     state: { content: "empty" },
   },
@@ -409,59 +412,150 @@ const scenarios: BenchScenario[] = [
     state: { content: "one" },
   },
   {
-    name: "Multiline",
+    name: "Typing multiline",
     description: "A growing prompt with a stable footer.",
     state: { content: "multiline" },
   },
   {
-    name: "Attachments",
-    description: "Mixed media flowing across the attachment rail.",
+    name: "Sending",
+    description: "A submitted draft entering the streaming state.",
+    state: { content: "one", status: "sending", run: "running" },
+  },
+  {
+    name: "Plan 1 of 3",
+    description: "The current plan sits above the composer as work progresses.",
+    state: { content: "multiline", plan: "active" },
+  },
+  {
+    name: "Running tasks + Plan",
+    description: "Background tasks and the current plan share one status row.",
+    state: { content: "one", run: "running", tasks: "three", plan: "active" },
+  },
+  {
+    name: "Plan complete",
+    description: "The final completed step uses the success state.",
+    state: { content: "one", plan: "complete" },
+  },
+  {
+    name: "Queue with 3",
+    description: "Three queued messages remain attached to the composer.",
+    state: { content: "one", run: "running", queue: "three" },
+  },
+  {
+    name: "Queue with 6",
+    description: "Six queued messages prove internal scrolling and reordering.",
+    state: { content: "one", run: "running", queue: "six" },
+  },
+  {
+    name: "Queue delivery uncertain",
+    description: "A failed queued item owns its delivery event and retry action.",
+    state: { content: "one", run: "running", queue: "three", queueState: "unconfirmed" },
+  },
+  {
+    name: "Queue waiting for reconnect",
+    description: "Offline queue items keep their normal handle and an amber status pill.",
+    state: { content: "one", queue: "three", queueState: "waiting-reconnect", status: "offline" },
+  },
+  {
+    name: "Attachments mixed",
+    description: "Mixed media flows horizontally across the attachment rail.",
     state: { content: "multiline", attachments: "mixed" },
   },
   {
-    name: "Slash menu",
-    description: "Command discovery opened from the live draft.",
-    state: { content: "one", menu: "slash" },
+    name: "Skill inline",
+    description: "An atomic skill mention remains inline across a multiline draft.",
+    state: { content: "skill-inline" },
   },
   {
-    name: "Running",
-    description: "An active run with its stop and follow-up controls.",
-    state: { content: "one", run: "running" },
+    name: "Interrupted",
+    description: "The terminal event stays with the last transcript message.",
+    state: { content: "one", run: "interrupted" },
   },
   {
-    name: "Steer",
-    description: "A follow-up entering the active run.",
-    state: { content: "one", run: "steering", followUpMode: "steer", queue: "one" },
-  },
-  {
-    name: "Queue (6) + editing",
-    description: "Six queued messages stress-test internal scrolling and editing.",
-    state: { content: "one", run: "running", queue: "six", queueEdit: "editing" },
-  },
-  {
-    name: "Waiting for approval",
+    name: "Approval pending",
     description: "The approval card is the only pending-approval state.",
     state: { content: "one", run: "approval", neighbor: "approval" },
   },
   {
-    name: "Interrupted + members",
-    description: "A terminal event stays with the transcript while member access owns the composer.",
-    state: { content: "one", run: "interrupted", access: "members" },
-  },
-  {
-    name: "Offline + read only",
-    description: "Read-only access outranks an offline connection without stacking status rows.",
-    state: { content: "one", status: "offline", access: "read-only" },
-  },
-  {
     name: "Approval + offline",
-    description: "Approval stays above while offline owns the single status band below.",
+    description: "Approval actions pause while offline owns the status band.",
     state: { content: "one", run: "approval", status: "offline", neighbor: "approval" },
   },
   {
-    name: "Plan active",
-    description: "The current plan sits above the composer as work progresses.",
-    state: { content: "multiline", plan: "active" },
+    name: "Read only",
+    description: "Member access renders one blue information band with a shield.",
+    state: { content: "one", access: "members" },
+  },
+  {
+    name: "Dictation active",
+    description: "The focused dictation mode removes unrelated composer controls.",
+    state: { content: "one", dictate: "recording" },
+  },
+  {
+    name: "Task suggestion",
+    description: "A proposed follow-up stays aligned with the composer.",
+    state: { content: "one", neighbor: "task-suggestion" },
+  },
+  {
+    name: "Session suggestion",
+    description: "A member suggestion uses the same composer-width rail.",
+    state: { content: "one", neighbor: "session-suggestion" },
+  },
+  {
+    name: "Pull request",
+    description: "Repository status stays inside the composer-width boundary.",
+    state: { content: "one", neighbor: "pull-request" },
+  },
+  {
+    name: "Swarm running",
+    description: "A swarm summarizes progress and reveals task detail on hover.",
+    state: { content: "one", neighbor: "swarm" },
+  },
+  {
+    name: "Swarm failed",
+    description: "A failed swarm uses danger only for the failed state.",
+    state: { content: "one", neighbor: "swarm-failed" },
+  },
+  {
+    name: "Chat error",
+    description: "A refresh error uses quiet composer chrome and a remote dismiss action.",
+    state: { content: "one", neighbor: "error" },
+  },
+  {
+    name: "Placement startup",
+    description: "Runner startup uses the same quiet composer-neighbor chrome.",
+    state: { content: "one", neighbor: "placement" },
+  },
+  {
+    name: "Placement failed",
+    description: "A failed runner startup stays aligned with the composer and offers Retry.",
+    state: { content: "one", neighbor: "placement-failed" },
+  },
+  {
+    name: "Disk warning",
+    description: "Low disk space uses an amber edge without a filled warning surface.",
+    state: { content: "one", neighbor: "disk-warning" },
+  },
+  {
+    name: "Workspace conflict",
+    description: "Cloud conflicts begin collapsed with commands kept out of the main view.",
+    state: { content: "one", neighbor: "workspace-conflict" },
+  },
+  {
+    name: "Disk critical",
+    description: "Critical disk pressure escalates only its icon, title and edge.",
+    state: { content: "one", neighbor: "disk-critical" },
+  },
+  {
+    name: "Light composite",
+    description: "A composed light-theme state closes the visual sweep.",
+    state: {
+      content: "multiline",
+      attachments: "mixed",
+      queue: "three",
+      run: "running",
+      theme: "light",
+    },
   },
   {
     name: "Incognito session",
@@ -479,18 +573,6 @@ const scenarios: BenchScenario[] = [
     name: "Open 40 skills",
     description: "A full invocation sheet stress-tests search and scrolling.",
     state: presets["skills-40"] ?? {},
-    stress: true,
-  },
-  {
-    name: "Mobile + full queue",
-    description: "A narrow composer carries attachments and three queued messages.",
-    state: presets["mobile-full"] ?? {},
-    stress: true,
-  },
-  {
-    name: "Offline + attachments",
-    description: "Queued content and mixed media wait for the connection to return.",
-    state: presets["offline-paste"] ?? {},
     stress: true,
   },
 ];
@@ -1030,7 +1112,11 @@ function renderBenchNeighbor() {
         expiresAtMs: Date.now() + 60_000,
       },
       busy: false,
-      canGrant: true,
+      canGrant: state.status !== "offline",
+      unavailableMessage:
+        state.status === "offline"
+          ? "Reconnecting… you can answer when the connection returns"
+          : undefined,
       error: null,
       nowMs: Date.now(),
       variant: "inline",
@@ -1101,7 +1187,8 @@ function renderBenchNeighbor() {
       onExpand: () => {},
       onDismiss: clear,
     });
-  } else if (state.neighbor === "swarm") {
+  } else if (state.neighbor === "swarm" || state.neighbor === "swarm-failed") {
+    const failed = state.neighbor === "swarm-failed";
     surface = renderChatSwarmProgress({
       sessionKey: "agent:main:main",
       sessions: [
@@ -1121,6 +1208,15 @@ function renderBenchNeighbor() {
           parentSessionKey: "agent:main:main",
           swarmGroupId: "swarm:agent:main:main:composer-review",
           label: "Queue reviewer",
+          status: failed ? "failed" : "done",
+        },
+        {
+          key: "agent:main:bench-worker-3",
+          kind: "direct",
+          updatedAt: Date.now(),
+          parentSessionKey: "agent:main:main",
+          swarmGroupId: "swarm:agent:main:main:composer-review",
+          label: "Interaction reviewer",
           status: "done",
         },
       ],
@@ -1206,6 +1302,14 @@ function renderChatSurface(sessionList: SessionsListResult) {
   } else if ((composerState.dictation as { benchStub?: boolean } | null)?.benchStub) {
     composerState.dictation = null;
   }
+  const disabledReasonTone =
+    state.access === "members" || state.access === "read-only" ? "info" : "danger";
+  if (
+    (state.access === "members" || state.access === "read-only") &&
+    disabledReasonTone === "danger"
+  ) {
+    throw new Error("Composer bench invariant: read-only access must render as info");
+  }
   const composer = renderChatComposer({
     paneId: "composer-bench",
     sessionKey: "agent:main:main",
@@ -1223,7 +1327,7 @@ function renderChatSurface(sessionList: SessionsListResult) {
         : state.status === "catalog"
           ? t("chat.catalog.unsupportedViewOnly")
           : null,
-    disabledReasonTone: state.access === "members" ? "info" : "danger",
+    disabledReasonTone,
     disabledBanner: insetBanner,
     runError: state.status === "error" ? { summary: "Send failed" } : null,
     sending: state.status === "sending",
@@ -1764,6 +1868,7 @@ function applyTransientState(): void {
   }
   if (pendingMenuActivation) {
     pendingMenuActivation = false;
+    textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     textarea.dispatchEvent(
       new InputEvent("beforeinput", { bubbles: true, inputType: "insertText" }),

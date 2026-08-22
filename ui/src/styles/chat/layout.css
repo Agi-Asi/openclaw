@@ -291,6 +291,170 @@ openclaw-chat-page {
   gap: 5px;
 }
 
+/* Composer neighbors share one quiet card frame. Status color belongs to the
+   item, never to the surface: only the icon, heading and a low-opacity edge
+   carry tone while the card keeps the composer's own surface and geometry. */
+.chat-composer-neighbor-card {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: calc(100% - 36px);
+  max-width: var(--chat-thread-max-width, 48rem);
+  min-height: 52px;
+  margin: 8px auto 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: calc(16px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
+  background: var(--chat-composer-surface, var(--popover));
+  color: var(--text);
+  box-shadow: none;
+}
+
+.chat-composer-neighbor-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.chat-composer-neighbor-card__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.chat-composer-neighbor-card__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.chat-composer-neighbor-card__copy strong,
+.chat-composer-neighbor-card__copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-composer-neighbor-card__copy strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chat-composer-neighbor-card__copy span {
+  color: var(--muted);
+}
+
+.chat-composer-neighbor-card--info {
+  border-color: color-mix(in srgb, var(--info) 16%, transparent);
+}
+
+.chat-composer-neighbor-card--info :is(.chat-composer-neighbor-card__icon, strong) {
+  color: color-mix(in srgb, var(--info) 76%, var(--text));
+}
+
+.chat-composer-neighbor-card--warn {
+  border-color: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+
+.chat-composer-neighbor-card--warn :is(.chat-composer-neighbor-card__icon, strong) {
+  color: color-mix(in srgb, var(--warn) 76%, var(--text));
+}
+
+.chat-composer-neighbor-card--danger {
+  border-color: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.chat-composer-neighbor-card--danger :is(.chat-composer-neighbor-card__icon, strong) {
+  color: color-mix(in srgb, var(--danger) 80%, var(--text));
+}
+
+.chat-composer-neighbor-card.chat-error,
+.chat-composer-neighbor-card.chat-cloud-disk-space-notice,
+.chat-composer-neighbor-card.chat-workspace-conflict-notice {
+  width: calc(100% - 36px);
+  max-width: var(--chat-thread-max-width, 48rem);
+  margin: 8px auto 0;
+  background: var(--chat-composer-surface, var(--popover));
+  box-shadow: none;
+  animation: none;
+}
+
+.chat-workspace-conflict-notice {
+  padding: 0;
+}
+
+.chat-workspace-conflict-notice > summary {
+  list-style: none;
+}
+
+.chat-workspace-conflict-notice > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-workspace-conflict-notice__summary {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 26px 26px;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.chat-workspace-conflict-notice__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chat-workspace-conflict-notice:not([open]) .chat-workspace-conflict-notice__chevron {
+  transform: rotate(180deg);
+}
+
+.chat-workspace-conflict-notice__content {
+  gap: 10px;
+  padding: 0 12px 12px 40px;
+}
+
+.chat-workspace-conflict-paths {
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-workspace-conflict-paths li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-workspace-conflict-path-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.chat-workspace-conflict-commands-disclosure > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.chat-workspace-conflict-commands-disclosure[open] > summary {
+  margin-bottom: 8px;
+}
+
+.chat-cloud-startup__spinner svg {
+  animation: compaction-spin 1s linear infinite;
+}
+
 @media (max-width: 640px) {
   .chat-workspace-conflict-ref,
   .chat-workspace-conflict-commands > div {
@@ -890,7 +1054,7 @@ openclaw-chat-page {
   border-bottom: 0;
   border-radius: calc(16px * var(--openclaw-corner-radius-scale))
     calc(16px * var(--openclaw-corner-radius-scale)) 0 0;
-  background: var(--chat-composer-surface, var(--card));
+  background: var(--composer-attached-surface, var(--chat-composer-surface, var(--card)));
 }
 
 .agent-chat__goal-float .agent-chat__goal-row {
@@ -2400,32 +2564,29 @@ button.chat-reply-preview--message:disabled {
 }
 
 .chat-swarm {
-  display: grid;
-  gap: 6px;
   width: calc(100% - 36px);
   max-width: var(--chat-thread-max-width, 48rem);
-  /* Completed phases stay visible while any child runs; bound large swarms so
-     their retained dots cannot displace the composer. */
-  max-height: clamp(160px, 32vh, 260px);
   margin: 0 auto;
-  padding: 0 2px 8px 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .chat-swarm__group {
+  position: relative;
   display: grid;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 3%, var(--panel));
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 5%, transparent);
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: calc(16px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
+  background: var(--chat-composer-surface, var(--popover));
+  outline: none;
 }
 
 .chat-swarm__header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
 }
@@ -2433,87 +2594,125 @@ button.chat-reply-preview--message:disabled {
 .chat-swarm__header strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chat-swarm__header span,
-.chat-swarm__narrator,
-.chat-swarm__phase {
+.chat-swarm__header span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
-.chat-swarm__narrator {
-  overflow: hidden;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-swarm__phase-row {
-  display: grid;
-  grid-template-columns: minmax(56px, auto) 1fr;
-  align-items: center;
-  gap: 8px;
-}
-
-.chat-swarm__phase {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-swarm__dots {
+.chat-swarm__progress {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px;
+  height: 2px;
 }
 
-.chat-swarm__dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--muted);
+.chat-swarm__progress-segment {
+  position: relative;
+  flex: 1 1 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
 }
 
-.chat-swarm__dot--queued {
-  border: 1px solid var(--muted);
-  background: transparent;
-}
-
-.chat-swarm__dot--running {
-  animation: chat-swarm-pulse 1.25s ease-in-out infinite;
+.chat-swarm__progress-segment > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
   background: var(--accent);
 }
 
-.chat-swarm__dot--done {
-  background: var(--ok);
-}
-
-.chat-swarm__dot--failed {
-  border-radius: 3px;
+.chat-swarm__progress-segment > .chat-swarm__progress-fill--failed {
   background: var(--danger);
-  transform: rotate(45deg) scale(0.82);
 }
 
-.chat-swarm__more {
+.chat-swarm__tasks {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: calc(14px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
+  background: var(--chat-composer-surface, var(--popover));
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
+  transform-origin: center bottom;
+  visibility: hidden;
+  transition:
+    opacity 100ms ease 300ms,
+    transform 100ms ease 300ms,
+    visibility 0ms linear 400ms;
+}
+
+.chat-swarm__group:is(:hover, :focus-within) .chat-swarm__tasks,
+.chat-swarm__tasks:hover {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  transition-delay: 600ms, 600ms, 0ms;
+}
+
+.chat-swarm__task {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 9px;
+  font-size: 12px;
 }
 
-@keyframes chat-swarm-pulse {
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
-    opacity: 0.55;
-  }
+.chat-swarm__task-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.chat-swarm__task-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.chat-swarm__task-icon--running svg {
+  animation: compaction-spin 1s linear infinite;
+}
+
+.chat-swarm__task-icon--done {
+  color: var(--ok);
+}
+
+.chat-swarm__task-icon--failed {
+  color: var(--danger);
+}
+
+.chat-swarm__task-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-swarm__task-duration {
+  font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-swarm__dot--running {
+  .chat-swarm__task-icon--running svg {
     animation: none;
+  }
+
+  .chat-swarm__tasks {
+    transition: none;
   }
 }
 
@@ -2893,6 +3092,11 @@ button.chat-pr__diff {
 .agent-chat__composer-shell,
 .agent-chat__input {
   --chat-composer-surface: var(--popover);
+  --composer-attached-surface: color-mix(
+    in srgb,
+    var(--chat-composer-surface) 60%,
+    var(--background, var(--bg))
+  );
   --chat-composer-hairline: color-mix(in srgb, var(--text-strong) 16%, transparent);
 }
 
@@ -3160,25 +3364,26 @@ button.chat-pr__diff {
     calc(20px * var(--openclaw-corner-radius-scale));
   corner-shape: superellipse(1.5);
   overflow: hidden;
+  background: var(--composer-attached-surface, var(--chat-composer-surface));
 }
 
 /* The underlap is a single status lane. Events belong to their transcript,
    queue item, or toast owner and never stack additional composer rows here. */
 .agent-chat__composer-underlaps[data-tone="info"] {
-  border-color: color-mix(in srgb, var(--info) 16%, transparent);
-  background: color-mix(in srgb, var(--info) 9%, var(--chat-composer-surface));
+  border-color: color-mix(in srgb, var(--info) 12%, transparent);
+  background: var(--composer-attached-surface);
   color: color-mix(in srgb, var(--info) 72%, var(--text));
 }
 
 .agent-chat__composer-underlaps[data-tone="warn"] {
-  border-color: color-mix(in srgb, var(--warn) 16%, transparent);
-  background: color-mix(in srgb, var(--warn) 9%, var(--chat-composer-surface));
+  border-color: color-mix(in srgb, var(--warn) 12%, transparent);
+  background: var(--composer-attached-surface);
   color: color-mix(in srgb, var(--warn) 72%, var(--text));
 }
 
 .agent-chat__composer-underlaps[data-tone="danger"] {
-  border-color: color-mix(in srgb, var(--danger) 16%, transparent);
-  background: color-mix(in srgb, var(--danger) 8%, var(--chat-composer-surface));
+  border-color: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: var(--composer-attached-surface);
   color: color-mix(in srgb, var(--danger) 78%, var(--text));
 }
 
@@ -3216,42 +3421,6 @@ button.chat-pr__diff {
   font-variant-numeric: tabular-nums;
 }
 
-.agent-chat__composer-underlaps:has(.agent-chat__composer-error):not(
-    :has(.agent-chat__offline-hint)
-  ) {
-  border-color: color-mix(in srgb, var(--danger) 16%, transparent);
-}
-
-.agent-chat__composer-underlaps:has(.agent-chat__composer-errors) {
-  background: color-mix(in srgb, var(--danger) 8%, var(--chat-composer-surface));
-}
-
-.agent-chat__composer-underlaps:has(.agent-chat__composer-notice):not(
-    :has(.agent-chat__composer-error)
-  ) {
-  border-color: color-mix(in srgb, var(--info) 16%, transparent);
-  background: color-mix(in srgb, var(--info) 9%, var(--chat-composer-surface));
-}
-
-.agent-chat__composer-underlaps:has(.agent-chat__offline-hint):not(
-    :has(.agent-chat__composer-errors)
-  ) {
-  border-color: color-mix(in srgb, var(--warn) 16%, transparent);
-  background: color-mix(in srgb, var(--warn) 9%, var(--chat-composer-surface));
-}
-
-:root[data-theme-mode="light"]
-  .agent-chat__composer-underlaps:has(.agent-chat__composer-errors) {
-  background: color-mix(in srgb, var(--danger) 14%, var(--chat-composer-surface));
-}
-
-:root[data-theme-mode="light"]
-  .agent-chat__composer-underlaps:has(.agent-chat__composer-notice):not(
-    :has(.agent-chat__composer-error)
-  ) {
-  background: color-mix(in srgb, var(--info) 14%, var(--chat-composer-surface));
-}
-
 .agent-chat__offline-hint {
   display: flex;
   min-height: var(--chat-composer-underlap-row-height);
@@ -3259,7 +3428,7 @@ button.chat-pr__diff {
   box-sizing: border-box;
   width: 100%;
   padding: 8px 14px;
-  background: color-mix(in srgb, var(--warn) 9%, var(--chat-composer-surface));
+  background: transparent;
   color: color-mix(in srgb, var(--warn) 72%, var(--text));
   font-size: 11px;
   line-height: 1.3;

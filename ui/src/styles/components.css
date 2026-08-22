@@ -2933,7 +2933,7 @@ td.data-table-key-col {
   border-bottom: 0;
   border-radius: calc(16px * var(--openclaw-corner-radius-scale))
     calc(16px * var(--openclaw-corner-radius-scale)) 0 0;
-  background: var(--chat-composer-surface);
+  background: var(--composer-attached-surface, var(--chat-composer-surface));
 }
 
 .chat-queue__scroll {
@@ -3639,6 +3639,11 @@ td.data-table-key-col {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.exec-approval-actions .btn:disabled {
+  pointer-events: none;
+  opacity: 0.42;
 }
 
 .exec-approval-list {

@@ -302,6 +302,11 @@ export const icons = {
     <path d="M8 12h12" />
     <path d="M8 18h12" />
     <path d="m4 10 2 2-2 2" />`),
+  wifiOff: strokeIcon(svg` <path d="m2 2 20 20" />
+    <path d="M8.5 8.5a5 5 0 0 1 7 0" />
+    <path d="M5 5a10 10 0 0 1 14 0" />
+    <path d="M12 18h.01" />
+    <path d="M8.5 15.5a5 5 0 0 1 2-1.2" />`),
 
   ...toolIcons,
 } as const;

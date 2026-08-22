@@ -234,7 +234,7 @@ function renderChatQueueItem(
       ? t("chat.queue.imageCount", { count: String(item.attachments.length) })
       : "");
   const leadingIcon = reconnecting
-    ? html`<span class="chat-queue__dot"></span>`
+    ? icons.queueList
     : failed
       ? icons.alertTriangle
       : steerMode

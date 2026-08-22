@@ -146,3 +146,8 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - Empty Enter during an active run steers the oldest eligible visible row. Each eligible row also exposes a Steer action.
 - A steered row can still be removed while it remains in the local queue; editing and reorder follow the owner locks for in-flight or otherwise non-movable rows.
 - [x] Approval is no longer a composer status-band state; approval-only uses the card, approval + offline uses the card plus one offline band, and the card matches composer width.
+- [x] Approval actions disable while offline; members and offline bands own their info and warning icons and tones.
+- [x] Swarm, disk, workspace conflict, placement and chat-error neighbors use the shared composer-width chrome.
+- [x] Reconnect queue rows keep the standard queue handle and communicate state through the amber pill.
+- [x] The review sweep covers plausible grouped product states, including a real open 40-skill sheet and an inline multiline skill.
+- [x] Queue, goal and status bands use the single `--composer-attached-surface` hierarchy token in both themes.

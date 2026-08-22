@@ -189,7 +189,10 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           {
             text: props.disabledReason,
             tone: props.disabledReasonTone ?? ("danger" as const),
-            icon: icons.shieldQuestion,
+            icon:
+              (props.disabledReasonTone ?? "danger") === "danger"
+                ? icons.alertTriangle
+                : icons.shieldQuestion,
             omitsSecondary: true,
           },
         ]
@@ -199,7 +202,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           {
             text: offlineText,
             tone: "warn" as const,
-            icon: icons.clock,
+            icon: icons.wifiOff,
             omitsSecondary: false,
           },
         ]
