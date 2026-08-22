@@ -3465,8 +3465,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
           "native-provider",
           typeof reasoningEffort === "string" ? reasoningEffort : null,
         );
-        const { reasoningEffort: _reasoningEffort, ...withoutReasoningEffort } = response;
-        return withoutReasoningEffort;
+        return response;
       }
       if (method === "thread/resume") {
         const config = (requestParams as { config?: Record<string, unknown> }).config;
