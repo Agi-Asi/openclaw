@@ -104,15 +104,22 @@ function guardianNoticeItem(notice: ChatGuardianNotice): Extract<ChatItem, { kin
       timestamp: notice.timestamp,
     };
   }
-  if (notice.kind === "warning") {
+  if (notice.kind === "warning" || notice.kind === "reviewing") {
+    const reviewing = notice.kind === "reviewing";
     return {
       kind: "notice",
       key: notice.key,
-      icon: "shieldCheck",
-      label: t("chat.systemNotice.guardian.warningLabel"),
-      text: notice.message ?? t("chat.systemNotice.guardian.warningFallback"),
+      icon: notice.source === "system" ? "cpu" : "shieldCheck",
+      label: reviewing
+        ? t("chat.systemNotice.guardian.requestedAction")
+        : notice.source === "system"
+          ? t("common.system")
+          : t("chat.systemNotice.guardian.warningLabel"),
+      text: reviewing
+        ? action
+        : (notice.message ?? t("chat.systemNotice.guardian.warningFallback")),
       timestamp: notice.timestamp,
-      tone: "danger",
+      ...(reviewing ? {} : { tone: "danger" }),
     };
   }
   if (notice.kind === "strict-review-required") {
