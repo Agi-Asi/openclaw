@@ -151,3 +151,4 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Reconnect queue rows keep the standard queue handle and communicate state through the amber pill.
 - [x] The review sweep covers plausible grouped product states, including a real open 40-skill sheet and an inline multiline skill.
 - [x] Queue, goal and status bands use the single `--composer-attached-surface` hierarchy token in both themes.
+- [x] Plan hover card stays still through its close delay, exits once over 100ms, cancels cleanly on reentry, and uses the compact 352px chrome.

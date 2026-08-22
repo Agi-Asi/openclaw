@@ -159,7 +159,7 @@
   position: relative;
   display: grid;
   width: fit-content;
-  max-width: min(440px, 100%);
+  max-width: min(352px, 100%);
   justify-items: center;
   overflow: visible;
   border: 0;
@@ -325,33 +325,72 @@
   max-height: min(360px, 42dvh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 14px;
+  padding: 11px;
   border: 1px solid color-mix(in srgb, var(--text-strong) 11%, transparent);
   border-radius: calc(16px * var(--openclaw-corner-radius-scale));
   background: var(--chat-composer-surface, var(--popover));
   box-shadow:
     0 1px 2px rgb(0 0 0 / 8%),
     0 12px 32px rgb(0 0 0 / 14%);
-  opacity: 0;
-  visibility: hidden;
+  display: none;
   pointer-events: none;
-  transform: translateY(8px) scale(0.95);
   transform-origin: center bottom;
-  transition:
-    opacity 100ms ease,
-    transform 100ms ease,
-    visibility 0ms linear 100ms;
 }
 
-.session-progress-card--composer[data-open="true"] .session-progress-card__body {
+.session-progress-card--composer:is(
+    [data-hover-state="entering"],
+    [data-hover-state="open"],
+    [data-hover-state="exiting"]
+  ) {
+  width: min(352px, 100%);
+}
+
+.session-progress-card--composer:is(
+    [data-hover-state="entering"],
+    [data-hover-state="open"],
+    [data-hover-state="exiting"]
+  )
+  .session-progress-card__body {
+  display: block;
+}
+
+.session-progress-card--composer[data-hover-state="entering"] .session-progress-card__body {
+  animation: session-progress-card-enter 100ms ease both;
+  pointer-events: auto;
+}
+
+.session-progress-card--composer[data-hover-state="open"] .session-progress-card__body {
   opacity: 1;
-  visibility: visible;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  transition:
-    opacity 100ms ease,
-    transform 100ms ease,
-    visibility 0ms linear 0ms;
+}
+
+.session-progress-card--composer[data-hover-state="exiting"] .session-progress-card__body {
+  animation: session-progress-card-exit 100ms ease both;
+}
+
+@keyframes session-progress-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes session-progress-card-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(0) scale(0.95);
+  }
 }
 
 .session-progress-card--composer .session-progress-card__heading {
@@ -368,6 +407,11 @@
   font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.session-progress-card--composer .session-progress-card__step,
+.session-progress-card--composer .session-progress-card__markdown.sidebar-markdown {
+  font-size: var(--control-ui-text-xs);
 }
 
 .session-progress-card__progress {
@@ -491,11 +535,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .session-progress-card--composer:hover {
-    width: min(440px, 100%);
-  }
-
-  .session-progress-card--composer:hover .session-progress-card__summary {
+  .session-progress-card--composer[data-open="true"] .session-progress-card__summary {
     justify-self: center;
   }
 
@@ -528,6 +568,6 @@
   }
 
   .session-progress-card--composer .session-progress-card__body {
-    transition: none;
+    animation: none;
   }
 }

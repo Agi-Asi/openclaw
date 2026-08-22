@@ -14,6 +14,17 @@ type ComposerProgressHoverTimers = {
 
 const composerProgressHoverTimers = new WeakMap<HTMLElement, ComposerProgressHoverTimers>();
 
+type ComposerProgressHoverState = "closed" | "entering" | "open" | "exiting";
+
+function setComposerProgressHoverState(root: HTMLElement, state: ComposerProgressHoverState) {
+  root.dataset.hoverState = state;
+  root.dataset.open = String(state !== "closed");
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 function scheduleComposerProgressOpen(event: PointerEvent) {
   const root = event.currentTarget as HTMLElement;
   const timers = composerProgressHoverTimers.get(root) ?? {};
@@ -21,12 +32,18 @@ function scheduleComposerProgressOpen(event: PointerEvent) {
     clearTimeout(timers.close);
     timers.close = undefined;
   }
-  if (root.dataset.open === "true" || timers.open) {
+  const state = root.dataset.hoverState as ComposerProgressHoverState | undefined;
+  if (state === "open" || state === "entering" || timers.open) {
+    composerProgressHoverTimers.set(root, timers);
+    return;
+  }
+  if (state === "exiting") {
+    setComposerProgressHoverState(root, "open");
     composerProgressHoverTimers.set(root, timers);
     return;
   }
   timers.open = setTimeout(() => {
-    root.dataset.open = "true";
+    setComposerProgressHoverState(root, prefersReducedMotion() ? "open" : "entering");
     timers.open = undefined;
   }, 600);
   composerProgressHoverTimers.set(root, timers);
@@ -42,11 +59,32 @@ function scheduleComposerProgressClose(event: PointerEvent) {
   if (timers.close) {
     clearTimeout(timers.close);
   }
+  if (root.dataset.hoverState === "closed") {
+    composerProgressHoverTimers.set(root, timers);
+    return;
+  }
   timers.close = setTimeout(() => {
-    root.dataset.open = "false";
+    setComposerProgressHoverState(root, prefersReducedMotion() ? "closed" : "exiting");
     timers.close = undefined;
   }, 300);
   composerProgressHoverTimers.set(root, timers);
+}
+
+function finishComposerProgressAnimation(event: AnimationEvent) {
+  if (event.target !== event.currentTarget) {
+    return;
+  }
+  const root = (event.currentTarget as HTMLElement).closest<HTMLElement>(
+    ".session-progress-card--composer",
+  );
+  if (!root) {
+    return;
+  }
+  if (event.animationName === "session-progress-card-enter") {
+    setComposerProgressHoverState(root, "open");
+  } else if (event.animationName === "session-progress-card-exit") {
+    setComposerProgressHoverState(root, "closed");
+  }
 }
 
 const STATUS_LABEL_KEYS: Record<ProgressCardStep["status"], Parameters<typeof t>[0]> = {
@@ -181,6 +219,7 @@ export function renderSessionProgressCard(
       data-progress-card-placement="composer"
       data-complete=${String(complete)}
       data-open="false"
+      data-hover-state="closed"
       @pointerenter=${scheduleComposerProgressOpen}
       @pointerleave=${scheduleComposerProgressClose}
     >
@@ -203,7 +242,12 @@ export function renderSessionProgressCard(
             >`
           : nothing}
       </div>
-      <div class="session-progress-card__body" role="region" aria-label=${composerCountLabel}>
+      <div
+        class="session-progress-card__body"
+        role="region"
+        aria-label=${composerCountLabel}
+        @animationend=${finishComposerProgressAnimation}
+      >
         <div class="session-progress-card__heading">
           <span>${t("sessionProgressCard.composerTitle")}</span>
           <span class="session-progress-card__heading-actions">
