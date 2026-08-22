@@ -23,6 +23,7 @@ import {
   publishPreparedModelRuntimeOwnerBatch,
   publishModelRuntimeSnapshot,
   rebindInputToCommittedConfiguredOwner,
+  resolveConfiguredOwnerPublication,
   resolvePublishedOwner,
   type PreparedModelRuntimeOwner,
   type PreparedModelRuntimeInput,
@@ -75,6 +76,12 @@ const pendingAuthMutations: AuthMutationEvent[] = [];
 
 const replyDispatchPublication = new PreparedReplyDispatchPublicationOwner({
   isGatewayLifecycleActive: () => gatewayLifecycleActive,
+  getPendingOwnerPublication: (agentId) =>
+    resolveConfiguredOwnerPublication(owners, {
+      agentId,
+      agentDir: ".",
+      config: {},
+    }).pending,
   getPendingReplacement: () => pendingModelRuntimeReplacement?.promise,
 });
 export const loadPublishedGatewayReplyDispatchRuntime = replyDispatchPublication.load;
@@ -612,8 +619,7 @@ function invalidateForAuthMutation(event: AuthMutationEvent): void {
     agentDir: normalizeOptionalDir(event.agentDir),
   };
   const staleError = new Error("prepared model runtime owner is stale after auth mutation");
-  let invalidatedOwner = false;
-  const invalidatedConfiguredAgentIds = new Set<string>();
+  const invalidatedOwners: PreparedModelRuntimeOwner[] = [];
   for (const owner of owners.values()) {
     if (
       !normalizedEvent.affectsInheritedStores &&
@@ -622,23 +628,18 @@ function invalidateForAuthMutation(event: AuthMutationEvent): void {
     ) {
       continue;
     }
-    invalidatedOwner = true;
+    invalidatedOwners.push(owner);
     owner.generation += 1;
     owner.needsRefresh = true;
     owner.refreshError = staleError;
-    if (owner.provenance === "configured" && owner.input.agentId) {
-      invalidatedConfiguredAgentIds.add(owner.input.agentId);
-    }
   }
-  if (!invalidatedOwner) {
+  if (invalidatedOwners.length === 0) {
     // A first owner reads the already-published auth snapshot while it builds. Replaying an earlier
     // mutation would immediately stale that initial generation even though no prior owner existed.
     return;
   }
-  replyDispatchPublication.remove(invalidatedConfiguredAgentIds);
-  notifyPreparedModelRuntimePublication({ phase: "invalidated" });
   pendingAuthMutations.push(normalizedEvent);
-  void enqueuePreparedModelRuntimePublication(async () => {
+  const publication = enqueuePreparedModelRuntimePublication(async () => {
     // A pending replacement gate means a queued config publication owns the next generation:
     // it drains queued auth mutations against the new config and rebuilds/announces the
     // dispatch publication. Rebuilding here would revive stale owners with the old config or
@@ -652,7 +653,19 @@ function invalidateForAuthMutation(event: AuthMutationEvent): void {
     }
     replyDispatchPublication.rebuild(owners.values());
     notifyPreparedModelRuntimePublication({ phase: "published" });
-  }).catch((error: unknown) => {
+  });
+  for (const owner of invalidatedOwners) {
+    const pending = publication.then(() => owner.snapshot!);
+    owner.pending = pending;
+    const clearPending = () => {
+      if (owner.pending === pending) {
+        owner.pending = undefined;
+      }
+    };
+    void pending.then(clearPending, clearPending);
+  }
+  notifyPreparedModelRuntimePublication({ phase: "invalidated" });
+  void publication.catch((error: unknown) => {
     if (error instanceof PreparedModelRuntimePublicationSupersededError) {
       return;
     }
