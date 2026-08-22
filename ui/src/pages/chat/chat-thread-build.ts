@@ -115,6 +115,17 @@ function guardianNoticeItem(notice: ChatGuardianNotice): Extract<ChatItem, { kin
       tone: "danger",
     };
   }
+  if (notice.kind === "strict-review-required") {
+    return {
+      kind: "notice",
+      key: notice.key,
+      icon: "shieldCheck",
+      label: t("chat.systemNotice.guardian.strictReviewRequiredLabel"),
+      text: notice.message ?? t("chat.systemNotice.guardian.strictReviewRequiredSummary"),
+      timestamp: notice.timestamp,
+      tone: "danger",
+    };
+  }
   return {
     kind: "notice",
     key: notice.key,
