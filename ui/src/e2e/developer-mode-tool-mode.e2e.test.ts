@@ -78,13 +78,39 @@ suite.define(() => {
   it("selects Tool mode before creating a session", async () => {
     await suite.withPage({ viewport: { width: 1440, height: 1000 } }, async ({ page }) => {
       const gateway = await installMockGateway(page, {
+        workspace: "/workspace/openclaw",
+        workspaceGit: true,
         methodResponses: {
           "plugins.uiDescriptors": { ok: true, descriptors: [], toolModes },
+          "worktrees.branches": {
+            branches: [{ kind: "local", name: "main" }],
+            defaultBranch: "main",
+            repositoryStatus: "git",
+          },
         },
       });
       await page.goto(`${suite.server.baseUrl}new`);
+      await gateway.waitForRequest("worktrees.branches");
+      const worktree = page.locator("#new-session-detail-trigger");
+      await worktree.waitFor();
+      await worktree.click();
+      await page.locator('[data-value="worktree"]').click();
       const picker = page.locator(".new-session-page__tool-mode-trigger");
       await picker.waitFor();
+      const [worktreeBox, pickerBox] = await Promise.all([
+        worktree.boundingBox(),
+        picker.boundingBox(),
+      ]);
+      if (!worktreeBox || !pickerBox) {
+        throw new Error("Worktree and Tool mode controls must be visible");
+      }
+      expect(Math.abs(pickerBox.y - worktreeBox.y)).toBeLessThanOrEqual(2);
+      expect(pickerBox.x).toBeGreaterThan(worktreeBox.x + worktreeBox.width);
+      expect(
+        await page
+          .locator(".new-session-page__composer .new-session-page__tool-mode-trigger")
+          .count(),
+      ).toBe(0);
       await picker.click();
       await page.getByRole("menuitemradio", { name: "Minimal" }).click();
       if (process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR) {

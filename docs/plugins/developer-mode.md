@@ -27,8 +27,8 @@ openclaw gateway restart
 ```
 
 After restart, open a session's top-right menu and choose
-**Developer → Tool mode**. The New session screen also offers Tool mode before
-the first message is sent.
+**Developer → Tool mode**. On the New session screen, Tool mode appears in the
+target row immediately after the Worktree selector.
 
 ## Modes
 

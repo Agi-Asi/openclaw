@@ -400,6 +400,8 @@ export class NewSessionPage extends OpenClawLightDomElement {
       : t("newSession.gateway");
     const submitting = this.submission.submitting;
     const pendingPlacement = Boolean(this.submission.pendingPlacement.sessionKey);
+    const toolModeDisabled = submitting || pendingPlacement;
+    const toolModePicker = this.toolMode.renderPicker(this.place, this.context, toolModeDisabled);
     return html`${renderWhereChip({
       state: whereState,
       gatewayName: this.gateway.gatewayName,
@@ -503,7 +505,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
           onBaseRefInput: (baseRef) => this.place.setBaseRef(baseRef),
           onWorktreeNameInput: (worktreeName) => this.place.setWorktreeName(worktreeName),
         })
-      : nothing}`;
+      : nothing}${toolModePicker}`;
   }
 
   private openConnectMachine() {
@@ -603,7 +605,6 @@ export class NewSessionPage extends OpenClawLightDomElement {
           visibility: this.submission.visibility,
           draftAvailable: this.submission.canStartAsDraft(),
           modelControl: this.place.modelControl,
-          ...this.toolMode.composerOptions(this.place, this.context),
           requiresModifier: loadSettings().chatSendShortcut === "modifier-enter",
           requestUpdate: () => this.requestUpdate(),
           submitting: this.submission.submitting,
