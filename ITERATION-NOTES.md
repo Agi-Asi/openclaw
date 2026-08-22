@@ -132,6 +132,7 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Add Interrupted + members, offline + read-only and approval + offline sweep fixtures.
 - [x] Match the Plan hover card delays and 100ms fade, scale and upward-slide transition.
 - [x] Complete queue double-click editing with caret-at-end focus, Enter submit and Escape cancel.
+- [x] Keep bench disclosures open while selecting and support live ArrowUp and ArrowDown changes.
 
 ## Observed queue contract
 

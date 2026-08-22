@@ -2077,6 +2077,22 @@ benchDisclosures.forEach((disclosure) => {
       if (other !== disclosure) other.open = false;
     });
   });
+  disclosure.addEventListener("keydown", (event) => {
+    if (!disclosure.open || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+    const options = [
+      ...disclosure.querySelectorAll<HTMLButtonElement>(
+        "[data-bench-axis][data-bench-value]:not(:disabled)",
+      ),
+    ];
+    if (options.length === 0) return;
+    event.preventDefault();
+    const activeIndex = options.findIndex((option) => option.hasAttribute("data-active"));
+    const direction = event.key === "ArrowUp" ? -1 : 1;
+    const nextIndex = (Math.max(activeIndex, 0) + direction + options.length) % options.length;
+    const nextOption = options[nextIndex];
+    nextOption?.click();
+    nextOption?.focus({ preventScroll: true });
+  });
 });
 document.addEventListener("pointerdown", (event) => {
   const target = event.target;
