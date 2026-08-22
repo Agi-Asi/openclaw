@@ -45,6 +45,7 @@ const allowedTags = [
   "p",
   "pre",
   "s",
+  "section",
   "span",
   "strong",
   "summary",
@@ -63,6 +64,7 @@ const allowedAttrs = [
   "class",
   "disabled",
   "href",
+  "id",
   "open",
   "rel",
   "target",
@@ -450,6 +452,12 @@ function installHooks() {
       return;
     }
 
+    // Same-document anchors (footnote references and backlinks) must keep their
+    // fragment behavior; the generic rewrite below would force target="_blank".
+    if (href.startsWith("#")) {
+      return;
+    }
+
     if (isHostLocalMarkdownFileHref(href)) {
       node.removeAttribute("href");
       return;
@@ -551,7 +559,7 @@ export function toSanitizedMarkdownHtml(
   }
   const renderInput = isMarkdownBlockArtText(rawInput) ? rawInput : input;
   const cacheable = input.length <= MARKDOWN_CACHE_MAX_CHARS;
-  const cacheKey = `${i18n.getLocale()}\0${renderOptions.assistantTranscriptRoleHeaders}\0${renderOptions.codeBlockChrome}\0${renderOptions.codeBlockInteraction}\0${renderOptions.fileLinks}\0${renderOptions.interactiveImages}\0${renderOptions.linkFavicons}\0${renderOptions.progressBars}\0${renderOptions.mode}\0${renderOptions.sessionLinks}\0${renderOptions.tableInteractions}\0${renderInput}`;
+  const cacheKey = `${i18n.getLocale()}\0${renderOptions.assistantTranscriptRoleHeaders}\0${renderOptions.codeBlockChrome}\0${renderOptions.codeBlockInteraction}\0${renderOptions.fileLinks}\0${renderOptions.interactiveImages}\0${renderOptions.linkFavicons}\0${renderOptions.progressBars}\0${renderOptions.mode}\0${renderOptions.sessionLinks}\0${renderOptions.tableInteractions}\0${renderOptions.docId ?? ""}\0${renderInput}`;
   if (cacheable) {
     const cached = getCachedMarkdown(cacheKey);
     if (cached !== null) {

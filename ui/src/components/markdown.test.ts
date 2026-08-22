@@ -615,6 +615,68 @@ PY
     });
   });
 
+  describe("footnotes", () => {
+    it("moves footnotes to navigable endnotes with local backlinks", () => {
+      const fragment = htmlFragment(
+        toSanitizedMarkdownHtml("Claim[^source].\n\n[^source]: Supporting **detail**.", {
+          documentId: "message-1",
+        }),
+      );
+      const reference = fragment.querySelector<HTMLAnchorElement>(".footnote-ref");
+      const note = fragment.querySelector<HTMLElement>(".footnote-item");
+      const backlink = fragment.querySelector<HTMLAnchorElement>(".footnote-backref");
+
+      expect(reference?.textContent).toBe("1");
+      expect(reference?.getAttribute("href")).toBe(`#${note?.id}`);
+      expect(backlink?.getAttribute("href")).toBe(`#${reference?.id}`);
+      expect(backlink?.getAttribute("aria-label")).toBe("Back");
+      // Note bodies render as Markdown, not escaped source.
+      expect(note?.querySelector("strong")?.textContent).toBe("detail");
+      expect(fragment.textContent).not.toContain("[^source]");
+    });
+
+    it("namespaces identical notes from adjacent transcript messages", () => {
+      const markdown = "Claim[^note].\n\n[^note]: Detail.";
+      const first = htmlFragment(toSanitizedMarkdownHtml(markdown, { documentId: "message-1" }));
+      const second = htmlFragment(toSanitizedMarkdownHtml(markdown, { documentId: "message-2" }));
+
+      const firstRef = first.querySelector(".footnote-ref");
+      const secondRef = second.querySelector(".footnote-ref");
+      expect(firstRef?.getAttribute("href")).not.toBe(secondRef?.getAttribute("href"));
+      // Each note resolves inside its own message's section.
+      const firstNote = first.querySelector(firstRef?.getAttribute("href") ?? "");
+      expect(firstNote?.classList.contains("footnote-item")).toBe(true);
+    });
+
+    it("numbers repeated references and backlinks them individually", () => {
+      const fragment = htmlFragment(
+        toSanitizedMarkdownHtml("A[^x] B[^x]\n\n[^x]: Note.", { documentId: "m" }),
+      );
+      const refs = [...fragment.querySelectorAll<HTMLAnchorElement>(".footnote-ref")];
+      const backlinks = [...fragment.querySelectorAll<HTMLAnchorElement>(".footnote-backref")];
+
+      expect(refs.map((ref) => ref.textContent)).toEqual(["1", "1"]);
+      expect(new Set(refs.map((ref) => ref.id)).size).toBe(2);
+      expect(backlinks.length).toBe(2);
+      for (const [index, backlink] of backlinks.entries()) {
+        expect(backlink.getAttribute("href")).toBe(`#${refs[index]?.id}`);
+      }
+    });
+
+    it("keeps undefined footnote references readable as source text", () => {
+      const html = toSanitizedMarkdownHtml("Claim[^missing] with no note.");
+      expect(html).toBe("<p>Claim[^missing] with no note.</p>\n");
+      expect(html).not.toContain("footnote");
+    });
+
+    it("keeps dollar amounts as plain text without math elements", () => {
+      const fragment = htmlFragment(toSanitizedMarkdownHtml("The total is $50 and E = mc^2."));
+      expect(fragment.querySelector("math")).toBeNull();
+      expect(fragment.textContent).toContain("$50");
+      expect(fragment.textContent).toContain("E = mc^2");
+    });
+  });
+
   describe("assistant transcript-role annotations", () => {
     it("marks parsed role headers without exposing Markdown delimiters", () => {
       const fragment = htmlFragment(

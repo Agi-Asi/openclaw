@@ -997,6 +997,7 @@ describe("grouped chat rendering", () => {
       assistantTranscriptRoleHeaders: false,
       codeBlockChrome: "none",
       codeBlockInteraction: "static",
+      documentId: "user-message",
       fileLinks: true,
       interactiveImages: false,
       linkFavicons: false,
@@ -1121,6 +1122,7 @@ describe("grouped chat rendering", () => {
       assistantTranscriptRoleHeaders: true,
       codeBlockChrome: "copy",
       codeBlockInteraction: "interactive",
+      documentId: "assistant-message",
       fileLinks: true,
       interactiveImages: false,
       linkFavicons: false,
@@ -1669,6 +1671,7 @@ describe("grouped chat rendering", () => {
         assistantTranscriptRoleHeaders: true,
         codeBlockChrome: "copy",
         codeBlockInteraction: "interactive",
+        documentId: "stream:1",
         fileLinks: true,
         interactiveImages: false,
         linkFavicons: false,
@@ -2061,6 +2064,7 @@ describe("grouped chat rendering", () => {
     expect(notice?.dataset.chatRowKey).toBe("notice:command");
     expect(markdownRenderMock).toHaveBeenCalledWith(expect.any(String), {
       codeBlockChrome: "none",
+      documentId: "notice:command",
     });
   });
 

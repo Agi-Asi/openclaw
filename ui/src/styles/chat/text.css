@@ -109,15 +109,15 @@
   outline-offset: 2px;
 }
 
-.chat-text :where(p, ul, ol, pre, blockquote, table, details, .markdown-table) {
+.chat-text :where(p, ul, ol, pre, blockquote, table, details, .markdown-table, .footnotes) {
   margin: 0;
 }
 
 /* Keep every adjacent top-level Markdown block on the same rhythm, including
    special blocks that otherwise read as part of the preceding block. */
 .chat-text
-  > :where(p, ul, ol, pre, blockquote, table, details, .markdown-table)
-  + :where(p, ul, ol, pre, blockquote, table, details, .markdown-table) {
+  > :where(p, ul, ol, pre, blockquote, table, details, .markdown-table, .footnotes)
+  + :where(p, ul, ol, pre, blockquote, table, details, .markdown-table, .footnotes) {
   margin-top: 1em;
 }
 
@@ -414,6 +414,46 @@
   text-align: end;
   color: var(--muted);
   font-size: calc(1em + 1px);
+}
+
+/* Footnote references read as superscript markers, not links; the endnotes
+   section separates from the prose with a hairline like a printed notes block. */
+.chat-text :where(.footnote-ref) {
+  margin-inline-start: 0.08em;
+  font-size: 0.72em;
+  line-height: 0;
+  vertical-align: super;
+  text-decoration: none;
+}
+
+.chat-text :where(.footnotes-sep) {
+  display: none;
+}
+
+:is(.chat-text, .chat-thinking) :where(.footnotes) {
+  padding-top: 0.75em;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+:is(.chat-text, .chat-thinking) :where(.footnotes-list) {
+  margin: 0;
+  padding-inline-start: var(--chat-markdown-indent);
+}
+
+:is(.chat-text, .chat-thinking) :where(.footnote-item p) {
+  display: inline;
+}
+
+:is(.chat-text, .chat-thinking) :where(.footnote-item + .footnote-item) {
+  margin-top: 0.4em;
+}
+
+.chat-text :where(.footnote-backref) {
+  display: inline-block;
+  margin-inline-start: 0.25em;
+  text-decoration: none;
 }
 
 :is(.chat-text, .chat-thinking) :where(details) {

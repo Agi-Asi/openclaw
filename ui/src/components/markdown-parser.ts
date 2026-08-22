@@ -16,6 +16,7 @@ import {
   parseMarkdownFileLinkTarget,
   splitMarkdownFileLineSuffix,
 } from "./markdown-file-links.ts";
+import { installMarkdownFootnotes } from "./markdown-footnotes.ts";
 import type { MarkdownRenderEnv } from "./markdown-render-options.ts";
 import { installMarkdownSessionLinks, SESSION_LINK_SCAN_RE } from "./markdown-session-links.ts";
 import { installMarkdownTables } from "./markdown-tables.ts";
@@ -152,6 +153,7 @@ export function createMarkdownParser(): MarkdownIt {
   installAssistantTranscriptRoleMarkdown(markdownParser, escapeMarkdownHtml);
   installMarkdownDetails(markdownParser);
   installMarkdownTables(markdownParser);
+  installMarkdownFootnotes(markdownParser);
 
   // Disable fuzzy link detection to prevent bare filenames like "README.md"
   // from being auto-linked as "http://README.md". URLs with explicit protocol

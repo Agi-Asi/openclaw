@@ -146,6 +146,7 @@ function renderMarkdownSidebar(props: MarkdownSidebarProps) {
     content?.kind === "markdown" && content.content.trim()
       ? toSanitizedMarkdownHtml(content.content, {
           codeBlockInteraction: "interactive",
+          documentId: `sidebar:${content.fullMessageRequest?.messageId ?? "markdown"}`,
           fileLinks: true,
           interactiveImages: props.onOpenImage !== undefined,
           sessionLinks: true,

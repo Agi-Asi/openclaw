@@ -303,6 +303,7 @@ export function renderGroupedMessage(
     sessionLinks: true,
     tableInteractions: "enabled",
     linkFavicons: Boolean(opts.fetchLinkFavicon) && !opts.isStreaming,
+    documentId: messageKey,
   };
 
   // Detect pure-JSON messages and render as collapsible block
@@ -536,6 +537,7 @@ export function renderGroupedMessage(
                             ${unsafeHTML(
                               toSanitizedMarkdownHtml(reasoningMarkdown, {
                                 codeBlockInteraction: "interactive",
+                                documentId: `reasoning:${messageKey}`,
                               }),
                             )}
                           </div>`
@@ -610,6 +612,7 @@ export function renderGroupedMessage(
                   ${unsafeHTML(
                     toSanitizedMarkdownHtml(reasoningMarkdown, {
                       codeBlockInteraction: "interactive",
+                      documentId: `reasoning:${messageKey}`,
                     }),
                   )}
                 </div>`
