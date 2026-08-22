@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  writeSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -175,8 +176,20 @@ async function checkpointProvenance(signal) {
 }
 
 function emitCheckpoint(lines) {
-  for (const line of lines) {
-    console.log(line);
+  const bytes = Buffer.from(`${lines.join("\n")}\n`, "utf8");
+  let offset = 0;
+  while (offset < bytes.length) {
+    try {
+      const written = writeSync(process.stdout.fd, bytes, offset, bytes.length - offset);
+      if (written === 0) {
+        throw new Error("checkpoint stdout write made no progress");
+      }
+      offset += written;
+    } catch (error) {
+      if (error?.code !== "EAGAIN" && error?.code !== "EWOULDBLOCK" && error?.code !== "EINTR") {
+        throw error;
+      }
+    }
   }
 }
 

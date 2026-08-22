@@ -201,7 +201,7 @@ describe("full release validation log checkpoints", () => {
     ).toThrow("header");
   });
 
-  it("searches earlier attempts newest-first and falls past a completed no-marker attempt", async () => {
+  it("searches earlier attempts newest-first and falls past a failed no-marker attempt", async () => {
     const attempts: number[] = [];
     const result = await recoverFullReleaseValidationLogCheckpoint({
       currentAttempt: 4,
@@ -211,7 +211,7 @@ describe("full release validation log checkpoints", () => {
         attempts.push(attempt);
         return [
           {
-            conclusion: "success",
+            conclusion: attempt === 3 ? "failure" : "success",
             head_sha: SHA,
             id: attempt,
             name: "Seal release execution plan",
@@ -227,6 +227,41 @@ describe("full release validation log checkpoints", () => {
     });
     expect(attempts).toEqual([3, 2]);
     expect(result).toMatchObject({ payload: { source: 2 }, sourceAttempt: 2 });
+  });
+
+  it.each([
+    "success",
+    "neutral",
+    "skipped",
+    "timed_out",
+    "action_required",
+    "stale",
+    "startup_failure",
+    "unknown",
+  ])("fails closed on a completed %s attempt without a checkpoint marker", async (conclusion) => {
+    await expect(
+      recoverFullReleaseValidationLogCheckpoint({
+        currentAttempt: 3,
+        expected: provenance(3),
+        kind: "plan",
+        listJobsForAttempt: async (attempt) => [
+          {
+            conclusion: attempt === 2 ? conclusion : "success",
+            head_sha: SHA,
+            id: attempt,
+            name: "Seal release execution plan",
+            run_attempt: attempt,
+            run_id: 123,
+            status: "completed",
+            workflow_name: "Full Release Validation",
+          },
+        ],
+        readJobLog: async (jobId) =>
+          Number(jobId) === 2
+            ? "completed without emission"
+            : checkpointLog("plan", { source: 1 }, 1),
+      }),
+    ).rejects.toThrow("completed without a marker");
   });
 
   it.each([

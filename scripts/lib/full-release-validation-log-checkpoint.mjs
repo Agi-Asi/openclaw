@@ -325,7 +325,12 @@ function readFullReleaseValidationLogCheckpointAttempt({
   if (checkpoint) {
     return { ...checkpoint, job, sourceAttempt: Number(runAttempt) };
   }
-  return undefined;
+  if (job.conclusion === "failure" || job.conclusion === "cancelled") {
+    return undefined;
+  }
+  throw new Error(
+    `checkpoint producer completed without a marker at attempt ${runAttempt} (conclusion: ${String(job.conclusion)})`,
+  );
 }
 
 export function readFullReleaseValidationLogCheckpointFromGitHub({

@@ -1276,8 +1276,9 @@ sleep 30
   it("writes an immediate terminal handoff with active identity on SIGTERM", async () => {
     const root = mkdtempSync(join(tmpdir(), "frv-state-signal-"));
     const gh = join(root, "gh");
-    const ghReady = join(root, "gh-ready");
     const githubOutput = join(root, "github-output");
+    const largeJobName = "n".repeat(200);
+    const largeJobUrl = `https://example.invalid/${"u".repeat(1000)}`;
     const output = join(root, "drain.json");
     const executionPlanPath = join(root, "full-release-execution-plan.json");
     writeFileSync(
@@ -1299,8 +1300,12 @@ if echo "$*" | grep -q '/actions/runs/77$'; then
   printf '%s\\n' '{"id":77,"event":"workflow_dispatch","run_attempt":2,"head_sha":"${SHA}","workflow_id":456,"path":".github/workflows/full-release-validation.yml"}'
   exit 0
 fi
-printf ready > "$FRV_GH_READY"
-if [ "$1" = "api" ] && echo "$2" | grep -q '/jobs'; then
+if [ "$1" = "api" ] && echo "$*" | grep -q '/jobs'; then
+  i=0
+  while [ "$i" -lt 94 ]; do
+    printf '%s\\n' '{"name":"${largeJobName}","status":"in_progress","conclusion":null,"html_url":"${largeJobUrl}"}'
+    i=$((i + 1))
+  done
   exit 0
 fi
 printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/ci.yml@refs/heads/release-ci/tooling","display_title":"CI full-release-validation-77-1-ci","head_branch":"release-ci/tooling","head_sha":"${SHA}","run_attempt":1,"status":"in_progress","conclusion":null,"created_at":"2026-08-21T00:00:00Z","updated_at":"2026-08-21T00:01:00Z","html_url":"https://example.invalid/runs/101"}'
@@ -1311,7 +1316,6 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
       env: {
         ...process.env,
         FAIL_FAST: "false",
-        FRV_GH_READY: ghReady,
         FULL_RELEASE_EXECUTION_PLAN_PATH: executionPlanPath,
         FULL_RELEASE_POLL_INTERVAL_MS: "60000",
         FULL_RELEASE_STATE_PATH: output,
@@ -1329,8 +1333,22 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
       stdio: ["ignore", "pipe", "ignore"],
     });
     const stdout: Buffer[] = [];
-    childProcess.stdout?.on("data", (chunk) => stdout.push(chunk));
-    await waitForFile(ghReady, 5_000);
+    const heartbeat = new Promise<void>((markHeartbeat, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("timeout waiting for drain heartbeat")),
+        5_000,
+      );
+      let stdoutText = "";
+      childProcess.stdout?.on("data", (chunk) => {
+        stdout.push(chunk);
+        stdoutText += chunk.toString("utf8");
+        if (stdoutText.includes("drain heartbeat:")) {
+          clearTimeout(timeout);
+          markHeartbeat();
+        }
+      });
+    });
+    await heartbeat;
     const exitPromise = waitForChildClose(childProcess);
     childProcess.kill("SIGTERM");
     const exit = await exitPromise;
@@ -1342,18 +1360,22 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
       state: "cancelled_with_children",
     });
     expect(readFileSync(githubOutput, "utf8")).toContain("state=cancelled_with_children");
-    expect(
-      parseFullReleaseValidationLogCheckpoint(Buffer.concat(stdout).toString("utf8"), {
-        kind: "drain",
-        producerJobKey: "diagnostic_drain",
-        runAttempt: 2,
-        runId: "77",
-        targetSha: TARGET_SHA,
-        workflowId: 456,
-        workflowPath: ".github/workflows/full-release-validation.yml",
-        workflowSha: SHA,
-      })?.payload,
-    ).toEqual(artifact);
+    const log = Buffer.concat(stdout).toString("utf8");
+    const checkpoint = parseFullReleaseValidationLogCheckpoint(log, {
+      kind: "drain",
+      producerJobKey: "diagnostic_drain",
+      runAttempt: 2,
+      runId: "77",
+      targetSha: TARGET_SHA,
+      workflowId: 456,
+      workflowPath: ".github/workflows/full-release-validation.yml",
+      workflowSha: SHA,
+    });
+    expect(checkpoint?.envelope.byteLength).toBeGreaterThan(120 * 1024);
+    expect(log.match(/^\[openclaw-frv-checkpoint\] /gmu)).toHaveLength(
+      Number(checkpoint?.envelope.chunkCount) + 2,
+    );
+    expect(checkpoint?.payload).toEqual(artifact);
   });
 
   it("cancels only the exact affected child and never cancels from drain", () => {
