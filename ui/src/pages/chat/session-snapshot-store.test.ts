@@ -202,44 +202,6 @@ describe("persistent chat session snapshots", () => {
     expect((await readStoredChatSnapshot(sessionKey))?.messages).toEqual(["stale-from-tab-a"]);
   });
 
-  it("resets safely across a persisted-database version upgrade with old conversations", async () => {
-    // A future schema version (v2 here) must fail closed: the older reader
-    // wipes the cache instead of misreading records, and the next write
-    // rebuilds a healthy store. Old conversations come back from the network.
-    const legacyKey = "agent:main:legacy";
-    await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open(CHAT_SNAPSHOT_DB_NAME, 2);
-      request.addEventListener("upgradeneeded", () => {
-        request.result.createObjectStore(CHAT_SNAPSHOT_STORE_NAME, { keyPath: "sessionKey" });
-      });
-      request.addEventListener("success", () => {
-        const database = request.result;
-        const transaction = database.transaction(CHAT_SNAPSHOT_STORE_NAME, "readwrite");
-        transaction.objectStore(CHAT_SNAPSHOT_STORE_NAME).put({
-          savedAt: 1,
-          sessionId: null,
-          sessionKey: legacyKey,
-          snapshot: { messages: ["old-conversation"], pagination: { hasMore: false } },
-        });
-        transaction.addEventListener("complete", () => {
-          database.close();
-          resolve();
-        });
-        transaction.addEventListener("error", () =>
-          reject(transaction.error ?? new Error("legacy put failed")),
-        );
-      });
-      request.addEventListener("error", () => reject(request.error ?? new Error("open failed")));
-    });
-
-    expect(await readStoredChatSnapshot(legacyKey)).toBeNull();
-
-    const rebuilt = new SessionSnapshotStore();
-    rebuilt.write(legacyKey, snapshot("fresh"));
-    await rebuilt.flush();
-    expect((await readStoredChatSnapshot(legacyKey))?.messages).toEqual(["fresh"]);
-  });
-
   it("round-trips a multi-megabyte snapshot through the probe path", async () => {
     const sessionKey = "agent:main:huge";
     const bigBody = "x".repeat(5 * 1024 * 1024);

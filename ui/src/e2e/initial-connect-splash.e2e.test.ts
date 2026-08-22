@@ -140,12 +140,13 @@ async function seedStoredTranscript(
         },
       };
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("openclaw-chat-snapshots", 1);
+        const request = indexedDB.open("openclaw-chat-snapshots", 2);
         request.addEventListener("upgradeneeded", () => {
           for (const name of Array.from(request.result.objectStoreNames)) {
             request.result.deleteObjectStore(name);
           }
           request.result.createObjectStore("snapshots", { keyPath: "sessionKey" });
+          request.result.createObjectStore("snapshotMetadata", { keyPath: "sessionKey" });
         });
         request.addEventListener("success", () => resolve(request.result));
         request.addEventListener("error", () => reject(request.error ?? new Error("open failed")));

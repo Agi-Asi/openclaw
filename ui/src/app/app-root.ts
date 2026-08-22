@@ -207,11 +207,12 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
     void this.probeSavedTranscript()
-      .then(() => {
+      .then(async () => {
         if (this.runtime !== runtime) {
           return;
         }
-        void runtime.start().then(() => this.resolveFocusDashboard());
+        await runtime.start();
+        await this.resolveFocusDashboard();
       })
       .catch((error: unknown) => {
         console.error("[openclaw] application start failed", error);
@@ -245,12 +246,15 @@ export class OpenClawApp extends OpenClawLightDomElement {
     if (sourceChanged) {
       this.loginGatewaySource = gateway;
       this.loginConnectionClient = null;
+      this.savedTranscriptReady = false;
+      this.connectSplashDue = false;
       this.resetLoginSensitivePresentation();
     }
     const snapshot = gateway.snapshot;
     const clientChanged = snapshot.client !== this.loginConnectionClient;
     if (clientChanged) {
       this.loginConnectionClient = snapshot.client;
+      this.connectSplashDue = false;
       this.resetLoginSensitivePresentation();
     }
     if (sourceChanged || clientChanged) {
