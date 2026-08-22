@@ -128,6 +128,8 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Make attached queue and goal chrome span the full composer width.
 - [x] Use the success token for the completed Plan pill check.
 - [x] Keep failed queue actions on the primary row and move the delivery-state pill before the diagnostic copy.
+- [x] Enforce one precedence-ordered composer status lane and keep Interrupted with its assistant turn.
+- [x] Add Interrupted + members, offline + read-only and approval + offline sweep fixtures.
 
 ## Observed queue contract
 

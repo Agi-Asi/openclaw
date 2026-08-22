@@ -372,6 +372,10 @@ export class ChatPane extends ChatPaneLayoutRender {
           (!sessionParticipationBlocked || suggestionViewer) &&
           !placementStartupPending,
       disabledReason: catalogDisabledReason ?? disabledReason,
+      disabledReasonTone:
+        sessionParticipationBlocked && !suggestionViewer && !catalogDisabledReason
+          ? "info"
+          : "danger",
       disabledBanner: this.sessionDisabledBanner({
         catalogDisabledReason,
         modelSetupRequired,

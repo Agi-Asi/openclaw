@@ -3162,6 +3162,60 @@ button.chat-pr__diff {
   overflow: hidden;
 }
 
+/* The underlap is a single status lane. Events belong to their transcript,
+   queue item, or toast owner and never stack additional composer rows here. */
+.agent-chat__composer-underlaps[data-tone="info"] {
+  border-color: color-mix(in srgb, var(--info) 16%, transparent);
+  background: color-mix(in srgb, var(--info) 9%, var(--chat-composer-surface));
+  color: color-mix(in srgb, var(--info) 72%, var(--text));
+}
+
+.agent-chat__composer-underlaps[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--warn) 16%, transparent);
+  background: color-mix(in srgb, var(--warn) 9%, var(--chat-composer-surface));
+  color: color-mix(in srgb, var(--warn) 72%, var(--text));
+}
+
+.agent-chat__composer-underlaps[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--danger) 16%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, var(--chat-composer-surface));
+  color: color-mix(in srgb, var(--danger) 78%, var(--text));
+}
+
+.agent-chat__composer-status-band {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--chat-composer-underlap-row-height);
+  padding: 8px 14px;
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.agent-chat__composer-status-icon,
+.agent-chat__composer-status-more {
+  flex: 0 0 auto;
+}
+
+.agent-chat__composer-status-icon svg {
+  width: var(--chat-composer-footer-icon-size);
+  height: var(--chat-composer-footer-icon-size);
+}
+
+.agent-chat__composer-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-chat__composer-status-more {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .agent-chat__composer-underlaps:has(.agent-chat__composer-error):not(
     :has(.agent-chat__offline-hint)
   ) {

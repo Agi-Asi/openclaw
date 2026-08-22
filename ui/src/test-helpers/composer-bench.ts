@@ -66,6 +66,7 @@ type BenchState = {
     | "failed";
   queueRow: "text" | "attachments" | "command" | "member" | "run-attached";
   run: "idle" | "running" | "steering" | "approval" | "interrupted";
+  access: "normal" | "members" | "read-only";
   followUpMode: "queue" | "steer" | "collect" | "interrupt";
   tasks: "none" | "one" | "three";
   plan: "none" | "active" | "complete";
@@ -166,6 +167,7 @@ const defaults: BenchState = {
   queueState: "ready",
   queueRow: "text",
   run: "idle",
+  access: "normal",
   followUpMode: "queue",
   tasks: "none",
   plan: "none",
@@ -440,6 +442,21 @@ const scenarios: BenchScenario[] = [
     name: "Waiting for approval",
     description: "The run is paused on its real approval surface.",
     state: { content: "one", run: "approval" },
+  },
+  {
+    name: "Interrupted + members",
+    description: "A terminal event stays with the transcript while member access owns the composer.",
+    state: { content: "one", run: "interrupted", access: "members" },
+  },
+  {
+    name: "Offline + read only",
+    description: "Read-only access outranks an offline connection without stacking status rows.",
+    state: { content: "one", status: "offline", access: "read-only" },
+  },
+  {
+    name: "Approval + offline",
+    description: "Approval owns the status lane and summarizes the secondary offline state.",
+    state: { content: "one", run: "approval", status: "offline" },
   },
   {
     name: "Plan active",
@@ -1196,13 +1213,17 @@ function renderChatSurface(sessionList: SessionsListResult) {
     connected: state.status !== "offline",
     offline: state.status === "offline",
     queuedOutboxCount: state.status === "offline" ? queue().length : 0,
-    canSend: state.status !== "disabled" && state.status !== "catalog",
+    canSend:
+      state.status !== "disabled" && state.status !== "catalog" && state.access === "normal",
     disabledReason:
-      state.status === "disabled"
+      state.access === "members" || state.access === "read-only"
+        ? t("chat.sessionSharing.readOnlyNotice")
+        : state.status === "disabled"
         ? t("chat.sessionSharing.readOnlyNotice")
         : state.status === "catalog"
           ? t("chat.catalog.unsupportedViewOnly")
           : null,
+    disabledReasonTone: state.access === "members" ? "info" : "danger",
     disabledBanner: insetBanner,
     runError: state.status === "error" ? { summary: "Send failed" } : null,
     sending: state.status === "sending",
@@ -1217,7 +1238,16 @@ function renderChatSurface(sessionList: SessionsListResult) {
             occurredAt: Date.now(),
           }
         : null,
-    messages: [],
+    messages:
+      state.run === "interrupted"
+        ? [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "The previous response ended before completion." }],
+              timestamp: Date.now() - 5_000,
+            },
+          ]
+        : [],
     stream: running ? "Adjusting the composer surface live..." : null,
     compactionStatus:
       state.inset === "compaction"

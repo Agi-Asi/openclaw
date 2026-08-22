@@ -322,6 +322,7 @@ export function projectChatTranscript(
     { parts: StreamGroupPart[]; options: StreamGroupOptions }
   >();
   const turnRecapByGroupKey = new Map<string, TurnRecap>();
+  const terminalStatusByGroupKey = new Map<string, "interrupted">();
   const loadedReplySources = new Map<string, LoadedReplySource>();
   const resolvedReplyPreviews = new Map<string, LoadedReplySource["preview"] | undefined>();
   const resolveReplyPreview = (replyToId: string) => {
@@ -419,6 +420,7 @@ export function projectChatTranscript(
       rewindDisabled: Boolean(props.runActive || props.runWorking),
       activeContinuation: activeContinuationByGroupKey.get(item.key),
       turnRecap: turnRecapByGroupKey.get(item.key),
+      terminalStatus: terminalStatusByGroupKey.get(item.key),
     } satisfies Parameters<typeof renderMessageGroup>[1];
   };
   const renderGroupItem = (item: MessageGroup) => {
@@ -574,6 +576,15 @@ export function projectChatTranscript(
       turnRecapOwnerKey = lastItem.key;
     }
   }
+  if (props.runStatus?.phase === "interrupted") {
+    const owner = transcriptItems.findLast(
+      (item): item is MessageGroup =>
+        item.kind === "group" && assistantGroupCanOwnActiveRunStatus(item),
+    );
+    if (owner) {
+      terminalStatusByGroupKey.set(owner.key, "interrupted");
+    }
+  }
   // New row keys measure expanded work immediately; existing keys keep their
   // cached height until ResizeObserver reports the changed layout.
   const transcriptRows = transcriptItems.flatMap((item): TranscriptRow<ChatRenderItem>[] =>
@@ -666,6 +677,8 @@ export function projectChatTranscript(
     props.replyMessageAccess?.revision ?? 0,
     props.replyMessageAccess?.navigationId ?? "",
     turnRecap === null ? "" : `${turnRecap.runtimeMs}:${turnRecap.outputTokens ?? ""}`,
+    props.runStatus?.phase ?? "",
+    props.runStatus?.occurredAt ?? 0,
   ]);
   state.transcriptRenderContext.onSetReply = props.onSetReply;
   state.transcriptRenderContext.onOpenReply = (replyToId) => {

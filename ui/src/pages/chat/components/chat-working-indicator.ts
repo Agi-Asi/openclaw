@@ -215,3 +215,12 @@ export function renderTurnRecapRow(
     </div>
   `;
 }
+
+export function renderTurnTerminalStatusRow(status: "interrupted") {
+  return html`
+    <div class="chat-turn-terminal-status chat-turn-terminal-status--${status}" role="status">
+      <span aria-hidden="true">${icons.stop}</span>
+      <span>${t("chat.composer.runInterrupted")}</span>
+    </div>
+  `;
+}

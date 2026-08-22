@@ -172,69 +172,76 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           : props.onDismissRealtimeTalkError,
       })
     : nothing;
-  const runError = props.runError
-    ? html`
-        <div class="agent-chat__composer-error agent-chat__run-error chat-run-error" role="alert">
-          <span
-            class="agent-chat__composer-error-icon chat-run-error__icon"
-            aria-hidden="true"
-            >${icons.alertTriangle}</span
-          >
-          <span class="agent-chat__composer-error-text chat-run-error__summary"
-            >${props.runError.summary}</span
-          >
-        </div>
-      `
-    : nothing;
-  const interruptedNotice =
-    composerRunStatus?.phase === "interrupted"
-      ? html`
-          <div class="agent-chat__composer-error agent-chat__run-error chat-run-error" role="status">
-            <span class="agent-chat__composer-error-icon chat-run-error__icon" aria-hidden="true"
-              >${icons.stop}</span
-            >
-            <span class="agent-chat__composer-error-text chat-run-error__summary"
-              >${t("chat.composer.runInterrupted")}</span
-            >
-          </div>
-        `
-      : nothing;
-  const disabledNotice =
-    showComposerInput && props.disabledReason
-      ? html`
-          <div id=${disabledReasonId} class="agent-chat__composer-notice" role="note">
-            <span class="agent-chat__composer-notice-icon" aria-hidden="true"
-              >${icons.shieldQuestion}</span
-            >
-            <span class="agent-chat__composer-error-text">${props.disabledReason}</span>
-          </div>
-        `
-      : nothing;
   const composerAlerts =
-    voiceError !== nothing ||
-    runError !== nothing ||
-    interruptedNotice !== nothing ||
-    disabledNotice !== nothing
-      ? html`<div
-          class="agent-chat__composer-errors ${showComposerInput
-            ? ""
-            : "agent-chat__composer-errors--standalone"}"
-          >${voiceError}${runError}${interruptedNotice}${disabledNotice}</div
+    voiceError !== nothing
+      ? html`<div class="agent-chat__composer-errors agent-chat__composer-errors--standalone"
+          >${voiceError}</div
         >`
       : nothing;
-  const offlineHint =
-    showComposerInput && props.offline
-      ? html`<div class="agent-chat__offline-hint" role="status" aria-live="polite">
-          ${props.queuedOutboxCount
-            ? t("chat.composer.offlineQueuedHint", {
-                count: String(props.queuedOutboxCount),
-              })
-            : t("chat.composer.offlineHint")}
-        </div>`
-      : nothing;
+  const offlineText = props.offline
+    ? props.queuedOutboxCount
+      ? t("chat.composer.offlineQueuedHint", { count: String(props.queuedOutboxCount) })
+      : t("chat.composer.offlineHint")
+    : null;
+  const composerStatuses = [
+    ...(props.disabledReason
+      ? [
+          {
+            text: props.disabledReason,
+            tone: props.disabledReasonTone ?? ("danger" as const),
+            icon: icons.shieldQuestion,
+            omitsSecondary: true,
+          },
+        ]
+      : []),
+    ...(props.waitingApproval
+      ? [
+          {
+            text: t("chat.waitingForApproval"),
+            tone: "danger" as const,
+            icon: icons.alertTriangle,
+            omitsSecondary: false,
+          },
+        ]
+      : []),
+    ...(offlineText
+      ? [
+          {
+            text: offlineText,
+            tone: "warn" as const,
+            icon: icons.clock,
+            omitsSecondary: false,
+          },
+        ]
+      : []),
+  ];
+  const primaryComposerStatus = composerStatuses[0] ?? null;
+  const hiddenComposerStatusCount = primaryComposerStatus?.omitsSecondary
+    ? 0
+    : Math.max(0, composerStatuses.length - 1);
   const composerUnderlaps =
-    showComposerInput && (composerAlerts !== nothing || offlineHint !== nothing)
-      ? html`<div class="agent-chat__composer-underlaps">${composerAlerts}${offlineHint}</div>`
+    showComposerInput && primaryComposerStatus
+      ? html`<div
+          class="agent-chat__composer-underlaps"
+          data-tone=${primaryComposerStatus.tone}
+        >
+          <div
+            id=${props.disabledReason ? disabledReasonId : nothing}
+            class="agent-chat__composer-status-band"
+            role=${primaryComposerStatus.tone === "danger" ? "alert" : "status"}
+            aria-live="polite"
+          >
+            <span class="agent-chat__composer-status-icon" aria-hidden="true"
+              >${primaryComposerStatus.icon}</span
+            >
+            <span class="agent-chat__composer-status-text">${primaryComposerStatus.text}</span>
+            ${hiddenComposerStatusCount > 0
+              ? html`<span class="agent-chat__composer-status-more"
+                  >· +${hiddenComposerStatusCount}</span
+                >`
+              : nothing}
+          </div>
+        </div>`
       : nothing;
   const skillDraftOverlay = renderSkillDraftOverlay(visibleDraft);
   // Dictation streams into the editor: the live partial previews at the spot
@@ -313,8 +320,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             </div>
           `
         : nothing}
-      ${disabledBanner} ${progressCard} ${queue} ${goal}
-      ${showComposerInput ? nothing : composerAlerts}
+      ${disabledBanner} ${progressCard} ${queue} ${goal} ${composerAlerts}
       ${showComposerInput
           ? html`<div
             class="agent-chat__input agent-chat__input--chat ${props.offline

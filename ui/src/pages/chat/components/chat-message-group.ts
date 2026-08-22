@@ -52,7 +52,7 @@ import {
   syncToolDisclosureOverflow,
   toggleToolDisclosureKeepingScroll,
 } from "./chat-tool-cards.ts";
-import { renderTurnRecapRow } from "./chat-working-indicator.ts";
+import { renderTurnRecapRow, renderTurnTerminalStatusRow } from "./chat-working-indicator.ts";
 
 type ActiveContinuation = {
   parts: StreamGroupPart[];
@@ -109,6 +109,7 @@ type RenderMessageGroupOptions = {
   rewindDisabled?: boolean;
   activeContinuation?: ActiveContinuation;
   turnRecap?: TurnRecap;
+  terminalStatus?: "interrupted";
 };
 
 type GroupedMessageRenderOptions = Parameters<typeof renderGroupedMessage>[2];
@@ -522,6 +523,7 @@ export function renderMessageGroup(group: MessageGroup, opts: RenderMessageGroup
           : opts.turnRecap
             ? renderTurnRecapRow(opts.turnRecap, { presentation: "continuation" })
             : nothing}
+        ${opts.terminalStatus ? renderTurnTerminalStatusRow(opts.terminalStatus) : nothing}
       </div>
       ${normalizedRole === "tool"
         ? nothing
