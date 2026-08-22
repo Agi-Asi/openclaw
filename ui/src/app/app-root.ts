@@ -61,6 +61,11 @@ function renderConnectingSplash(status?: string) {
   `;
 }
 
+// A handshake that resolves faster than this never earns the mascot: the
+// document stays on the plain boot background and goes straight to content,
+// so fast connects cannot flash the splash (duration-token timer below).
+const CONNECT_SPLASH_DELAY_MS = 300;
+
 export class OpenClawApp extends OpenClawLightDomElement {
   // Pinned while a connect submitted from the visible login gate is in
   // flight, so a failed manual attempt cannot flash the shell in between.
@@ -77,6 +82,28 @@ export class OpenClawApp extends OpenClawLightDomElement {
   // the first connect paints that conversation instead of the full-document
   // splash. One-shot per document load; a probe miss keeps today's splash.
   @state() private savedTranscriptReady = false;
+  // The initial-connect splash is earned only after CONNECT_SPLASH_DELAY_MS;
+  // below that the boot background holds until content (or the gate) lands.
+  // Settling clears the single timer slot, so no stale fire survives.
+  @state() private connectSplashDue = false;
+  private connectSplashTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+  private armDeferredConnectSplash(): void {
+    if (this.connectSplashTimer !== null) {
+      return;
+    }
+    this.connectSplashTimer = globalThis.setTimeout(() => {
+      this.connectSplashTimer = null;
+      this.connectSplashDue = true;
+    }, CONNECT_SPLASH_DELAY_MS);
+  }
+
+  private settleConnectSplashTimer(): void {
+    if (this.connectSplashTimer !== null) {
+      globalThis.clearTimeout(this.connectSplashTimer);
+      this.connectSplashTimer = null;
+    }
+  }
 
   private probeSavedTranscript(): void {
     if (this.savedTranscriptReady || !this.context || !this.runtime) {
@@ -176,6 +203,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
     this.contextProvider.setValue(context);
     this.syncLoginConnection();
     this.probeSavedTranscript();
+    this.armDeferredConnectSplash();
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
@@ -189,6 +217,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
 
   override disconnectedCallback() {
     // Stop reactive subscriptions before disposing their application sources.
+    this.settleConnectSplashTimer();
     this.subscriptions.clear();
     this.focusDashboardAbort?.abort();
     this.focusDashboardAbort = null;
@@ -223,6 +252,11 @@ export class OpenClawApp extends OpenClawLightDomElement {
     }
     if (sourceChanged || clientChanged) {
       this.syncLoginConnection(gateway);
+    }
+    if (snapshot.phase === "connected" || snapshot.lastError !== null) {
+      // The pending first connect ended (or moved to the recovery gate), so
+      // the deferred splash decision no longer matters.
+      this.settleConnectSplashTimer();
     }
     if (snapshot.phase === "connected") {
       this.loginGatePinned = false;
@@ -545,10 +579,26 @@ export class OpenClawApp extends OpenClawLightDomElement {
       gatewaySnapshot.lastError === null &&
       (gatewaySnapshot.phase === "starting" ||
         (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
-    if (initialConnectPending && !this.savedTranscriptReady) {
+    const startupProgressVisible = gatewaySnapshot.phase === "starting";
+    if (
+      initialConnectPending &&
+      !this.savedTranscriptReady &&
+      (startupProgressVisible || this.connectSplashDue)
+    ) {
       return html`
         <openclaw-tooltip-provider>
           ${renderConnectingSplash(gatewayStartupStatus)} ${gatewayUrlConfirmation}
+        </openclaw-tooltip-provider>
+      `;
+    }
+    if (initialConnectPending && !this.savedTranscriptReady) {
+      // Below the splash threshold the document holds the plain boot
+      // background so a fast handshake goes straight to content without
+      // flashing the mascot.
+      return html`
+        <openclaw-tooltip-provider>
+          <main class="app-shell app-shell--booting" aria-busy="true"></main>
+          ${gatewayUrlConfirmation}
         </openclaw-tooltip-provider>
       `;
     }
