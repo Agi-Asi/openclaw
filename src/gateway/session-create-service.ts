@@ -6,6 +6,7 @@ import {
 import {
   ErrorCodes,
   type ErrorShape,
+  type SessionToolModeSelection,
   type SessionVisibility,
   errorShape,
   missingScopeErrorShape,
@@ -49,6 +50,7 @@ import {
   hasInternalHookListeners,
   triggerInternalHook,
 } from "../hooks/internal-hooks.js";
+import { resolveSessionToolMode } from "../plugins/session-tool-modes.js";
 import {
   isIncognitoSessionKey,
   isSubagentSessionKey,
@@ -312,6 +314,7 @@ export async function createGatewaySession(params: {
   spawnedCwd?: string;
   sessionRoot?: string;
   permissionMode?: SessionEntry["permissionMode"];
+  toolMode?: SessionToolModeSelection;
   /** Prepares session-owned resources while the target lifecycle fence is held. */
   prepareLifecycle?: PrepareGatewaySessionLifecycle;
   onLifecycleCleanupError?: (error: unknown) => void;
@@ -351,6 +354,18 @@ export async function createGatewaySession(params: {
   /** Synchronous caller-authority guard checked by each durable owner boundary. */
   commitGuard?: () => void;
 }): Promise<CreateGatewaySessionResult> {
+  if (
+    params.toolMode &&
+    resolveSessionToolMode({ selection: params.toolMode })?.status !== "available"
+  ) {
+    return {
+      ok: false,
+      error: errorShape(
+        ErrorCodes.INVALID_REQUEST,
+        `unavailable session Tool mode: ${params.toolMode.pluginId}/${params.toolMode.modeId}`,
+      ),
+    };
+  }
   const requestedKey = normalizeOptionalString(params.key);
   const parentSessionKey = normalizeOptionalString(params.parentSessionKey);
   const projectId = normalizeOptionalString(params.projectId);
@@ -705,6 +720,7 @@ export async function createGatewaySession(params: {
         ...(spawnedCwd ? { spawnedCwd } : {}),
         ...(params.sessionRoot ? { sessionRoot: params.sessionRoot } : {}),
         ...(params.permissionMode ? { permissionMode: params.permissionMode } : {}),
+        ...(params.toolMode ? { toolMode: params.toolMode } : {}),
         ...(params.prepareLifecycle ? { prepareLifecycle: params.prepareLifecycle } : {}),
         ...(params.onLifecycleCleanupError
           ? { onLifecycleCleanupError: params.onLifecycleCleanupError }
@@ -1100,6 +1116,7 @@ export async function createGatewaySession(params: {
           ...(spawnedCwd ? { spawnedCwd } : {}),
           ...(sessionRoot ? { sessionRoot } : {}),
           ...(params.permissionMode ? { permissionMode: params.permissionMode } : {}),
+          ...(params.toolMode ? { toolMode: structuredClone(params.toolMode) } : {}),
           ...(preparedLifecycle?.worktree ? { worktree: preparedLifecycle.worktree } : {}),
           ...(execNode ? { execHost: "node", execNode, ...(execCwd ? { execCwd } : {}) } : {}),
           ...(createdNewEntry && params.armSessionDiffBaselineCapture && !execNode

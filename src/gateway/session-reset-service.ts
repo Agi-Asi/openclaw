@@ -946,6 +946,7 @@ export async function performGatewaySessionReset(params: {
   spawnedCwd?: string;
   sessionRoot?: string;
   permissionMode?: SessionEntry["permissionMode"];
+  toolMode?: SessionEntry["toolMode"];
   /** Prepares session-owned resources while the target lifecycle fence is held. */
   prepareLifecycle?: PrepareGatewaySessionLifecycle;
   onLifecycleCleanupError?: (error: unknown) => void;
@@ -1569,6 +1570,7 @@ export async function performGatewaySessionReset(params: {
             permissionMode: params.clearSpawnedCwd
               ? undefined
               : (params.permissionMode ?? currentEntry?.permissionMode),
+            toolMode: params.toolMode ?? currentEntry?.toolMode,
             worktree: params.clearSpawnedCwd
               ? undefined
               : (preparedLifecycle?.worktree ?? currentEntry?.worktree),

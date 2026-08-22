@@ -44,6 +44,7 @@ import {
 import { renderProjectChip, resolveProjectChip } from "./project-chip.ts";
 import type { SubmissionOutcomeReason } from "./session-placement-recovery-state.ts";
 import { renderAgentSelect } from "./target-controls.ts";
+import { NewSessionToolModeController } from "./tool-mode-controller.ts";
 import { renderWhereChip, resolveWhereChip } from "./where-chip.ts";
 
 const { activateDraft, restoreDraft, restoreDraftOwner, retainDraft } = drafts;
@@ -65,6 +66,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
   private connectMachineSetup: DevicePairSetup | null = null;
   private connectMachineRequestId = 0;
   @state() private imageLightbox: ImageLightboxItem | null = null;
+  private readonly toolMode: NewSessionToolModeController;
   private readonly groupRouteRevalidation = new catalog.GroupRouteRevalidation(
     () => this.data,
     () => this.context?.revalidate("new-session"),
@@ -156,11 +158,12 @@ export class NewSessionPage extends OpenClawLightDomElement {
         closeTransientUi: () => closeSessionMenus(this),
       },
     );
+    this.toolMode = new NewSessionToolModeController(this.submission, () => this.requestUpdate());
     this.subscriptions = new SubscriptionsController(this)
       .watch(
         () => this.context?.gateway,
         (gateway, notify) => gateway.subscribe(notify),
-        (gateway) => this.gateway.synchronize(gateway),
+        (gateway) => this.toolMode.synchronizeGateway(gateway, this.gateway),
       )
       .effect(
         () => this.context?.gateway,
@@ -600,6 +603,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
           visibility: this.submission.visibility,
           draftAvailable: this.submission.canStartAsDraft(),
           modelControl: this.place.modelControl,
+          ...this.toolMode.composerOptions(this.place, this.context),
           requiresModifier: loadSettings().chatSendShortcut === "modifier-enter",
           requestUpdate: () => this.requestUpdate(),
           submitting: this.submission.submitting,

@@ -1,0 +1,13 @@
+{
+  "id": "developer-mode",
+  "name": "Developer Mode",
+  "description": "Adds per-session Standard, Code, and Minimal Tool modes.",
+  "enabledByDefault": false,
+  "activation": {
+    "onStartup": true
+  },
+  "catalog": {
+    "featured": true,
+    "order": 40
+  }
+}

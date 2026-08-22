@@ -1,8 +1,13 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
+import type {
+  PluginSessionToolMode,
+  SessionToolModeSelection,
+} from "../../../../packages/gateway-protocol/src/index.js";
 import { icons } from "../../components/icons.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.ts";
+import { syncDropdownItemRadio } from "../../components/web-awesome.ts";
 import { t } from "../../i18n/index.ts";
 import "../../components/tooltip.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
@@ -44,6 +49,9 @@ type NewSessionComposerOptions = {
   getAttachments: () => ChatAttachment[];
   message: string;
   modelControl?: TemplateResult | typeof nothing;
+  toolModes: PluginSessionToolMode[];
+  toolMode?: SessionToolModeSelection;
+  toolModeRuntimeId?: string;
   pendingAttachmentReads: number;
   readSignal: AbortSignal;
   requiresModifier: boolean;
@@ -66,6 +74,7 @@ type NewSessionComposerOptions = {
   onInput: (message: string) => void;
   onOpenImage?: (item: ImageLightboxItem) => void;
   onVisibilityChange?: (visibility: NewSessionVisibility) => void;
+  onToolModeChange?: (selection: SessionToolModeSelection) => void;
   onSubmit: () => void;
 };
 
@@ -196,6 +205,50 @@ function renderVisibilityPill(params: {
       <span aria-hidden="true">${params.icon}</span>${params.label}
     </button>
   `;
+}
+
+function renderToolModePicker(options: NewSessionComposerOptions) {
+  if (options.toolModes.length === 0) {
+    return nothing;
+  }
+  const current = options.toolMode
+    ? options.toolModes.find(
+        (mode) =>
+          mode.pluginId === options.toolMode?.pluginId && mode.id === options.toolMode.modeId,
+      )
+    : options.toolModes.find((mode) => mode.default === true);
+  const runtimeId = options.toolModeRuntimeId?.trim().toLowerCase();
+  const compatible = options.toolModes.some((mode) =>
+    runtimeId ? mode.supportedRuntimeIds.includes(runtimeId) : true,
+  );
+  const title = compatible
+    ? current?.controlLabel
+    : `Available for ${options.toolModes.flatMap((mode) => mode.supportedRuntimeIds).join(", ")} sessions`;
+  return html`<wa-dropdown placement="top-start">
+    <button
+      slot="trigger"
+      type="button"
+      class="new-session-page__tool-mode-trigger"
+      ?disabled=${!compatible || options.submitting || options.messageLocked}
+      title=${title ?? "Tool mode"}
+      aria-label=${`${current?.controlLabel ?? "Tool mode"}: ${current?.label ?? "Standard"}`}
+    >
+      ${current?.label ?? "Standard"}<span aria-hidden="true">▾</span>
+    </button>
+    ${options.toolModes.map((mode) => {
+      const checked = current?.pluginId === mode.pluginId && current.id === mode.id;
+      return html`<wa-dropdown-item
+        value=${`${mode.pluginId}:${mode.id}`}
+        role="menuitemradio"
+        aria-checked=${String(checked)}
+        ${ref((element) => syncDropdownItemRadio(element, checked))}
+        ?disabled=${checked}
+        @click=${() => options.onToolModeChange?.({ pluginId: mode.pluginId, modeId: mode.id })}
+      >
+        ${mode.label}
+      </wa-dropdown-item>`;
+    })}
+  </wa-dropdown>`;
 }
 
 export function renderDraftError(message: string) {
@@ -345,7 +398,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
         </div>
         <div class="agent-chat__composer-footer">
           <div class="agent-chat__composer-controls">
-            ${renderChatAttachmentMenu(attachmentProps)}
+            ${renderChatAttachmentMenu(attachmentProps)} ${renderToolModePicker(options)}
             ${options.modelControl && options.modelControl !== nothing
               ? html`<div class="chat-composer-model-control">${options.modelControl}</div>`
               : nothing}
@@ -384,6 +437,9 @@ export function renderNewSessionDraftComposer(options: {
   visibility?: NewSessionVisibility;
   draftAvailable?: boolean;
   modelControl: NewSessionModelControl;
+  toolModes?: PluginSessionToolMode[];
+  toolMode?: SessionToolModeSelection;
+  toolModeRuntimeId?: string;
   textareaController: NewSessionComposerTextareaController;
   requiresModifier: boolean;
   requestUpdate: () => void;
@@ -399,6 +455,7 @@ export function renderNewSessionDraftComposer(options: {
   onInput: (message: string) => void;
   onOpenImage?: (item: ImageLightboxItem) => void;
   onVisibilityChange?: (visibility: NewSessionVisibility) => void;
+  onToolModeChange?: (selection: SessionToolModeSelection) => void;
   onSubmit: () => void;
 }) {
   const readSignal = options.attachmentDraft.readSignal;
@@ -411,6 +468,9 @@ export function renderNewSessionDraftComposer(options: {
     message: options.message,
     visibility: options.visibility,
     draftAvailable: options.draftAvailable,
+    toolModes: options.toolModes ?? [],
+    toolMode: options.toolMode,
+    toolModeRuntimeId: options.toolModeRuntimeId,
     modelControl: options.isCatalogTarget
       ? nothing
       : options.modelControl.render({
@@ -441,6 +501,7 @@ export function renderNewSessionDraftComposer(options: {
     onInput: options.onInput,
     onOpenImage: options.onOpenImage,
     onVisibilityChange: options.onVisibilityChange,
+    onToolModeChange: options.onToolModeChange,
     onSubmit: options.onSubmit,
   });
 }

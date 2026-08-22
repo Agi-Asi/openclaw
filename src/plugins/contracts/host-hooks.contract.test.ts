@@ -2058,6 +2058,7 @@ describe("host-hook fixture plugin contract", () => {
     expect(
       validatePluginsUiDescriptorsResult({
         ok: true,
+        toolModes: [],
         descriptors: [
           {
             id: "approval-panel",
@@ -2071,6 +2072,7 @@ describe("host-hook fixture plugin contract", () => {
     expect(
       validatePluginsUiDescriptorsResult({
         ok: true,
+        toolModes: [],
         descriptors: [
           {
             id: "approval-panel",
@@ -2098,6 +2100,16 @@ describe("host-hook fixture plugin contract", () => {
           id: "approval-panel",
           surface: "session",
           label: "Approval panel",
+        });
+        api.session.controls.registerToolMode({
+          id: "standard",
+          label: "Standard",
+          sectionLabel: "Developer",
+          controlLabel: "Tool mode",
+          default: true,
+          supportedRuntimeIds: ["openclaw"],
+          toolProfile: "coding",
+          codeMode: "direct",
         });
       },
     });
@@ -2133,6 +2145,20 @@ describe("host-hook fixture plugin contract", () => {
           pluginName: "Host Hook Fixture",
           surface: "session",
           label: "Approval panel",
+        },
+      ],
+      toolModes: [
+        {
+          pluginId: "host-hook-fixture",
+          pluginName: "Host Hook Fixture",
+          id: "standard",
+          label: "Standard",
+          sectionLabel: "Developer",
+          controlLabel: "Tool mode",
+          default: true,
+          supportedRuntimeIds: ["openclaw"],
+          toolProfile: "coding",
+          codeMode: "direct",
         },
       ],
     });

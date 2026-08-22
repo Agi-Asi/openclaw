@@ -120,6 +120,31 @@ html.openclaw-native-macos .new-session-page__incognito-rail {
   stroke-width: 1.7px;
 }
 
+.new-session-page__tool-mode-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: var(--cursor-action);
+}
+
+.new-session-page__tool-mode-trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-hover) 84%, transparent);
+  color: var(--text);
+}
+
+.new-session-page__tool-mode-trigger:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
 /* Quiet chip row directly above the composer: the agent and place pickers
    share one trigger treatment so the row reads as a single control
    strip. Web Awesome owns popup/listbox behavior. */

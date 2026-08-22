@@ -6,6 +6,7 @@ import type {
   SessionCatalogSession,
   SessionDiscussionState,
   SessionSharingRole,
+  PluginSessionToolMode,
   SessionSuggestion,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type {
@@ -238,6 +239,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   @litState() protected headerEditing = false;
   @litState() protected headerRenameValue = "";
   @litState() protected headerPlatform: string | null = null;
+  @litState() protected headerToolModes: PluginSessionToolMode[] = [];
   @litState() protected headerCopiedAction: ChatPaneHeaderAction | null = null;
   protected continueInTerminalDialog: {
     qualifiedSessionKey: string;

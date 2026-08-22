@@ -5209,6 +5209,13 @@ export const en: TranslationMap = {
       },
     },
     sessionHeader: {
+      developerSection: "Developer",
+      toolModeUnavailable: "Tool mode unavailable",
+      toolModeUnavailableDetail:
+        "The selected plugin mode is unavailable. Configured defaults are active.",
+      usingDefaults: "Using defaults",
+      toolModeActive: "Active",
+      toolModeNext: "Next",
       renameTooltip: "Rename session",
       renameAria: "Rename session {title}",
       renameInputAria: "Session title",

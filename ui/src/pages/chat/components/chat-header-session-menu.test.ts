@@ -2,6 +2,10 @@
 
 import { html, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+  PluginSessionToolMode,
+  SessionToolModeSelection,
+} from "../../../../../packages/gateway-protocol/src/index.js";
 import type { UiSettings } from "../../../app/settings.ts";
 import { icons } from "../../../components/icons.ts";
 import type { SessionOwnerOption } from "../../../components/session-owner-chip.ts";
@@ -52,6 +56,10 @@ async function mountMenu(
     panelActions?: HeaderMenuQuickAction[];
     layoutActions?: HeaderMenuQuickAction[];
     statusActions?: HeaderMenuStatusAction[];
+    toolModes?: PluginSessionToolMode[];
+    selectedToolMode?: SessionToolModeSelection | null;
+    activeToolMode?: SessionToolModeSelection | null;
+    agentRuntimeId?: string;
     ownerOptions?: SessionOwnerOption[];
     selfOwner?: SessionOwnerOption | null;
     currentOwnerId?: string | null;
@@ -81,6 +89,10 @@ async function mountMenu(
       .panelActions=${options.panelActions ?? []}
       .layoutActions=${options.layoutActions ?? []}
       .statusActions=${options.statusActions ?? []}
+      .toolModes=${options.toolModes ?? []}
+      .selectedToolMode=${options.selectedToolMode ?? null}
+      .activeToolMode=${options.activeToolMode ?? null}
+      .agentRuntimeId=${options.agentRuntimeId ?? "openclaw"}
       .ownerOptions=${options.ownerOptions ?? []}
       .selfOwner=${options.selfOwner ?? null}
       .currentOwnerId=${options.currentOwnerId ?? null}
@@ -130,6 +142,99 @@ function select(menu: ParentNode, value: string) {
 }
 
 describe("chat header session menu", () => {
+  it("renders plugin Tool modes as a Developer submenu and dispatches selection", async () => {
+    const onAction = vi.fn<(action: HeaderMenuAction) => void>();
+    const common = {
+      pluginId: "developer-mode",
+      sectionLabel: "Developer",
+      controlLabel: "Tool mode",
+      supportedRuntimeIds: ["openclaw"],
+    } satisfies Pick<
+      PluginSessionToolMode,
+      "pluginId" | "sectionLabel" | "controlLabel" | "supportedRuntimeIds"
+    >;
+    const menu = await mountMenu({
+      toolModes: [
+        {
+          ...common,
+          id: "standard",
+          label: "Standard",
+          default: true,
+          toolProfile: "coding",
+          codeMode: "direct",
+        },
+        {
+          ...common,
+          id: "code",
+          label: "Code",
+          toolProfile: "coding",
+          codeMode: "code",
+        },
+      ],
+      selectedToolMode: { pluginId: "developer-mode", modeId: "standard" },
+      onAction,
+    });
+
+    expect(menu.querySelector(".session-menu__section-label")?.textContent?.trim()).toBe(
+      "Developer",
+    );
+    const toolMode = item(menu, "Tool mode");
+    expect(
+      Array.from(toolMode.querySelectorAll("wa-dropdown-item[slot='submenu']")).map(itemLabel),
+    ).toEqual(["Standard", "Code"]);
+    expect(item(menu, "Standard").disabled).toBe(true);
+
+    select(menu, "tool-mode:developer-mode:code");
+    expect(onAction).toHaveBeenCalledWith({
+      kind: "tool-mode",
+      selection: { pluginId: "developer-mode", modeId: "code" },
+    });
+  });
+
+  it("disables Tool mode when another runtime owns the session", async () => {
+    const menu = await mountMenu({
+      agentRuntimeId: "codex",
+      toolModes: [
+        {
+          pluginId: "developer-mode",
+          id: "standard",
+          label: "Standard",
+          sectionLabel: "Developer",
+          controlLabel: "Tool mode",
+          default: true,
+          supportedRuntimeIds: ["openclaw"],
+          toolProfile: "coding",
+          codeMode: "direct",
+        },
+      ],
+    });
+
+    expect(item(menu, "Tool mode").disabled).toBe(true);
+    expect(item(menu, "Tool mode").getAttribute("title")).toContain("openclaw");
+  });
+
+  it("distinguishes the active Tool mode from the next selection", async () => {
+    const common = {
+      pluginId: "developer-mode",
+      sectionLabel: "Developer",
+      controlLabel: "Tool mode",
+      supportedRuntimeIds: ["openclaw"],
+      toolProfile: "coding" as const,
+    };
+    const menu = await mountMenu({
+      toolModes: [
+        { ...common, id: "standard", label: "Standard", codeMode: "direct" },
+        { ...common, id: "code", label: "Code", codeMode: "code" },
+      ],
+      selectedToolMode: { pluginId: "developer-mode", modeId: "code" },
+      activeToolMode: { pluginId: "developer-mode", modeId: "standard" },
+    });
+
+    expect(item(menu, "Standard").querySelector("[slot='details']")?.textContent?.trim()).toBe(
+      "Active",
+    );
+    expect(item(menu, "Code").querySelector("[slot='details']")?.textContent?.trim()).toBe("Next");
+  });
   it("renders the curated session actions in order", async () => {
     const menu = await mountMenu();
     const labels = Array.from(

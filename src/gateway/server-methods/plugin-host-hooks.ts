@@ -81,7 +81,10 @@ export const pluginHostHookHandlers: GatewayRequestHandlers = {
       }
       return descriptor;
     });
-    const result = { ok: true, descriptors };
+    const toolModes = (registry?.sessionToolModes ?? []).map((entry) =>
+      Object.assign({ pluginId: entry.pluginId, pluginName: entry.pluginName }, entry.mode),
+    );
+    const result = { ok: true, descriptors, toolModes };
     if (!validatePluginsUiDescriptorsResult(result)) {
       log.warn("invalid plugins.uiDescriptors result", {
         errors: validatePluginsUiDescriptorsResult.errors,

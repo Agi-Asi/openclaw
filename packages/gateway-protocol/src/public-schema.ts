@@ -476,6 +476,7 @@ export {
   PluginsSearchResultSchema,
   PluginsSessionActionParamsSchema,
   PluginsSessionActionResultSchema,
+  PluginSessionToolModeSchema,
   PluginsSetEnabledParamsSchema,
   PluginsSetEnabledResultSchema,
   PluginsUiDescriptorsParamsSchema,

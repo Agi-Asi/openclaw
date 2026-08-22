@@ -750,6 +750,41 @@ describe("gateway sessions patch", () => {
     expect(cleared.toolOverrides).toBeUndefined();
   });
 
+  test("sets and clears a registered session Tool mode", async () => {
+    const registry = createEmptyPluginRegistry();
+    registry.sessionToolModes.push({
+      pluginId: "developer-mode",
+      mode: {
+        id: "code",
+        label: "Code",
+        sectionLabel: "Developer",
+        controlLabel: "Tool mode",
+        supportedRuntimeIds: ["openclaw"],
+        toolProfile: "coding",
+        codeMode: "code",
+      },
+      source: "test",
+    });
+    setActivePluginRegistry(registry);
+    const store = mainStoreEntry({});
+
+    const set = expectPatchOk(
+      await runPatch({
+        store,
+        patch: {
+          key: MAIN_SESSION_KEY,
+          toolMode: { pluginId: "developer-mode", modeId: "code" },
+        },
+      }),
+    );
+    expect(set.toolMode).toEqual({ pluginId: "developer-mode", modeId: "code" });
+
+    const cleared = expectPatchOk(
+      await runPatch({ store, patch: { key: MAIN_SESSION_KEY, toolMode: null } }),
+    );
+    expect(cleared.toolMode).toBeUndefined();
+  });
+
   test("persists verboseLevel=full", async () => {
     const entry = expectPatchOk(
       await runPatch({

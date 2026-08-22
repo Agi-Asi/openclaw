@@ -172,6 +172,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "skillsSnapshot",
   "systemPromptReport",
   "pluginDebugEntries",
+  "toolMode",
   "hookExternalContentSource",
   "acp",
   "quotaSuspension",
