@@ -3151,7 +3151,9 @@ button.chat-pr__diff {
       0px - var(--chat-composer-shell-gap) - var(--chat-composer-bottom-underlap)
     )
     0 0;
-  padding-top: calc(var(--chat-composer-shell-gap) + var(--chat-composer-bottom-underlap));
+  /* Only the intentional underlap is hidden behind the composer. The shell
+     gap must remain outside the row's visible centering box. */
+  padding-top: var(--chat-composer-bottom-underlap);
   border: 1px solid color-mix(in srgb, var(--border) 16%, transparent);
   border-top: 0;
   border-radius: 0 0 calc(20px * var(--openclaw-corner-radius-scale))

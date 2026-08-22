@@ -121,6 +121,7 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Match running tasks to Plan/composer chrome and share one horizontal status row when both appear.
 - [x] Move the scenario sweep into the top rail between the view card and Composer controls.
 - [x] Default Width to Desktop and let its endpoint fill the available bench stage.
+- [x] Center lower status-band content within the visible area below the composer.
 
 ## Observed queue contract
 
