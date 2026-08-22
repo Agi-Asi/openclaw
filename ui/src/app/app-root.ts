@@ -253,8 +253,11 @@ export class OpenClawApp extends OpenClawLightDomElement {
     const snapshot = gateway.snapshot;
     const clientChanged = snapshot.client !== this.loginConnectionClient;
     if (clientChanged) {
+      const replacingClient = this.loginConnectionClient !== null;
       this.loginConnectionClient = snapshot.client;
-      this.connectSplashDue = false;
+      if (replacingClient) {
+        this.connectSplashDue = false;
+      }
       this.resetLoginSensitivePresentation();
     }
     if (sourceChanged || clientChanged) {
