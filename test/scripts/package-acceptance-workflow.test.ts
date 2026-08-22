@@ -6458,6 +6458,12 @@ describe("package artifact reuse", () => {
       "full-release-validation-${{ inputs.full_release_validation_run_id }}-${{ steps.full_run.outputs.attempt }}",
     );
     expect(trustedTooling.env?.WORKFLOW_SHA).toBe("${{ github.sha }}");
+    expect(trustedTooling.run).toContain(
+      "scripts/lib/full-release-validation-log-checkpoint.mjs?ref=${WORKFLOW_SHA}",
+    );
+    expect(trustedTooling.run).toContain(
+      '"${tooling_dir}/lib/full-release-validation-log-checkpoint.mjs"',
+    );
     expect(validateManifest.env).toMatchObject({
       RUN_JSON_FILE: "${{ runner.temp }}/full-release-validation-run.json",
       TRUSTED_WORKFLOW_FULL_REF: "${{ github.ref }}",

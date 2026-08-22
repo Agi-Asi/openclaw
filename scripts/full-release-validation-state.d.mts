@@ -1,4 +1,8 @@
 export * from "./full-release-validation-policy.mjs";
+export function emitCheckpoint(
+  lines: string[],
+  write?: (fd: number, buffer: Uint8Array, offset: number, length: number) => number,
+): void;
 export function validateChildBinding(
   child: Record<string, unknown>,
   run: Record<string, unknown>,

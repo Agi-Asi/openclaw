@@ -571,10 +571,33 @@ async function planMode() {
       readArtifact(outputPath, "execution plan"),
       expected,
     );
-    const provenance = expected.targetSha
+    let finished = false;
+    let provenance;
+    const stop = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      abortController.abort(new Error("execution plan restoration cancelled"));
+      try {
+        commitExecutionPlan(outputPath, restored, provenance);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 2;
+      }
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+      process.exit(process.exitCode);
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    provenance = expected.targetSha
       ? await bestEffortCheckpointProvenance(abortController.signal)
       : undefined;
+    finished = true;
     commitExecutionPlan(outputPath, restored, provenance);
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
     return;
   }
   if (currentAttempt !== 1) {
@@ -583,10 +606,8 @@ async function planMode() {
 
   const planInputs = parsePlanInputs(process.env.FULL_RELEASE_PLAN_INPUTS_JSON);
   const built = buildReleaseExecutionPlan(planInputs);
-  const provenance = expected.targetSha
-    ? await bestEffortCheckpointProvenance(abortController.signal)
-    : undefined;
   let finished = false;
+  let provenance;
   let plan = buildReleaseExecutionPlanArtifact({
     children: built.children,
     evidenceReuse: evidenceReuseFromInputs(planInputs),
@@ -634,6 +655,9 @@ async function planMode() {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
+  provenance = expected.targetSha
+    ? await bestEffortCheckpointProvenance(abortController.signal)
+    : undefined;
   const reuse = await validateReuse(built.children, planInputs, abortController.signal);
   if (finished) {
     return;
@@ -696,9 +720,7 @@ async function collectMode(mode) {
   }));
   let finished = false;
   const abortController = new AbortController();
-  const provenance = expected.targetSha
-    ? await bestEffortCheckpointProvenance(abortController.signal)
-    : undefined;
+  let provenance;
   let decisionReuse = { blockers: [], children: plan, errors: [] };
 
   const buildPayload = (decision, cancellation = {}) =>
@@ -759,6 +781,9 @@ async function collectMode(mode) {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
+  provenance = expected.targetSha
+    ? await bestEffortCheckpointProvenance(abortController.signal)
+    : undefined;
   if (mode === "decision" && executionPlan.evidenceReuse.requested) {
     decisionReuse = await validateReuse(
       plan,

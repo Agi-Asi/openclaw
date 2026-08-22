@@ -474,6 +474,8 @@ jobs:
             --jq .content | base64 --decode > "${tooling_dir}/validate-full-release-validation-evidence.mjs"
           gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/release-ci-summary.mjs?ref=${WORKFLOW_SHA}" \
             --jq .content | base64 --decode > "${tooling_dir}/release-ci-summary.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/lib/full-release-validation-log-checkpoint.mjs?ref=${WORKFLOW_SHA}" \
+            --jq .content | base64 --decode > "${tooling_dir}/lib/full-release-validation-log-checkpoint.mjs"
           gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/lib/plain-gh.mjs?ref=${WORKFLOW_SHA}" \
             --jq .content | base64 --decode > "${tooling_dir}/lib/plain-gh.mjs"
           gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/plugin-sdk-api-release-evidence.mjs?ref=${WORKFLOW_SHA}" \

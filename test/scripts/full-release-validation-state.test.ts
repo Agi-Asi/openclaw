@@ -18,10 +18,7 @@ import {
   validateReleaseExecutionPlanArtifact,
   verifyReleaseStateArtifacts,
 } from "../../scripts/full-release-validation-state.mjs";
-import {
-  encodeFullReleaseValidationLogCheckpoint,
-  parseFullReleaseValidationLogCheckpoint,
-} from "../../scripts/lib/full-release-validation-log-checkpoint.mjs";
+import { parseFullReleaseValidationLogCheckpoint } from "../../scripts/lib/full-release-validation-log-checkpoint.mjs";
 import { waitForChildClose, waitForFile } from "../helpers/process-wait.js";
 
 const SCRIPT = resolve("scripts/full-release-validation-state.mjs");
@@ -1082,7 +1079,7 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
     const githubOutput = join(root, "github-output");
     const output = join(root, "full-release-execution-plan.json");
     writeCheckpointGh(join(root, "gh"));
-    const result = spawnSync("/bin/sh", ["-c", 'exec 1>&-; exec "$NODE" "$SCRIPT" plan'], {
+    spawnSync("/bin/sh", ["-c", 'exec 1>&-; exec "$NODE" "$SCRIPT" plan'], {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -1119,7 +1116,7 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
     expect(readFileSync(githubOutput, "utf8")).toContain(`sha256=${artifact.sha256}`);
   });
 
-  it("writes the execution plan immediately when SIGTERM interrupts a stalled reuse API", async () => {
+  it("writes the execution plan immediately when SIGTERM interrupts stalled provenance", async () => {
     const root = mkdtempSync(join(tmpdir(), "frv-plan-signal-"));
     const gh = join(root, "gh");
     const ghReady = join(root, "gh-ready");
@@ -1128,9 +1125,6 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
     writeFileSync(
       gh,
       `#!/bin/sh
-case "$*" in
-  *"/actions/runs/77") printf '%s\\n' '{"id":77,"event":"workflow_dispatch","run_attempt":1,"head_sha":"${SHA}","workflow_id":456,"path":".github/workflows/full-release-validation.yml"}'; exit 0 ;;
-esac
 printf ready > "$FRV_GH_READY"
 sleep 30
 `,
@@ -1174,8 +1168,6 @@ sleep 30
       },
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const stdout: Buffer[] = [];
-    childProcess.stdout?.on("data", (chunk) => stdout.push(chunk));
     await waitForFile(ghReady, 5_000);
     const exitPromise = waitForChildClose(childProcess);
     const started = Date.now();
@@ -1189,19 +1181,56 @@ sleep 30
       parentRunAttempt: 1,
     });
     expect(readFileSync(githubOutput, "utf8")).toContain(`sha256=${artifact.sha256}`);
-    expect(
-      parseFullReleaseValidationLogCheckpoint(Buffer.concat(stdout).toString("utf8"), {
-        kind: "plan",
-        producerJobKey: "release_execution_plan",
-        runAttempt: 1,
-        runId: "77",
-        targetSha: TARGET_SHA,
-        workflowId: 456,
-        workflowPath: ".github/workflows/full-release-validation.yml",
-        workflowSha: SHA,
-      })?.payload,
-    ).toEqual(artifact);
   });
+
+  it.each(["decision", "drain"] as const)(
+    "writes canonical %s state when SIGTERM interrupts stalled provenance",
+    async (mode) => {
+      const root = mkdtempSync(join(tmpdir(), `frv-${mode}-provenance-signal-`));
+      const gh = join(root, "gh");
+      const ghReady = join(root, "gh-ready");
+      const output = join(root, `${mode}.json`);
+      const executionPlanPath = join(root, "full-release-execution-plan.json");
+      writeFileSync(executionPlanPath, JSON.stringify(executionPlan({ rerunGroup: "ci" })));
+      writeFileSync(
+        gh,
+        `#!/bin/sh
+printf ready > "$FRV_GH_READY"
+sleep 30
+`,
+      );
+      chmodSync(gh, 0o755);
+      const childProcess = spawn(process.execPath, [SCRIPT, mode], {
+        env: {
+          ...process.env,
+          FAIL_FAST: "false",
+          FRV_GH_READY: ghReady,
+          FULL_RELEASE_EXECUTION_PLAN_PATH: executionPlanPath,
+          FULL_RELEASE_STATE_PATH: output,
+          GITHUB_REF_NAME: "release-ci/tooling",
+          GITHUB_REPOSITORY: "openclaw/openclaw",
+          GITHUB_RUN_ATTEMPT: "2",
+          GITHUB_RUN_ID: "77",
+          GITHUB_SHA: SHA,
+          PATH: `${root}:${process.env.PATH}`,
+          RELEASE_PROFILE: "stable",
+          RERUN_GROUP: "ci",
+          TARGET_SHA,
+        },
+        stdio: "ignore",
+      });
+      await waitForFile(ghReady, 5_000);
+      const exitPromise = waitForChildClose(childProcess);
+      const started = Date.now();
+      childProcess.kill("SIGTERM");
+      const exit = await exitPromise;
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(exit.code).not.toBe(0);
+      expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({
+        errors: [expect.objectContaining({ kind: "collector_cancelled" })],
+      });
+    },
+  );
 
   it("keeps the committed result when the human summary cannot be written", () => {
     const root = mkdtempSync(join(tmpdir(), "frv-state-target-failure-"));
