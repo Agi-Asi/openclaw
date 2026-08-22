@@ -2048,8 +2048,9 @@
   min-height: 34px;
   padding: 0 12px;
   color: var(--muted);
-  background: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text-strong) 11%, transparent);
+  background: var(--chat-composer-surface, var(--card));
+  border: 1px solid
+    var(--chat-composer-hairline, color-mix(in srgb, var(--text-strong) 11%, transparent));
   border-radius: var(--radius-full);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;

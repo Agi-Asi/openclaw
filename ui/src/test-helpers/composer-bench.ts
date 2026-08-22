@@ -1421,7 +1421,13 @@ function renderChatSurface(sessionList: SessionsListResult) {
     onGatewayQuestionSkip: () => publishState({ inset: "none" }),
     onSlashIntent: () => {},
   });
-  return html`${renderBenchNeighbor()}${renderBenchTasksStatus()}${composer}`;
+  const shareStatusRow = state.tasks !== "none" && state.plan !== "none";
+  return html`${renderBenchNeighbor()}<div
+      class="composer-bench__composer-stack"
+      ?data-shared-status-row=${shareStatusRow}
+    >
+      ${renderBenchTasksStatus()}${composer}
+    </div>`;
 }
 
 function renderNewTargetBar() {

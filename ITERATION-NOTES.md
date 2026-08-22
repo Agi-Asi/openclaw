@@ -114,6 +114,11 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Align the Plan step label and 2/3 counter, and keep its canonical spinner active across the full hover preview.
 - [x] Keep the active Plan spinner visible but paused until hover; replace it with a check and the final step plus 3/3 when complete.
 - [x] Keep the active Plan spinner rotating continuously, independent of hover.
+- [x] Keep bottom error and status underlaps behind the composer footer and send action.
+- [x] Normalize all in-scope Above composer neighbors to the real composer width and flow.
+- [x] Vertically center every lower composer status band and soften info, danger, and offline borders.
+- [x] Show the canonical reconnect pill on every queued row while offline.
+- [x] Match running tasks to Plan/composer chrome and share one horizontal status row when both appear.
 
 ## Observed queue contract
 

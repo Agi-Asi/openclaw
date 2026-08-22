@@ -479,6 +479,32 @@ body {
   width: 100%;
 }
 
+.composer-bench__composer-stack {
+  width: 100%;
+}
+
+.composer-bench__composer-stack[data-shared-status-row] {
+  display: grid;
+}
+
+.composer-bench__composer-stack[data-shared-status-row]
+  > :is(.composer-bench__tasks-status, .agent-chat__composer-shell) {
+  grid-area: 1 / 1;
+}
+
+.composer-bench__composer-stack[data-shared-status-row] > .composer-bench__tasks-status {
+  z-index: 5;
+  align-self: start;
+  justify-self: start;
+  width: auto;
+  padding-top: 8px;
+  margin: 0;
+}
+
+.composer-bench__composer-stack[data-shared-status-row] .chat-tasks-status {
+  margin: 0;
+}
+
 .composer-bench__tasks-status {
   box-sizing: border-box;
   width: 100%;
@@ -492,13 +518,19 @@ body {
 }
 
 .composer-bench__neighbor {
+  position: relative;
   box-sizing: border-box;
   width: 100%;
   margin-bottom: 8px;
 }
 
-.composer-bench__neighbor > :first-child {
-  margin-top: 0;
+.composer-bench__neighbor > * {
+  position: relative;
+  inset: auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -13,6 +13,7 @@ import { renderChatAuthorAvatar } from "./chat-author-avatar.ts";
 
 type ChatQueueProps = {
   queue: ChatQueueItem[];
+  offline?: boolean;
   canAbort?: boolean;
   onQueueRetry?: (id: string) => void;
   onQueueSteer?: (id: string) => void;
@@ -114,11 +115,13 @@ function renderChatQueueItem(
 ) {
   const authorAvatar = renderChatAuthorAvatar(item.sender);
   const hasAuthorAvatar = authorAvatar !== nothing;
-  const stateLabel = sendStateLabel(item);
+  const stateLabel = props.offline
+    ? t("chat.queue.states.waitingForReconnect")
+    : sendStateLabel(item);
   const failed = item.sendState === "failed" || item.sendState === "unconfirmed";
   const isSteer = item.queueMode === "steer";
   const steerMode = isSteer && !failed;
-  const reconnecting = item.sendState === "waiting-reconnect";
+  const reconnecting = props.offline || item.sendState === "waiting-reconnect";
   const busy = item.sendState === "executing-command";
   const editing = props.editingId === item.id;
   const canSteer =

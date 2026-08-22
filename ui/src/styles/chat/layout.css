@@ -2971,6 +2971,10 @@ button.chat-pr__diff {
   --chat-composer-editor-line: calc(var(--chat-composer-editor-size) * 1.5);
 
   position: relative;
+  /* Queue, goal and status rows deliberately underlap the composer. Keep the
+     writing surface in the foreground so their backgrounds cannot paint over
+     the footer controls while their exposed content remains below it. */
+  z-index: 1;
   container-name: chat-composer;
   container-type: inline-size;
   display: flex;
@@ -3137,6 +3141,7 @@ button.chat-pr__diff {
 
 .agent-chat__composer-underlaps {
   --chat-composer-bottom-underlap: 18px;
+  --chat-composer-underlap-row-height: 44px;
 
   position: relative;
   z-index: 0;
@@ -3147,7 +3152,7 @@ button.chat-pr__diff {
     )
     0 0;
   padding-top: calc(var(--chat-composer-shell-gap) + var(--chat-composer-bottom-underlap));
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 16%, transparent);
   border-top: 0;
   border-radius: 0 0 calc(20px * var(--openclaw-corner-radius-scale))
     calc(20px * var(--openclaw-corner-radius-scale));
@@ -3158,7 +3163,7 @@ button.chat-pr__diff {
 .agent-chat__composer-underlaps:has(.agent-chat__composer-error):not(
     :has(.agent-chat__offline-hint)
   ) {
-  border-color: color-mix(in srgb, var(--danger) 26%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
 .agent-chat__composer-underlaps:has(.agent-chat__composer-errors) {
@@ -3168,13 +3173,14 @@ button.chat-pr__diff {
 .agent-chat__composer-underlaps:has(.agent-chat__composer-notice):not(
     :has(.agent-chat__composer-error)
   ) {
+  border-color: color-mix(in srgb, var(--info) 16%, transparent);
   background: color-mix(in srgb, var(--info) 9%, var(--chat-composer-surface));
 }
 
 .agent-chat__composer-underlaps:has(.agent-chat__offline-hint):not(
     :has(.agent-chat__composer-errors)
   ) {
-  border-color: color-mix(in srgb, var(--warn) 26%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 16%, transparent);
   background: color-mix(in srgb, var(--warn) 9%, var(--chat-composer-surface));
 }
 
@@ -3191,9 +3197,12 @@ button.chat-pr__diff {
 }
 
 .agent-chat__offline-hint {
+  display: flex;
+  min-height: var(--chat-composer-underlap-row-height);
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
-  padding: 7px 14px;
+  padding: 8px 14px;
   background: color-mix(in srgb, var(--warn) 9%, var(--chat-composer-surface));
   color: color-mix(in srgb, var(--warn) 72%, var(--text));
   font-size: 11px;
@@ -4138,7 +4147,7 @@ button.chat-pr__diff {
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  min-height: 36px;
+  min-height: var(--chat-composer-underlap-row-height, 44px);
   padding: 8px 10px 8px 14px;
   font-size: var(--control-ui-text-sm);
   line-height: 1.35;
@@ -4150,7 +4159,7 @@ button.chat-pr__diff {
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  min-height: 36px;
+  min-height: var(--chat-composer-underlap-row-height, 44px);
   padding: 8px 10px 8px 14px;
   font-size: var(--control-ui-text-sm);
   line-height: 1.35;

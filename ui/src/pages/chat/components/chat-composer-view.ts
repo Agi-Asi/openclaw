@@ -254,6 +254,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
 
   const queue = renderChatQueue({
     queue: props.queue,
+    offline: props.offline,
     canAbort: showAbortableUi,
     onQueueRetry: props.connected && canCompose ? props.onQueueRetry : undefined,
     onQueueSteer: props.connected && canCompose ? props.onQueueSteer : undefined,
