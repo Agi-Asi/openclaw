@@ -390,7 +390,14 @@
 .session-progress-card__progress::-webkit-progress-value,
 .session-progress-card__progress::-moz-progress-bar {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 54%, transparent);
+  background: var(--ok);
+}
+
+.session-progress-card--composer[data-complete="true"]
+  .session-progress-card__progress::-webkit-progress-value,
+.session-progress-card--composer[data-complete="true"]
+  .session-progress-card__progress::-moz-progress-bar {
+  background: color-mix(in srgb, var(--ok) 38%, transparent);
 }
 
 .session-progress-card--composer .session-progress-card__markdown progress {

@@ -134,6 +134,7 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Complete queue double-click editing with caret-at-end focus, Enter submit and Escape cancel.
 - [x] Keep bench disclosures open while selecting and support live ArrowUp and ArrowDown changes.
 - [x] Auto-scroll the three-row queue near either edge while dragging across hidden items.
+- [x] Mute only the completed Plan progress fill while keeping partial progress and checks strong.
 
 ## Observed queue contract
 

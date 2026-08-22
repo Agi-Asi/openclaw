@@ -179,6 +179,7 @@ export function renderSessionProgressCard(
     return html`<div
       class="session-progress-card session-progress-card--composer"
       data-progress-card-placement="composer"
+      data-complete=${String(complete)}
       data-open="false"
       @pointerenter=${scheduleComposerProgressOpen}
       @pointerleave=${scheduleComposerProgressClose}
