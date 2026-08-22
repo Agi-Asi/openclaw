@@ -122,6 +122,8 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Move the scenario sweep into the top rail between the view card and Composer controls.
 - [x] Default Width to Desktop and let its endpoint fill the available bench stage.
 - [x] Center lower status-band content within the visible area below the composer.
+- [x] Standardize the three bench shells to one background, border and radius.
+- [x] Start the options panel directly at Composition without a title separator.
 
 ## Observed queue contract
 

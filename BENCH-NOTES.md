@@ -231,3 +231,5 @@
 2026-08-22 07:36 · Moved the scenario sweep out of the Composer panel into a full-width top card aligned with Width and Theme · scripts/control-ui-mock-dev.ts, ui/src/test-helpers/composer-bench.css · COMPONENT #124301 multiline | BENCH
 2026-08-22 07:36 · Made Desktop the opening width and mapped its slider endpoint to the full available bench stage · scripts/control-ui-mock-dev.ts, ui/src/test-helpers/composer-bench.ts, ui/src/test-helpers/composer-bench.css · COMPONENT #124301 multiline | BENCH
 2026-08-22 07:46 · Centered every lower composer status row within only its visible band instead of counting the hidden shell gap · ui/src/styles/chat/layout.css · COMPONENT #124301 multiline | BENCH
+2026-08-22 07:46 · Unified Width and Theme, scenario sweep and options panel under one background, border, radius and shadow contract · ui/src/test-helpers/composer-bench.css · COMPONENT #124301 multiline | BENCH
+2026-08-22 07:46 · Removed the Composer panel title and its leading separator so the controls begin directly at Composition · scripts/control-ui-mock-dev.ts, ui/src/test-helpers/composer-bench.css · COMPONENT #124301 multiline | BENCH

@@ -25,6 +25,16 @@ body {
   min-height: 100vh;
 }
 
+.composer-bench__controls,
+.composer-bench__view-controls,
+.composer-bench__scenario {
+  border: 1px solid rgb(244 245 248 / 8%);
+  border-radius: 14px;
+  background: rgb(23 25 31 / 90%);
+  box-shadow: 0 14px 40px rgb(0 0 0 / 26%);
+  backdrop-filter: blur(20px) saturate(1.15);
+}
+
 .composer-bench__controls {
   --text: #d8d9df;
   --text-strong: #f4f5f8;
@@ -44,11 +54,7 @@ body {
   height: max-content;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
-  border-radius: 20px;
   padding: 12px;
-  background: rgb(23 25 31 / 90%);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 32%);
-  backdrop-filter: blur(20px) saturate(1.15);
   scrollbar-width: thin;
 }
 
@@ -89,28 +95,10 @@ body {
   width: 220px;
   gap: 2px;
   padding: 7px;
-  border: 1px solid rgb(244 245 248 / 8%);
-  border-radius: 14px;
-  background: rgb(23 25 31 / 90%);
-  box-shadow: 0 14px 40px rgb(0 0 0 / 26%);
-  backdrop-filter: blur(20px) saturate(1.15);
 }
 
 .composer-bench__view-controls .composer-bench__row {
   min-height: 32px;
-}
-
-.composer-bench__header {
-  display: flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 4px;
-}
-
-.composer-bench__header h1 {
-  margin: 0;
-  color: var(--text-strong);
-  font: 600 14px/1 var(--font-body);
 }
 
 .composer-bench__scenario {
@@ -124,12 +112,7 @@ body {
   height: 80px;
   gap: 2px;
   margin: 0;
-  border: 1px solid rgb(244 245 248 / 8%);
-  border-radius: 14px;
   padding: 7px 8px 8px;
-  background: rgb(23 25 31 / 90%);
-  box-shadow: 0 14px 40px rgb(0 0 0 / 26%);
-  backdrop-filter: blur(20px) saturate(1.15);
 }
 
 .composer-bench__scenario:focus-visible {
@@ -213,6 +196,10 @@ body {
 .composer-bench__group {
   margin: 0;
   border-top: 1px solid color-mix(in srgb, var(--text-strong) 7%, transparent);
+}
+
+.composer-bench__controls > .composer-bench__group:first-child {
+  border-top: 0;
 }
 
 .composer-bench__group > summary {

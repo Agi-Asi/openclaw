@@ -175,9 +175,6 @@ const composerBenchHtml = `<!doctype html>
   <body data-composer-bench-page>
     <div class="composer-bench">
       <aside class="composer-bench__controls" data-composer-bench-controls>
-        <header class="composer-bench__header">
-          <h1>Composer</h1>
-        </header>
         ${composerBenchGroup(
           "composition",
           "Composition",
