@@ -261,6 +261,7 @@ describe("loadChatRoute", () => {
       phase: "connecting",
       client: null,
       hello: null,
+      sessionKey: "",
     } as unknown as ApplicationContext["gateway"]["snapshot"];
     const context = {
       basePath: "",
@@ -362,6 +363,7 @@ describe("loadChatRoute", () => {
       phase: "connecting",
       client: null,
       hello: null,
+      sessionKey: "",
     } as unknown as ApplicationContext["gateway"]["snapshot"];
     const context = {
       basePath: "",
@@ -430,6 +432,7 @@ describe("loadChatRoute", () => {
         phase: "connecting",
         client: null,
         hello: null,
+        sessionKey: "",
       } as unknown as ApplicationContext["gateway"]["snapshot"];
       const context = {
         basePath: "",
@@ -463,6 +466,7 @@ describe("loadChatRoute", () => {
         phase: "connected",
         client: {},
         hello: { snapshot: { sessionDefaults: { mainKey } } },
+        sessionKey: "",
       } as unknown as ApplicationContext["gateway"]["snapshot"];
       const connectedListener = listener as GatewayListener | null;
       if (!connectedListener) {

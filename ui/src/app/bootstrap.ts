@@ -236,6 +236,13 @@ export type ApplicationRuntime = {
   } | null;
   readonly confirmPendingGatewayConnection: () => void;
   readonly cancelPendingGatewayConnection: () => void;
+  /**
+   * Releases the first-run routing gate before the gateway answers so a
+   * saved-transcript document can start routing (and paint its stored
+   * conversation) during the initial handshake. The setup watcher still owns
+   * its redirect; a no-op when this document never deferred routing.
+   */
+  readonly releaseStartupRouteGate: () => void;
   start: () => Promise<void>;
   stop: () => void;
 };
@@ -546,6 +553,9 @@ export function bootstrapApplication(
     },
     confirmPendingGatewayConnection,
     cancelPendingGatewayConnection,
+    releaseStartupRouteGate: () => {
+      resolveInitialFirstRunDecision?.();
+    },
     start: () => {
       const stopRouter = () => router.stop();
       if (startsApplicationRouter) {

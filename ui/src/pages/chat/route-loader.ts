@@ -30,6 +30,7 @@ import {
 } from "../../lib/sessions/session-key.ts";
 import { draftRouteDataFromLocation, draftSearchFromLocation } from "./route-draft.ts";
 import type { SessionRouteContext as ApplicationContext } from "./route-loader-context.ts";
+import { resolveLocalMainSessionTarget } from "./route-loader-main-local.ts";
 import { findCachedShortSession, sessionKeyUuid } from "./route-loader-short-cache.ts";
 import {
   resolveShortSessionReference,
@@ -550,8 +551,11 @@ export async function loadChatRoute(
     };
   }
   if (target.kind === "main") {
-    await waitForGatewayClient(context.gateway, signal);
-    const sessionKey = mainSessionKey(context, target);
+    const local = resolveLocalMainSessionTarget(context, target);
+    if (!local) {
+      await waitForGatewayClient(context.gateway, signal);
+    }
+    const sessionKey = local ? local.sessionKey : mainSessionKey(context, target);
     if (preferenceDerived) {
       const resolution = await querySessionReference(
         context,

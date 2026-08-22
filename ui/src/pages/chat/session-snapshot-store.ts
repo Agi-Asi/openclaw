@@ -167,6 +167,15 @@ async function readSnapshotRecord(sessionKey: string): Promise<SessionSnapshotRe
   }
 }
 
+// One-shot stored-snapshot read for surfaces outside a mounted chat pane
+// (startup gate deciding between splash and saved-transcript paint).
+export async function readStoredChatSnapshot(
+  sessionKey: string,
+): Promise<ChatSessionSnapshot | null> {
+  const record = await readSnapshotRecord(sessionKey);
+  return record?.snapshot ?? null;
+}
+
 async function readSnapshotRecords(): Promise<SessionSnapshotRecord[] | null> {
   const database = await openSessionSnapshotDatabase();
   if (!database) {

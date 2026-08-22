@@ -60,7 +60,7 @@ function contextFor(
   const context = {
     basePath: "",
     gateway: {
-      snapshot: { phase: "connected", client, hello: null },
+      snapshot: { phase: "connected", client, hello: null, sessionKey: "" },
       subscribe: vi.fn(() => () => undefined),
     },
     agents: { state: { agentsList: { mainKey: "main" } } },
@@ -410,6 +410,66 @@ describe("gateway-backed session route resolution", () => {
     });
   });
 
+  it("resolves an agent-home route from the persisted key before hello", async () => {
+    const { context, list } = contextFor(() => result([]));
+    context.gateway.snapshot = {
+      phase: "connecting",
+      client: null,
+      hello: null,
+      sessionKey: "agent:roboclaw:main",
+    } as unknown as ApplicationContext["gateway"]["snapshot"];
+
+    await expect(
+      loadChatRoute(
+        context,
+        { pathname: "/chat/roboclaw", search: "", hash: "" },
+        "chat",
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ kind: "session", sessionKey: "agent:roboclaw:main", face: "chat" });
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("resolves the default agent home from a bare persisted alias before hello", async () => {
+    const { context, list } = contextFor(() => result([]));
+    context.gateway.snapshot = {
+      phase: "connecting",
+      client: null,
+      hello: null,
+      sessionKey: "main",
+    } as unknown as ApplicationContext["gateway"]["snapshot"];
+
+    await expect(
+      loadChatRoute(
+        context,
+        { pathname: "/chat/main", search: "", hash: "" },
+        "chat",
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ kind: "session", sessionKey: "agent:main:main", face: "chat" });
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("keeps agent-home routes waiting when the persisted key names another agent", async () => {
+    const { context } = contextFor(() => result([]));
+    context.gateway.snapshot = {
+      phase: "connecting",
+      client: null,
+      hello: null,
+      sessionKey: "agent:research:main",
+    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    const controller = new AbortController();
+    const pending = loadChatRoute(
+      context,
+      { pathname: "/chat/roboclaw", search: "", hash: "" },
+      "chat",
+      controller.signal,
+    );
+    controller.abort();
+
+    await expect(pending).rejects.toBe(controller.signal.reason);
+  });
+
   it("returns slug ties to the existing disambiguation view", async () => {
     const rows = [
       row({ key: "agent:roboclaw:thread:12345678-0aaa-4000-8000-000000000001" }),
@@ -569,6 +629,28 @@ describe("gateway-backed session route resolution", () => {
       kind: "session",
       sessionKey: storedRow.key,
     });
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("trusts a carried short key that matches the persisted last-active session", async () => {
+    const key = "agent:roboclaw:12345678-0aaa-4000-8000-000000000001";
+    const { context, list } = contextFor(() => result([]));
+    context.gateway.snapshot = {
+      phase: "connecting",
+      client: null,
+      hello: null,
+      sessionKey: key,
+    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    const target = sessionNavigationTarget({
+      face: "chat",
+      sessionKey: key,
+      fallbackAgentId: "roboclaw",
+      navigationKey: key,
+    });
+
+    await expect(
+      loadChatRoute(context, targetLocation(target), "chat", new AbortController().signal),
+    ).resolves.toMatchObject({ kind: "session", sessionKey: key });
     expect(list).not.toHaveBeenCalled();
   });
 

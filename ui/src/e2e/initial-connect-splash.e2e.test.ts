@@ -78,6 +78,55 @@ async function traceLoginGateMounts(page: Page): Promise<() => Promise<boolean>>
     );
 }
 
+// Seeds the persistent transcript cache for the default main session so the
+// next navigation resolves the saved-conversation paint path. Runs against
+// the same origin of an already-settled document; the record shape mirrors
+// the store's schema.
+async function seedStoredTranscript(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const record = {
+      savedAt: Date.now(),
+      sessionId: null,
+      sessionKey: "agent:main:main",
+      snapshot: {
+        messages: [
+          {
+            content: "cached-transcript-marker",
+            role: "assistant",
+            timestamp: 1,
+          },
+        ],
+        pagination: { hasMore: false },
+        sessionId: null,
+      },
+    };
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("openclaw-chat-snapshots", 1);
+      request.addEventListener("upgradeneeded", () => {
+        for (const name of Array.from(request.result.objectStoreNames)) {
+          request.result.deleteObjectStore(name);
+        }
+        request.result.createObjectStore("snapshots", { keyPath: "sessionKey" });
+      });
+      request.addEventListener("success", () => resolve(request.result));
+      request.addEventListener("error", () => reject(request.error ?? new Error("open failed")));
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("snapshots", "readwrite");
+      transaction.objectStore("snapshots").put(record);
+      transaction.addEventListener("complete", () => resolve());
+      transaction.addEventListener("error", () =>
+        reject(transaction.error ?? new Error("put failed")),
+      );
+    });
+    database.close();
+  });
+}
+
+async function clearStoredTranscripts(page: Page): Promise<void> {
+  await page.evaluate(() => indexedDB.deleteDatabase("openclaw-chat-snapshots"));
+}
+
 describeControlUiE2e("Control UI initial connect splash E2E", () => {
   beforeAll(async () => {
     if (!chromiumAvailable) {
@@ -306,6 +355,33 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await page.locator("openclaw-app-shell").waitFor();
   });
 
+  it("paints a stored transcript while the first connect is still pending", async () => {
+    const page = await createPage();
+    const loginGateMounted = await traceLoginGateMounts(page);
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    // First visit settles credentials and the shell, then leaves a saved
+    // transcript behind — the state of any returning browser.
+    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page);
+
+    await page.reload();
+    await gateway.waitForRequest("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+    await page.getByText("cached-transcript-marker").first().waitFor();
+    expect(await page.locator(".connect-splash").count()).toBe(0);
+    expect(await loginGateMounted()).toBe(false);
+    await captureProof(page, "07-saved-transcript-while-connecting");
+
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+  });
+
   it("uses the splash for a stored device token on reload", async () => {
     const page = await createPage();
     const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
@@ -318,7 +394,10 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await page.locator("openclaw-app-shell").waitFor();
 
     // The hello stored a device token, so the reload connect is authenticated
-    // and must paint the splash instead of flashing the gate.
+    // and must paint the splash instead of flashing the gate. The splash
+    // contract covers browsers without a stored transcript; clear whatever
+    // the first visit persisted so this stays deterministic.
+    await clearStoredTranscripts(page);
     await page.reload();
     await gateway.waitForRequest("connect");
     await page.locator(".connect-splash").waitFor();

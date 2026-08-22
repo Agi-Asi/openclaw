@@ -16,7 +16,7 @@ import {
   CHAT_SNAPSHOT_STORE_NAME,
 } from "./session-snapshot-database.ts";
 import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
-import { SessionSnapshotStore } from "./session-snapshot-store.ts";
+import { SessionSnapshotStore, readStoredChatSnapshot } from "./session-snapshot-store.ts";
 
 function snapshot(message: unknown, sessionId = "session-1"): ChatSessionSnapshot {
   return {
@@ -168,6 +168,16 @@ describe("persistent chat session snapshots", () => {
     await writer.flush();
 
     expect(await new SessionSnapshotStore().read(sessionKey)).toEqual(cached);
+  });
+
+  it("serves the startup probe straight from storage", async () => {
+    const sessionKey = "agent:main:probe";
+    const writer = new SessionSnapshotStore();
+    writer.write(sessionKey, snapshot("cached"));
+    await writer.flush();
+
+    expect(await readStoredChatSnapshot(sessionKey)).toEqual(snapshot("cached"));
+    expect(await readStoredChatSnapshot("agent:main:missing")).toBeNull();
   });
 
   it("does not let an append miss replace a richer persisted snapshot", async () => {

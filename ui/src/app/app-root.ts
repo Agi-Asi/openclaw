@@ -73,6 +73,35 @@ export class OpenClawApp extends OpenClawLightDomElement {
   @state() private pendingGatewayUrl: string | null = null;
   @state() private onboarding = resolveOnboardingMode(globalThis.location?.search ?? "");
   @state() private focusDashboardRoute: FocusDashboardRouteState = { kind: "loading" };
+  // Set when the document's locally-named session has a stored transcript, so
+  // the first connect paints that conversation instead of the full-document
+  // splash. One-shot per document load; a probe miss keeps today's splash.
+  @state() private savedTranscriptReady = false;
+
+  private probeSavedTranscript(): void {
+    if (this.savedTranscriptReady || !this.context || !this.runtime) {
+      return;
+    }
+    const runtime = this.runtime;
+    const persistedSessionKey = this.context.gateway.snapshot.sessionKey;
+    void import("./saved-transcript-probe.runtime.ts")
+      .then((module) =>
+        module.probeSavedTranscript({
+          basePath: this.context?.basePath,
+          documentMode: runtime.documentMode,
+          focusDocument: this.focusTarget !== null,
+          persistedSessionKey,
+          markSavedTranscriptReady: () => {
+            // Routing must start before the handshake returns so the stored
+            // conversation can paint; the first-run watcher still owns its own
+            // redirect decision once the gateway answers.
+            this.savedTranscriptReady = true;
+            runtime.releaseStartupRouteGate();
+          },
+        }),
+      )
+      .catch(() => undefined);
+  }
 
   private runtime: ApplicationRuntime | undefined;
   private readonly contextProvider = new ContextProvider(this, {
@@ -146,6 +175,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // descendants reconnect and rebuild their controller-owned state afterward.
     this.contextProvider.setValue(context);
     this.syncLoginConnection();
+    this.probeSavedTranscript();
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
@@ -515,7 +545,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
       gatewaySnapshot.lastError === null &&
       (gatewaySnapshot.phase === "starting" ||
         (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
-    if (initialConnectPending) {
+    if (initialConnectPending && !this.savedTranscriptReady) {
       return html`
         <openclaw-tooltip-provider>
           ${renderConnectingSplash(gatewayStartupStatus)} ${gatewayUrlConfirmation}
@@ -524,7 +554,12 @@ export class OpenClawApp extends OpenClawLightDomElement {
     }
     const shellOwnsRecovery =
       gatewaySnapshot.phase === "reconnecting" || gatewaySnapshot.phase === "reload-required";
-    const showLoginGate = !gatewayConnected && !shellOwnsRecovery;
+    // A saved-transcript document paints its last conversation behind the
+    // honest connection indicator while the first connect is in flight; a
+    // failed attempt still publishes lastError and returns the login gate.
+    const savedTranscriptPaintsConnection = initialConnectPending && this.savedTranscriptReady;
+    const showLoginGate =
+      !gatewayConnected && !shellOwnsRecovery && !savedTranscriptPaintsConnection;
     if (showLoginGate) {
       return html`
         <openclaw-tooltip-provider>

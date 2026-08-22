@@ -10,6 +10,7 @@ import {
 } from "../lib/sessions/route-navigation.ts";
 import {
   buildAgentMainSessionKey,
+  DEFAULT_MAIN_KEY,
   normalizeAgentId,
   parseAgentSessionKey,
   resolveUiConfiguredMainKey,
@@ -89,10 +90,30 @@ export class ShellNavigationOwner {
 
   replaceChatWithCurrentSession(): boolean {
     const context = this.host.context;
-    const sessionKey = this.host.activeSessionKey.trim();
+    // A fresh document starts with no committed session; the persisted
+    // last-active key names the same conversation the gateway store will
+    // reconcile after hello, so recovery can proceed before connect.
+    const sessionKeyRaw =
+      this.host.activeSessionKey.trim() || context?.gateway.snapshot.sessionKey.trim() || "";
     if (!context) {
       return true;
     }
+    // A bare main alias names the canonical main session even before hello,
+    // but only while no configured main contradicts the default alias; a
+    // known custom main keeps waiting for the gateway as before.
+    const requestedParsed = parseAgentSessionKey(sessionKeyRaw);
+    const sessionKey =
+      !requestedParsed &&
+      sessionKeyRaw.toLowerCase() === DEFAULT_MAIN_KEY &&
+      resolveUiConfiguredMainKey({
+        agentsList: context.agents.state.agentsList,
+        hello: context.gateway.snapshot.hello,
+      }) === DEFAULT_MAIN_KEY
+        ? buildAgentMainSessionKey({
+            agentId: resolveSessionNavigationAgentId(context),
+            mainKey: DEFAULT_MAIN_KEY,
+          })
+        : sessionKeyRaw;
     if (!parseAgentSessionKey(sessionKey) && context.gateway.snapshot.phase !== "connected") {
       return false;
     }
@@ -152,7 +173,14 @@ export class ShellNavigationOwner {
     }
     context.replace(
       face,
-      sessionNavigationTarget({ context, face, sessionKey: replacementSessionKey }).options,
+      sessionNavigationTarget({
+        context,
+        face,
+        sessionKey: replacementSessionKey,
+        // Carry the exact key so a uuid-short path resolves from this
+        // navigation's own key while the gateway is still connecting.
+        navigationKey: replacementSessionKey,
+      }).options,
     );
     return true;
   }
