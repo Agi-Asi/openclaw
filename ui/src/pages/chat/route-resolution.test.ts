@@ -637,6 +637,21 @@ describe("gateway-backed session route resolution", () => {
     expect(list).not.toHaveBeenCalled();
   });
 
+  it("resolves a normal short URL from the matching persisted session", async () => {
+    const key = "agent:roboclaw:12345678-0aaa-4000-8000-000000000001";
+    const { context, list } = contextFor(() => result([]), [], key);
+
+    await expect(
+      loadChatRoute(
+        context,
+        { pathname: "/chat/roboclaw/12345678", search: "", hash: "" },
+        "chat",
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ kind: "session", sessionKey: key });
+    expect(list).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       connectionChange: "gateway client replacement",

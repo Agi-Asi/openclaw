@@ -43,12 +43,12 @@ export function findCachedShortSession(
     .get(SESSION_NAVIGATION_KEY_PARAM)
     ?.trim();
   const handoffKey = consumeSessionNavigationHandoff(context.gateway, location.pathname);
-  const carriedKey = locationKey ?? handoffKey;
+  const persistedKey = context.gateway.snapshot.sessionKey.trim();
+  const carriedKey = (locationKey ?? handoffKey ?? persistedKey) || undefined;
   // The persisted last-active key names this browser's own most recent
   // conversation, so a matching carried key stays trustworthy before the
   // session list exists to confirm it (startup restore, offline reopen).
-  const carriedByOwnPersistence =
-    Boolean(carriedKey) && carriedKey === context.gateway.snapshot.sessionKey.trim();
+  const carriedByOwnPersistence = Boolean(carriedKey) && carriedKey === persistedKey;
   const carriedByCurrentNavigation =
     Boolean(handoffKey && handoffKey === carriedKey) || carriedByOwnPersistence;
   if (carriedKey) {

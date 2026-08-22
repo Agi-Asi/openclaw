@@ -110,6 +110,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
       return Promise.resolve();
     }
     const runtime = this.runtime;
+    const persistedSessionKey = this.context.gateway.snapshot.sessionKey;
     return import("./saved-transcript-probe.runtime.ts")
       .then((module) =>
         module.probeSavedTranscript({
@@ -117,6 +118,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
           credentialAction: runtime.transcriptProbeAction,
           documentMode: runtime.documentMode,
           focusDocument: this.focusTarget !== null,
+          persistedSessionKey,
           markSavedTranscriptReady: () => {
             if (this.runtime === runtime) {
               this.savedTranscriptReady = true;
@@ -202,7 +204,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // descendants reconnect and rebuild their controller-owned state afterward.
     this.contextProvider.setValue(context);
     this.syncLoginConnection();
-    this.armDeferredConnectSplash();
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
@@ -211,6 +212,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
         if (this.runtime !== runtime) {
           return;
         }
+        this.armDeferredConnectSplash();
         await runtime.start();
         await this.resolveFocusDashboard();
       })
