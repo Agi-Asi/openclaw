@@ -390,9 +390,7 @@ class OpenClawShell
       .effect(
         () => this.context?.sessions,
         (sessions) =>
-          sessions.onBackgroundTurn((outcome) =>
-            this.shellGateway.handleBackgroundTurnOutcome(outcome),
-          ),
+          sessions.onBackgroundTurn((outcome) => this.shellGateway.showBackgroundTurn(outcome)),
       )
       .watch(
         () => this.context?.runtimeConfig,

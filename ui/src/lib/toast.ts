@@ -31,6 +31,7 @@ let queuedToast: ToastOptions | null = null;
 
 class OpenClawToastHost extends OpenClawLightDomContentsElement {
   @state() private toast: ToastOptions | null = null;
+  private readonly toastQueue: ToastOptions[] = [];
   private dismissTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
   override connectedCallback() {
@@ -64,6 +65,14 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
     );
   }
 
+  queue(options: ToastOptions) {
+    if (this.toast) {
+      this.toastQueue.push(options);
+      return;
+    }
+    this.show(options);
+  }
+
   private clearDismissTimer() {
     if (this.dismissTimer !== null) {
       globalThis.clearTimeout(this.dismissTimer);
@@ -76,6 +85,10 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
     this.clearDismissTimer();
     this.toast = null;
     toast?.onDismiss?.(reason);
+    const next = reason === "replaced" ? undefined : this.toastQueue.shift();
+    if (next) {
+      this.show(next);
+    }
   }
 
   override render() {
@@ -117,7 +130,7 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
   }
 }
 
-export function showToast(options: ToastOptions): boolean {
+function deliverToast(options: ToastOptions, enqueue: boolean): boolean {
   if (typeof document === "undefined") {
     return false;
   }
@@ -140,8 +153,20 @@ export function showToast(options: ToastOptions): boolean {
     };
     modal.addEventListener("wa-after-hide", handoff);
   }
-  host.show(options);
+  if (enqueue) {
+    host.queue(options);
+  } else {
+    host.show(options);
+  }
   return true;
+}
+
+export function showToast(options: ToastOptions): boolean {
+  return deliverToast(options, false);
+}
+
+export function queueToast(options: ToastOptions): boolean {
+  return deliverToast(options, true);
 }
 
 // Guarded so DOM-free (node) consumers of send-failure surfacing can load this module.

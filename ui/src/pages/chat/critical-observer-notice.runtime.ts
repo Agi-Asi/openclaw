@@ -19,4 +19,4 @@ export function resetCriticalObserverTracker(): void {
   tracker.clear();
 }
 
-export { showBackgroundTurnNotice } from "../../app/background-turn-notice.runtime.ts";
+export { showBackgroundNotice } from "../../app/background-turn-notice.runtime.ts";

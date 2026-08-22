@@ -7,36 +7,10 @@ import {
   uiSessionEventMatches,
   type UiSessionDefaultsHost,
 } from "../lib/sessions/session-key.ts";
-import { showToast, type ToastOptions } from "../lib/toast.ts";
+import { queueToast } from "../lib/toast.ts";
+import type { ShellGatewayHost } from "./app-shell-gateway.ts";
 
-const pendingNotices: ToastOptions[] = [];
-let noticeActive = false;
-
-function showNextNotice(): void {
-  if (noticeActive) {
-    return;
-  }
-  const next = pendingNotices.shift();
-  if (!next) {
-    return;
-  }
-  noticeActive = true;
-  showToast({
-    ...next,
-    onDismiss: (reason) => {
-      next.onDismiss?.(reason);
-      noticeActive = false;
-      showNextNotice();
-    },
-  });
-}
-
-function enqueueNotice(options: ToastOptions): void {
-  pendingNotices.push(options);
-  showNextNotice();
-}
-
-export function showBackgroundTurnNotice(params: {
+function showBackgroundTurnNotice(params: {
   sessionHost: UiSessionDefaultsHost;
   sessions: readonly GatewaySessionRow[];
   selectedSessionKey: string;
@@ -73,9 +47,26 @@ export function showBackgroundTurnNotice(params: {
                 : outcome.errorMessage
                   ? t("sessionsView.runFailedReason", { reason: outcome.errorMessage })
                   : t("sessionsView.statusFailed");
-  enqueueNotice({
+  queueToast({
     message: `${session}: ${status}`,
     actionLabel: t("sessionsView.openSession"),
     onAction: () => params.onOpen(outcome.key, outcome.agentId),
+  });
+}
+
+export function showBackgroundNotice(
+  host: ShellGatewayHost,
+  outcome: SessionBackgroundTurnOutcome,
+): void {
+  const context = host.context;
+  if (!context) {
+    return;
+  }
+  showBackgroundTurnNotice({
+    outcome,
+    selectedSessionKey: host.activeSessionKey,
+    sessionHost: host.storedOutboxScopeHost(context),
+    sessions: context.sessions.state.result?.sessions ?? [],
+    onOpen: (sessionKey, agentId) => host.selectChatSession(sessionKey, agentId),
   });
 }

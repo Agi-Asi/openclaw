@@ -222,20 +222,8 @@ export class ShellGatewayOwner {
     }
   }
 
-  handleBackgroundTurnOutcome(outcome: SessionBackgroundTurnOutcome): void {
-    const context = this.host.context;
-    if (!context) {
-      return;
-    }
-    void this.noticeRuntime().then((runtime) =>
-      runtime.showBackgroundTurnNotice({
-        outcome,
-        selectedSessionKey: this.host.activeSessionKey,
-        sessionHost: this.host.storedOutboxScopeHost(context),
-        sessions: context.sessions.state.result?.sessions ?? [],
-        onOpen: (sessionKey, agentId) => this.host.selectChatSession(sessionKey, agentId),
-      }),
-    );
+  showBackgroundTurn(outcome: SessionBackgroundTurnOutcome): void {
+    void this.noticeRuntime().then((runtime) => runtime.showBackgroundNotice(this.host, outcome));
   }
 
   scheduleAgentRosterRefresh(): void {

@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../components/modal-dialog.ts";
-import { showToast } from "./toast.ts";
+import { queueToast, showToast } from "./toast.ts";
 
 async function mountHost() {
   const host = document.createElement("openclaw-toast-host");
@@ -33,6 +33,26 @@ describe("shared toast", () => {
     await host.updateComplete;
     expect(host.querySelectorAll(".app-toast")).toHaveLength(1);
     expect(host.querySelector(".app-toast__message")?.textContent).toBe("Second");
+  });
+
+  it("keeps queued outcomes behind an unrelated replacement toast", async () => {
+    const host = await mountHost();
+    const onAction = vi.fn();
+
+    queueToast({ message: "First completion" });
+    queueToast({ message: "Second completion", actionLabel: "Open", onAction });
+    await host.updateComplete;
+    expect(host.querySelector(".app-toast__message")?.textContent).toBe("First completion");
+
+    showToast({ message: "Critical observer notice" });
+    await host.updateComplete;
+    expect(host.querySelector(".app-toast__message")?.textContent).toBe("Critical observer notice");
+    host.querySelector<HTMLButtonElement>(".app-toast__dismiss")?.click();
+    await host.updateComplete;
+    expect(host.querySelector(".app-toast__message")?.textContent).toBe("Second completion");
+
+    host.querySelector<HTMLButtonElement>(".app-toast__action")?.click();
+    expect(onAction).toHaveBeenCalledOnce();
   });
 
   it("uses the active modal's toast layer before the app layer", async () => {
