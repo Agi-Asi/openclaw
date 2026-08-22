@@ -254,6 +254,8 @@ function renderChatQueueItem(
             @focus=${(event: FocusEvent) => {
               if (event.currentTarget instanceof HTMLTextAreaElement) {
                 fitQueueEditInput(event.currentTarget);
+                const end = event.currentTarget.value.length;
+                event.currentTarget.setSelectionRange(end, end);
               }
             }}
             @input=${(event: Event) => {
@@ -267,7 +269,7 @@ function renderChatQueueItem(
                 event.preventDefault();
                 event.stopPropagation();
                 props.onQueueEditCancel?.();
-              } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              } else if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 props.onQueueEditSubmit?.();
               }
