@@ -7,6 +7,48 @@ import { toSanitizedMarkdownHtml } from "./markdown.ts";
 
 type SessionProgressCardPlacement = "board" | "composer" | "hovercard" | "rail";
 
+type ComposerProgressHoverTimers = {
+  open?: ReturnType<typeof setTimeout>;
+  close?: ReturnType<typeof setTimeout>;
+};
+
+const composerProgressHoverTimers = new WeakMap<HTMLElement, ComposerProgressHoverTimers>();
+
+function scheduleComposerProgressOpen(event: PointerEvent) {
+  const root = event.currentTarget as HTMLElement;
+  const timers = composerProgressHoverTimers.get(root) ?? {};
+  if (timers.close) {
+    clearTimeout(timers.close);
+    timers.close = undefined;
+  }
+  if (root.dataset.open === "true" || timers.open) {
+    composerProgressHoverTimers.set(root, timers);
+    return;
+  }
+  timers.open = setTimeout(() => {
+    root.dataset.open = "true";
+    timers.open = undefined;
+  }, 600);
+  composerProgressHoverTimers.set(root, timers);
+}
+
+function scheduleComposerProgressClose(event: PointerEvent) {
+  const root = event.currentTarget as HTMLElement;
+  const timers = composerProgressHoverTimers.get(root) ?? {};
+  if (timers.open) {
+    clearTimeout(timers.open);
+    timers.open = undefined;
+  }
+  if (timers.close) {
+    clearTimeout(timers.close);
+  }
+  timers.close = setTimeout(() => {
+    root.dataset.open = "false";
+    timers.close = undefined;
+  }, 300);
+  composerProgressHoverTimers.set(root, timers);
+}
+
 const STATUS_LABEL_KEYS: Record<ProgressCardStep["status"], Parameters<typeof t>[0]> = {
   completed: "sessionProgressCard.status.completed",
   in_progress: "sessionProgressCard.status.inProgress",
@@ -138,6 +180,8 @@ export function renderSessionProgressCard(
       class="session-progress-card session-progress-card--composer"
       data-progress-card-placement="composer"
       data-open="false"
+      @pointerenter=${scheduleComposerProgressOpen}
+      @pointerleave=${scheduleComposerProgressClose}
     >
       <div
         class="session-progress-card__summary"

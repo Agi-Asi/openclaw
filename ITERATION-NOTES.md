@@ -130,6 +130,7 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] Keep failed queue actions on the primary row and move the delivery-state pill before the diagnostic copy.
 - [x] Enforce one precedence-ordered composer status lane and keep Interrupted with its assistant turn.
 - [x] Add Interrupted + members, offline + read-only and approval + offline sweep fixtures.
+- [x] Match the Plan hover card delays and 100ms fade, scale and upward-slide transition.
 
 ## Observed queue contract
 
