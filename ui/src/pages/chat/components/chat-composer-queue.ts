@@ -36,6 +36,62 @@ type ChatQueueReorder = {
 const DRAG_MIME = "application/x-openclaw-queued-message";
 const DRAG_OVER_CLASS = "chat-queue__item--drop-target";
 const KEYBOARD_EDIT_FOCUS_ATTRIBUTE = "data-edit-keyboard-focus";
+const QUEUE_DRAG_SCROLL_EDGE = 24;
+const QUEUE_DRAG_SCROLL_MAX_SPEED = 12;
+
+let queueDragScroll:
+  | { container: HTMLElement; velocity: number; frame: number | null }
+  | undefined;
+
+function stopQueueDragAutoScroll(): void {
+  if (queueDragScroll?.frame != null) {
+    cancelAnimationFrame(queueDragScroll.frame);
+  }
+  queueDragScroll = undefined;
+}
+
+function runQueueDragAutoScroll(): void {
+  const active = queueDragScroll;
+  if (!active || active.velocity === 0) return;
+  const previous = active.container.scrollTop;
+  active.container.scrollTop += active.velocity;
+  if (active.container.scrollTop === previous) {
+    stopQueueDragAutoScroll();
+    return;
+  }
+  active.frame = requestAnimationFrame(runQueueDragAutoScroll);
+}
+
+function updateQueueDragAutoScroll(container: HTMLElement, pointerY: number): void {
+  const bounds = container.getBoundingClientRect();
+  const topProximity = Math.min(
+    QUEUE_DRAG_SCROLL_EDGE,
+    Math.max(0, QUEUE_DRAG_SCROLL_EDGE - (pointerY - bounds.top)),
+  );
+  const bottomProximity = Math.min(
+    QUEUE_DRAG_SCROLL_EDGE,
+    Math.max(0, QUEUE_DRAG_SCROLL_EDGE - (bounds.bottom - pointerY)),
+  );
+  const proximity = bottomProximity > 0 ? bottomProximity : -topProximity;
+  const velocity = (proximity / QUEUE_DRAG_SCROLL_EDGE) * QUEUE_DRAG_SCROLL_MAX_SPEED;
+  if (velocity === 0) {
+    stopQueueDragAutoScroll();
+    return;
+  }
+  if (queueDragScroll?.container === container) {
+    queueDragScroll.velocity = velocity;
+    if (queueDragScroll.frame == null) {
+      queueDragScroll.frame = requestAnimationFrame(runQueueDragAutoScroll);
+    }
+    return;
+  }
+  stopQueueDragAutoScroll();
+  queueDragScroll = {
+    container,
+    velocity,
+    frame: requestAnimationFrame(runQueueDragAutoScroll),
+  };
+}
 
 function markQueueEditFocus(row: Element | null, keyboard: boolean): void {
   row?.toggleAttribute(KEYBOARD_EDIT_FOCUS_ATTRIBUTE, keyboard);
@@ -96,6 +152,25 @@ export function renderChatQueue(props: ChatQueueProps) {
         class="chat-queue__scroll"
         data-scrollable=${visibleQueue.length > 3 ? "true" : "false"}
         data-at-start="true"
+        @dragover=${(event: DragEvent) => {
+          if (!event.dataTransfer?.types.includes(DRAG_MIME)) return;
+          const container = event.currentTarget;
+          if (container instanceof HTMLElement) {
+            updateQueueDragAutoScroll(container, event.clientY);
+          }
+        }}
+        @dragleave=${(event: DragEvent) => {
+          const container = event.currentTarget;
+          if (
+            container instanceof HTMLElement &&
+            event.relatedTarget instanceof Node &&
+            container.contains(event.relatedTarget)
+          ) {
+            return;
+          }
+          stopQueueDragAutoScroll();
+        }}
+        @drop=${stopQueueDragAutoScroll}
         @scroll=${(event: Event) => {
           const scroll = event.currentTarget;
           if (scroll instanceof HTMLElement) {
@@ -225,6 +300,7 @@ function renderChatQueueItem(
                   }
                 }
               : undefined}
+            @dragend=${stopQueueDragAutoScroll}
             @keydown=${(event: KeyboardEvent) => {
               if (!canMove) {
                 return;
