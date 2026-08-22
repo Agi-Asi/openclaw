@@ -890,7 +890,9 @@ suite.define(() => {
 
       await page.goto(`${suite.server.baseUrl}chat`);
       await composer.waitFor({ state: "visible", timeout: 10_000 });
-      expect(await composer.getAttribute("aria-keyshortcuts")).toBe("Control+Enter Meta+Enter");
+      expect(await composer.getAttribute("aria-keyshortcuts")).toBe(
+        "Control+Enter Meta+Enter Control+Shift+Enter Meta+Shift+Enter",
+      );
 
       await composer.fill("plain enter stays in the draft");
       await composer.press("Enter");

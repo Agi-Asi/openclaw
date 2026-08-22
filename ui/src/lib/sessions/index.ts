@@ -2,7 +2,7 @@ import type { SessionCatalogPullRequestSummary } from "../../../../packages/gate
 import { GatewayRequestError, type GatewayEventFrame } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { createGatewayConnectionLifecycle } from "../gateway-connection-lifecycle.ts";
-import type { SessionBackgroundTurnOutcome } from "./background-turns.runtime.ts";
+import type { SessionBackgroundTurnOutcome } from "./background-turn-contract.ts";
 import { scopedAgentListParamsForSession } from "./navigation.ts";
 import {
   readSessionChangedEvent,
@@ -40,7 +40,7 @@ export type {
   SessionListSnapshot,
   SessionMessageSubscription,
 } from "./session-capability.ts";
-export type { SessionBackgroundTurnOutcome } from "./background-turns.runtime.ts";
+export type { SessionBackgroundTurnOutcome } from "./background-turn-contract.ts";
 export type { SessionPatch } from "./patch.ts";
 export { DEFAULT_SESSION_LIST_QUERY } from "./session-requests.ts";
 export { reconcileSessionRunTerminal, type SessionRunTerminal } from "./reconcile.ts";

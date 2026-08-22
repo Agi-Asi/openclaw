@@ -24,7 +24,7 @@ import type {
 } from "../../api/types.ts";
 import type { ApplicationGatewayPhase } from "../../app/gateway.ts";
 import type { GatewayConnectionScope } from "../gateway-connection-lifecycle.ts";
-import type { SessionBackgroundTurnOutcome } from "./background-turns.runtime.ts";
+import type { SessionBackgroundTurnOutcome } from "./background-turn-contract.ts";
 import type { SessionCreateOutcome, SessionCreateParams } from "./create.ts";
 import type { SessionGroupSettings } from "./custom-groups.ts";
 import type { SessionArchivedFilter } from "./navigation.ts";

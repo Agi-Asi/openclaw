@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GatewayEventFrame } from "../../api/gateway.ts";
-import {
-  createSessionBackgroundTurns,
-  type SessionBackgroundTurnOutcome,
-} from "./background-turns.runtime.ts";
+import type { SessionBackgroundTurnOutcome } from "./background-turn-contract.ts";
+import { createSessionBackgroundTurns } from "./background-turns.runtime.ts";
 import type { SessionCreateOutcome } from "./create.ts";
 
 function chatTerminal(params: {

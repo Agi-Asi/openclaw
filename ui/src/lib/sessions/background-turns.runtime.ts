@@ -1,5 +1,9 @@
 import type { ChatEvent } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import type { GatewayEventFrame } from "../../api/gateway.ts";
+import type {
+  SessionBackgroundTurnLaunch,
+  SessionBackgroundTurnOutcome,
+} from "./background-turn-contract.ts";
 import type { SessionCreateOutcome, SessionCreateParams } from "./create.ts";
 import type { SessionGateway } from "./session-capability.ts";
 import { areUiSessionKeysEquivalent, normalizeAgentId } from "./session-key.ts";
@@ -7,41 +11,6 @@ import { areUiSessionKeysEquivalent, normalizeAgentId } from "./session-key.ts";
 const MAX_BUFFERED_TERMINALS = 32;
 
 type BackgroundTerminalEvent = Extract<ChatEvent, { state: "aborted" | "error" | "final" }>;
-
-type BackgroundLaunch = {
-  agentId?: string;
-  key: string;
-  runId: string;
-};
-
-export type SessionBackgroundTurnOutcome =
-  | (BackgroundLaunch & { status: "completed" })
-  | (BackgroundLaunch & {
-      status: "aborted";
-      errorMessage?: string;
-    })
-  | (BackgroundLaunch & {
-      status: "error";
-      errorKind?: Extract<BackgroundTerminalEvent, { state: "error" }>["errorKind"];
-      errorMessage?: string;
-    })
-  | {
-      agentId?: string;
-      key: string;
-      status: "initial-turn-rejected";
-      errorMessage: string;
-    }
-  | {
-      agentId?: string;
-      key: string;
-      status: "initial-turn-idle";
-    }
-  | {
-      agentId?: string;
-      key: string;
-      status: "tracking-interrupted";
-      reason: "connection-replaced" | "missing-run-id";
-    };
 
 type BackgroundCreate = (params: SessionCreateParams) => Promise<SessionCreateOutcome | null>;
 
@@ -64,7 +33,7 @@ function readTerminal(event: GatewayEventFrame): BackgroundTerminalEvent | null 
 }
 
 function launchMatchesTerminal(
-  launch: BackgroundLaunch,
+  launch: SessionBackgroundTurnLaunch,
   terminal: BackgroundTerminalEvent,
 ): boolean {
   if (
@@ -81,7 +50,7 @@ function launchMatchesTerminal(
 }
 
 function terminalOutcome(
-  launch: BackgroundLaunch,
+  launch: SessionBackgroundTurnLaunch,
   terminal: BackgroundTerminalEvent,
 ): SessionBackgroundTurnOutcome {
   if (terminal.state === "final") {
@@ -107,7 +76,7 @@ export function createSessionBackgroundTurns(
   gateway?: Pick<SessionGateway, "snapshot" | "subscribe" | "subscribeEvents">,
 ) {
   const listeners = new Set<(outcome: SessionBackgroundTurnOutcome) => void>();
-  const launchesByRunId = new Map<string, BackgroundLaunch[]>();
+  const launchesByRunId = new Map<string, SessionBackgroundTurnLaunch[]>();
   const pendingCreates = new Set<symbol>();
   const bufferedTerminals: BackgroundTerminalEvent[] = [];
   let connectionGeneration = 0;
