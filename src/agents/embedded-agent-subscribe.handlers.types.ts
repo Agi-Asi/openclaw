@@ -323,6 +323,7 @@ type ToolHandlerParams = Pick<
   | "runId"
   | "onBlockReplyFlush"
   | "onAgentEvent"
+  | "trajectoryRecordEvent"
   | "onToolStreamBoundary"
   | "onExecutionPhase"
   | "onHeartbeatToolResponse"

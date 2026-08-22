@@ -9,8 +9,9 @@ title: "Trajectory bundles"
 ---
 
 Trajectory capture is OpenClaw's per-session flight recorder. It records a
-structured timeline for each agent run, then `/export-trajectory` packages the
-current session into a redacted support bundle covering:
+structured timeline for each agent run. The experimental Control UI view lets
+you inspect that timeline in place; `/export-trajectory` packages the current
+session into a redacted support bundle covering:
 
 - The prompt, system prompt, and tools sent to the model
 - Which transcript messages and tool calls led to an answer
@@ -24,7 +25,23 @@ sanitized Gateway bundle and, for OpenAI Codex harness sessions, can send Codex
 feedback to OpenAI after approval. Use `/export-trajectory` when you need the
 detailed per-session prompt, tool, and transcript timeline.
 
-## Quick start
+## Inspect a trajectory in Control UI
+
+Enable **Settings → Labs → Trajectory view**, open a chat session, then choose
+**Trajectory** from the side-panel page picker. The view loads the newest
+recorded window first and keeps the normal chat composer available.
+
+The fixed overview has Input, Model, and Tools lanes. The ledger groups the
+loaded window into turns and request attempts; select a row to open its local
+details inspector. Search, folding, range focus, and displayed request numbers
+apply only to the loaded window. Use **Load earlier history** when the omitted
+prefix indicator is present.
+
+The view distinguishes capture disabled, no recorded rows, unloaded history,
+trimmed history, and fields that were never recorded. It does not infer missing
+duration, TTFT, usage, schemas, or terminal state.
+
+## Export a support bundle
 
 Send in the active session (alias `/trajectory`):
 

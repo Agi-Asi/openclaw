@@ -427,6 +427,17 @@ export async function handleToolExecutionEnd(
     },
   });
   const endedAt = Date.now();
+  ctx.params.trajectoryRecordEvent?.("tool.result", {
+    toolCallId,
+    name: toolName,
+    result: sanitizedResult,
+    isError: isToolError,
+    startedAt: startData?.startTime,
+    endedAt,
+    ...(startData?.startTime !== undefined
+      ? { durationMs: Math.max(0, endedAt - startData.startTime) }
+      : {}),
+  });
   const itemId = buildToolItemId(toolCallId);
   const itemData: AgentItemEventData = {
     itemId,
@@ -498,6 +509,16 @@ export async function handleToolExecutionEnd(
         ...(ctx.params.sessionKey ? { sessionKey: ctx.params.sessionKey } : {}),
         stream: "approval",
         data: approvalData,
+      });
+      ctx.params.trajectoryRecordEvent?.("approval.requested", {
+        toolCallId,
+        kind: "exec",
+        status: approvalStatus,
+        command: execDetails.command,
+        host: execDetails.host,
+        ...(execDetails.status === "approval-pending"
+          ? { approvalId: execDetails.approvalId, approvalSlug: execDetails.approvalSlug }
+          : { reason: execDetails.reason }),
       });
       emitAgentEventCallbackBestEffort(ctx, {
         stream: "approval",
