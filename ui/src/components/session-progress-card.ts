@@ -32,6 +32,12 @@ function currentProgressStep(steps: readonly ProgressCardStep[]): ProgressCardSt
   );
 }
 
+function currentProgressPosition(steps: readonly ProgressCardStep[]): number {
+  const current = currentProgressStep(steps);
+  const index = current ? steps.indexOf(current) : -1;
+  return Math.max(1, index + 1);
+}
+
 function renderMarkdown(markdown: string | undefined) {
   if (!markdown) {
     return nothing;
@@ -49,7 +55,12 @@ function renderSteps(card: ProgressCard) {
   return html`<ol class="session-progress-card__steps">
     ${steps.map((step) => {
       const statusLabel = t(STATUS_LABEL_KEYS[step.status]);
-      const marker = step.status === "completed" ? "✓" : step.status === "in_progress" ? "▸" : "▢";
+      const marker =
+        step.status === "completed"
+          ? icons.check
+          : step.status === "in_progress"
+            ? html`<span class="session-run-spinner"></span>`
+            : icons.circle;
       return html`<li
         class="session-progress-card__step session-progress-card__step--${step.status}"
         aria-label=${t("sessionProgressCard.stepLabel", { status: statusLabel, step: step.step })}
@@ -101,25 +112,65 @@ export function renderSessionProgressCard(
       </button>`
     : nothing;
   if (placement === "composer") {
-    const current = currentProgressStep(card.steps ?? []);
-    return html`<details
+    const steps = card.steps ?? [];
+    const currentStep = currentProgressStep(steps);
+    const currentPosition = currentProgressPosition(steps);
+    const complete = steps.length > 0 && steps.every((step) => step.status === "completed");
+    const composerCountLabel = counts
+      ? t("sessionProgressCard.countLabel", {
+          completed: String(currentPosition),
+          total: String(counts.total),
+        })
+      : t("sessionProgressCard.noteLabel");
+    const stepLabel = currentStep?.step ?? t("sessionProgressCard.noteLabel");
+    const shortCount = counts
+      ? t("sessionProgressCard.shortCount", {
+          completed: String(currentPosition),
+          total: String(counts.total),
+        })
+      : nothing;
+    const summaryIndicator = complete
+      ? icons.check
+      : currentStep?.status === "in_progress"
+        ? html`<span class="session-run-spinner"></span>`
+        : icons.circle;
+    return html`<div
       class="session-progress-card session-progress-card--composer"
       data-progress-card-placement="composer"
+      data-open="false"
     >
-      <summary class="session-progress-card__summary" aria-label=${countLabel}>
-        <span class="session-progress-card__current-marker" aria-hidden="true">▸</span>
-        <span class="session-progress-card__current"
-          >${current?.step ?? t("sessionProgressCard.noteLabel")}</span
-        >
+      <div
+        class="session-progress-card__summary"
+        aria-label=${composerCountLabel}
+      >
+        <span class="session-progress-card__summary-indicator" aria-hidden="true">
+          ${summaryIndicator}
+        </span>
+        <span class="session-progress-card__current">${stepLabel}</span>
         ${counts
-          ? html`<span class="session-progress-card__count"
-              >${counts.completed}/${counts.total}</span
+          ? html`<span class="session-progress-card__summary-count"
+              >${currentPosition}/${counts.total}</span
             >`
           : nothing}
-        ${dismiss}
-      </summary>
-      ${renderBody(card)}
-    </details>`;
+      </div>
+      <div class="session-progress-card__body" role="region" aria-label=${composerCountLabel}>
+        <div class="session-progress-card__heading">
+          <span>${t("sessionProgressCard.composerTitle")}</span>
+          <span class="session-progress-card__heading-actions">
+            ${shortCount} ${dismiss}
+          </span>
+        </div>
+        ${counts
+          ? html`<progress
+              class="session-progress-card__progress"
+              value=${currentPosition}
+              max=${counts.total}
+              aria-label=${composerCountLabel}
+            ></progress>`
+          : nothing}
+        ${renderMarkdown(card.markdown)} ${renderSteps(card)}
+      </div>
+    </div>`;
   }
   return html`<section
     class="session-progress-card session-progress-card--${placement}"

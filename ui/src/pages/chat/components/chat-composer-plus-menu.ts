@@ -4,6 +4,7 @@ import type { ToolsEffectiveEntry, ToolsEffectiveResult } from "../../../api/typ
 import { pathForPluginsHubTab, pathForRoute } from "../../../app-route-paths.ts";
 import type { ApplicationNavigationOptions } from "../../../app/context.ts";
 import { icons } from "../../../components/icons.ts";
+import { restorePointerOpenedChatComposerTrigger } from "./chat-picker-overlay.ts";
 import "../../../components/tooltip.ts";
 import "../../../components/web-awesome.ts";
 import { t } from "../../../i18n/index.ts";
@@ -11,11 +12,13 @@ import type { McpServerSummary } from "../../../lib/config/mcp-servers.ts";
 import { formatUiExternalText } from "../../../lib/format-error.ts";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
 import {
+  countSessionToolOverrides,
   nextBooleanToolOverrides,
   nextMcpToolsDenyOverrides,
   nextWebSearchToolOverrides,
   readOwnEntry,
   resolveToolOverrideState,
+  sessionToolOverrideNames,
 } from "../../../lib/sessions/tool-overrides.ts";
 import {
   handleChatAttachmentMenuSelection,
@@ -137,6 +140,11 @@ function renderRootView(props: ChatComposerPlusMenuProps) {
     props.webSearchBaseEnabled,
     props.toolOverrides?.webSearch,
   );
+  const overrideCount = countSessionToolOverrides(props.toolOverrides);
+  const overrideNames = sessionToolOverrideNames(
+    props.toolOverrides,
+    t("chat.composer.menu.webSearch"),
+  ).join(", ");
   const attachments = renderChatAttachmentMenuOptions(icons.paperclip);
   if (!props.showCapabilities) {
     return attachments;
@@ -190,6 +198,25 @@ function renderRootView(props: ChatComposerPlusMenuProps) {
         t("chat.composer.menu.managePlugins"),
       )}
     </wa-dropdown-item>
+    ${overrideCount > 0
+      ? html`
+          ${menuDivider()}
+          <wa-dropdown-item
+            class="agent-chat__capability-menu-item agent-chat__capability-overrides"
+            value="clear-session-overrides"
+            title=${overrideNames}
+            ?disabled=${props.mutationBlockedReason !== null}
+          >
+            <span slot="icon" aria-hidden="true">${icons.settings}</span>
+            <span>
+              ${t("chat.composer.overrides.shortCount", { count: String(overrideCount) })}
+            </span>
+            <span slot="details" class="agent-chat__capability-overrides-clear" aria-hidden="true">
+              ${icons.x}
+            </span>
+          </wa-dropdown-item>
+        `
+      : nothing}
   `;
 }
 
@@ -434,6 +461,12 @@ function handleMenuSelection(
     );
     return;
   }
+  if (value === "clear-session-overrides") {
+    if (!props.mutationBlockedReason) {
+      props.onPatchToolOverrides(null);
+    }
+    return;
+  }
   if (value.startsWith("skill:")) {
     event.preventDefault();
     const skill = props.skills?.[Number(value.slice("skill:".length))];
@@ -517,6 +550,7 @@ function handleMenuSelection(
 
 export function renderChatComposerPlusMenu(props: ChatComposerPlusMenuProps) {
   const view = props.showCapabilities ? props.view : "root";
+  const hasSessionOverrides = countSessionToolOverrides(props.toolOverrides) > 0;
   if (view.startsWith("tools:")) {
     props.onEnsureToolAccess?.(view.slice("tools:".length));
   }
@@ -536,6 +570,7 @@ export function renderChatComposerPlusMenu(props: ChatComposerPlusMenuProps) {
       .open=${props.open}
       @wa-select=${(event: CustomEvent<{ item: { value?: string } }>) =>
         handleMenuSelection(event, props)}
+      @wa-after-show=${restorePointerOpenedChatComposerTrigger}
       @wa-show=${() => {
         if (!props.open) {
           props.onOpenChange(true);
@@ -549,7 +584,7 @@ export function renderChatComposerPlusMenu(props: ChatComposerPlusMenuProps) {
       }}
       data-view=${view}
     >
-      ${renderChatAttachmentMenuTrigger(props.disabled)} ${content}
+      ${renderChatAttachmentMenuTrigger(props.disabled, hasSessionOverrides)} ${content}
     </wa-dropdown>
     ${props.addServerDialog ?? nothing}
   `;

@@ -306,17 +306,17 @@ function renderSlashCommandOption(params: {
         requestUpdate();
       }}
     >
-      <span class="slash-menu-leading">
-        <span class="slash-menu-icon"
-          >${cmd.icon ? renderSlashIcon(cmd.icon) : icons.terminal}</span
-        >
+      <span class="slash-menu-icon"
+        >${cmd.icon ? renderSlashIcon(cmd.icon) : icons.terminal}</span
+      >
+      <span class="slash-menu-copy">
         <span class="slash-menu-name"
           >/${renderMatchedName(cmd.name, query)}${cmd.args
             ? html`<span class="slash-menu-args"> ${cmd.args}</span>`
             : nothing}</span
         >
+        <span class="slash-menu-desc">${getSlashCommandDescription(cmd)}</span>
       </span>
-      <span class="slash-menu-desc">${getSlashCommandDescription(cmd)}</span>
     </div>
   `;
 }
@@ -368,15 +368,17 @@ export function renderSlashMenu(
                     requestUpdate();
                   }}
                 >
-                  <span class="slash-menu-leading">
-                    <span class="slash-menu-icon"
-                      >${state.slashMenuCommand?.icon
-                        ? renderSlashIcon(state.slashMenuCommand.icon)
-                        : nothing}</span
-                    >
+                  <span class="slash-menu-icon"
+                    >${state.slashMenuCommand?.icon
+                      ? renderSlashIcon(state.slashMenuCommand.icon)
+                      : nothing}</span
+                  >
+                  <span class="slash-menu-copy">
                     <span class="slash-menu-name">${arg}</span>
+                    <span class="slash-menu-desc"
+                      >/${state.slashMenuCommand?.name} ${arg}</span
+                    >
                   </span>
-                  <span class="slash-menu-desc">/${state.slashMenuCommand?.name} ${arg}</span>
                 </div>
               `,
             )}

@@ -13,8 +13,9 @@ const COMPOSER_CHROME_INTERACTIVE_SELECTOR = [
 ].join(",");
 
 type ComposerTextareaResizeObserverState = {
-  observer: ResizeObserver;
+  observer: ResizeObserver | null;
   adjustmentFrame: number | null;
+  onScroll: () => void;
 };
 
 type ComposerPopoverAnchorObserverState = {
@@ -121,8 +122,31 @@ export function replaceComposerPopoverAnchor(
   return next;
 }
 
+function syncTextareaOverlay(el: HTMLTextAreaElement): HTMLElement | null {
+  const overlay = el.parentElement?.querySelector<HTMLElement>(
+    ".agent-chat__composer-draft-overlay",
+  );
+  if (!overlay) {
+    return null;
+  }
+  overlay.scrollTop = el.scrollTop;
+  overlay.scrollLeft = el.scrollLeft;
+  return overlay;
+}
+
 function updateTextareaOverflow(el: HTMLTextAreaElement) {
-  el.style.overflowY = el.scrollHeight > el.clientHeight ? "auto" : "hidden";
+  const scrollable = el.scrollHeight > el.clientHeight + 1;
+  // Two 16px fades need enough vertical runway not to overlap into a narrow
+  // opaque strip on short drafts. Small overflows still scroll, just unfaded.
+  const canFade = scrollable && el.clientHeight >= 64;
+  const fadeTop = canFade && el.scrollTop > 1;
+  const fadeBottom = canFade && el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+  el.style.overflowY = scrollable ? "auto" : "hidden";
+  el.toggleAttribute("data-scroll-fade-top", fadeTop);
+  el.toggleAttribute("data-scroll-fade-bottom", fadeBottom);
+  const overlay = syncTextareaOverlay(el);
+  overlay?.toggleAttribute("data-scroll-fade-top", fadeTop);
+  overlay?.toggleAttribute("data-scroll-fade-bottom", fadeBottom);
 }
 
 export function adjustTextareaHeight(el: HTMLTextAreaElement) {
@@ -133,6 +157,11 @@ export function adjustTextareaHeight(el: HTMLTextAreaElement) {
   if (el.closest('[data-composer-layout="single-line"]')) {
     el.style.height = "";
     el.style.overflowY = "";
+    el.removeAttribute("data-scroll-fade-top");
+    el.removeAttribute("data-scroll-fade-bottom");
+    const overlay = syncTextareaOverlay(el);
+    overlay?.removeAttribute("data-scroll-fade-top");
+    overlay?.removeAttribute("data-scroll-fade-bottom");
     return;
   }
   // Hide the browser's scrollbar while measuring; restore it only when the
@@ -149,29 +178,35 @@ export function adjustTextareaHeight(el: HTMLTextAreaElement) {
 }
 
 export function observeTextareaOverflow(el: HTMLTextAreaElement) {
-  if (typeof ResizeObserver !== "function" || composerTextareaResizeObservers.has(el)) {
+  if (composerTextareaResizeObservers.has(el)) {
     return;
   }
   let width = el.getBoundingClientRect().width;
-  const observer = new ResizeObserver(() => {
-    const nextWidth = el.getBoundingClientRect().width;
-    if (nextWidth !== width) {
-      width = nextWidth;
-      const state = composerTextareaResizeObservers.get(el);
-      if (state && state.adjustmentFrame === null) {
-        state.adjustmentFrame = requestAnimationFrame(() => {
-          state.adjustmentFrame = null;
-          if (composerTextareaResizeObservers.get(el) === state) {
-            adjustTextareaHeight(el);
+  const onScroll = () => updateTextareaOverflow(el);
+  const observer =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(() => {
+          const nextWidth = el.getBoundingClientRect().width;
+          if (nextWidth !== width) {
+            width = nextWidth;
+            const state = composerTextareaResizeObservers.get(el);
+            if (state && state.adjustmentFrame === null) {
+              state.adjustmentFrame = requestAnimationFrame(() => {
+                state.adjustmentFrame = null;
+                if (composerTextareaResizeObservers.get(el) === state) {
+                  adjustTextareaHeight(el);
+                }
+              });
+            }
+            return;
           }
-        });
-      }
-      return;
-    }
-    updateTextareaOverflow(el);
-  });
-  observer.observe(el);
-  composerTextareaResizeObservers.set(el, { observer, adjustmentFrame: null });
+          updateTextareaOverflow(el);
+        })
+      : null;
+  el.addEventListener("scroll", onScroll, { passive: true });
+  observer?.observe(el);
+  composerTextareaResizeObservers.set(el, { observer, adjustmentFrame: null, onScroll });
+  updateTextareaOverflow(el);
 }
 
 export function disconnectTextareaOverflowObserver(el: HTMLTextAreaElement) {
@@ -180,7 +215,8 @@ export function disconnectTextareaOverflowObserver(el: HTMLTextAreaElement) {
   if (!state) {
     return;
   }
-  state.observer.disconnect();
+  state.observer?.disconnect();
+  el.removeEventListener("scroll", state.onScroll);
   if (state.adjustmentFrame !== null) {
     cancelAnimationFrame(state.adjustmentFrame);
   }

@@ -15,7 +15,11 @@ import {
   type ChatModelPickerOption,
   type ChatModelPickerTargetGroup,
 } from "./chat-model-picker-options.ts";
-import { syncChatPickerOverlay } from "./chat-picker-overlay.ts";
+import {
+  closeChatDetailsOnEscape,
+  handleChatComposerDetailsToggle,
+  syncChatPickerOverlay,
+} from "./chat-picker-overlay.ts";
 
 export type ChatModelCatalogState = {
   hasSnapshot: boolean;
@@ -170,26 +174,6 @@ function resetModelSearch(details: HTMLDetailsElement): void {
   updateModelSearch(input);
 }
 
-export function clearChatModelSearchOnEscape(event: KeyboardEvent): boolean {
-  if (event.key !== "Escape") {
-    return false;
-  }
-  const input = event
-    .composedPath()
-    .find(
-      (target): target is HTMLInputElement =>
-        target instanceof HTMLInputElement && target.matches("[data-chat-model-search]"),
-    );
-  if (!input?.value) {
-    return false;
-  }
-  input.value = "";
-  updateModelSearch(input);
-  event.preventDefault();
-  event.stopPropagation();
-  return true;
-}
-
 function handleModelSearchKeydown(event: KeyboardEvent): void {
   const input = event.currentTarget as HTMLInputElement;
   const menu = pickerMenu(input);
@@ -220,6 +204,9 @@ function handleModelSearchKeydown(event: KeyboardEvent): void {
 }
 
 function handleModelPickerKeydown(event: KeyboardEvent): void {
+  if (closeChatDetailsOnEscape(event)) {
+    return;
+  }
   const details = event.currentTarget as HTMLDetailsElement;
   if (!details.open || event.target instanceof HTMLInputElement || !/^[1-9]$/u.test(event.key)) {
     return;
@@ -315,9 +302,6 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const triggerMeta = activeModelOption?.contextWindow
-    ? formatContextTokenCapacity(activeModelOption.contextWindow)
-    : "";
   // Brand mark ahead of the model name, and only when one actually ships:
   // hasProviderBrandIcon gates out the lettered fallback badge, so a provider
   // without a mark renders nothing rather than a placeholder — the trigger's gap
@@ -378,7 +362,9 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
     const details = (event.currentTarget as HTMLElement).closest<HTMLDetailsElement>("details");
     if (details) {
       details.open = false;
-      details.querySelector<HTMLElement>("summary")?.focus();
+      if (event.detail === 0) {
+        details.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
+      }
     }
   };
   const selectTarget = (groupId: string, value: string, event: MouseEvent) => {
@@ -391,7 +377,9 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
     const details = (event.currentTarget as HTMLElement).closest<HTMLDetailsElement>("details");
     if (details) {
       details.open = false;
-      details.querySelector<HTMLElement>("summary")?.focus();
+      if (event.detail === 0) {
+        details.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
+      }
     }
   };
   const highlightOption = (row: HTMLButtonElement) => {
@@ -406,6 +394,7 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
       @keydown=${handleModelPickerKeydown}
       @toggle=${(event: Event) => {
         const details = event.currentTarget as HTMLDetailsElement;
+        handleChatComposerDetailsToggle(event);
         syncChatPickerOverlay(details);
         if (!details.open) {
           resetModelSearch(details);
@@ -434,9 +423,7 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
         @click=${(event: MouseEvent) => {
           if (params.disabled) {
             event.preventDefault();
-            return;
           }
-          (event.currentTarget as HTMLElement).focus({ preventScroll: true });
         }}
       >
         ${modelToolsUnavailable
@@ -624,7 +611,11 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
                                   ).closest<HTMLDetailsElement>("details");
                                   if (details) {
                                     details.open = false;
-                                    details.querySelector<HTMLElement>("summary")?.focus();
+                                    if (event.detail === 0) {
+                                      details
+                                        .querySelector<HTMLElement>("summary")
+                                        ?.focus({ preventScroll: true });
+                                    }
                                   }
                                 }}
                               >

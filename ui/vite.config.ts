@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
-import { gzip } from "pako";
+import pako from "pako";
 import type { Plugin, UserConfig } from "vite";
 import { controlUiCodeSplitting } from "./config/control-ui-chunking.ts";
 import { controlUiHoverGuardPlugin } from "./config/control-ui-hover-guard.ts";
@@ -73,7 +73,7 @@ export function createControlUiPrecompressedAssetVariants(
     {
       fileName: `${fileName}.gz`,
       // Host zlib is byte-unstable across supported runtimes; pako's classic hash is canonical.
-      source: Buffer.from(gzip(body, { level: 9, legacyHash: true })),
+      source: Buffer.from(pako.gzip(body, { level: 9, legacyHash: true })),
     },
   ];
 }

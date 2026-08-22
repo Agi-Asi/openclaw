@@ -189,6 +189,11 @@ export const en: TranslationMap = {
   },
   sessionProgressCard: {
     title: "Progress",
+    composerTitle: "Plan",
+    stepPosition: "Step {current} / {total}",
+    shortCount: "{completed} of {total}",
+    expandPlan: "Expand plan",
+    collapsePlan: "Collapse plan",
     noteLabel: "Progress note",
     dismiss: "Dismiss progress card",
     dismissFailed: "Could not dismiss the progress card. Try again.",
@@ -893,7 +898,7 @@ export const en: TranslationMap = {
     worktreeNamePlaceholder: "auto",
     worktreeNameInvalid: "Use lowercase letters, digits, and dashes.",
     incognito: "Incognito",
-    incognitoDescription: "Keep this session only until the Gateway restarts",
+    incognitoDescription: "This session is kept only until the Gateway restarts.",
     draft: "Draft",
     draftDescription: "Keep this session to yourself until you publish it",
     messagePlaceholder: "What should this session work on?",
@@ -5558,6 +5563,7 @@ export const en: TranslationMap = {
       retry: "Retry",
       retryQueuedMessage: "Retry queued message",
       steer: "Steer",
+      steering: "Steering",
       steerQueuedMessage: "Steer queued message",
       removeQueuedMessage: "Remove queued message",
       moreActions: "More queued message actions",
@@ -5667,12 +5673,12 @@ export const en: TranslationMap = {
       fastMode: "Fast mode",
       searchModels: "Search models",
       noMatchingModels: "No models match your search",
-      sessionOverride: "Session override",
+      sessionOverride: "This session only",
       useDefault: "Use default",
       resetToDefault: "Reset to default ({model})",
       defaultWithModel: "Default ({model})",
       defaultWithLevel: "Default ({level})",
-      fastHelp: "Fast responses finish sooner and can use more of your usage limits.",
+      fastHelp: "Faster responses, use more of your limits.",
       speedUnsupported: "Speed control is not supported for this model.",
       contextActiveAndMax: "{active} active · {maximum} max",
       chatOnly: "Chat only",
@@ -5690,7 +5696,7 @@ export const en: TranslationMap = {
       label: "Permissions",
       help: "Choose how this session handles files, commands, and escalation reviews.",
       default: "Default",
-      defaultDescription: "Follow the agent's configured policy.",
+      defaultDescription: "Use the configured policy.",
       rootLabel: "Root",
       sessionRoot: "Session root: {root}",
       fullRequiresAdmin: "Full access requires operator.admin access.",
@@ -5698,19 +5704,19 @@ export const en: TranslationMap = {
       modes: {
         "read-only": {
           label: "Read only",
-          description: "Read within the session root; writes and commands are blocked.",
+          description: "Read files; block edits and commands.",
         },
         guarded: {
           label: "Guarded",
-          description: "A human reviews requests beyond the session root.",
+          description: "Ask before working outside the session root.",
         },
         workspace: {
           label: "Workspace",
-          description: "An AI reviewer checks requests beyond the session root.",
+          description: "Review outside the session root automatically.",
         },
         full: {
           label: "Full access",
-          description: "No reviewer; files and commands are unrestricted.",
+          description: "Allow all files and commands.",
         },
       },
     },
@@ -5912,6 +5918,7 @@ export const en: TranslationMap = {
       overrides: {
         count: "{count} session overrides",
         countOne: "{count} session override",
+        shortCount: "{count} overrides",
         clear: "Clear session overrides",
       },
       contextUsage: {
@@ -5956,6 +5963,7 @@ export const en: TranslationMap = {
       microphonePermissionBlocked:
         "Microphone access is blocked. Allow it in browser site settings to list inputs.",
       holdToRecordSetting: "Hold microphone button to dictate",
+      holdToDictate: "Hold to dictate",
       holdToRecordSettingDescription:
         "Hold the composer microphone button, speak, then release to insert text without sending.",
       dictationAudioUnsupported: "The Gateway returned an unsupported dictation audio format.",
@@ -5966,6 +5974,7 @@ export const en: TranslationMap = {
       dictationFinalizing: "Finishing dictation…",
       dictationFinalizationTimedOut:
         "Dictation stopped before the last partial transcript could be finalized.",
+      insertDictation: "Insert dictation",
       dictationProviderUnavailable:
         "No transcription provider is configured for dictation. Choose one in Settings to dictate.",
       dictationRecording: "Recording {elapsed}",

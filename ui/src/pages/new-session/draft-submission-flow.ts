@@ -1,4 +1,7 @@
-import type { ProjectsAddResult } from "../../../../packages/gateway-protocol/src/index.js";
+import type {
+  ProjectsAddResult,
+  SessionPermissionMode,
+} from "../../../../packages/gateway-protocol/src/index.js";
 import { t } from "../../i18n/index.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import {
@@ -52,6 +55,7 @@ import { readNewSessionTerminalStartAccess, startNewSessionInTerminal } from "./
 export class DraftSubmissionFlow {
   private visibilityValue: NewSessionVisibility = "normal";
   private messageValue = "";
+  private permissionModeValue: SessionPermissionMode | undefined;
   private submittingValue = false;
   private blockedSubmitGate: string | null = null;
   private submissionOutcomeUnknownValue: SubmissionOutcomeReason | null = null;
@@ -105,6 +109,10 @@ export class DraftSubmissionFlow {
     return this.submittingValue;
   }
 
+  get permissionMode(): SessionPermissionMode | undefined {
+    return this.permissionModeValue;
+  }
+
   get submissionOutcomeUnknown(): SubmissionOutcomeReason | null {
     return this.submissionOutcomeUnknownValue;
   }
@@ -113,6 +121,12 @@ export class DraftSubmissionFlow {
     this.startedSession.current = null;
     this.messageValue = message;
     this.draftPersistence.noteUserMutation();
+    this.callbacks.requestUpdate();
+  }
+
+  setPermissionMode(permissionMode: SessionPermissionMode | undefined) {
+    this.startedSession.current = null;
+    this.permissionModeValue = permissionMode;
     this.callbacks.requestUpdate();
   }
 
@@ -219,6 +233,7 @@ export class DraftSubmissionFlow {
       message: options.message ?? "",
       model: this.place.modelControl.selected,
       thinkingLevel: this.place.modelControl.thinkingLevel,
+      permissionMode: this.permissionModeValue,
       visibility: options.visibility ?? this.visibilityValue,
       attachments: options.attachments,
       projectId: this.place.browser.remoteProject?.projectId ?? this.place.browser.projectId,
@@ -373,6 +388,7 @@ export class DraftSubmissionFlow {
       ? (this.submissionOutcomeUnknownValue ?? "placement-interrupted")
       : null;
     this.visibilityValue = "normal";
+    this.permissionModeValue = undefined;
     this.attachmentDraft.reset({ release: true });
     if (preservePendingPlacement) {
       if (!this.pendingPlacement.restored) {

@@ -23,11 +23,20 @@ import {
   scheduleTextareaHeightAdjustment,
 } from "../chat/components/chat-composer-dom.ts";
 import {
+  closeChatComposerPickerOnEscape,
+  handleChatComposerDropdownShow,
+  markPointerOpenedChatComposerDropdown,
+  restorePointerOpenedChatComposerTrigger,
+} from "../chat/components/chat-picker-overlay.ts";
+import {
   createSkillMenuState,
   getActiveSkillMenuOptionId,
   getActiveSkillMenuOptionLabel,
   handleSkillMenuKeydown,
+  handleSkillTokenKeydown,
+  normalizeSkillTokenSelection,
   isSkillMenuVisible,
+  renderSkillDraftOverlay,
   renderSkillMenu,
   resetSkillMenuState,
   updateSkillMenu,
@@ -45,6 +54,7 @@ type NewSessionComposerOptions = {
   getAttachments: () => ChatAttachment[];
   message: string;
   modelControl?: TemplateResult | typeof nothing;
+  permissionControl?: TemplateResult | typeof nothing;
   pendingAttachmentReads: number;
   readSignal: AbortSignal;
   requiresModifier: boolean;
@@ -235,25 +245,32 @@ function renderVisibilityPill(params: {
   return html`
     <button
       type="button"
-      class="new-session-page__visibility ${active ? "new-session-page__visibility--active" : ""}"
+      class="new-session-page__visibility new-session-page__visibility--${params.mode} ${active
+        ? "new-session-page__visibility--active"
+        : ""}"
       role="switch"
       aria-checked=${String(active)}
       ?disabled=${disabled}
       title=${params.description}
       @click=${() => params.options.onVisibilityChange?.(active ? "normal" : params.mode)}
     >
-      <span aria-hidden="true">${params.icon}</span>${params.label}
+      <span class="new-session-page__visibility-icon" aria-hidden="true">${params.icon}</span>
+      <span class="new-session-page__visibility-label">${params.label}</span>
     </button>
   `;
 }
 
 export function renderDraftError(message: string) {
   return html`
-    <div class="callout danger new-session-page__error new-session-page__alert" role="alert">
-      <span class="new-session-page__alert-icon" aria-hidden="true">${icons.alertTriangle}</span>
-      <span class="callout__content new-session-page__alert-message"
-        >${formatUiError(message)}</span
-      >
+    <div class="agent-chat__composer-errors new-session-page__alert">
+      <div class="agent-chat__composer-error" role="alert">
+        <span class="agent-chat__composer-error-icon" aria-hidden="true"
+          >${icons.alertTriangle}</span
+        >
+        <span class="agent-chat__composer-error-text new-session-page__alert-message"
+          >${formatUiError(message)}</span
+        >
+      </div>
     </div>
   `;
 }
@@ -264,6 +281,9 @@ function handleComposerKeydown(
   skillMenuHost: SkillMenuHost,
 ) {
   if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
+  if (handleSkillTokenKeydown(event)) {
     return;
   }
   if (
@@ -312,6 +332,9 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
   const handleSelect = (event: Event) => {
     const target = event.currentTarget;
     if (target instanceof HTMLTextAreaElement) {
+      if (normalizeSkillTokenSelection(target)) {
+        return;
+      }
       updateSkills(target);
     }
   };
@@ -338,6 +361,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
   const skillMenuListboxId = paneDomId(skillMenuHost.paneId, "skill-menu-listbox");
   const activeSkillOptionId = getActiveSkillMenuOptionId(skillMenuState, skillMenuHost.paneId);
   const skillMenuAnnouncementId = paneDomId(skillMenuHost.paneId, "skill-active-announcement");
+  const skillDraftOverlay = renderSkillDraftOverlay(options.message);
   return html`
     <div
       class="agent-chat__composer-shell new-session-page__composer"
@@ -346,7 +370,13 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
       @dragleave=${attachmentDropHandlers.onDragleave}
       @dragover=${attachmentDropHandlers.onDragover}
     >
-      <div class="agent-chat__input">
+      <div
+        class="agent-chat__input"
+        @keydown=${closeChatComposerPickerOnEscape}
+        @wa-show=${handleChatComposerDropdownShow}
+        @wa-after-show=${restorePointerOpenedChatComposerTrigger}
+        @pointerdown=${markPointerOpenedChatComposerDropdown}
+      >
         ${renderChatAttachmentInputs(attachmentProps)} ${renderAttachmentPreview(attachmentProps)}
         <div class="agent-chat__composer-input-row">
           <div class="agent-chat__composer-combobox">
@@ -355,7 +385,9 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
               : nothing}
             <textarea
               ${ref(options.textareaController.ref)}
-              class="new-session-page__message"
+              class="new-session-page__message ${skillDraftOverlay === nothing
+                ? ""
+                : "agent-chat__composer-textarea--rich"}"
               rows="1"
               ?disabled=${options.submitting || options.messageLocked}
               placeholder=${t("newSession.messagePlaceholder")}
@@ -373,6 +405,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
                 options.onInput(target.value);
               }}
               @select=${handleSelect}
+              @pointerup=${handleSelect}
               @keydown=${(event: KeyboardEvent) =>
                 handleComposerKeydown(event, options, skillMenuHost)}
               @paste=${(event: ClipboardEvent) => {
@@ -381,6 +414,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
                 }
               }}
             ></textarea>
+            ${skillDraftOverlay}
             <span
               id=${skillMenuAnnouncementId}
               class="sr-only"
@@ -392,20 +426,22 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
           </div>
         </div>
         <div class="agent-chat__composer-footer">
-          <div class="agent-chat__composer-lead">${renderChatAttachmentMenu(attachmentProps)}</div>
+          <div class="agent-chat__composer-lead">
+            ${renderChatAttachmentMenu(attachmentProps)}${options.permissionControl ?? nothing}
+            ${options.draftAvailable
+              ? renderVisibilityPill({
+                  mode: "draft",
+                  icon: icons.pencil,
+                  label: t("newSession.draft"),
+                  description: t("newSession.draftDescription"),
+                  options,
+                })
+              : nothing}
+          </div>
           <div class="agent-chat__composer-trail">
             <div class="agent-chat__composer-controls">
               ${options.modelControl && options.modelControl !== nothing
                 ? html`<div class="chat-composer-model-control">${options.modelControl}</div>`
-                : nothing}
-              ${options.draftAvailable
-                ? renderVisibilityPill({
-                    mode: "draft",
-                    icon: icons.pencil,
-                    label: t("newSession.draft"),
-                    description: t("newSession.draftDescription"),
-                    options,
-                  })
                 : nothing}
             </div>
             <div class="agent-chat__composer-actions">
@@ -437,6 +473,7 @@ export function renderNewSessionDraftComposer(options: {
   visibility?: NewSessionVisibility;
   draftAvailable?: boolean;
   modelControl: NewSessionModelControl;
+  permissionControl?: TemplateResult;
   textareaController: NewSessionComposerTextareaController;
   voiceControl?: TemplateResult;
   requiresModifier: boolean;
@@ -473,6 +510,7 @@ export function renderNewSessionDraftComposer(options: {
           context: options.context,
           sending: options.submitting,
         }),
+    permissionControl: options.permissionControl,
     pendingAttachmentReads: options.attachmentDraft.pendingReads,
     readSignal,
     requiresModifier: options.requiresModifier,

@@ -41,9 +41,7 @@ export function renderSessionMenuItem(params: SessionMenuItemOptions, submitting
       ?disabled=${submitting || (params.disabled ?? false)}
       @click=${params.onSelect}
     >
-      ${params.icon
-        ? html`<span class="session-menu__icon" aria-hidden="true">${params.icon}</span>`
-        : nothing}
+      <span class="session-menu__icon" aria-hidden="true">${params.icon ?? nothing}</span>
       <span class="session-menu__text">${params.label}</span>
       ${params.sub ? html`<span class="session-menu__sub">${params.sub}</span>` : nothing}
       ${params.facts?.length

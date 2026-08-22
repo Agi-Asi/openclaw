@@ -2041,13 +2041,21 @@
    only a slow opacity breath; tabular digits keep the ticking elapsed label
    from nudging the row sideways. */
 .chat-tasks-status {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   margin: 4px 0 2px;
+  min-height: 34px;
+  padding: 0 12px;
   color: var(--muted);
+  background: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-strong) 11%, transparent);
+  border-radius: var(--radius-full);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 8%),
+    0 6px 18px rgb(0 0 0 / 10%);
 }
 
 .chat-tasks-status__claw {
@@ -2086,15 +2094,12 @@
   color: var(--muted);
   font: inherit;
   cursor: var(--cursor-action);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
-  text-underline-offset: 2px;
+  text-decoration: none;
 }
 
 .chat-tasks-status__link:hover,
 .chat-tasks-status__link:focus-visible {
-  color: var(--accent);
-  text-decoration-color: currentColor;
+  color: var(--text);
 }
 
 /* Hover preview on the status row: the latest tasks in a read-only card. The

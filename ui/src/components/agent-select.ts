@@ -206,16 +206,19 @@ export class AgentSelect extends OpenClawLightDomElement {
               ?data-selected=${selected}
               aria-label=${accessibleLabel}
               .value=${option.value}
-              type="checkbox"
-              .checked=${selected}
               ?disabled=${this.disabled || option.disabled}
               ${ref((element) => syncDropdownItemRadio(element, selected))}
             >
               <span slot="icon">${this.renderAvatar(option)}</span>
               ${renderAgentSelectCopy(option)}
-              ${option.badge
-                ? html`<span slot="details" class="agent-select__badge">${option.badge}</span>`
-                : nothing}
+              <span slot="details" class="agent-select__option-state" aria-hidden="true">
+                ${option.badge
+                  ? html`<span class="agent-select__badge">${option.badge}</span>`
+                  : nothing}
+                ${selected
+                  ? html`<span class="agent-select__option-check">${icons.check}</span>`
+                  : nothing}
+              </span>
             </wa-dropdown-item>
           `;
         })}

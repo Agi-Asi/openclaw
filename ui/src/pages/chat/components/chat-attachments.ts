@@ -1,7 +1,9 @@
 // Shared attachment controls for chat and new-session composers.
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { html, nothing } from "lit";
+import { ref } from "lit/directives/ref.js";
 import { icons } from "../../../components/icons.ts";
+import { restorePointerOpenedChatComposerTrigger } from "./chat-picker-overlay.ts";
 import type { ImageLightboxItem } from "../../../components/image-lightbox.ts";
 import "../../../components/tooltip.ts";
 import "../../../components/web-awesome.ts";
@@ -504,12 +506,17 @@ export function handleChatAttachmentMenuSelection(
   return true;
 }
 
-export function renderChatAttachmentMenuTrigger(disabled: boolean | undefined) {
+export function renderChatAttachmentMenuTrigger(
+  disabled: boolean | undefined,
+  hasSessionOverrides = false,
+) {
   return html`
     <button
       slot="trigger"
       type="button"
-      class="agent-chat__input-btn agent-chat__input-btn--attach"
+      class="agent-chat__input-btn agent-chat__input-btn--attach ${hasSessionOverrides
+        ? "agent-chat__input-btn--has-overrides"
+        : ""}"
       aria-label=${t("chat.composer.addAttachment")}
       ?disabled=${disabled}
       title=${t("chat.composer.addAttachment")}
@@ -542,6 +549,7 @@ export function renderChatAttachmentMenu(props: ChatAttachmentControlsProps) {
       class="agent-chat__attach-menu"
       placement="top-start"
       aria-label=${t("chat.composer.addAttachment")}
+      @wa-after-show=${restorePointerOpenedChatComposerTrigger}
       @wa-select=${handleChatAttachmentMenuSelection}
     >
       ${renderChatAttachmentMenuTrigger(props.disabled)} ${renderChatAttachmentMenuOptions()}
@@ -622,9 +630,6 @@ function renderBrowserAnnotationAttachment(
         )}
       </div>
       <div class="chat-attachment-file__body chat-browser-annotation-card__body">
-        <span class="chat-browser-annotation-card__label"
-          >${t("chat.composer.browserAnnotation")}</span
-        >
         <span
           class="chat-attachment-file__name chat-browser-annotation-card__identity"
           title=${identity}
@@ -632,9 +637,6 @@ function renderBrowserAnnotationAttachment(
         >
         <span class="chat-attachment-file__meta chat-browser-annotation-card__meta">
           <span>${regionLabel}</span>
-          ${annotation.inspectedElement
-            ? html`<span>${t("chat.composer.browserAnnotationInspectedElement")}</span>`
-            : nothing}
         </span>
       </div>
       <openclaw-tooltip .content=${removeLabel}>
@@ -652,13 +654,126 @@ function renderBrowserAnnotationAttachment(
   `;
 }
 
+type AttachmentFileKind =
+  | "archive"
+  | "audio"
+  | "code"
+  | "generic"
+  | "pdf"
+  | "presentation"
+  | "spreadsheet"
+  | "text"
+  | "video"
+  | "word";
+
+function attachmentFilePresentation(attachment: ChatAttachment): {
+  icon: (typeof icons)[keyof typeof icons];
+  kind: AttachmentFileKind;
+  typeLabel: string;
+} {
+  const mimeType = attachment.mimeType.toLowerCase();
+  const extension = attachment.fileName?.toLowerCase().split(".").pop() ?? "";
+  const typeLabel = extension.toUpperCase() || t("chat.attachments.attachedFile");
+  if (mimeType === "application/pdf" || extension === "pdf") {
+    return { icon: icons.fileText, kind: "pdf", typeLabel };
+  }
+  if (mimeType.startsWith("audio/")) {
+    return { icon: icons.music, kind: "audio", typeLabel };
+  }
+  if (mimeType.startsWith("video/")) {
+    return { icon: icons.play, kind: "video", typeLabel };
+  }
+  if (
+    ["application/gzip", "application/vnd.rar", "application/x-7z-compressed", "application/zip"].includes(
+      mimeType,
+    ) || ["zip", "tar", "gz", "tgz", "rar", "7z"].includes(extension)
+  ) {
+    return { icon: icons.archive, kind: "archive", typeLabel };
+  }
+  if (
+    [
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ].includes(mimeType) || ["doc", "docx"].includes(extension)
+  ) {
+    return { icon: icons.fileText, kind: "word", typeLabel };
+  }
+  if (
+    [
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+    ].includes(mimeType) || ["csv", "xls", "xlsx"].includes(extension)
+  ) {
+    return { icon: icons.file, kind: "spreadsheet", typeLabel };
+  }
+  if (
+    [
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ].includes(mimeType) || ["ppt", "pptx"].includes(extension)
+  ) {
+    return { icon: icons.file, kind: "presentation", typeLabel };
+  }
+  if (
+    ["application/json", "application/toml", "application/yaml"].includes(mimeType) ||
+    ["js", "jsx", "ts", "tsx", "json", "yaml", "yml", "toml", "sh"].includes(extension)
+  ) {
+    return { icon: icons.braces, kind: "code", typeLabel };
+  }
+  if (mimeType.startsWith("text/") || ["md", "txt", "rtf"].includes(extension)) {
+    return { icon: icons.fileText, kind: "text", typeLabel };
+  }
+  return { icon: icons.file, kind: "generic", typeLabel };
+}
+
+function renderStandardFileAttachment(attachment: ChatAttachment) {
+  const presentation = attachmentFilePresentation(attachment);
+  const label = attachment.fileName ?? t("chat.attachments.attachedFile");
+  return html`
+    <openclaw-tooltip .content=${label}>
+      <div
+        class="chat-attachment-file chat-attachment-file--${presentation.kind}"
+        role="img"
+        aria-label=${label}
+      >
+        <span class="chat-attachment-file__icon">${presentation.icon}</span>
+        <span class="chat-attachment-file__body">
+          <span class="chat-attachment-file__name">${label}</span>
+          <span class="chat-attachment-file__type">${presentation.typeLabel}</span>
+        </span>
+      </div>
+    </openclaw-tooltip>
+  `;
+}
+
+function syncAttachmentRailScroll(element: Element | undefined): void {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  const sync = () => {
+    const scrollable = element.scrollWidth > element.clientWidth + 1;
+    element.dataset.scrollable = String(scrollable);
+    element.dataset.atStart = String(!scrollable || element.scrollLeft <= 1);
+    element.dataset.atEnd = String(
+      !scrollable || element.scrollLeft + element.clientWidth >= element.scrollWidth - 1,
+    );
+  };
+  sync();
+  requestAnimationFrame(sync);
+}
+
 export function renderAttachmentPreview(props: ChatAttachmentControlsProps) {
   const attachments = props.attachments ?? [];
   if (attachments.length === 0) {
     return nothing;
   }
   return html`
-    <div class="chat-attachments-preview">
+    <div
+      class="chat-attachments-preview"
+      ${ref(syncAttachmentRailScroll)}
+      @scroll=${(event: Event) => syncAttachmentRailScroll(event.currentTarget as Element)}
+    >
       ${attachments.map((att) =>
         att.browserAnnotation
           ? renderBrowserAnnotationAttachment(att, att.browserAnnotation, props)
@@ -673,12 +788,16 @@ export function renderAttachmentPreview(props: ChatAttachmentControlsProps) {
                   .join(" ")}
               >
                 ${att.mimeType.startsWith("image/") && getChatAttachmentPreviewUrl(att)
-                  ? renderAttachmentImage(
-                      att,
-                      t("chat.composer.attachmentPreview"),
-                      att.fileName?.trim() || t("chat.imageLightbox.untitled"),
-                      props,
-                    )
+                  ? html`<openclaw-tooltip
+                      .content=${att.fileName?.trim() || t("chat.imageLightbox.untitled")}
+                    >
+                      ${renderAttachmentImage(
+                        att,
+                        att.fileName?.trim() || t("chat.composer.attachmentPreview"),
+                        att.fileName?.trim() || t("chat.imageLightbox.untitled"),
+                        props,
+                      )}
+                    </openclaw-tooltip>`
                   : isLargePastedTextAttachment(att)
                     ? html`
                         <div class="chat-attachment-file chat-attachment-file--pasted-text">
@@ -700,18 +819,7 @@ export function renderAttachmentPreview(props: ChatAttachmentControlsProps) {
                           </span>
                         </div>
                       `
-                    : html`
-                        <openclaw-tooltip
-                          .content=${att.fileName ?? t("chat.attachments.attachedFile")}
-                        >
-                          <div class="chat-attachment-file">
-                            <span class="chat-attachment-file__icon">${icons.paperclip}</span>
-                            <span class="chat-attachment-file__name"
-                              >${att.fileName ?? t("chat.attachments.attachedFile")}</span
-                            >
-                          </div>
-                        </openclaw-tooltip>
-                      `}
+                    : renderStandardFileAttachment(att)}
                 <openclaw-tooltip .content=${t("chat.composer.removeAttachment")}>
                   <button
                     class="chat-attachment-remove"

@@ -44,3 +44,22 @@ export function renderNewSessionIncognitoControl(submission: {
     </div>
   `;
 }
+
+/** Persistent context beside the draft while ephemeral session mode is active. */
+export function renderNewSessionIncognitoNotice(active: boolean) {
+  const description = t("newSession.incognitoDescription");
+  return html`
+    <div
+      class="new-session-page__incognito-notice ${active
+        ? "new-session-page__incognito-notice--visible"
+        : ""}"
+      role="status"
+      aria-hidden=${String(!active)}
+    >
+      <span class="new-session-page__incognito-notice-icon" aria-hidden="true">
+        ${icons.eyeOff}
+      </span>
+      <span>${description}</span>
+    </div>
+  `;
+}

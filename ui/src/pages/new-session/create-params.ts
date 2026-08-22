@@ -1,4 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import type { SessionPermissionMode } from "../../../../packages/gateway-protocol/src/index.js";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
 
 const WORKTREE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -30,6 +31,7 @@ export function buildDraftSessionCreateParams(draft: {
   message: string;
   model?: string;
   thinkingLevel?: string;
+  permissionMode?: SessionPermissionMode;
   visibility?: NewSessionVisibility;
   attachments?: unknown[];
   projectId?: string;
@@ -60,6 +62,7 @@ export function buildDraftSessionCreateParams(draft: {
     ...(category ? { category } : {}),
     ...(!catalogId && model ? { model } : {}),
     ...(!catalogId && thinkingLevel ? { thinkingLevel } : {}),
+    ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
     ...(projectId ? { projectId } : {}),
     ...(customFolder ? { cwd: customFolder } : {}),
     ...(draft.worktree

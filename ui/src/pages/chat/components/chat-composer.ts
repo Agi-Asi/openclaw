@@ -23,6 +23,7 @@ import {
   getActiveSkillMenuOptionId,
   getActiveSkillMenuOptionLabel,
   isSkillMenuVisible,
+  normalizeSkillTokenSelection,
   resetSkillMenuState,
   type SkillMenuHost,
   updateSkillMenu,
@@ -31,6 +32,7 @@ import {
   getActiveSlashMenuOptionId,
   getActiveSlashMenuOptionLabel,
   isSlashMenuVisible,
+  resetSlashMenuState,
   updateSlashMenu,
 } from "./chat-composer-slash-menu.ts";
 import {
@@ -61,7 +63,7 @@ export function renderChatComposer(props: ChatComposerProps) {
     isCurrentSessionSubmittedProgress(item, props.sessionKey, props.runStatus),
   );
   const composerRunStatus =
-    showAbortableUi || Boolean(submittedProgress)
+    props.sending || showAbortableUi || Boolean(submittedProgress)
       ? { phase: "in-progress" as const }
       : props.runStatus;
   const compactBusy =
@@ -307,6 +309,9 @@ export function renderChatComposer(props: ChatComposerProps) {
   };
   const handleSelect = (event: Event) => {
     const target = event.target as HTMLTextAreaElement;
+    if (normalizeSkillTokenSelection(target)) {
+      return;
+    }
     updateSkillMenu(target.value, target.selectionStart, state, skillMenuHost, requestUpdate);
   };
   const handleCompositionEnd = (event: CompositionEvent) => {
@@ -327,6 +332,8 @@ export function renderChatComposer(props: ChatComposerProps) {
     if (state.composingDraft?.key === draftKey) {
       state.composingDraft = null;
     }
+    resetSlashMenuState(state);
+    resetSkillMenuState(state);
     commitComposerDraft(props, target.value);
     props.onTypingChange?.(false);
   };
@@ -365,11 +372,20 @@ export function renderChatComposer(props: ChatComposerProps) {
         selectedDeviceId: selectedMicrophoneId,
         voiceActive: Boolean(props.realtimeTalkActive),
         issue: devicePicker.issue,
+        holdToDictate: props.composerHoldToRecord !== false,
         onOpen: devicePicker.handleOpen,
         onClose: devicePicker.handleClose,
         onSelect: (deviceId: string) => {
           patchSettings({ realtimeTalkInputDeviceId: deviceId.trim() || undefined });
           devicePicker.handleClose();
+        },
+        onHoldToDictateChange: (enabled: boolean) => {
+          if (props.onComposerHoldToRecordChange) {
+            props.onComposerHoldToRecordChange(enabled);
+          } else {
+            patchSettings({ composerHoldToRecord: enabled });
+          }
+          requestUpdate();
         },
       })
     : nothing;

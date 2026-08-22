@@ -1,7 +1,6 @@
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 import type { PresenceEntry } from "../../api/types.ts";
 import type { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
-import { clearChatModelSearchOnEscape } from "../chat/components/chat-model-picker.ts";
 
 const PLACE_TOPOLOGY_EVENTS = new Set([
   "config.changed",
@@ -63,13 +62,14 @@ export function closeSessionMenus(root: ParentNode) {
 }
 
 export function handleSessionPickerEvent(root: ParentNode, event: Event) {
-  const pickers = root.querySelectorAll<HTMLDetailsElement>(".chat-controls__inline-select[open]");
+  const pickers = root.querySelectorAll<HTMLElement & { open: boolean }>(
+    ".agent-chat__input :is(.chat-controls__inline-select, .agent-chat__attach-menu, wa-dropdown)[open]",
+  );
   if (pickers.length === 0) {
     return;
   }
   if (event.type === "keydown") {
     const keyEvent = event as KeyboardEvent;
-    clearChatModelSearchOnEscape(keyEvent);
     if (keyEvent.defaultPrevented || keyEvent.key !== "Escape") {
       return;
     }
@@ -82,7 +82,7 @@ export function handleSessionPickerEvent(root: ParentNode, event: Event) {
     keyEvent.preventDefault();
     picker.open = false;
     if (restoreFocus) {
-      picker.querySelector<HTMLElement>("summary")?.focus();
+      picker.querySelector<HTMLElement>("summary, [slot=trigger]")?.focus();
     }
     return;
   }

@@ -121,11 +121,12 @@ export function renderDetailChip(params: {
       @wa-after-hide=${params.onPopoverAfterHide}
     >
       <div class="new-session-page__picker-root">
-        <div class="new-session-page__menu-title">${t("newSession.branches")}</div>
+        <div class="new-session-page__menu-title">${t("newSession.worktree")}</div>
         ${renderSessionMenuItem(
           {
             value: "worktree",
             label: t("newSession.worktree"),
+            icon: icons.gitBranch,
             checked: params.worktree,
             disabled: !worktreeEnabled,
             title: params.worktreeAvailable

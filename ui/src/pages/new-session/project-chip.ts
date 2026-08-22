@@ -158,7 +158,7 @@ export function renderProjectChip(params: {
         }
       }}
     >
-      <span class="session-menu__check" aria-hidden="true"></span>
+      <span class="session-menu__icon" aria-hidden="true">${icons.folder}</span>
       <span class="session-menu__text">${t("newSession.browse")}</span>
       <span class="new-session-page__menu-chevron" aria-hidden="true">${icons.chevronRight}</span>
     </button>
@@ -219,20 +219,11 @@ export function renderProjectChip(params: {
             <div class="new-session-page__picker-root">
               <div class="new-session-page__menu-title">${t("newSession.projects")}</div>
               ${html`
-                ${params.workspace && params.state.showWorkspace
-                  ? renderSessionMenuItem(
-                      {
-                        value: "workspace",
-                        label: folderDisplayName(params.workspace),
-                        icon: icons.folder,
-                        checked: !params.projectId && folder === params.workspace,
-                        onSelect: () => params.onApplyFolder(params.workspace),
-                      },
-                      params.submitting,
-                    )
-                  : nothing}
                 <label class="new-session-page__project-search">
                   <span class="sr-only">${t("newSession.projectSearchPlaceholder")}</span>
+                  <span class="new-session-page__project-search-icon" aria-hidden="true"
+                    >${icons.search}</span
+                  >
                   <input
                     type="search"
                     placeholder=${t("newSession.projectSearchPlaceholder")}
@@ -250,6 +241,18 @@ export function renderProjectChip(params: {
                     }}
                   />
                 </label>
+                ${params.workspace && params.state.showWorkspace
+                  ? renderSessionMenuItem(
+                      {
+                        value: "workspace",
+                        label: folderDisplayName(params.workspace),
+                        icon: icons.folder,
+                        checked: !params.projectId && folder === params.workspace,
+                        onSelect: () => params.onApplyFolder(params.workspace),
+                      },
+                      params.submitting,
+                    )
+                  : nothing}
                 ${params.state.localProjects.map((project) =>
                   renderSessionMenuItem(
                     {

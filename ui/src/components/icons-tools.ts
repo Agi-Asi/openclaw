@@ -257,6 +257,10 @@ export const toolIcons = {
   moreHorizontal: strokeIcon(svg` <circle cx="12" cy="12" r="1.5" />
     <circle cx="6" cy="12" r="1.5" />
     <circle cx="18" cy="12" r="1.5" />`),
+  // Lucide ellipsis rendered as round stroke caps instead of outlined circles.
+  more: strokeIcon(svg` <path d="M4 12h.01" />
+    <path d="M12 12h.01" />
+    <path d="M20 12h.01" />`),
   arrowUpDown: strokeIcon(svg` <path d="m21 16-4 4-4-4" />
     <path d="M17 20V4" />
     <path d="m3 8 4-4 4 4" />

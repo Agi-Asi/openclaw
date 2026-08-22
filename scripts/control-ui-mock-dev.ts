@@ -93,10 +93,401 @@ const COMPOSER_QUEUE_FIXTURE = [
   orderKey: index + 1,
   kind: "queued" as const,
 }));
+const COMPOSER_BENCH_SKILLS = Array.from({ length: 40 }, (_, index) => ({
+  name: `bench_skill_${String(index + 1).padStart(2, "0")}`,
+  description: `Composer bench skill ${index + 1} for testing long invocation menus.`,
+  source: "skill" as const,
+  scope: "text" as const,
+  acceptsArgs: false,
+  skillDisplayName: `Bench Skill ${String(index + 1).padStart(2, "0")}`,
+  skillModelVisible: true,
+}));
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const uiRoot = path.join(repoRoot, "ui");
 const boardFixturePath = "/__fixtures/board/";
+const composerBenchPath = "/bench";
+function composerBenchSegmented(axis: string, options: Array<[value: string, label: string]>): string {
+  return `<span class="composer-bench__segmented">${options
+    .map(
+      ([value, label]) =>
+        `<button type="button" data-bench-axis="${axis}" data-bench-value="${value}">${label}</button>`,
+    )
+    .join("")}</span>`;
+}
+
+function composerBenchRow(label: string, control: string, disabled = false): string {
+  return `<div class="composer-bench__row${disabled ? " is-disabled" : ""}"><span>${label}</span>${control}</div>`;
+}
+
+function composerBenchStacked(
+  label: string,
+  axis: string,
+  options: Array<[value: string, label: string]>,
+): string {
+  return `<div class="composer-bench__choice"><span class="composer-bench__choice-label">${label}</span>
+    <div class="composer-bench__choice-options">${options
+      .map(
+        ([value, optionLabel]) =>
+          `<button type="button" data-bench-axis="${axis}" data-bench-value="${value}">${optionLabel}</button>`,
+      )
+      .join("")}</div>
+  </div>`;
+}
+
+function composerBenchDisclosure(
+  label: string,
+  axis: string,
+  options: Array<[value: string, label: string]>,
+): string {
+  return `<details class="composer-bench__choice composer-bench__choice--disclosure" data-bench-disclosure="${axis}">
+    <summary><span>${label}</span><output data-bench-choice-value="${axis}">${options[0]?.[1] ?? ""}</output></summary>
+    <div class="composer-bench__choice-options">${options
+      .map(
+        ([value, optionLabel]) =>
+          `<button type="button" data-bench-axis="${axis}" data-bench-value="${value}">${optionLabel}</button>`,
+      )
+      .join("")}</div>
+  </details>`;
+}
+
+function composerBenchGroup(id: string, label: string, rows: string, open = true): string {
+  return `<details class="composer-bench__group" data-bench-group="${id}"${open ? " open" : ""}>
+    <summary>${label}</summary><div class="composer-bench__rows">${rows}</div>
+  </details>`;
+}
+
+function composerBenchWhen(condition: string, content: string): string {
+  return `<div data-bench-when="${condition}">${content}</div>`;
+}
+
+const composerBenchHtml = `<!doctype html>
+<html lang="en" data-theme="dark" data-theme-mode="dark" data-theme-resolved="dark" class="wa-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Composer Bench</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/styles/chat.css" />
+    <link rel="stylesheet" href="/src/test-helpers/composer-bench.css" />
+  </head>
+  <body data-composer-bench-page>
+    <div class="composer-bench">
+      <aside class="composer-bench__controls" data-composer-bench-controls>
+        <header class="composer-bench__header">
+          <h1>Composer</h1>
+        </header>
+        <section class="composer-bench__scenario" data-bench-scenario tabindex="0" aria-label="Composer scenario">
+          <span class="composer-bench__scenario-kind" data-bench-scenario-kind data-visible="false">Stress cases</span>
+          <div class="composer-bench__scenario-nav">
+            <button type="button" data-bench-scenario-prev aria-label="Previous scenario">‹</button>
+            <output data-bench-scenario-name>Custom</output>
+            <button type="button" data-bench-scenario-next aria-label="Next scenario">›</button>
+          </div>
+          <p data-bench-scenario-description>Adjust any control or browse the demo sequence.</p>
+        </section>
+        ${composerBenchGroup(
+          "composition",
+          "Composition",
+          composerBenchRow(
+            "Surface",
+            composerBenchSegmented("surface", [
+              ["chat", "Chat"],
+              ["new", "New"],
+            ]),
+          ) +
+            composerBenchRow(
+              "Content",
+              composerBenchSegmented("content", [
+                ["empty", "Empty"],
+                ["one", "1 line"],
+                ["multiline", "Multi"],
+                ["giant", "Huge"],
+              ]),
+            ) +
+            composerBenchDisclosure(
+              "Attachments",
+              "attachments",
+              [
+                ["none", "None"],
+                ["image", "1 image"],
+                ["annotation", "Browser annotation"],
+                ["mixed", "Mixed"],
+              ],
+            ) +
+            composerBenchDisclosure(
+              "Plus menu",
+              "capabilities",
+              [
+                ["attachments", "Attachments only"],
+                ["available", "Capabilities"],
+                ["overrides", "Session overrides"],
+              ],
+            ) +
+            composerBenchWhen(
+              "content",
+              composerBenchRow(
+                "Menus",
+                composerBenchSegmented("menu", [
+                  ["closed", "Closed"],
+                  ["slash", "Slash"],
+                  ["skills", "Skills"],
+                ]),
+              ),
+            ),
+        )}
+        ${composerBenchGroup(
+          "execution",
+          "Execution",
+            composerBenchStacked(
+              "Run",
+            "run",
+              [
+                ["idle", "Idle"],
+                ["running", "Running"],
+                ["steering", "Running + steered item"],
+                ["approval", "Waiting for approval"],
+                ["interrupted", "Interrupted"],
+              ],
+            ) +
+            composerBenchRow(
+              "Follow-up",
+              composerBenchSegmented("followUpMode", [
+                ["queue", "Queue"],
+                ["steer", "Steer"],
+                ["collect", "Collect"],
+                ["interrupt", "Interrupt"],
+              ]),
+            ) +
+            composerBenchRow(
+              "Tasks",
+              composerBenchSegmented("tasks", [
+                ["none", "None"],
+                ["one", "1"],
+                ["three", "3"],
+              ]),
+            ) +
+            composerBenchRow(
+              "Plan",
+              composerBenchSegmented("plan", [
+                ["none", "None"],
+                ["active", "Active"],
+                ["complete", "Complete"],
+              ]),
+            ) +
+            composerBenchWhen(
+              "plan",
+              composerBenchDisclosure(
+                "Inset",
+                "inset",
+                [
+                  ["none", "None"],
+                  ["reply", "Reply preview"],
+                  ["goal", "Goal"],
+                  ["compaction", "Compaction"],
+                  ["fallback", "Model fallback"],
+                  ["banner-archived", "Archived session"],
+                  ["banner-restart", "Restart recovery"],
+                  ["banner-model", "Model setup required"],
+                  ["question", "Question takeover"],
+                ],
+              ),
+            ) +
+            composerBenchRow(
+              "Queue",
+              composerBenchSegmented("queue", [
+                ["none", "None"],
+                ["one", "1 item"],
+                ["three", "3 items"],
+              ]),
+            ) +
+            composerBenchWhen(
+              "queue",
+              composerBenchRow(
+                "Queue edit",
+                composerBenchSegmented("queueEdit", [
+                  ["closed", "Closed"],
+                  ["editing", "Editing"],
+                ]),
+              ) +
+                composerBenchDisclosure(
+                  "Delivery",
+                  "queueState",
+                  [
+                    ["ready", "Ready"],
+                    ["waiting-model", "Applying settings"],
+                    ["waiting-idle", "Waiting for run"],
+                    ["executing-command", "Running command"],
+                    ["waiting-reconnect", "Waiting for reconnect"],
+                    ["unconfirmed", "Needs review"],
+                    ["failed", "Failed"],
+                  ],
+                ) +
+                composerBenchStacked(
+                  "Queue row",
+                  "queueRow",
+                  [
+                    ["text", "Text"],
+                    ["attachments", "Attachments only"],
+                    ["command", "Local command"],
+                    ["member", "Member attributed"],
+                    ["run-attached", "Attached to run"],
+                  ],
+                ) +
+                composerBenchDisclosure(
+                  "State",
+                  "status",
+                  [
+                    ["focused", "Focused"],
+                    ["sending", "Sending"],
+                    ["disabled", "Disabled"],
+                    ["catalog", "Catalog view-only"],
+                    ["error", "Error"],
+                    ["offline", "Offline"],
+                  ],
+                ) +
+                composerBenchRow(
+                  "Order",
+                  `<output class="composer-bench__order" data-bench-queue-order>—</output>`,
+                ),
+            ),
+        )}
+        ${composerBenchGroup(
+          "context",
+          "Context",
+          composerBenchRow(
+              "Privacy",
+              composerBenchSegmented("visibility", [
+                ["normal", "Normal"],
+                ["draft", "Draft"],
+                ["incognito", "Incognito"],
+              ]),
+            ) +
+            composerBenchWhen(
+              "surface-new",
+              composerBenchDisclosure(
+                "New action",
+                "newAction",
+                [
+                  ["start", "Start"],
+                  ["terminal", "Start in terminal"],
+                  ["blocked", "Preparing"],
+                  ["locked", "Placement locked"],
+                  ["invalid-worktree", "Invalid worktree"],
+                  ["outcome-unknown", "Outcome unknown"],
+                  ["placement-interrupted", "Placement interrupted"],
+                  ["catalog", "Catalog target"],
+                ],
+              ),
+            ) +
+            composerBenchRow(
+              "Usage",
+              composerBenchSegmented("usage", [
+                ["context", "Context"],
+                ["plan", "Plan"],
+              ]),
+            ) +
+            composerBenchDisclosure(
+              "Above composer",
+              "neighbor",
+              [
+                ["none", "None"],
+                ["approval", "Approval"],
+                ["task-suggestion", "Task suggestion"],
+                ["session-suggestion", "Session suggestion"],
+                ["pull-request", "Pull request"],
+                ["swarm", "Swarm progress"],
+                ["disk-warning", "Disk warning"],
+                ["disk-critical", "Disk critical"],
+                ["workspace-conflict", "Workspace conflict"],
+                ["placement", "Placement startup"],
+                ["placement-failed", "Placement failed"],
+                ["error", "Chat error"],
+              ],
+            ),
+        )}
+        ${composerBenchGroup(
+          "composer-selectable",
+          "Composer-selectable",
+          composerBenchDisclosure(
+            "Permission",
+            "permission",
+            [
+              ["default", "Default"],
+              ["full", "Full access"],
+              ["workspace", "Workspace"],
+              ["guarded", "Guarded"],
+              ["read-only", "Read only"],
+            ],
+          ) +
+            composerBenchRow(
+              "Model",
+              composerBenchSegmented("model", [
+                ["default", "Inherited"],
+                ["opus", "Opus"],
+                ["gpt", "GPT"],
+              ]),
+            ) +
+            composerBenchDisclosure(
+              "Reasoning",
+              "reasoning",
+              [
+                ["default", "Default"],
+                ["off", "Off"],
+                ["low", "Low"],
+                ["medium", "Medium"],
+                ["high", "High"],
+              ],
+            ) +
+            composerBenchRow(
+              "Fast mode",
+              composerBenchSegmented("fastMode", [
+                ["off", "Off"],
+                ["on", "On"],
+              ]),
+            ) +
+            `<div data-bench-voice-options>${composerBenchDisclosure("Voice", "voice", [
+              ["off", "Off"],
+              ["connecting", "Connecting"],
+              ["listening", "Listening"],
+              ["thinking", "Thinking"],
+              ["camera", "Camera"],
+              ["camera-pending", "Camera pending"],
+              ["camera-error", "Camera error"],
+              ["error", "Error"],
+            ])}</div><div class="composer-bench__row" data-bench-voice-unavailable hidden><span>Voice</span><span class="composer-bench__muted">Chat only</span></div>` +
+            composerBenchDisclosure(
+              "Microphone",
+              "voiceInput",
+              [
+                ["available", "Available inputs"],
+                ["unsupported", "List unsupported"],
+                ["none", "No input found"],
+                ["permission", "Permission blocked"],
+                ["busy", "Input busy"],
+                ["inactive", "Page inactive"],
+                ["failed", "Access failed"],
+              ],
+            ),
+          false,
+        )}
+      </aside>
+      <main class="composer-bench__stage" data-composer-bench-stage data-composer-production-owner="renderChatComposer"></main>
+      <nav class="composer-bench__view-controls" aria-label="View controls">
+        <div class="composer-bench__row composer-bench__row--slider" data-bench-slider="width" role="slider" tabindex="0" aria-label="Width" aria-valuemin="360" aria-valuemax="1200" aria-valuenow="900" aria-valuetext="Desktop"><span>Width</span><output data-bench-width-value>Desktop</output></div>
+        ${composerBenchRow(
+          "Theme",
+          composerBenchSegmented("theme", [
+            ["dark", "Dark"],
+            ["light", "Light"],
+          ]),
+        )}
+      </nav>
+    </div>
+    <script type="module" src="/src/test-helpers/composer-bench.ts"></script>
+  </body>
+</html>`;
 const boardFixtureHtml = `<!doctype html>
 <html lang="en">
   <head>
@@ -2178,6 +2569,7 @@ async function createChatPickerScenario(
       "plugin.approval.list": [],
       "openclaw.approval.list": [],
       "sessions.patch": { ok: true },
+      "commands.list": { commands: COMPOSER_BENCH_SKILLS },
       "sessions.diff": buildSessionDiffMock(),
       // The worktrees page assumes the gateway contract shape; without this
       // fixture the mock's {} fallback surfaces as a TypeError banner.
@@ -2921,6 +3313,25 @@ function createMockGatewayPlugin(scenario: ControlUiMockGatewayScenario): Plugin
   const bootstrapBody = JSON.stringify(createControlUiMockBootstrapConfig(scenario));
   return {
     configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const requestUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+        const benchRequest =
+          requestUrl.pathname === composerBenchPath ||
+          (requestUrl.pathname === "/chat" && requestUrl.searchParams.has("bench"));
+        if (!benchRequest) {
+          next();
+          return;
+        }
+        void server
+          .transformIndexHtml(composerBenchPath, composerBenchHtml)
+          .then((html) => {
+            res.statusCode = 200;
+            res.setHeader("cache-control", "no-store");
+            res.setHeader("content-type", "text/html; charset=utf-8");
+            res.end(html);
+          })
+          .catch((error: unknown) => next(error as Error));
+      });
       server.middlewares.use(CONTROL_UI_BOOTSTRAP_CONFIG_PATH, (_req, res) => {
         res.statusCode = 200;
         res.setHeader("content-type", "application/json");
@@ -2933,10 +3344,14 @@ function createMockGatewayPlugin(scenario: ControlUiMockGatewayScenario): Plugin
     enforce: "pre",
     name: "openclaw-control-ui-mock-gateway",
     transformIndexHtml(html) {
-      return html.replace(
+      if (html.includes("data-composer-bench-page")) {
+        return html;
+      }
+      const withGateway = html.replace(
         "</head>",
         `    <script data-openclaw-control-ui-mock-gateway>\n${composerQueueFixtureScript}\n${initScript}\n${statefulInitScript}\n    </script>\n  </head>`,
       );
+      return withGateway;
     },
   };
 }

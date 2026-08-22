@@ -35,6 +35,7 @@ function createGoalElapsedRef(goal: SessionGoal) {
       return;
     }
     bound = element;
+    element.textContent = formatGoalElapsed(goalElapsedMs(goal, Date.now()));
     const timer = setInterval(() => {
       // Tests and detached renders can drop the pill without a final ref call.
       if (!element.isConnected) {
@@ -103,9 +104,11 @@ export function renderChatGoal(
     >
       <div class="agent-chat__goal-row">
         <span class="agent-chat__goal-icon">${icons.target}</span>
-        <span class="agent-chat__goal-label">${formatGoalStatusLabel(goal.status)}</span>
-        <span class="agent-chat__goal-objective">${goal.objective}</span>
-        <span class="agent-chat__goal-elapsed" ${ref(createGoalElapsedRef(goal))}>${elapsed}</span>
+        <span class="agent-chat__goal-copy">
+          <span class="agent-chat__goal-label">${formatGoalStatusLabel(goal.status)}</span>
+          <span class="agent-chat__goal-objective">${goal.objective}</span>
+        </span>
+        <span class="agent-chat__goal-elapsed" ${ref(createGoalElapsedRef(goal))}></span>
         <span class="agent-chat__goal-actions">
           ${showActions && actions.onGoalEdit && goal.status !== "complete"
             ? renderChatGoalActionButton({
