@@ -3,18 +3,22 @@ import type { ChatCommandDefinition } from "openclaw/plugin-sdk/command-auth-nat
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type { NativeCommandSpec } from "openclaw/plugin-sdk/native-command-registry";
+import {
+  PLUGIN_COMMAND_DISPATCH,
+  type PluginCommandCatalogDecision,
+} from "openclaw/plugin-sdk/plugin-command-runtime";
 import { clearPluginCommands, registerPluginCommand } from "openclaw/plugin-sdk/plugin-runtime";
 import {
   createEmptyPluginRegistry,
   getActivePluginRegistry,
   setActivePluginRegistry,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
-import { dispatchReplyWithBufferedBlockDispatcher } from "openclaw/plugin-sdk/reply-dispatch-runtime";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
 } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { executePluginCommandDispatch } from "../../../../src/plugins/plugin-command-runtime.js";
 import { getSlackSlashMocks, resetSlackSlashMocks } from "./slash.test-harness.js";
 
 vi.mock("openclaw/plugin-sdk/agent-runtime", async () => {
@@ -407,6 +411,19 @@ function setAsyncDispatchMock(
       mockImplementation: (callback: typeof implementation) => unknown;
     }
   ).mockImplementation(implementation);
+}
+
+function getPluginCommandDispatch(params: {
+  replyOptions?: Record<PropertyKey, unknown>;
+}): PluginCommandCatalogDecision {
+  const dispatch = params.replyOptions?.[PLUGIN_COMMAND_DISPATCH] as
+    | PluginCommandCatalogDecision
+    | undefined;
+  expect(dispatch).toBeDefined();
+  if (!dispatch) {
+    throw new Error("plugin command dispatch missing");
+  }
+  return dispatch;
 }
 
 function expectArgMenuLayout(respond: ReturnType<typeof vi.fn>): {
@@ -879,9 +896,19 @@ describe("Slack native command argument menus", () => {
         execute,
       },
     ];
-    setAsyncDispatchMock(
-      async (params) => await dispatchReplyWithBufferedBlockDispatcher(params as never),
-    );
+    setAsyncDispatchMock(async (params) => {
+      const dispatch = getPluginCommandDispatch(params);
+      expect(dispatch.kind).toBe("plugin");
+      if (dispatch.kind === "plugin") {
+        await executePluginCommandDispatch(dispatch, {
+          channel: "slack",
+          isAuthorizedSender: true,
+          commandBody: "/slackplugin now please",
+          config: { commands: { native: true, nativeSkills: false } },
+        });
+      }
+      return { counts: { final: 1, tool: 0, block: 0 } };
+    });
     const pluginHarness = createArgMenusHarness();
     await registerCommands(pluginHarness.ctx, pluginHarness.account);
     const handler = requireHandler(pluginHarness.commands, "/slackplugin", "plugin command");
@@ -902,9 +929,10 @@ describe("Slack native command argument menus", () => {
       pluginCommandFixtures.specs = [
         { name, description: "Skipped plugin", acceptsArgs: false, execute },
       ];
-      setAsyncDispatchMock(
-        async (params) => await dispatchReplyWithBufferedBlockDispatcher(params as never),
-      );
+      setAsyncDispatchMock(async (params) => {
+        expect(getPluginCommandDispatch(params)).toEqual({ kind: "non-plugin" });
+        return { counts: { final: 1, tool: 0, block: 0 } };
+      });
       const collisionHarness = createArgMenusHarness();
       await registerCommands(collisionHarness.ctx, collisionHarness.account);
       const handler = requireHandler(collisionHarness.commands, `/${name}`, `${name} command`);
