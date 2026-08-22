@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { ifDefined } from "lit/directives/if-defined.js";
 import { icons } from "../../../components/icons.ts";
 import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
@@ -9,9 +10,23 @@ const BAR_GAINS = [0.38, 0.62, 0.84, 1, 0.84, 0.62, 0.38];
 const MICROPHONE_ACTIVITY_TAG = "openclaw-microphone-activity";
 const EMPTY_LEVEL_SIGNAL = new RealtimeTalkLevelSignal();
 
+// Wider meters (the dictation strip) ask for more bars via the `bars`
+// attribute; the default 7-bar profile stays byte-identical for the talk
+// button, whose bar count the talk e2e suite observes.
+function activityBarGains(count: number): number[] {
+  if (count === BAR_GAINS.length) {
+    return BAR_GAINS;
+  }
+  return Array.from(
+    { length: count },
+    (_, index) => 0.35 + 0.65 * Math.sin(Math.PI * ((index + 0.5) / count)),
+  );
+}
+
 class MicrophoneActivityElement extends HTMLElement {
   private levelSignal: RealtimeTalkLevelSignal | undefined;
   private unsubscribe: (() => void) | null = null;
+  private gains: number[] = BAR_GAINS;
 
   set signal(signal: RealtimeTalkLevelSignal | undefined) {
     if (signal === this.levelSignal) {
@@ -39,7 +54,11 @@ class MicrophoneActivityElement extends HTMLElement {
 
   private ensureBars(): void {
     if (!this.firstElementChild) {
-      for (const [index] of BAR_GAINS.entries()) {
+      const requested = Number(this.getAttribute("bars"));
+      this.gains = activityBarGains(
+        Number.isInteger(requested) && requested > 0 ? requested : BAR_GAINS.length,
+      );
+      for (const [index] of this.gains.entries()) {
         const bar = document.createElement("span");
         bar.className = "agent-chat__voice-activity-bar";
         bar.style.setProperty("--talk-bar-delay", `${index * -70}ms`);
@@ -56,7 +75,7 @@ class MicrophoneActivityElement extends HTMLElement {
   private renderLevel(level: number): void {
     this.dataset.level = String(level);
     for (const [index, bar] of [...this.children].entries()) {
-      const gain = BAR_GAINS[index] ?? 1;
+      const gain = this.gains[index] ?? 1;
       (bar as HTMLElement).style.setProperty(
         "--talk-bar-scale",
         String(0.18 + level * gain * 0.82),
@@ -95,6 +114,7 @@ export function voiceStatusLabel(
 type MicrophoneActivityProps = {
   status?: RealtimeTalkStatus;
   inputLevel?: RealtimeTalkLevelSignal;
+  bars?: number;
 };
 
 // Class names and data attributes are asserted by the talk e2e suite; the
@@ -106,6 +126,7 @@ export function renderMicrophoneActivity(props: MicrophoneActivityProps): Templa
       class="agent-chat__voice-activity"
       data-status=${activeStatus(props.status)}
       data-source="microphone"
+      bars=${ifDefined(props.bars)}
       aria-hidden="true"
       .signal=${props.inputLevel ?? EMPTY_LEVEL_SIGNAL}
     >

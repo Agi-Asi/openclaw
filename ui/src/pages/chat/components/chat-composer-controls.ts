@@ -232,7 +232,7 @@ export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
   const label = finalizing
     ? t("chat.composer.dictationFinalizing")
     : active
-      ? t("chat.composer.dictationReleaseToInsert")
+      ? t("chat.composer.discardDictation")
       : (props.idleLabel ?? t("chat.composer.startVoiceInput"));
   const tooltip =
     props.dictation && !(active || finalizing) ? t("chat.composer.voiceGestureHint") : label;
@@ -266,7 +266,12 @@ export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
           ${finalizing
             ? icons.loader
             : active
-              ? icons.stop
+              ? html`
+                  ${icons.x}
+                  <span class="chat-send-btn__dictation-cancel-label"
+                    >${t("common.cancel")}</span
+                  >
+                `
               : html`
                   ${icons.mic}
                   <span class="agent-chat__control-label">${label}</span>
@@ -359,6 +364,19 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
   );
   const dictationConfirmAction = props.dictation?.active
     ? html`
+        <span
+          class="agent-chat__dictation-label"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          >${props.dictation.finalizing
+            ? t("chat.composer.dictationFinalizing")
+            : props.dictation.connecting
+              ? t("chat.composer.dictationConnecting")
+              : t("chat.composer.dictationRecording", {
+                  elapsed: props.dictation.elapsed,
+                })}</span
+        >
         <openclaw-tooltip .content=${t("chat.composer.insertDictation")}>
           <button
             class="chat-send-btn chat-send-btn--dictation-confirm"

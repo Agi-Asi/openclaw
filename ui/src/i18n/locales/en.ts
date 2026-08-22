@@ -5978,7 +5978,7 @@ export const en: TranslationMap = {
       dictationProviderUnavailable:
         "No transcription provider is configured for dictation. Choose one in Settings to dictate.",
       dictationRecording: "Recording {elapsed}",
-      dictationReleaseToInsert: "Release to insert dictation",
+      discardDictation: "Cancel dictation",
       realtimeTalkRequiresMicrophone: "Realtime voice input requires browser microphone access.",
       selectedMicrophoneUnavailable:
         "The selected microphone is unavailable. Choose another input or System default.",

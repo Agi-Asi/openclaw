@@ -55,3 +55,13 @@ Lane: composer selects (worktree `composer-bench`). Bench files intocados.
 - Causa da diferença apontada em review: `wa-dropdown-item::part(icon)` tem 24px intrínsecos (SVG 16px centrado → gap visual maior) e labels 12px/400 `--text` vs 13px/600 `--text-strong` do permission.
 - Fix (`layout.css`): `::part(icon)` forçado a 16px nos attach/capability items; `::part(label)` = 13px/600 `--text-strong`; notes voltam a 11px/400 muted; mic device labels e model option titles alinhados ao mesmo 13px/600.
 - Verificado visualmente (dark) em :5230 — attach/capability e permission agora com a mesma tipografia e mesmo trilho de ícone.
+
+## Voice mode (dictation) refactor
+
+- Referências: barra estilo "Listening" (Cancel ✕ à esquerda, waveform larga, ✓ à direita) + luz circulando a borda.
+- Cor: dictation migrou de `--danger` para `--accent` (red brand) — borda orbitante (`chat-dictation-edge-orbit`, mantida), tint da borda, barras da wave e ✓ confirm (accent sólido, hover `--accent-hover`).
+- Wave: `openclaw-microphone-activity` ganhou atributo `bars` (perfil senoidal simétrico); default 7 intacto (e2e do Talk). Dictation usa 36 barras em strip full-width acima do editor; partial transcript centralizado e ellipsized abaixo.
+- Barra de captura: footer vira Cancel (✕ + "Cancel", pill neutra — mesmo elemento do mic, preservando pointer capture do hold) · label central `role="status"` (Starting…/Recording m:ss/Finishing…) · ✓ accent à direita (insere). Elementos inúteis já ocultos (lead/meta/controls/mic-picker), agora com actions esticada em `space-between`.
+- i18n: `+discardDictation` ("Cancel dictation"), `-dictationReleaseToInsert` (sem usos); baseline+verify ok.
+- Limpeza: CSS morto `chat-send-btn__dictation-time` e `agent-chat__dictation-copy` removidos.
+- Verificação: DOM do estado dictating injetado no bench (:5230) — screenshots dark/light inspecionados (`/tmp/herdr/dict-*.png`); vitest dictation/composer suites: mesmas 5 falhas pré-existentes do checkpoint, 72 pass; tsgo:ui sem erros nos arquivos tocados; stylelint só com os 3 erros pré-existentes.

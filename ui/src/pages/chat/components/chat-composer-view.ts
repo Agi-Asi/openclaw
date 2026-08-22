@@ -356,32 +356,19 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                   ? html`
                       <div
                         class=${`agent-chat__dictation-status${dictation.finalizing ? " agent-chat__dictation-status--finalizing" : ""}`}
-                        role="status"
-                        aria-live="polite"
-                        aria-atomic="true"
                       >
                         <span class="agent-chat__dictation-wave">
                           ${renderMicrophoneActivity({
                             status: dictation.connecting ? "connecting" : "listening",
                             inputLevel: dictation.inputLevel,
+                            bars: 36,
                           })}
                         </span>
-                        <span class="agent-chat__dictation-copy">
-                          <span class="agent-chat__dictation-label"
-                            >${dictation.finalizing
-                            ? t("chat.composer.dictationFinalizing")
-                            : dictation.connecting
-                              ? t("chat.composer.dictationConnecting")
-                              : t("chat.composer.dictationRecording", {
-                                  elapsed: dictation.elapsed,
-                                })}</span
-                          >
-                          ${dictation.partial
-                            ? html`<span class="agent-chat__dictation-partial"
-                                >${dictation.partial}</span
-                              >`
-                            : nothing}
-                        </span>
+                        ${dictation.partial
+                          ? html`<span class="agent-chat__dictation-partial"
+                              >${dictation.partial}</span
+                            >`
+                          : nothing}
                       </div>
                     `
                   : nothing}
