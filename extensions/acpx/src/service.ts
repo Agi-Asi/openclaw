@@ -75,7 +75,19 @@ type CreateAcpxRuntimeServiceParams = {
   processCleanupDeps?: AcpxProcessCleanupDeps;
 };
 
-const loadRuntimeModule = createLazyRuntimeModule(() => import("./runtime.js"));
+const loadRuntimeModule = createLazyRuntimeModule(async () => {
+  const startedAt = Date.now();
+  if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+    console.info("[acp-bind-diagnostic] acpx.runtime-module.import.start");
+  }
+  const module = await import("./runtime.js");
+  if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+    console.info(
+      `[acp-bind-diagnostic] acpx.runtime-module.import.end elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+  }
+  return module;
+});
 
 /** Convert ACPX timeout seconds into timer-safe milliseconds. */
 export function resolveAcpxTimerTimeoutMs(timeoutSeconds: number | undefined): number | undefined {
@@ -92,6 +104,10 @@ function createLazyDefaultRuntime(params: AcpxRuntimeFactoryParams): AcpxRuntime
   async function resolveRuntime(): Promise<AcpxRuntimeLike> {
     if (runtime) {
       return runtime;
+    }
+    const startedAt = Date.now();
+    if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+      console.info("[acp-bind-diagnostic] acpx.runtime.resolve.start");
     }
     runtimePromise ??= loadRuntimeModule().then((module) => {
       runtime = new module.AcpxRuntime({
@@ -114,6 +130,11 @@ function createLazyDefaultRuntime(params: AcpxRuntimeFactoryParams): AcpxRuntime
         elicitationModes: ["form", "url"],
         timeoutMs: resolveAcpxTimerTimeoutMs(params.pluginConfig.timeoutSeconds),
       }) as AcpxRuntimeLike;
+      if (process.env.OPENCLAW_LIVE_ACP_BIND === "1") {
+        console.info(
+          `[acp-bind-diagnostic] acpx.runtime.resolve.end elapsedMs=${String(Date.now() - startedAt)}`,
+        );
+      }
       return runtime;
     });
     return await runtimePromise;
