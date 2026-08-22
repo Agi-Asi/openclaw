@@ -54,6 +54,46 @@ function streamingJsonResponse(params: { chunkCount: number; chunkSize: number }
 }
 
 describe("exa web search provider", () => {
+  it("caps returned and cached results when Exa exceeds the requested count", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            { url: "https://example.com/first", title: "First", highlights: ["first"] },
+            { url: "https://example.com/second", title: "Second", highlights: ["second"] },
+            { url: "https://example.com/third", title: "Third", highlights: ["third"] },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const tool = createExaWebSearchProvider().createTool({
+      config: {
+        plugins: { entries: { exa: { config: { webSearch: { apiKey: "exa-test-key" } } } } },
+      },
+      searchConfig: {},
+    });
+    if (!tool) {
+      throw new Error("Expected tool definition");
+    }
+
+    try {
+      const args = { query: "exa result count owner", count: 1 };
+      const first = await tool.execute(args);
+      const cached = await tool.execute(args);
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+        numResults: 1,
+      });
+      expect(first).toMatchObject({ provider: "exa", count: 1 });
+      expect(first.results).toHaveLength(1);
+      expect(cached).toEqual({ ...first, cached: true });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("does not send or cache an already canceled search", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ results: [] }), {
