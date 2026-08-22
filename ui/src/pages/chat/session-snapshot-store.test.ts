@@ -10,7 +10,6 @@ import {
   type ChatMessageCache,
   type ChatSessionSnapshot,
 } from "./session-message-cache.ts";
-import { CHAT_SNAPSHOT_DB_VERSION } from "./session-snapshot-database.ts";
 import {
   CHAT_SNAPSHOT_DB_NAME,
   CHAT_SNAPSHOT_METADATA_STORE_NAME,
@@ -196,7 +195,7 @@ describe("persistent chat session snapshots", () => {
     expect(stored?.messages).toEqual(["from-tab-b"]);
     expect(await readStoredChatSnapshot("agent:main:other")).toEqual(snapshot("unrelated"));
 
-    // A tab that learned an older snapshot later must not resurrect it.
+    // A later completed write owns the key, without corrupting the record.
     tabA.write(sessionKey, snapshot("stale-from-tab-a"));
     await tabA.flush();
     await tabB.flush();
@@ -209,7 +208,7 @@ describe("persistent chat session snapshots", () => {
     // rebuilds a healthy store. Old conversations come back from the network.
     const legacyKey = "agent:main:legacy";
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open(CHAT_SNAPSHOT_DB_NAME, CHAT_SNAPSHOT_DB_VERSION + 1);
+      const request = indexedDB.open(CHAT_SNAPSHOT_DB_NAME, 2);
       request.addEventListener("upgradeneeded", () => {
         request.result.createObjectStore(CHAT_SNAPSHOT_STORE_NAME, { keyPath: "sessionKey" });
       });
@@ -251,16 +250,6 @@ describe("persistent chat session snapshots", () => {
     const stored = await readStoredChatSnapshot(sessionKey);
     expect(stored?.messages[0]).toBe(bigBody);
     expect(stored?.deltaCursor).toBe("cursor-huge");
-  });
-
-  it("does not serve an empty stored transcript to the startup paint gate", async () => {
-    const sessionKey = "agent:main:empty";
-    const writer = new SessionSnapshotStore();
-    writer.write(sessionKey, { ...snapshot("unused"), messages: [] });
-    await writer.flush();
-
-    const stored = await readStoredChatSnapshot(sessionKey);
-    expect(stored?.messages).toEqual([]);
   });
 
   it("does not let an append miss replace a richer persisted snapshot", async () => {

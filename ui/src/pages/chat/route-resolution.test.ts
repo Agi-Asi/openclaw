@@ -52,6 +52,7 @@ function contextFor(
     agentId?: string;
   }) => SessionsListResult | null,
   cachedSessions: GatewaySessionRow[] = [],
+  gatewaySnapshot: Partial<ApplicationContext["gateway"]["snapshot"]> = {},
 ) {
   const client = {};
   const list = vi.fn(async (options: { search?: string; offset?: number } = {}) =>
@@ -60,7 +61,7 @@ function contextFor(
   const context = {
     basePath: "",
     gateway: {
-      snapshot: { phase: "connected", client, hello: null, sessionKey: "" },
+      snapshot: { phase: "connected", client, hello: null, sessionKey: "", ...gatewaySnapshot },
       subscribe: vi.fn(() => () => undefined),
     },
     agents: { state: { agentsList: { mainKey: "main" } } },
@@ -411,13 +412,12 @@ describe("gateway-backed session route resolution", () => {
   });
 
   it("resolves an agent-home route from the persisted key before hello", async () => {
-    const { context, list } = contextFor(() => result([]));
-    context.gateway.snapshot = {
+    const { context, list } = contextFor(() => result([]), [], {
       phase: "connecting",
       client: null,
       hello: null,
       sessionKey: "agent:roboclaw:main",
-    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    });
 
     await expect(
       loadChatRoute(
@@ -431,13 +431,12 @@ describe("gateway-backed session route resolution", () => {
   });
 
   it("resolves the default agent home from a bare persisted alias before hello", async () => {
-    const { context, list } = contextFor(() => result([]));
-    context.gateway.snapshot = {
+    const { context, list } = contextFor(() => result([]), [], {
       phase: "connecting",
       client: null,
       hello: null,
       sessionKey: "main",
-    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    });
 
     await expect(
       loadChatRoute(
@@ -451,13 +450,12 @@ describe("gateway-backed session route resolution", () => {
   });
 
   it("keeps agent-home routes waiting when the persisted key names another agent", async () => {
-    const { context } = contextFor(() => result([]));
-    context.gateway.snapshot = {
+    const { context } = contextFor(() => result([]), [], {
       phase: "connecting",
       client: null,
       hello: null,
       sessionKey: "agent:research:main",
-    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    });
     const controller = new AbortController();
     const pending = loadChatRoute(
       context,
@@ -634,13 +632,12 @@ describe("gateway-backed session route resolution", () => {
 
   it("trusts a carried short key that matches the persisted last-active session", async () => {
     const key = "agent:roboclaw:12345678-0aaa-4000-8000-000000000001";
-    const { context, list } = contextFor(() => result([]));
-    context.gateway.snapshot = {
+    const { context, list } = contextFor(() => result([]), [], {
       phase: "connecting",
       client: null,
       hello: null,
       sessionKey: key,
-    } as unknown as ApplicationContext["gateway"]["snapshot"];
+    });
     const target = sessionNavigationTarget({
       face: "chat",
       sessionKey: key,

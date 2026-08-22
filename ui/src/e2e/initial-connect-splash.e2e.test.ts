@@ -78,18 +78,50 @@ async function traceLoginGateMounts(page: Page): Promise<() => Promise<boolean>>
     );
 }
 
+async function traceConnectSplashMounts(page: Page): Promise<() => Promise<boolean>> {
+  await page.addInitScript(() => {
+    const trace = { mounted: false };
+    (
+      window as Window & {
+        openclawConnectSplashMountTrace?: typeof trace;
+      }
+    ).openclawConnectSplashMountTrace = trace;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (
+            node instanceof Element &&
+            (node.matches(".connect-splash") || node.querySelector(".connect-splash"))
+          ) {
+            trace.mounted = true;
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  return () =>
+    page.evaluate(
+      () =>
+        (
+          window as Window & {
+            openclawConnectSplashMountTrace?: { mounted: boolean };
+          }
+        ).openclawConnectSplashMountTrace?.mounted ?? false,
+    );
+}
+
 // Seeds the persistent transcript cache for the default main session so the
 // next navigation resolves the saved-conversation paint path. Runs against
 // the same origin of an already-settled document; the record shape mirrors
 // the store's schema.
-async function seedStoredTranscript(page: Page): Promise<void> {
-  await page.evaluate(async () => {
+async function seedStoredTranscript(page: Page, messages?: unknown[]): Promise<void> {
+  await page.evaluate(async (seedMessages) => {
     const record = {
       savedAt: Date.now(),
       sessionId: null,
       sessionKey: "agent:main:main",
       snapshot: {
-        messages: [
+        messages: seedMessages ?? [
           {
             content: "cached-transcript-marker",
             role: "assistant",
@@ -120,7 +152,7 @@ async function seedStoredTranscript(page: Page): Promise<void> {
       );
     });
     database.close();
-  });
+  }, messages);
 }
 
 async function clearStoredTranscripts(page: Page): Promise<void> {
@@ -147,6 +179,21 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
   afterEach(async () => {
     await Promise.all([...openContexts].map((context) => context.close().catch(() => {})));
     openContexts.clear();
+  });
+
+  it("does not mount the splash when the first connect resolves before the threshold", async () => {
+    const page = await createPage();
+    const splashMounted = await traceConnectSplashMounts(page);
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+
+    expect(await page.locator(".connect-splash").count()).toBe(0);
+    expect(await splashMounted()).toBe(false);
+    await captureProof(page, "00-fast-connect-without-splash");
   });
 
   it("shows the splash instead of the login gate while a configured token connects", async () => {
@@ -380,6 +427,25 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
     expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+  });
+
+  it("keeps the splash when the stored transcript is empty", async () => {
+    const page = await createPage();
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page, []);
+
+    await page.reload();
+    await gateway.waitForRequest("connect");
+    await page.locator(".connect-splash").waitFor();
+    expect(await page.locator("openclaw-app-shell").count()).toBe(0);
+
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
   });
 
   it("uses the splash for a stored device token on reload", async () => {
