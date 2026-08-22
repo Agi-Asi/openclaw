@@ -110,7 +110,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
       return Promise.resolve();
     }
     const runtime = this.runtime;
-    const persistedSessionKey = this.context.gateway.snapshot.sessionKey;
     return import("./saved-transcript-probe.runtime.ts")
       .then((module) =>
         module.probeSavedTranscript({
@@ -118,7 +117,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
           credentialAction: runtime.transcriptProbeAction,
           documentMode: runtime.documentMode,
           focusDocument: this.focusTarget !== null,
-          persistedSessionKey,
           markSavedTranscriptReady: () => {
             if (this.runtime === runtime) {
               this.savedTranscriptReady = true;
@@ -207,18 +205,21 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
-    void this.probeSavedTranscript()
-      .then(async () => {
-        if (this.runtime !== runtime) {
-          return;
-        }
-        this.armDeferredConnectSplash();
-        await runtime.start();
-        await this.resolveFocusDashboard();
-      })
-      .catch((error: unknown) => {
-        console.error("[openclaw] application start failed", error);
-      });
+    void (async () => {
+      if (runtime.transcriptProbeAction === 2) {
+        await this.probeSavedTranscript();
+      } else {
+        void this.probeSavedTranscript();
+      }
+      if (this.runtime !== runtime) {
+        return;
+      }
+      this.armDeferredConnectSplash();
+      await runtime.start();
+      await this.resolveFocusDashboard();
+    })().catch((error: unknown) => {
+      console.error("[openclaw] application start failed", error);
+    });
   }
 
   override disconnectedCallback() {

@@ -301,12 +301,7 @@ export function bootstrapApplication(
 
   const settings = startup.settings;
   const transcriptCredentialAction =
-    startup.changed ||
-    startup.password !== null ||
-    startup.pendingBootstrapToken !== null ||
-    startup.pendingGatewayUrl !== null
-      ? 2
-      : 0;
+    startup.changed || startup.password !== null || startup.pendingBootstrapToken !== null ? 2 : 0;
   const gateway = createApplicationGateway(
     settings,
     startup.password ?? "",

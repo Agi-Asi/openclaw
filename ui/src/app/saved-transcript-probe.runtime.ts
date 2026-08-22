@@ -5,7 +5,6 @@ type SavedTranscriptProbeHost = {
   readonly credentialAction: 0 | 2;
   readonly documentMode: ApprovalDocumentMode | null;
   readonly focusDocument: boolean;
-  readonly persistedSessionKey: string;
   markSavedTranscriptReady(): void;
 };
 
@@ -30,23 +29,8 @@ export async function probeSavedTranscript(host: SavedTranscriptProbeHost): Prom
   // without gateway defaults or first-run routing.
   const { sessionRefFromPath } = await import("../app-session-route-paths.ts");
   const direct = sessionRefFromPath(globalThis.location?.pathname ?? "", host.basePath ?? "");
-  let candidate =
+  const candidate =
     direct?.namespace === "chat" && direct.kind === "literal" ? direct.sessionKey : null;
-  if (direct?.namespace === "chat" && direct.kind === "short") {
-    const [{ sessionKeyUuid }, { normalizeAgentId, parseAgentSessionKey }] = await Promise.all([
-      import("../pages/chat/route-loader-short-cache.ts"),
-      import("../lib/sessions/session-key.ts"),
-    ]);
-    const persisted = host.persistedSessionKey.trim();
-    const persistedAgent = parseAgentSessionKey(persisted)?.agentId;
-    if (
-      sessionKeyUuid(persisted)?.startsWith(direct.shortId.toLowerCase().replaceAll("-", "")) &&
-      persistedAgent &&
-      normalizeAgentId(persistedAgent) === normalizeAgentId(direct.agentId)
-    ) {
-      candidate = persisted;
-    }
-  }
   if (!candidate) {
     return;
   }
