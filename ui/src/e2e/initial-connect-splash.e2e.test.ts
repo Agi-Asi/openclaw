@@ -406,4 +406,103 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
   });
+
+  it("returns the login gate and drops a painted snapshot when auth is rejected", async () => {
+    const page = await createPage();
+    const loginGateMounted = await traceLoginGateMounts(page);
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    // First visit settles credentials, then leaves a saved transcript behind.
+    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page);
+
+    await page.reload();
+    await gateway.waitForRequest("connect");
+    await page.getByText("cached-transcript-marker").first().waitFor();
+    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+
+    // The gateway rejects the very credentials the painted snapshot assumed:
+    // fail closed — content goes away and the gate returns.
+    await gateway.rejectDeferred("connect", {
+      code: "UNAUTHORIZED",
+      message: "unauthorized: gateway token mismatch",
+      details: { code: ConnectErrorDetailCodes.AUTH_TOKEN_MISMATCH },
+    });
+    await page.locator("openclaw-login-gate").waitFor();
+    expect(await page.locator("openclaw-app-shell").count()).toBe(0);
+    expect(await page.getByText("cached-transcript-marker").count()).toBe(0);
+    expect(await page.locator(".connect-splash").count()).toBe(0);
+    expect(await loginGateMounted()).toBe(true);
+  });
+
+  it("keeps the painted transcript through a retryable first-handshake failure", async () => {
+    const page = await createPage();
+    const gateway = await installMockGateway(page, {
+      deferredMethods: ["connect"],
+      historyMessages: [
+        { role: "assistant", content: "cached-transcript-marker", timestamp: Date.now() },
+      ],
+    });
+
+    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page);
+
+    await page.reload();
+    await gateway.waitForRequest("connect");
+    await page.getByText("cached-transcript-marker").first().waitFor();
+
+    // Retryable startup failure: the transport drops mid-paint, but the
+    // conversation stays up while the client retries.
+    const initialConnectCount = (await gateway.getRequests("connect")).length;
+    await gateway.deferNext("connect");
+    await gateway.rejectDeferred("connect", {
+      code: "UNAVAILABLE",
+      message: "gateway starting; retry shortly",
+      details: { reason: "startup-sidecars" },
+      retryable: true,
+    });
+    await expect
+      .poll(async () => (await gateway.getRequests("connect")).length)
+      .toBeGreaterThan(initialConnectCount);
+    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+    await expect.poll(() => page.getByText("cached-transcript-marker").count()).toBeGreaterThan(0);
+
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await expect.poll(() => page.getByText("cached-transcript-marker").count()).toBeGreaterThan(0);
+  });
+
+  it("handles in-app navigation attempted before the handshake resolves", async () => {
+    const page = await createPage();
+    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+
+    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page);
+
+    await page.reload();
+    await gateway.waitForRequest("connect");
+    await page.getByText("cached-transcript-marker").first().waitFor();
+
+    // Operator clicks into Automations while the first connect is still
+    // pending: the route is gated offline without breaking the document.
+    await page.getByRole("link", { name: "Automations" }).click();
+    const offlineNotice = page.getByText("Actions are unavailable while the Gateway reconnects.");
+    await offlineNotice.waitFor({ timeout: 10_000 });
+    expect(await page.locator(".lazy-view-error").count()).toBe(0);
+    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await expect.poll(async () => await offlineNotice.count()).toBe(0);
+    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
+  });
 });

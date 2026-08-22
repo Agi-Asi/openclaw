@@ -10,6 +10,7 @@ import {
   type ChatMessageCache,
   type ChatSessionSnapshot,
 } from "./session-message-cache.ts";
+import { CHAT_SNAPSHOT_DB_VERSION } from "./session-snapshot-database.ts";
 import {
   CHAT_SNAPSHOT_DB_NAME,
   CHAT_SNAPSHOT_METADATA_STORE_NAME,
@@ -178,6 +179,88 @@ describe("persistent chat session snapshots", () => {
 
     expect(await readStoredChatSnapshot(sessionKey)).toEqual(snapshot("cached"));
     expect(await readStoredChatSnapshot("agent:main:missing")).toBeNull();
+  });
+
+  it("keeps one coherent record when two browser contexts write concurrently", async () => {
+    // Two tabs are two store instances over one same-origin IndexedDB; the DB
+    // serializes their transactions, and the last completed flush owns the key.
+    const sessionKey = "agent:main:two-tabs";
+    const tabA = new SessionSnapshotStore();
+    const tabB = new SessionSnapshotStore();
+    tabA.write(sessionKey, snapshot("from-tab-a"));
+    tabB.write("agent:main:other", snapshot("unrelated"));
+    tabB.write(sessionKey, snapshot("from-tab-b"));
+    await Promise.all([tabA.flush(), tabB.flush()]);
+
+    const stored = await readStoredChatSnapshot(sessionKey);
+    expect(stored?.messages).toEqual(["from-tab-b"]);
+    expect(await readStoredChatSnapshot("agent:main:other")).toEqual(snapshot("unrelated"));
+
+    // A tab that learned an older snapshot later must not resurrect it.
+    tabA.write(sessionKey, snapshot("stale-from-tab-a"));
+    await tabA.flush();
+    await tabB.flush();
+    expect((await readStoredChatSnapshot(sessionKey))?.messages).toEqual(["stale-from-tab-a"]);
+  });
+
+  it("resets safely across a persisted-database version upgrade with old conversations", async () => {
+    // A future schema version (v2 here) must fail closed: the older reader
+    // wipes the cache instead of misreading records, and the next write
+    // rebuilds a healthy store. Old conversations come back from the network.
+    const legacyKey = "agent:main:legacy";
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(CHAT_SNAPSHOT_DB_NAME, CHAT_SNAPSHOT_DB_VERSION + 1);
+      request.addEventListener("upgradeneeded", () => {
+        request.result.createObjectStore(CHAT_SNAPSHOT_STORE_NAME, { keyPath: "sessionKey" });
+      });
+      request.addEventListener("success", () => {
+        const database = request.result;
+        const transaction = database.transaction(CHAT_SNAPSHOT_STORE_NAME, "readwrite");
+        transaction.objectStore(CHAT_SNAPSHOT_STORE_NAME).put({
+          savedAt: 1,
+          sessionId: null,
+          sessionKey: legacyKey,
+          snapshot: { messages: ["old-conversation"], pagination: { hasMore: false } },
+        });
+        transaction.addEventListener("complete", () => {
+          database.close();
+          resolve();
+        });
+        transaction.addEventListener("error", () =>
+          reject(transaction.error ?? new Error("legacy put failed")),
+        );
+      });
+      request.addEventListener("error", () => reject(request.error ?? new Error("open failed")));
+    });
+
+    expect(await readStoredChatSnapshot(legacyKey)).toBeNull();
+
+    const rebuilt = new SessionSnapshotStore();
+    rebuilt.write(legacyKey, snapshot("fresh"));
+    await rebuilt.flush();
+    expect((await readStoredChatSnapshot(legacyKey))?.messages).toEqual(["fresh"]);
+  });
+
+  it("round-trips a multi-megabyte snapshot through the probe path", async () => {
+    const sessionKey = "agent:main:huge";
+    const bigBody = "x".repeat(5 * 1024 * 1024);
+    const writer = new SessionSnapshotStore();
+    writer.write(sessionKey, { ...snapshot(bigBody), deltaCursor: "cursor-huge" });
+    await writer.flush();
+
+    const stored = await readStoredChatSnapshot(sessionKey);
+    expect(stored?.messages[0]).toBe(bigBody);
+    expect(stored?.deltaCursor).toBe("cursor-huge");
+  });
+
+  it("does not serve an empty stored transcript to the startup paint gate", async () => {
+    const sessionKey = "agent:main:empty";
+    const writer = new SessionSnapshotStore();
+    writer.write(sessionKey, { ...snapshot("unused"), messages: [] });
+    await writer.flush();
+
+    const stored = await readStoredChatSnapshot(sessionKey);
+    expect(stored?.messages).toEqual([]);
   });
 
   it("does not let an append miss replace a richer persisted snapshot", async () => {
