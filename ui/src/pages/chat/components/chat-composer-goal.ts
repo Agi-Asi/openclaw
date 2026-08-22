@@ -103,7 +103,7 @@ export function renderChatGoal(
       aria-label=${formatGoalDetail(goal)}
     >
       <div class="agent-chat__goal-row">
-        <span class="agent-chat__goal-icon">${icons.target}</span>
+        <span class="agent-chat__goal-icon">${icons.goal}</span>
         <span class="agent-chat__goal-copy">
           <span class="agent-chat__goal-label">${formatGoalStatusLabel(goal.status)}</span>
           <span class="agent-chat__goal-objective">${goal.objective}</span>

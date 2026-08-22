@@ -23,7 +23,6 @@ import { renderChatPermissionPicker } from "../pages/chat/components/chat-permis
 import { renderChatPullRequests } from "../pages/chat/components/chat-pull-requests.ts";
 import { renderChatSessionSuggestions } from "../pages/chat/components/chat-session-suggestions.ts";
 import { renderChatSwarmProgress } from "../pages/chat/components/chat-swarm-progress.ts";
-import { renderChatTaskSuggestionTray } from "../pages/chat/components/chat-task-suggestions.ts";
 import { renderWelcomeState } from "../pages/chat/components/chat-welcome.ts";
 import { renderChatViewNotices } from "../pages/chat/chat-view-notices.ts";
 import { RealtimeTalkLevelSignal } from "../pages/chat/realtime-talk-level.ts";
@@ -106,9 +105,10 @@ type BenchState = {
     | "busy"
     | "inactive"
     | "failed";
-  content: "empty" | "one" | "multiline" | "skill-inline" | "giant";
+  content: "empty" | "one" | "multiline" | "skill-inline" | "skill-inline-mobile" | "giant";
   attachments: "none" | "image" | "annotation" | "mixed";
   menu: "closed" | "slash" | "skills";
+  plusMenuOpen: boolean;
   status: "focused" | "sending" | "disabled" | "catalog" | "error" | "offline";
   newAction:
     | "start"
@@ -122,7 +122,6 @@ type BenchState = {
   neighbor:
     | "none"
     | "approval"
-    | "task-suggestion"
     | "session-suggestion"
     | "pull-request"
     | "swarm"
@@ -186,6 +185,7 @@ const defaults: BenchState = {
   content: "multiline",
   attachments: "none",
   menu: "closed",
+  plusMenuOpen: false,
   status: "focused",
   newAction: "start",
   neighbor: "none",
@@ -198,7 +198,9 @@ const content: Record<BenchState["content"], string> = {
   one: "Tailor the composer spacing.",
   multiline: "Tailor the composer spacing.\nKeep the controls aligned.\nPreserve the real send flow.",
   "skill-inline":
-    "Tailor the composer spacing with $bench_skill_05 before the final pass,\nthen re-check the send flow.",
+    "Tailor the composer spacing with deliberate care across every footer control before using $bench_skill_05 to finish the final visual pass and re-check the complete send flow.",
+  "skill-inline-mobile":
+    "Review with $bench_skill_05 before checking the send flow again on a compact mobile surface.",
   giant: Array.from(
     { length: 18 },
     (_, index) => `Line ${index + 1}: inspect wrapping, internal scroll, and footer stability.`,
@@ -210,7 +212,9 @@ function seededDraft(
   menu: BenchState["menu"],
 ): string {
   if (menu === "slash") return "/";
-  if (menu === "skills") return "Use $bench_";
+  if (menu === "skills") {
+    return contentKey === "one" ? "Use $bench_skill_0" : "Use $bench_";
+  }
   return content[contentKey];
 }
 
@@ -377,7 +381,7 @@ const presets: Record<string, Partial<BenchState>> = {
     status: "focused",
     width: 900,
   },
-  "skills-40": { content: "one", menu: "skills", run: "idle", queue: "none", width: 640 },
+  "skills-40": { content: "empty", menu: "skills", run: "idle", queue: "none", width: 640 },
   "mobile-full": {
     content: "multiline",
     attachments: "image",
@@ -422,7 +426,7 @@ const scenarios: BenchScenario[] = [
     state: { content: "one", status: "sending", run: "running" },
   },
   {
-    name: "Plan 1 of 3",
+    name: "Plan 2 of 3",
     description: "The current plan sits above the composer as work progresses.",
     state: { content: "multiline", plan: "active" },
   },
@@ -435,6 +439,16 @@ const scenarios: BenchScenario[] = [
     name: "Plan complete",
     description: "The final completed step uses the success state.",
     state: { content: "one", plan: "complete" },
+  },
+  {
+    name: "Goal",
+    description: "A session goal sits directly above the composer.",
+    state: { content: "one", inset: "goal" },
+  },
+  {
+    name: "Goal + queue",
+    description: "The queue stacks above the goal in the canonical attached order.",
+    state: { content: "one", run: "running", queue: "three", inset: "goal" },
   },
   {
     name: "Queue with 3",
@@ -463,23 +477,28 @@ const scenarios: BenchScenario[] = [
   },
   {
     name: "Skill inline",
-    description: "An atomic skill mention remains inline across a multiline draft.",
+    description: "A skill mention wraps naturally without an explicit newline.",
     state: { content: "skill-inline" },
   },
   {
-    name: "Interrupted",
-    description: "The terminal event stays with the last transcript message.",
-    state: { content: "one", run: "interrupted" },
+    name: "Skill inline mobile",
+    description: "The same atomic mention wraps naturally on a narrow surface.",
+    state: { content: "skill-inline-mobile", width: 390 },
   },
   {
-    name: "Approval pending",
-    description: "The approval card is the only pending-approval state.",
-    state: { content: "one", run: "approval", neighbor: "approval" },
+    name: "Commands open",
+    description: "The real slash-command palette opens with repository commands.",
+    state: { content: "empty", menu: "slash" },
   },
   {
-    name: "Approval + offline",
-    description: "Approval actions pause while offline owns the status band.",
-    state: { content: "one", run: "approval", status: "offline", neighbor: "approval" },
+    name: "Skills open",
+    description: "The real skill invocation sheet opens for normal navigation.",
+    state: { content: "one", menu: "skills" },
+  },
+  {
+    name: "Plus menu open",
+    description: "The real capability menu opens from the composer attachment control.",
+    state: { content: "one", capabilities: "available", plusMenuOpen: true },
   },
   {
     name: "Read only",
@@ -492,9 +511,14 @@ const scenarios: BenchScenario[] = [
     state: { content: "one", dictate: "recording" },
   },
   {
-    name: "Task suggestion",
-    description: "A proposed follow-up stays aligned with the composer.",
-    state: { content: "one", neighbor: "task-suggestion" },
+    name: "New session",
+    description: "The New surface begins with an empty real composer.",
+    state: { surface: "new", content: "empty" },
+  },
+  {
+    name: "New incognito",
+    description: "A temporary New session disappears after Gateway restart.",
+    state: { surface: "new", visibility: "incognito", content: "empty" },
   },
   {
     name: "Session suggestion",
@@ -556,12 +580,6 @@ const scenarios: BenchScenario[] = [
       run: "running",
       theme: "light",
     },
-  },
-  {
-    name: "Incognito session",
-    description: "A temporary New session that disappears after Gateway restart.",
-    state: presets.incognito ?? {},
-    stress: true,
   },
   {
     name: "Huge prompt + attachments",
@@ -724,7 +742,14 @@ function readState(raw: string | null): BenchState {
     );
     const menu = parsed.menu === "slash" || parsed.menu === "skills" ? parsed.menu : "closed";
     const surface = parsed.surface === "new" ? "new" : "chat";
-    const contentKey = ["empty", "one", "multiline", "giant"].includes(String(parsed.content))
+    const contentKey = [
+      "empty",
+      "one",
+      "multiline",
+      "skill-inline",
+      "skill-inline-mobile",
+      "giant",
+    ].includes(String(parsed.content))
       ? (parsed.content as BenchState["content"])
       : surface === "new"
         ? "empty"
@@ -1122,31 +1147,6 @@ function renderBenchNeighbor() {
       variant: "inline",
       onDecision: clear,
     });
-  } else if (state.neighbor === "task-suggestion") {
-    surface = renderChatTaskSuggestionTray({
-      taskSuggestions: [
-        {
-          id: "bench-task-suggestion",
-          title: "Review composer interactions",
-          prompt: "Audit the existing composer interactions and report concrete regressions.",
-          tldr: "Check the current composer behavior before the visual pass.",
-          cwd: "/workspace/openclaw",
-          sessionKey: "agent:main:main",
-          agentId: "main",
-          createdAt: Date.now(),
-        },
-      ],
-      taskSuggestionBusyIds: new Set(),
-      taskSuggestionCloudProfiles: [],
-      taskSuggestionCopiedIds: new Set(),
-      canAcceptTaskSuggestions: true,
-      canAcceptTaskSuggestionModes: true,
-      canDismissTaskSuggestions: true,
-      onAcceptTaskSuggestion: clear,
-      onDismissTaskSuggestion: clear,
-      onCopyTaskSuggestionPrompt: () => {},
-      onNavigateTaskSuggestion: () => {},
-    });
   } else if (state.neighbor === "session-suggestion") {
     surface = renderChatSessionSuggestions({
       suggestions: [
@@ -1293,6 +1293,10 @@ function renderChatSurface(sessionList: SessionsListResult) {
   // stub alive across rerenders. Clearing only our own stub (marked) lets the
   // real controller path own the slot whenever the axis is off.
   const composerState = getChatComposerState("composer-bench");
+  composerState.capabilityMenuOpen = state.plusMenuOpen;
+  if (state.plusMenuOpen) {
+    composerState.capabilityMenuView = "root";
+  }
   if (state.dictate !== "off") {
     const stub = benchDictationController() as ComposerDictationController & {
       benchStub?: boolean;
@@ -1862,6 +1866,33 @@ function renderBench(): void {
 }
 
 function applyTransientState(): void {
+  const sharedStack = document.querySelector<HTMLElement>(
+    ".composer-bench__composer-stack[data-shared-status-row]",
+  );
+  const tasksStatus = sharedStack?.querySelector<HTMLElement>(".chat-tasks-status");
+  if (sharedStack && tasksStatus) {
+    const composerShell = sharedStack.querySelector<HTMLElement>(".agent-chat__composer-shell");
+    const stackRect = sharedStack.getBoundingClientRect();
+    const composerRect = composerShell?.getBoundingClientRect();
+    if (composerRect) {
+      sharedStack.style.setProperty(
+        "--composer-bench-composer-inset",
+        `${Math.max(0, Math.round(composerRect.left - stackRect.left))}px`,
+      );
+    }
+    sharedStack.style.setProperty(
+      "--composer-bench-tasks-offset",
+      `${Math.ceil(tasksStatus.getBoundingClientRect().width + 8)}px`,
+    );
+  }
+  const surface = document.querySelector<HTMLElement>(".composer-bench__surface");
+  const composerShell = surface?.querySelector<HTMLElement>(".agent-chat__composer-shell");
+  if (surface && composerShell) {
+    surface.style.setProperty(
+      "--composer-bench-composer-width",
+      `${Math.round(composerShell.getBoundingClientRect().width)}px`,
+    );
+  }
   const textarea = document.querySelector<HTMLTextAreaElement>(".agent-chat__composer-combobox textarea");
   if (!textarea) {
     return;

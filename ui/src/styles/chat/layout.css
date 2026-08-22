@@ -1034,14 +1034,13 @@ openclaw-chat-page {
 }
 
 .agent-chat__goal-float {
-  --chat-goal-underlap: 14px;
+  --chat-goal-underlap: 18px;
 
   position: relative;
   z-index: 0;
   box-sizing: border-box;
   width: 100%;
-  margin: 0
-    calc(0px - var(--chat-composer-shell-gap) - var(--chat-goal-underlap));
+  margin: 0 0 calc(0px - var(--chat-composer-shell-gap) - var(--chat-goal-underlap));
 }
 
 .agent-chat__goal-float .agent-chat__goal {
@@ -1052,8 +1051,9 @@ openclaw-chat-page {
   padding-top: 0;
   padding-bottom: var(--chat-goal-underlap);
   border-bottom: 0;
-  border-radius: calc(16px * var(--openclaw-corner-radius-scale))
-    calc(16px * var(--openclaw-corner-radius-scale)) 0 0;
+  border-radius: calc(20px * var(--openclaw-corner-radius-scale))
+    calc(20px * var(--openclaw-corner-radius-scale)) 0 0;
+  corner-shape: superellipse(1.5);
   background: var(--composer-attached-surface, var(--chat-composer-surface, var(--card)));
 }
 
@@ -3282,7 +3282,7 @@ button.chat-pr__diff {
     linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: chat-dictation-edge-orbit 2.2s linear infinite;
+  animation: chat-dictation-edge-orbit 5s linear infinite;
   pointer-events: none;
 }
 
@@ -3371,19 +3371,19 @@ button.chat-pr__diff {
    queue item, or toast owner and never stack additional composer rows here. */
 .agent-chat__composer-underlaps[data-tone="info"] {
   border-color: color-mix(in srgb, var(--info) 12%, transparent);
-  background: var(--composer-attached-surface);
+  background: color-mix(in srgb, var(--info) 7%, var(--composer-attached-surface));
   color: color-mix(in srgb, var(--info) 72%, var(--text));
 }
 
 .agent-chat__composer-underlaps[data-tone="warn"] {
   border-color: color-mix(in srgb, var(--warn) 12%, transparent);
-  background: var(--composer-attached-surface);
+  background: color-mix(in srgb, var(--warn) 7%, var(--composer-attached-surface));
   color: color-mix(in srgb, var(--warn) 72%, var(--text));
 }
 
 .agent-chat__composer-underlaps[data-tone="danger"] {
   border-color: color-mix(in srgb, var(--danger) 12%, transparent);
-  background: var(--composer-attached-surface);
+  background: color-mix(in srgb, var(--danger) 7%, var(--composer-attached-surface));
   color: color-mix(in srgb, var(--danger) 78%, var(--text));
 }
 
@@ -3402,12 +3402,15 @@ button.chat-pr__diff {
 
 .agent-chat__composer-status-icon,
 .agent-chat__composer-status-more {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  color: inherit;
 }
 
 .agent-chat__composer-status-icon svg {
-  width: var(--chat-composer-footer-icon-size);
-  height: var(--chat-composer-footer-icon-size);
+  width: var(--chat-composer-footer-icon-size, 16px);
+  height: var(--chat-composer-footer-icon-size, 16px);
 }
 
 .agent-chat__composer-status-text {
@@ -3764,56 +3767,8 @@ button.chat-pr__diff {
   min-width: 0;
 }
 
-/* Model and reasoning live in their own row inside this group, which carries a
-   tighter gap of its own elsewhere in the app. Inside the composer the pair sits
-   on the family rhythm like every other chip, and the mark between them is what
-   makes it read as one phrase rather than two separate settings. */
 .agent-chat__composer-controls .chat-controls__model-settings {
-  gap: var(--chat-composer-chip-gap);
-  border-radius: var(--radius-full);
-  background: transparent;
-  transition: background var(--duration-fast) ease;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .agent-chat__composer-controls .chat-controls__model-settings:hover {
-    background: var(--chat-composer-group-hover);
-  }
-
-  .agent-chat__composer-controls
-    .chat-controls__model-settings:hover
-    .chat-controls__inline-select-trigger,
-  .agent-chat__composer-controls
-    .chat-controls__model-settings:hover
-    .chat-controls__model-settings-separator {
-    color: var(--text-strong);
-  }
-}
-
-/* Only the composer binds the pair into a phrase; elsewhere the two pickers sit
-   in layouts that do not read as one, where the mark would be noise. */
-.chat-controls__model-settings-separator {
-  display: none;
-}
-
-/* Decorative binder between the two triggers. Non-interactive on purpose: it
-   carries no pointer target of its own, so neither picker's hover or click area
-   is narrowed by it, and it sits at the surface's muted step so the phrase reads
-   as label-mark-label rather than three equal words. The negative margin pulls
-   it into the inset the two chips already own, which is what makes the pair read
-   tighter than the space separating it from the chip beside it. */
-.agent-chat__composer-controls .chat-controls__model-settings-separator {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-inline: -3px;
-  color: var(--muted);
-  /* A step above the chip text: the middle dot is a small mark inside its own em
-     box, so at the label's size it reads as a speck rather than a separator. */
-  font-size: calc(var(--chat-composer-chip-text, 13px) + 1px);
-  line-height: 1;
-  pointer-events: none;
-  user-select: none;
+  gap: 4px;
 }
 
 .agent-chat__composer-run-status {
@@ -3885,7 +3840,7 @@ button.chat-pr__diff {
 }
 
 .agent-chat__disabled-banner--neutral {
-  color: var(--text);
+  color: inherit;
 }
 
 .agent-chat__disabled-banner-icon {
@@ -6522,7 +6477,7 @@ button.chat-pr__diff {
 .chat-controls__model-settings {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .chat-controls__model-settings .chat-controls__inline-select-trigger {
@@ -6611,6 +6566,29 @@ button.chat-pr__diff {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-controls__inline-select-chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transform: rotate(180deg);
+  transition: transform var(--duration-fast) ease;
+}
+
+.chat-controls__inline-select-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.chat-controls__inline-select[open]
+  > .chat-controls__inline-select-trigger
+  .chat-controls__inline-select-chevron {
+  transform: rotate(0deg);
 }
 
 .chat-controls__trigger-meta {

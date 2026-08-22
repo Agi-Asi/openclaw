@@ -202,7 +202,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           {
             text: offlineText,
             tone: "warn" as const,
-            icon: icons.wifiOff,
+            icon: icons.globeOff,
             omitsSecondary: false,
           },
         ]

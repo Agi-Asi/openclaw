@@ -152,3 +152,17 @@ Local-only working ledger. Re-read after every implementation block; move an ite
 - [x] The review sweep covers plausible grouped product states, including a real open 40-skill sheet and an inline multiline skill.
 - [x] Queue, goal and status bands use the single `--composer-attached-surface` hierarchy token in both themes.
 - [x] Plan hover card stays still through its close delay, exits once over 100ms, cancels cleanly on reentry, and uses the compact 352px chrome.
+- [x] Align Running tasks and Plan on one left-anchored row only when both coexist; preserve standalone alignment.
+- [x] Split Model and Effort into independent footer controls with separate chevrons, hover and menus.
+- [x] Restore offline and members bands with item-owned tint, border and canonical icons.
+- [x] Replace explicit skill-fixture newlines with natural desktop and mobile wrapping.
+- [x] Remove Interrupted and approval cards from the composer sweep without touching their product owners.
+- [x] Restore the prior full-width dictation waveform and change only the edge orbit to 5s linear motion.
+- [x] Keep Plan progress neutral and success color on checks only.
+- [x] Show 3.4 queue rows when scrollable and intrinsic height with three or fewer rows.
+- [x] Add Goal, Goal plus queue, open command, open skill, open plus, New empty and New incognito sweep steps.
+- [x] Match Goal and queue width, radius, superellipse and underlap to the composer.
+- [x] Use Lucide Goal for Goal and Lucide Globe Off for Offline through the shared registry.
+- [x] Remove Task suggestion from the bench only.
+- [x] Remove the duplicate Fast mode tooltip.
+- [x] Record every representable bench axis and the plausible combinations still absent from the sweep.

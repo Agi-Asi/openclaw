@@ -502,31 +502,49 @@ body {
   align-self: start;
   justify-self: start;
   width: auto;
-  padding-top: 8px;
-  margin: 0;
+  padding-top: 0;
+  margin: 8px 0 0 var(--composer-bench-composer-inset, 0px);
 }
 
 .composer-bench__composer-stack[data-shared-status-row] .chat-tasks-status {
   margin: 0;
 }
 
+.composer-bench__composer-stack[data-shared-status-row] .agent-chat__progress-float {
+  width: auto;
+  justify-self: start;
+  justify-items: start;
+  margin-left: var(--composer-bench-tasks-offset, 0px);
+}
+
 .composer-bench__tasks-status {
   box-sizing: border-box;
-  width: 100%;
-  max-width: var(--chat-thread-max-width, 48rem);
-  padding-inline: 12px;
-  margin: 0 auto 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding-inline: 0;
+  margin: 0 0 8px;
 }
 
 .composer-bench__tasks-status .chat-tasks-status {
   margin: 0;
 }
 
+.composer-bench__tasks-status .chat-tasks-status__time,
+.composer-bench__tasks-status .chat-tasks-status__link {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.composer-bench__tasks-status .chat-tasks-status__sep {
+  color: var(--muted);
+}
+
 .composer-bench__neighbor {
   position: relative;
   box-sizing: border-box;
-  width: 100%;
-  margin-bottom: 8px;
+  width: min(100%, var(--composer-bench-composer-width, 768px));
+  margin: 0 auto 8px;
 }
 
 .composer-bench__neighbor > * {
@@ -536,6 +554,11 @@ body {
   width: 100%;
   max-width: none;
   margin: 0;
+}
+
+.composer-bench__neighbor > .exec-approval-card {
+  width: 100%;
+  max-width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

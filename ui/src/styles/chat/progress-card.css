@@ -431,17 +431,24 @@
   background: color-mix(in srgb, var(--text-strong) 8%, transparent);
 }
 
-.session-progress-card__progress::-webkit-progress-value,
+.session-progress-card__progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground, var(--text-strong)) 55%, transparent);
+}
+
 .session-progress-card__progress::-moz-progress-bar {
   border-radius: 999px;
-  background: var(--ok);
+  background: color-mix(in srgb, var(--foreground, var(--text-strong)) 55%, transparent);
 }
 
 .session-progress-card--composer[data-complete="true"]
-  .session-progress-card__progress::-webkit-progress-value,
+  .session-progress-card__progress::-webkit-progress-value {
+  background: color-mix(in srgb, var(--foreground, var(--text-strong)) 35%, transparent);
+}
+
 .session-progress-card--composer[data-complete="true"]
   .session-progress-card__progress::-moz-progress-bar {
-  background: color-mix(in srgb, var(--ok) 38%, transparent);
+  background: color-mix(in srgb, var(--foreground, var(--text-strong)) 35%, transparent);
 }
 
 .session-progress-card--composer .session-progress-card__markdown progress {

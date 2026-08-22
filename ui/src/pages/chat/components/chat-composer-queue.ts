@@ -152,6 +152,7 @@ export function renderChatQueue(props: ChatQueueProps) {
         class="chat-queue__scroll"
         data-scrollable=${visibleQueue.length > 3 ? "true" : "false"}
         data-at-start="true"
+        data-at-end=${visibleQueue.length > 3 ? "false" : "true"}
         @dragover=${(event: DragEvent) => {
           if (!event.dataTransfer?.types.includes(DRAG_MIME)) return;
           const container = event.currentTarget;
@@ -175,6 +176,9 @@ export function renderChatQueue(props: ChatQueueProps) {
           const scroll = event.currentTarget;
           if (scroll instanceof HTMLElement) {
             scroll.dataset.atStart = String(scroll.scrollTop <= 1);
+            scroll.dataset.atEnd = String(
+              scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 1,
+            );
           }
         }}
       >

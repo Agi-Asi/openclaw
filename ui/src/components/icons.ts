@@ -185,6 +185,9 @@ export const icons = {
   target: strokeIcon(svg` <circle cx="12" cy="12" r="10" />
     <circle cx="12" cy="12" r="6" />
     <circle cx="12" cy="12" r="2" />`),
+  goal: strokeIcon(svg` <path d="M12 13V2l8 4-8 4" />
+    <path d="M20.561 10.222a9 9 0 1 1-12.55-5.29" />
+    <path d="M8.002 9.997a5 5 0 1 0 8.9 2.02" />`),
   switchCamera: strokeIcon(svg` <path d="M11 19H6.5a4.5 4.5 0 0 1 0-9H8" />
     <path d="m8 16 3 3-3 3" />
     <path d="M13 5h4.5a4.5 4.5 0 0 1 0 9H16" />
@@ -307,6 +310,15 @@ export const icons = {
     <path d="M5 5a10 10 0 0 1 14 0" />
     <path d="M12 18h.01" />
     <path d="M8.5 15.5a5 5 0 0 1 2-1.2" />`),
+  globeOff: strokeIcon(svg` <path
+      d="M10.114 4.462A14.5 14.5 0 0 1 12 2a10 10 0 0 1 9.313 13.643"
+    />
+    <path d="M15.557 15.556A14.5 14.5 0 0 1 12 22 10 10 0 0 1 4.929 4.929" />
+    <path d="M15.892 10.234A14.5 14.5 0 0 0 12 2a10 10 0 0 0-3.643.687" />
+    <path d="M17.656 12H22" />
+    <path d="M19.071 19.071A10 10 0 0 1 12 22 14.5 14.5 0 0 1 8.44 8.45" />
+    <path d="M2 12h10" />
+    <path d="m2 2 20 20" />`),
 
   ...toolIcons,
 } as const;

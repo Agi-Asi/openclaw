@@ -440,6 +440,9 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
         <span class="chat-controls__inline-select-label">
           ${params.triggerStatusLabel ?? params.triggerModelLabel}
         </span>
+        <span class="chat-controls__inline-select-chevron" aria-hidden="true"
+          >${icons.chevronUp}</span
+        >
       </summary>
       <wa-popup data-anchored-overlay>
         <div

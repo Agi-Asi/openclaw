@@ -2914,7 +2914,7 @@ td.data-table-key-col {
 /* Queued turns sit behind the composer's rounded top edge. The inset keeps the
    queue visibly subordinate; the protected bottom space is what may underlap. */
 .chat-queue {
-  --chat-queue-underlap: 14px;
+  --chat-queue-underlap: 18px;
   --chat-queue-row-height: 42px;
   --chat-queue-hairline: color-mix(in srgb, var(--text-strong) 16%, transparent);
 
@@ -2931,8 +2931,9 @@ td.data-table-key-col {
   padding-bottom: var(--chat-queue-underlap);
   border: 1px solid var(--chat-queue-hairline);
   border-bottom: 0;
-  border-radius: calc(16px * var(--openclaw-corner-radius-scale))
-    calc(16px * var(--openclaw-corner-radius-scale)) 0 0;
+  border-radius: calc(20px * var(--openclaw-corner-radius-scale))
+    calc(20px * var(--openclaw-corner-radius-scale)) 0 0;
+  corner-shape: superellipse(1.5);
   background: var(--composer-attached-surface, var(--chat-composer-surface));
 }
 
@@ -2944,13 +2945,27 @@ td.data-table-key-col {
 }
 
 .chat-queue__scroll[data-scrollable="true"] {
-  height: calc(3 * var(--chat-queue-row-height));
+  height: calc(3.4 * var(--chat-queue-row-height));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.chat-queue__scroll[data-scrollable="true"][data-at-start="false"] {
+.chat-queue__scroll[data-scrollable="true"][data-at-start="true"][data-at-end="false"] {
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%);
+}
+
+.chat-queue__scroll[data-scrollable="true"][data-at-start="false"][data-at-end="true"] {
   mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 100%);
+}
+
+.chat-queue__scroll[data-scrollable="true"][data-at-start="false"][data-at-end="false"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 22px),
+    transparent 100%
+  );
 }
 
 .chat-queue__scroll::-webkit-scrollbar {

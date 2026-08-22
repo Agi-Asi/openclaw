@@ -383,7 +383,6 @@ const composerBenchHtml = `<!doctype html>
               [
                 ["none", "None"],
                 ["approval", "Approval"],
-                ["task-suggestion", "Task suggestion"],
                 ["session-suggestion", "Session suggestion"],
                 ["pull-request", "Pull request"],
                 ["swarm", "Swarm progress"],
