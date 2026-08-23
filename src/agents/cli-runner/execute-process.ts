@@ -152,11 +152,9 @@ export async function executeCliProcess(params: {
       onUsage: params.diagnostics?.observeUsage,
       onCliOutput: params.diagnostics?.observeCliOutput,
       onRequestPayload: params.diagnostics?.observeRequestPayload,
+      onProviderRunning: runParams.onProviderRunning,
       onPhase: params.options?.onPhase,
     });
-    if (!runParams.provider.toLowerCase().includes("codex")) {
-      runParams.onProviderRunning?.();
-    }
     params.options?.onPhase?.("resolve");
     const rawText = liveResult.output.text;
     return {
