@@ -14,6 +14,8 @@ export type ToastOptions = {
   onAction?: () => void;
   onDismiss?: (reason: ToastDismissReason) => void;
   durationMs?: number;
+  /** Queue behind the active toast so unrelated replacements keep priority. */
+  fifo?: boolean;
 };
 
 const DEFAULT_TOAST_DURATION_MS = 6_000;
@@ -31,7 +33,7 @@ let queuedToast: ToastOptions | null = null;
 
 class OpenClawToastHost extends OpenClawLightDomContentsElement {
   @state() private toast: ToastOptions | null = null;
-  private readonly toastQueue: ToastOptions[] = [];
+  private toastQueue?: ToastOptions[];
   private dismissTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
   override connectedCallback() {
@@ -56,9 +58,9 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
   /** Keep the active outcome intact while moveBefore() crosses top-layer owners. */
   connectedMoveCallback() {}
 
-  show(options: ToastOptions, enqueue = false) {
-    if (enqueue && this.toast) {
-      this.toastQueue.push(options);
+  show(options: ToastOptions) {
+    if (options.fifo && this.toast) {
+      (this.toastQueue ??= []).push(options);
       return;
     }
     this.dismiss("replaced");
@@ -81,7 +83,10 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
     this.clearDismissTimer();
     this.toast = null;
     toast?.onDismiss?.(reason);
-    const next = reason === "replaced" ? undefined : this.toastQueue.shift();
+    if (reason === "replaced") {
+      return;
+    }
+    const next = this.toastQueue?.shift();
     if (next) {
       this.show(next);
     }
@@ -126,7 +131,7 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
   }
 }
 
-function deliverToast(options: ToastOptions, enqueue: boolean): boolean {
+export function showToast(options: ToastOptions): boolean {
   if (typeof document === "undefined") {
     return false;
   }
@@ -149,16 +154,8 @@ function deliverToast(options: ToastOptions, enqueue: boolean): boolean {
     };
     modal.addEventListener("wa-after-hide", handoff);
   }
-  host.show(options, enqueue);
+  host.show(options);
   return true;
-}
-
-export function showToast(options: ToastOptions): boolean {
-  return deliverToast(options, false);
-}
-
-export function queueToast(options: ToastOptions): boolean {
-  return deliverToast(options, true);
 }
 
 // Guarded so DOM-free (node) consumers of send-failure surfacing can load this module.

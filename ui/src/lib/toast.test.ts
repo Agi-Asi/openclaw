@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../components/modal-dialog.ts";
-import { queueToast, showToast } from "./toast.ts";
+import { showToast } from "./toast.ts";
 
 async function mountHost() {
   const host = document.createElement("openclaw-toast-host");
@@ -38,8 +38,8 @@ describe("shared toast", () => {
   it("keeps queued outcomes behind an unrelated replacement toast", async () => {
     const host = await mountHost();
 
-    queueToast({ message: "First completion" });
-    queueToast({ message: "Second completion" });
+    showToast({ message: "First completion", fifo: true });
+    showToast({ message: "Second completion", fifo: true });
     await host.updateComplete;
     expect(host.querySelector(".app-toast__message")?.textContent).toBe("First completion");
 

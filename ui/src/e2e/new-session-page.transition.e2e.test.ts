@@ -2,6 +2,10 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
 import {
+  controlUiBundledGatewayUrl,
+  controlUiBundledSettingsStorageKey,
+} from "../test-helpers/control-ui-e2e.ts";
+import {
   controlUiSessionPath,
   createNewSessionPageE2eSuite,
   createdSessionListResult,
@@ -59,6 +63,45 @@ suite.define(() => {
       await toast.getByText("Done").waitFor({ timeout: 10_000 });
       await toast.getByRole("button", { name: "Open" }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe(controlUiSessionPath(sessionKey));
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("uses shifted Enter for background start in modifier mode", async () => {
+    const context = await suite.browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const gatewayUrl = controlUiBundledGatewayUrl(suite.server.baseUrl);
+    await context.addInitScript(
+      ({ key, url }) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({ chatSendShortcut: "modifier-enter", gatewayUrl: url }),
+        );
+      },
+      { key: controlUiBundledSettingsStorageKey(suite.server.baseUrl), url: gatewayUrl },
+    );
+    const page = await context.newPage();
+    const backgroundKey = "agent:main:dashboard:modifier-background";
+    const runId = "run-modifier-background";
+    const gateway = await installMockGateway(page, {
+      methodResponses: {
+        "agent.wait": { endedAt: Date.now(), runId, status: "ok" },
+        "sessions.create": { key: backgroundKey, runId, runStarted: true },
+      },
+    });
+    try {
+      await page.goto(`${suite.server.baseUrl}new`);
+      const composer = page.locator(".new-session-page__message");
+      await composer.fill("start in the background");
+      await composer.press("Control+Shift+Enter");
+      await expect.poll(() => new URL(page.url()).pathname).toBe("/new");
+      await expect(gateway.waitForRequest("sessions.create")).resolves.toMatchObject({
+        params: { agentId: "main", message: "start in the background" },
+      });
     } finally {
       await context.close();
     }

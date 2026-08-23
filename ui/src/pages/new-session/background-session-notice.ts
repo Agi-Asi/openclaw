@@ -5,7 +5,7 @@ import { t } from "../../i18n/index.ts";
 import { resolveSessionDisplayName } from "../../lib/session-display.ts";
 import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
 import { uiSessionEventMatches } from "../../lib/sessions/session-key.ts";
-import { queueToast } from "../../lib/toast.ts";
+import { showToast } from "../../lib/toast.ts";
 
 type AgentWaitResult = {
   status?: "error" | "ok" | "pending" | "timeout";
@@ -77,7 +77,8 @@ export async function notifyWhenBackgroundSessionEnds(params: {
         : result.stopReason === "rpc"
           ? t("sessionsView.statusKilled")
           : t("sessionsView.statusFailed");
-  queueToast({
+  showToast({
+    fifo: true,
     message: `${resolveSessionDisplayName(params.key, row)}: ${status}`,
     actionLabel: t("sessionsView.openSession"),
     onAction: () => {

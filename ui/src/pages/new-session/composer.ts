@@ -228,10 +228,14 @@ function handleComposerKeydown(
   ) {
     return;
   }
-  if (event.key !== "Enter" || event.shiftKey) {
+  if (event.key !== "Enter") {
     return;
   }
-  if (!event.altKey && (event.metaKey || event.ctrlKey) && options.onBackgroundSubmit) {
+  const hasSubmitModifier = event.metaKey || event.ctrlKey;
+  const isBackgroundShortcut = options.requiresModifier
+    ? hasSubmitModifier && event.shiftKey
+    : hasSubmitModifier && !event.shiftKey;
+  if (!event.altKey && isBackgroundShortcut && options.onBackgroundSubmit) {
     if (options.canSubmit || options.submitDisabledReason !== undefined) {
       event.preventDefault();
       resetSkillMenuState(options.textareaController.skillMenuState);
@@ -239,7 +243,7 @@ function handleComposerKeydown(
     }
     return;
   }
-  if (options.requiresModifier && !event.metaKey && !event.ctrlKey) {
+  if (event.shiftKey || (options.requiresModifier && !hasSubmitModifier)) {
     return;
   }
   // A reasoned gate still consumes the press: the submission flow records the
@@ -320,9 +324,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
               ?disabled=${options.submitting || options.messageLocked}
               placeholder=${t("newSession.messagePlaceholder")}
               aria-label=${t("newSession.messagePlaceholder")}
-              aria-keyshortcuts=${options.requiresModifier
-                ? "Control+Enter Meta+Enter"
-                : "Enter Control+Enter Meta+Enter"}
+              aria-keyshortcuts=${`Control+Enter Meta+Enter${options.requiresModifier ? " Control+Shift+Enter Meta+Shift+Enter" : " Enter"}`}
               .value=${options.message}
               aria-autocomplete="list"
               aria-controls=${ifDefined(skillMenuVisible ? skillMenuListboxId : undefined)}

@@ -177,9 +177,11 @@ describe("new-session composer keyboard submission", () => {
     { label: "Meta+Enter", requiresModifier: true, ctrlKey: false, metaKey: true },
   ])("submits once with $label when starting a session is enabled", (testCase) => {
     const onSubmit = vi.fn();
+    const onBackgroundSubmit = vi.fn();
     const { composer } = renderComposer({
       canSubmit: true,
       onSubmit,
+      onBackgroundSubmit,
       requiresModifier: testCase.requiresModifier,
     });
     const textarea = composer.querySelector<HTMLTextAreaElement>("textarea");
@@ -198,15 +200,46 @@ describe("new-session composer keyboard submission", () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(onSubmit).toHaveBeenCalledOnce();
+    expect(onBackgroundSubmit).not.toHaveBeenCalled();
   });
 
   it.each([
-    { label: "Ctrl+Enter", ctrlKey: true, metaKey: false },
-    { label: "Meta+Enter", ctrlKey: false, metaKey: true },
+    {
+      label: "Ctrl+Enter in Enter mode",
+      ctrlKey: true,
+      metaKey: false,
+      requiresModifier: false,
+      shiftKey: false,
+    },
+    {
+      label: "Meta+Enter in Enter mode",
+      ctrlKey: false,
+      metaKey: true,
+      requiresModifier: false,
+      shiftKey: false,
+    },
+    {
+      label: "Ctrl+Shift+Enter in modifier mode",
+      ctrlKey: true,
+      metaKey: false,
+      requiresModifier: true,
+      shiftKey: true,
+    },
+    {
+      label: "Meta+Shift+Enter in modifier mode",
+      ctrlKey: false,
+      metaKey: true,
+      requiresModifier: true,
+      shiftKey: true,
+    },
   ])("starts in the background with $label", (testCase) => {
     const onSubmit = vi.fn();
     const onBackgroundSubmit = vi.fn();
-    const { composer } = renderComposer({ onSubmit, onBackgroundSubmit });
+    const { composer } = renderComposer({
+      onSubmit,
+      onBackgroundSubmit,
+      requiresModifier: testCase.requiresModifier,
+    });
     const textarea = composer.querySelector<HTMLTextAreaElement>("textarea");
     if (!textarea) {
       throw new Error("Expected composer textarea");
@@ -217,6 +250,7 @@ describe("new-session composer keyboard submission", () => {
       ctrlKey: testCase.ctrlKey,
       key: "Enter",
       metaKey: testCase.metaKey,
+      shiftKey: testCase.shiftKey,
     });
 
     textarea.dispatchEvent(event);
