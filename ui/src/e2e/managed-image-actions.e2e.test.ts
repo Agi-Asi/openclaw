@@ -142,7 +142,11 @@ suite.define(() => {
         )
         .toEqual({ size: imageBytes.byteLength, type: "image/png" });
       await expect
-        .poll(() => page.locator("openclaw-toast-host").textContent())
+        .poll(() =>
+          page
+            .locator("openclaw-session-toast-host .app-toast", { hasText: "Copied!" })
+            .textContent(),
+        )
         .toContain("Copied!");
 
       await page.locator('.chat-image-action[title="Open original"]').click();

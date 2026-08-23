@@ -66,10 +66,10 @@ async function openRawSettings(page: Page, response?: unknown) {
 }
 
 async function expectOpenFailure(page: Page, message: string): Promise<void> {
-  const status = page.getByRole("status").filter({ hasText: message });
-  await expect.poll(() => status.count()).toBe(1);
-  await expect.poll(() => status.textContent()).toContain("File path copied to clipboard");
-  await expect.poll(() => status.textContent()).toContain(configPath);
+  const alert = page.getByRole("alert").filter({ hasText: message });
+  await expect.poll(() => alert.count()).toBe(1);
+  await expect.poll(() => alert.textContent()).toContain("File path copied to clipboard");
+  await expect.poll(() => alert.textContent()).toContain(configPath);
   await expect
     .poll(() => page.evaluate(() => Reflect.get(globalThis, "configOpenFileCopied")))
     .toEqual([configPath]);
