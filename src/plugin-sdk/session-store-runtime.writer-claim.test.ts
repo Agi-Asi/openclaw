@@ -20,6 +20,7 @@ const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 function privateGenerationEntry(): InternalSessionEntry {
   return {
     activeWriterRunId: "writer-run",
+    codeModeWaitingClaims: { "private-run": {} as never },
     lifecycleRevision: "generation-1",
     lifecycleRunId: "lifecycle-run",
     sessionDiffBaselineCapture: {
@@ -34,6 +35,7 @@ function privateGenerationEntry(): InternalSessionEntry {
 
 function expectGenerationPrivateFieldsCleared(entry: InternalSessionEntry | undefined): void {
   expect(entry?.activeWriterRunId).toBeUndefined();
+  expect(entry?.codeModeWaitingClaims).toBeUndefined();
   expect(entry?.lifecycleRunId).toBeUndefined();
   expect(entry?.sessionDiffBaselineCapture).toBeUndefined();
 }
@@ -61,6 +63,7 @@ describe("plugin session writer claim projection", () => {
   it("excludes private claims and retired thinking provenance from entries and patches", () => {
     const entry = {
       activeWriterRunId: "run-writer",
+      codeModeWaitingClaims: { "private-run": {} as never },
       lifecycleRunId: "run-lifecycle",
       sessionDiffBaselineCapture: {
         version: 1,
@@ -94,6 +97,7 @@ describe("plugin session writer claim projection", () => {
     expect(
       projectPluginSessionEntryPatch({
         activeWriterRunId: "run-next",
+        codeModeWaitingClaims: { "injected-run": {} as never },
         lifecycleRunId: "run-lifecycle-next",
         sessionDiffBaselineCapture: {
           version: 1,
@@ -129,11 +133,12 @@ describe("plugin session writer claim projection", () => {
     await patchSessionEntry({
       sessionKey,
       storePath,
-      update: () => ({ model: "gpt-5.6" }),
+      update: () => ({ codeModeWaitingClaims: undefined, model: "gpt-5.6" }) as never,
     });
 
     expect(loadSessionEntry({ sessionKey, storePath })).toMatchObject({
       activeWriterRunId: "writer-run",
+      codeModeWaitingClaims: { "private-run": {} },
       lifecycleRevision: "generation-1",
       lifecycleRunId: "lifecycle-run",
       model: "gpt-5.6",
@@ -151,6 +156,7 @@ describe("plugin session writer claim projection", () => {
       lifecycleRunId: "lifecycle-run",
       sessionDiffBaselineCapture: { captureId: "capture-1", status: "pending" },
     });
+    expect(loadSessionEntry({ sessionKey, storePath })?.codeModeWaitingClaims).toBeUndefined();
   });
 
   it("clears private generation fields when a patch rotates lifecycle revision", async () => {

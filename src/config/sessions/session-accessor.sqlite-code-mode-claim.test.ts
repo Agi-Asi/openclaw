@@ -26,6 +26,8 @@ import {
   appendExpectedSessionTranscriptTurn,
   appendTranscriptMessageSync,
 } from "./session-accessor.sqlite-transcript-write.js";
+import { projectPublicSessionEntry } from "./session-entry-projection.js";
+import type { InternalSessionEntry } from "./types.js";
 
 const claimWarningMock = vi.hoisted(() => vi.fn());
 
@@ -45,6 +47,41 @@ vi.mock("../../logging/subsystem.js", async () => {
 });
 
 const tempDirs: string[] = [];
+
+// Source-equivalent v2026.8.1-beta.2 semantics: known retired fields are removed
+// while unknown fields survive a full JSON rewrite. This does not run the package.
+function rewriteWithBeta2UnknownFieldSemantics(raw: string): InternalSessionEntry {
+  const value = JSON.parse(raw) as Record<string, unknown>;
+  const {
+    icon: _icon,
+    sessionFile: _sessionFile,
+    transcriptPath: _transcriptPath,
+    pendingFinalDeliveryLastAttemptAt: _lastAttempt,
+    pendingFinalDeliveryAttemptCount: _attemptCount,
+    pendingFinalDeliveryLastError: _lastError,
+    memoryFlushAt: _memoryFlushAt,
+    memoryFlushContextHash: _memoryFlushContextHash,
+    memoryFlushLastFailedAt: _memoryFlushLastFailedAt,
+    memoryFlushLastFailureError: _memoryFlushLastFailureError,
+    ...canonicalValue
+  } = value;
+  return {
+    ...canonicalValue,
+    label: "rewritten by beta.2",
+    updatedAt: Date.now(),
+  } as InternalSessionEntry;
+}
+
+function projectWithBeta2UnknownFieldSemantics(
+  entry: InternalSessionEntry,
+): Record<string, unknown> {
+  const {
+    activeWriterRunId: _activeWriterRunId,
+    mainRestartRecovery: _mainRestartRecovery,
+    ...publicEntry
+  } = entry;
+  return publicEntry;
+}
 
 describe("SQLite Code Mode waiting claims", () => {
   let scope: {
@@ -188,6 +225,76 @@ describe("SQLite Code Mode waiting claims", () => {
 
     appendTerminal("run-a", claim!, "terminal-a");
     expect(loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims).toBeUndefined();
+  });
+
+  it("survives source-equivalent beta.2 unknown-field rewrites", () => {
+    appendTranscriptMessageSync(scope, waitingMessage("run-beta2", "waiting-beta2"));
+    const expectedClaim = claims()?.["run-beta2"];
+    expect(expectedClaim).toBeDefined();
+    closeOpenClawAgentDatabasesForTest();
+    const resolved = resolveSqliteTranscriptScope(scope);
+    const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
+    const db = getSessionKysely(database.db);
+    const row = executeSqliteQueryTakeFirstSync(
+      database.db,
+      db
+        .selectFrom("session_nodes")
+        .select("entry_json")
+        .where("session_key", "=", scope.sessionKey),
+    );
+    if (!row) {
+      throw new Error("missing beta.2 compatibility row");
+    }
+    const rewritten = rewriteWithBeta2UnknownFieldSemantics(row.entry_json);
+    executeSqliteQuerySync(
+      database.db,
+      db
+        .updateTable("session_nodes")
+        .set({ entry_json: JSON.stringify(rewritten), updated_at: rewritten.updatedAt })
+        .where("session_key", "=", scope.sessionKey),
+    );
+    database.db
+      .prepare("UPDATE session_nodes SET entry_valid=1 WHERE session_key=?")
+      .run(scope.sessionKey);
+    closeOpenClawAgentDatabasesForTest();
+    const reopened = loadSessionEntryReadOnly(scope) as InternalSessionEntry;
+    expect(reopened.codeModeWaitingClaims?.["run-beta2"]).toEqual(expectedClaim);
+    expect(projectPublicSessionEntry(reopened)).not.toHaveProperty("codeModeWaitingClaims");
+    // The beta.2 source projection exposed unknown fields, including this opaque,
+    // non-secret claim. The plugin writer test owns current projection filtering.
+    expect(projectWithBeta2UnknownFieldSemantics(rewritten).codeModeWaitingClaims).toEqual({
+      "run-beta2": expectedClaim,
+    });
+    expect(Object.keys(expectedClaim!).toSorted()).toEqual([
+      "expiresAt",
+      "sourceLifecycleRevision",
+      "sourceSessionId",
+      "sourceToolCallId",
+      "sourceWriterRunId",
+      "transcriptAnchor",
+      "transcriptEventDigest",
+      "waitingCodeModeRunId",
+    ]);
+
+    appendTerminal("run-beta2", expectedClaim!, "terminal-beta2");
+    expect(claims()).toBeUndefined();
+  });
+
+  it("drops a claim safely across an intentional full replacement", () => {
+    appendTranscriptMessageSync(scope, waitingMessage("run-replaced", "waiting-replaced"));
+    const replacedClaim = claims()?.["run-replaced"];
+    expect(replacedClaim).toBeDefined();
+
+    replaceSessionEntrySync(scope, {
+      activeWriterRunId: scope.expectedWriterRunId,
+      lifecycleRevision: scope.expectedLifecycleRevision,
+      sessionId: scope.sessionId,
+      updatedAt: Date.now(),
+    });
+    expect(claims()).toBeUndefined();
+
+    appendTerminal("run-replaced", replacedClaim!, "terminal-after-replacement");
+    expect(claims()).toBeUndefined();
   });
 
   it("clamps claim expiry and rejects already-expired mutations", () => {
