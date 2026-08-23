@@ -2841,14 +2841,24 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
             scrollWidth: node.scrollWidth,
           };
         };
+        const paddingFor = (selector: string) => {
+          const node = document.querySelector<HTMLElement>(selector)!;
+          const style = getComputedStyle(node);
+          return {
+            end: Number.parseFloat(style.paddingInlineEnd),
+            start: Number.parseFloat(style.paddingInlineStart),
+          };
+        };
         return {
           context: rectFor(".context-ring"),
           controls: rectFor(".agent-chat__composer-controls"),
           effort: rectFor(".chat-controls__effort-trigger"),
+          effortPadding: paddingFor(".chat-controls__effort-trigger"),
           footer: rectFor(".agent-chat__composer-footer"),
           meta: rectFor(".agent-chat__composer-meta"),
           model: rectFor(".chat-controls__model-trigger"),
           modelLabel: rectFor(".chat-controls__model-trigger .chat-controls__inline-select-label"),
+          modelPadding: paddingFor(".chat-controls__model-trigger"),
           overrides: rectFor(".agent-chat__session-overrides-pill"),
           permission: rectFor(".chat-controls__permission-trigger"),
           status: rectFor(".agent-chat__composer-run-status"),
@@ -2875,6 +2885,8 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         expect(trigger.width).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
         expect(trigger.height).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
       }
+      expect(layout.modelPadding).toEqual({ end: 6, start: 6 });
+      expect(layout.effortPadding).toEqual({ end: 6, start: 6 });
       expect(layout.modelLabel.scrollWidth).toBeLessThanOrEqual(layout.modelLabel.clientWidth + 1);
       for (const [left, right] of [
         [layout.meta, layout.status],
@@ -2923,6 +2935,17 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
               display: getComputedStyle(node).display,
             };
           };
+          const paddingFor = (selector: string) => {
+            const node = document.querySelector(selector) as HTMLElement | null;
+            if (!node) {
+              return null;
+            }
+            const style = getComputedStyle(node);
+            return {
+              end: Number.parseFloat(style.paddingInlineEnd),
+              start: Number.parseFloat(style.paddingInlineStart),
+            };
+          };
           return {
             chat: rectFor(".card.chat"),
             shell: rectFor(".agent-chat__composer-shell"),
@@ -2933,10 +2956,12 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
             meta: rectFor(".agent-chat__composer-meta"),
             model: rectFor(".chat-composer-model-control"),
             modelTrigger: rectFor(".chat-controls__model-trigger"),
+            modelTriggerPadding: paddingFor(".chat-controls__model-trigger"),
             modelLabel: rectFor(
               ".chat-controls__model-trigger .chat-controls__inline-select-label",
             ),
             effortTrigger: rectFor(".chat-controls__effort-trigger"),
+            effortTriggerPadding: paddingFor(".chat-controls__effort-trigger"),
             effortLabel: rectFor(
               ".chat-controls__effort-trigger .chat-controls__inline-select-label",
             ),
@@ -2964,6 +2989,8 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           controls.effortTrigger,
           "composer thinking trigger",
         );
+        expect(controls.modelTriggerPadding).not.toBeNull();
+        expect(controls.effortTriggerPadding).not.toBeNull();
         const effortLabel = expectControlRect(controls.effortLabel, "composer thinking label");
         const permission = expectControlRect(controls.permission, "composer permission trigger");
         const permissionLabel = expectControlRect(
@@ -3013,6 +3040,8 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           .locator(".agent-chat__composer-combobox > textarea")
           .evaluate((textareaNode) => Number.parseFloat(getComputedStyle(textareaNode).fontSize));
         if (width <= 768) {
+          expect(controls.modelTriggerPadding).toEqual({ end: 10, start: 10 });
+          expect(controls.effortTriggerPadding).toEqual({ end: 10, start: 10 });
           expect(composerFontSize).toBe(16);
           expect(model.width).toBeGreaterThanOrEqual(40);
           expect(model.width).toBeLessThanOrEqual(footer.width);
@@ -3034,6 +3063,8 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           }
           expect(footer.height).toBeLessThanOrEqual(49.1);
         } else {
+          expect(controls.modelTriggerPadding).toEqual({ end: 6, start: 8 });
+          expect(controls.effortTriggerPadding).toEqual({ end: 6, start: 8 });
           expect(composerFontSize).toBe(14);
           for (const label of [permissionLabel, modelLabel, effortLabel]) {
             expect(label.scrollWidth).toBeLessThanOrEqual((label.clientWidth ?? 0) + 1);
