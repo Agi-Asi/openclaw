@@ -196,7 +196,7 @@ export function renderApplicationShell(host: ShellViewHost) {
     return nothing;
   }
   if (host.routeState.routeId === undefined) {
-    return html`<main class="app-shell app-shell--booting" aria-busy="true"></main>`;
+    return html`<main aria-busy="true"></main>`;
   }
   const gatewaySnapshot = context.gateway.snapshot;
   const config = context.config.current;

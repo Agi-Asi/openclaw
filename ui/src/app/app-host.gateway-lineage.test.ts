@@ -7,6 +7,7 @@ import type {
   GatewayBrowserClientOptions,
   GatewayHelloOk,
 } from "../api/gateway.ts";
+import { createApplicationRouter } from "../app-routes.ts";
 import { createStorageMock } from "../test-helpers/storage.ts";
 import "./app-host.ts";
 import type { ApplicationRuntime } from "./bootstrap.ts";
@@ -48,12 +49,13 @@ function renderGatewaySurface(
   }
   try {
     const app = document.createElement("openclaw-app") as unknown as {
-      runtime: Pick<ApplicationRuntime, "context" | "documentMode">;
+      runtime: Pick<ApplicationRuntime, "context" | "documentMode" | "router">;
       render: () => { strings: readonly string[] };
       synchronizeGateway: (gateway: ApplicationGateway) => void;
     };
     app.runtime = {
       documentMode: null,
+      router: createApplicationRouter(),
       context: {
         gateway,
         basePath: "",
@@ -72,19 +74,52 @@ function renderGatewaySurface(
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("Control UI Gateway target lineage", () => {
-  it("returns to the login gate when a newly selected Gateway's first attempt fails", () => {
+  it("returns to the login gate when a newly selected Gateway's first attempt fails", async () => {
+    vi.useFakeTimers();
     const { gateway, clients } = createGatewayHarness();
+    expect(renderGatewaySurface(gateway)).toContain("<openclaw-login-gate");
     gateway.start();
-    clients[0]?.opts.onHello?.(HELLO);
-    gateway.connect({ gatewayUrl: "wss://other-gateway.example.test" });
-    clients[1]?.opts.onClose?.({ code: 1006, reason: "remote refused", willRetry: true });
+    const app = document.createElement("openclaw-app") as unknown as {
+      runtime: Pick<ApplicationRuntime, "context" | "documentMode" | "router">;
+      render: () => { strings: readonly string[] };
+      synchronizeGateway: (gateway: ApplicationGateway) => void;
+    };
+    app.runtime = {
+      documentMode: null,
+      router: createApplicationRouter(),
+      context: {
+        gateway,
+        basePath: "",
+        agentSelection: { state: { selectedId: null } },
+        config: { current: { terminalEnabled: false } },
+        theme: { resolvedMode: "dark" },
+      } as unknown as ApplicationContext,
+    };
+    app.synchronizeGateway(gateway);
+    await vi.advanceTimersByTimeAsync(299);
 
-    const surface = renderGatewaySurface(gateway);
+    gateway.connect({ gatewayUrl: "wss://other-gateway.example.test" });
+    app.synchronizeGateway(gateway);
+    await vi.advanceTimersByTimeAsync(1);
+    const container = document.createElement("div");
+    render(app.render(), container);
+    expect(container.innerHTML).toContain('class="shell"');
+    expect(container.innerHTML).not.toContain('class="connect-splash"');
+
+    await vi.advanceTimersByTimeAsync(299);
+    render(app.render(), container);
+    expect(container.innerHTML).toContain('class="connect-splash"');
+
+    clients[1]?.opts.onClose?.({ code: 1006, reason: "remote refused", willRetry: true });
+    app.synchronizeGateway(gateway);
+    render(app.render(), container);
+    const surface = container.innerHTML;
 
     expect(surface).toContain("<openclaw-login-gate");
     expect(surface).not.toContain("<openclaw-app-shell");
@@ -123,12 +158,13 @@ describe("Control UI Gateway target lineage", () => {
       willRetry: true,
     });
     const app = document.createElement("openclaw-app") as unknown as {
-      runtime: Pick<ApplicationRuntime, "context" | "documentMode">;
+      runtime: Pick<ApplicationRuntime, "context" | "documentMode" | "router">;
       render: () => { strings: readonly string[] };
       synchronizeGateway: (gateway: ApplicationGateway) => void;
     };
     app.runtime = {
       documentMode: null,
+      router: createApplicationRouter(),
       context: {
         gateway,
         basePath: "",

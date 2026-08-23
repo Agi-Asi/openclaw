@@ -30,6 +30,7 @@ import {
   type OptionalCustomElement,
   TERMINAL_PANEL_ELEMENT,
 } from "./lazy-custom-element.ts";
+import { isMobileNavLayout } from "./mobile-nav-layout.ts";
 import { resolveOnboardingMode } from "./onboarding-mode.ts";
 
 type FocusDashboardRouteState =
@@ -61,7 +62,6 @@ function renderConnectingSplash(status?: string) {
   `;
 }
 
-// Fast handshakes never earn the mascot, preventing a one-frame splash.
 const CONNECT_SPLASH_DELAY_MS = 300;
 
 export class OpenClawApp extends OpenClawLightDomElement {
@@ -76,24 +76,20 @@ export class OpenClawApp extends OpenClawLightDomElement {
   @state() private pendingGatewayUrl: string | null = null;
   @state() private onboarding = resolveOnboardingMode(globalThis.location?.search ?? "");
   @state() private focusDashboardRoute: FocusDashboardRouteState = { kind: "loading" };
-  // The initial-connect splash is earned only after CONNECT_SPLASH_DELAY_MS;
-  // below that the boot background holds until content (or the gate) lands.
-  // Settling clears the single timer slot, so no stale fire survives.
   @state() private connectSplashDue = false;
-  private connectSplashTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private connectSplashTimer?: ReturnType<typeof setTimeout>;
 
-  private armDeferredConnectSplash(): void {
-    this.connectSplashTimer = globalThis.setTimeout(() => {
-      this.connectSplashTimer = null;
-      this.connectSplashDue = true;
-    }, CONNECT_SPLASH_DELAY_MS);
+  private restartConnectSplashTimer() {
+    this.settleConnectSplashTimer();
+    this.connectSplashDue = false;
+    this.connectSplashTimer = setTimeout(
+      () => (this.connectSplashDue = true),
+      CONNECT_SPLASH_DELAY_MS,
+    );
   }
 
-  private settleConnectSplashTimer(): void {
-    if (this.connectSplashTimer !== null) {
-      globalThis.clearTimeout(this.connectSplashTimer);
-      this.connectSplashTimer = null;
-    }
+  private settleConnectSplashTimer() {
+    clearTimeout(this.connectSplashTimer);
   }
 
   private runtime: ApplicationRuntime | undefined;
@@ -146,11 +142,9 @@ export class OpenClawApp extends OpenClawLightDomElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    this.connectSplashDue = false;
     void import("../components/session-progress-hovercard-registration.ts");
     this.resetLoginSensitivePresentation();
-    const runtime = bootstrapApplication();
-    this.runtime = runtime;
+    this.runtime = bootstrapApplication();
     const focusTarget = this.focusTarget;
     if (focusTarget?.kind === "terminal") {
       this.requestLazyDocument(TERMINAL_PANEL_ELEMENT);
@@ -173,8 +167,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
-    this.armDeferredConnectSplash();
-    void runtime
+    void this.runtime
       .start()
       .then(() => this.resolveFocusDashboard())
       .catch((error: unknown) => {
@@ -214,15 +207,12 @@ export class OpenClawApp extends OpenClawLightDomElement {
     const snapshot = gateway.snapshot;
     const clientChanged = snapshot.client !== this.loginConnectionClient;
     if (clientChanged) {
-      const replacingClient = this.loginConnectionClient !== null;
       this.loginConnectionClient = snapshot.client;
-      if (replacingClient) {
-        this.connectSplashDue = false;
-      }
       this.resetLoginSensitivePresentation();
     }
     if (sourceChanged || clientChanged) {
       this.syncLoginConnection(gateway);
+      this.restartConnectSplashTimer();
     }
     if (snapshot.phase === "connected" || snapshot.lastError !== null) {
       // The pending first connect ended (or moved to the recovery gate), so
@@ -442,7 +432,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
     const context = this.context;
     const runtime = this.runtime;
     if (!context || !runtime) {
-      return html`<main class="app-shell app-shell--booting" aria-busy="true"></main>`;
+      return html`<main aria-busy="true"></main>`;
     }
     const gatewaySnapshot = context.gateway.snapshot;
     const gatewayConnected = gatewaySnapshot.phase === "connected";
@@ -548,10 +538,9 @@ export class OpenClawApp extends OpenClawLightDomElement {
     const initialConnectPending =
       runtime.documentMode === null &&
       gatewaySnapshot.lastError === null &&
-      (gatewaySnapshot.phase === "stopped" ||
-        gatewaySnapshot.phase === "starting" ||
+      (gatewaySnapshot.phase === "starting" ||
         (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
-    if (initialConnectPending && this.connectSplashDue) {
+    if (initialConnectPending && (gatewayStartupStatus || this.connectSplashDue)) {
       return html`
         <openclaw-tooltip-provider>
           ${renderConnectingSplash(gatewayStartupStatus)} ${gatewayUrlConfirmation}
@@ -559,10 +548,22 @@ export class OpenClawApp extends OpenClawLightDomElement {
       `;
     }
     if (initialConnectPending) {
+      const routeId = runtime.router.routeIdFromPath(
+        globalThis.location?.pathname ?? "",
+        context.basePath,
+      );
+      const mobileNavLayout = isMobileNavLayout();
+      const mobileChat = mobileNavLayout && routeId === "chat";
       return html`<openclaw-tooltip-provider>
-        <div class="shell" aria-busy="true">
-          <aside class="shell-nav"></aside>
-          <main class="content"></main>
+        <div
+          class=${mobileChat
+            ? "shell shell--mobile-nav shell--merged-chat-chrome"
+            : mobileNavLayout
+              ? "shell shell--mobile-nav"
+              : "shell"}
+          aria-busy="true"
+        >
+          <i class="shell-nav"></i><i class="content"></i>
         </div>
         ${gatewayUrlConfirmation}
       </openclaw-tooltip-provider>`;
