@@ -73,6 +73,7 @@ type ChannelsAddWizardFlowParams = {
   runtime: RuntimeEnv;
   prompter: WizardPrompter;
   initialChannel?: ChannelChoice;
+  beforeExternalEffect?: () => Promise<void>;
   beforePersistentEffect?: () => Promise<void>;
   signal?: AbortSignal;
   /**
@@ -108,6 +109,7 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
     allowDisable: false,
     allowIMessageInstall: true,
     allowSignalInstall: true,
+    ...(params.beforeExternalEffect ? { beforeExternalEffect: params.beforeExternalEffect } : {}),
     ...(params.beforePersistentEffect
       ? { beforePersistentEffect: params.beforePersistentEffect }
       : {}),
@@ -274,6 +276,8 @@ export async function runChannelsSetupWizard(
   opts: {
     channel?: string;
     onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
+    /** Revalidate authority without locking a still-cancellable external flow. */
+    beforeExternalEffect?: () => Promise<void>;
     /** Revalidate/lock cancellation immediately before durable effects. */
     beforePersistentEffect?: () => Promise<void>;
     /** Abort setup-owned transient work when the hosted wizard closes. */
@@ -301,6 +305,7 @@ export async function runChannelsSetupWizard(
     ...(target.kind === "resolved" ? { initialChannel: target.channel } : {}),
     deferDeviceLinkToClient: true,
     ...(opts.onConfigured ? { onConfigured: opts.onConfigured } : {}),
+    ...(opts.beforeExternalEffect ? { beforeExternalEffect: opts.beforeExternalEffect } : {}),
     ...(opts.beforePersistentEffect ? { beforePersistentEffect: opts.beforePersistentEffect } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });

@@ -109,6 +109,7 @@ export async function runHostedChannelSetup(
           quickstartDefaults: true,
           skipDmPolicyPrompt: true,
           skipConfirm: true,
+          beforeExternalEffect: async () => await beforePersistentApply(setupRuntime),
           beforePersistentEffect: async () => await beforePersistentApply(setupRuntime),
           ...(signal ? { signal } : {}),
           onPostWriteHook: (hook) => channelSetup.onPostWriteHook(hook),

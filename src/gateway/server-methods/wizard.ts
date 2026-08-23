@@ -38,6 +38,7 @@ export type ChannelSetupWizardRunner = (
   opts: {
     channel?: string;
     onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
+    beforeExternalEffect?: () => Promise<void>;
     beforePersistentEffect?: () => Promise<void>;
     signal?: AbortSignal;
   },
@@ -138,6 +139,9 @@ export const wizardHandlers: GatewayRequestHandlers = {
                   {
                     channel: readStringValue(params.channel),
                     onConfigured: (accounts) => wizardSession.setConfiguredAccounts(accounts),
+                    // External setup effects remain cancellable until their
+                    // producer settles and the session owns the commit point.
+                    beforeExternalEffect: async () => signal.throwIfAborted(),
                     // Durable effects (plugin installs, config commit) must finish
                     // even if the client cancels mid-write.
                     beforePersistentEffect: async () => wizardSession.lockCancellation(),
