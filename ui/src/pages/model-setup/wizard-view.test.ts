@@ -1,13 +1,20 @@
 /* @vitest-environment jsdom */
 
 import { nothing, render } from "lit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderModelSetupWizard } from "./wizard-view.ts";
 
 describe("renderModelSetupWizard", () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.append(container);
+  });
+
   afterEach(() => {
-    render(nothing, document.body);
-    document.body.replaceChildren();
+    render(nothing, container);
+    container.remove();
   });
 
   it("hides cancellation and keeps a locked QR dialog open", () => {
@@ -35,15 +42,15 @@ describe("renderModelSetupWizard", () => {
         onCancel,
         onClose: vi.fn(),
       }),
-      document.body,
+      container,
     );
-    const modal = document.body.querySelector("openclaw-modal-dialog");
+    const modal = container.querySelector("openclaw-modal-dialog");
     const dismissal = new CustomEvent("modal-cancel", { cancelable: true });
 
     modal?.dispatchEvent(dismissal);
 
     expect(dismissal.defaultPrevented).toBe(true);
-    expect(document.body.querySelector(".wizard-step__actions button")).toBeNull();
+    expect(container.querySelector(".wizard-step__actions button")).toBeNull();
     expect(onCancel).not.toHaveBeenCalled();
   });
 });
