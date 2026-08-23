@@ -16,7 +16,7 @@ import {
   CHAT_SNAPSHOT_STORE_NAME,
 } from "./session-snapshot-database.ts";
 import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
-import { SessionSnapshotStore, readStoredChatSnapshot } from "./session-snapshot-store.ts";
+import { SessionSnapshotStore } from "./session-snapshot-store.ts";
 
 function snapshot(message: unknown, sessionId = "session-1"): ChatSessionSnapshot {
   return {
@@ -170,16 +170,6 @@ describe("persistent chat session snapshots", () => {
     expect(await new SessionSnapshotStore().read(sessionKey)).toEqual(cached);
   });
 
-  it("serves the startup probe straight from storage", async () => {
-    const sessionKey = "agent:main:probe";
-    const writer = new SessionSnapshotStore();
-    writer.write(sessionKey, snapshot("cached"));
-    await writer.flush();
-
-    expect(await readStoredChatSnapshot(sessionKey)).toEqual(snapshot("cached"));
-    expect(await readStoredChatSnapshot("agent:main:missing")).toBeNull();
-  });
-
   it("keeps one coherent record when two browser contexts write concurrently", async () => {
     // Two tabs are two store instances over one same-origin IndexedDB; the DB
     // serializes their transactions, and the last completed flush owns the key.
@@ -191,25 +181,29 @@ describe("persistent chat session snapshots", () => {
     tabB.write(sessionKey, snapshot("from-tab-b"));
     await Promise.all([tabA.flush(), tabB.flush()]);
 
-    const stored = await readStoredChatSnapshot(sessionKey);
+    const stored = await new SessionSnapshotStore().read(sessionKey);
     expect(stored?.messages).toEqual(["from-tab-b"]);
-    expect(await readStoredChatSnapshot("agent:main:other")).toEqual(snapshot("unrelated"));
+    expect(await new SessionSnapshotStore().read("agent:main:other")).toEqual(
+      snapshot("unrelated"),
+    );
 
     // A later completed write owns the key, without corrupting the record.
     tabA.write(sessionKey, snapshot("stale-from-tab-a"));
     await tabA.flush();
     await tabB.flush();
-    expect((await readStoredChatSnapshot(sessionKey))?.messages).toEqual(["stale-from-tab-a"]);
+    expect((await new SessionSnapshotStore().read(sessionKey))?.messages).toEqual([
+      "stale-from-tab-a",
+    ]);
   });
 
-  it("round-trips a multi-megabyte snapshot through the probe path", async () => {
+  it("round-trips a multi-megabyte snapshot", async () => {
     const sessionKey = "agent:main:huge";
     const bigBody = "x".repeat(5 * 1024 * 1024);
     const writer = new SessionSnapshotStore();
     writer.write(sessionKey, { ...snapshot(bigBody), deltaCursor: "cursor-huge" });
     await writer.flush();
 
-    const stored = await readStoredChatSnapshot(sessionKey);
+    const stored = await new SessionSnapshotStore().read(sessionKey);
     expect(stored?.messages[0]).toBe(bigBody);
     expect(stored?.deltaCursor).toBe("cursor-huge");
   });

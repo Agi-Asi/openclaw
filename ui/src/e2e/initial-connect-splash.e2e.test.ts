@@ -80,22 +80,43 @@ async function traceLoginGateMounts(page: Page): Promise<() => Promise<boolean>>
     );
 }
 
-async function traceConnectSplashMounts(page: Page): Promise<() => Promise<boolean>> {
+async function traceConnectStartup(page: Page): Promise<
+  () => Promise<{
+    firstSurface: "skeleton" | "splash" | "shell" | null;
+    skeletonMounted: boolean;
+    splashMounted: boolean;
+  }>
+> {
   await page.addInitScript(() => {
-    const trace = { mounted: false };
+    const trace: {
+      firstSurface: "skeleton" | "splash" | "shell" | null;
+      skeletonMounted: boolean;
+      splashMounted: boolean;
+    } = { firstSurface: null, skeletonMounted: false, splashMounted: false };
     (
       window as Window & {
-        openclawConnectSplashMountTrace?: typeof trace;
+        openclawConnectStartupTrace?: typeof trace;
       }
-    ).openclawConnectSplashMountTrace = trace;
+    ).openclawConnectStartupTrace = trace;
     new MutationObserver((records) => {
       for (const record of records) {
         for (const node of record.addedNodes) {
-          if (
-            node instanceof Element &&
-            (node.matches(".connect-splash") || node.querySelector(".connect-splash"))
-          ) {
-            trace.mounted = true;
+          if (!(node instanceof Element)) {
+            continue;
+          }
+          const surface =
+            node.matches(".connect-splash") || node.querySelector(".connect-splash")
+              ? "splash"
+              : node.matches(".connect-shell-skeleton") ||
+                  node.querySelector(".connect-shell-skeleton")
+                ? "skeleton"
+                : node.matches("openclaw-app-shell") || node.querySelector("openclaw-app-shell")
+                  ? "shell"
+                  : null;
+          if (surface) {
+            trace.firstSurface ??= surface;
+            trace.splashMounted ||= surface === "splash";
+            trace.skeletonMounted ||= surface === "skeleton";
           }
         }
       }
@@ -106,9 +127,17 @@ async function traceConnectSplashMounts(page: Page): Promise<() => Promise<boole
       () =>
         (
           window as Window & {
-            openclawConnectSplashMountTrace?: { mounted: boolean };
+            openclawConnectStartupTrace?: {
+              firstSurface: "skeleton" | "splash" | "shell" | null;
+              skeletonMounted: boolean;
+              splashMounted: boolean;
+            };
           }
-        ).openclawConnectSplashMountTrace?.mounted ?? false,
+        ).openclawConnectStartupTrace ?? {
+          firstSurface: null,
+          skeletonMounted: false,
+          splashMounted: false,
+        },
     );
 }
 
@@ -191,18 +220,32 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     openContexts.clear();
   });
 
-  it("does not mount the splash when the first connect resolves before the threshold", async () => {
+  it("never mounts the splash before a fast authenticated reload of a saved conversation", async () => {
     const page = await createPage();
-    const splashMounted = await traceConnectSplashMounts(page);
-    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+    const startupTrace = await traceConnectStartup(page);
+    const gateway = await installMockGateway(page, {
+      deferredMethods: ["connect"],
+      historyMessages: [
+        { role: "assistant", content: "cached-transcript-marker", timestamp: Date.now() },
+      ],
+    });
 
     await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
     await gateway.waitForRequest("connect");
     await gateway.resolveDeferred("connect");
     await page.locator("openclaw-app-shell").waitFor();
+    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
 
-    expect(await page.locator(".connect-splash").count()).toBe(0);
-    expect(await splashMounted()).toBe(false);
+    await gateway.deferNext("connect");
+    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
+    await gateway.waitForRequest("connect");
+    await gateway.resolveDeferred("connect");
+    await page.locator("openclaw-app-shell").waitFor();
+    await page.getByText("cached-transcript-marker").first().waitFor();
+    const trace = await startupTrace();
+    expect(trace.firstSurface).toBe("skeleton");
+    expect(trace.skeletonMounted).toBe(true);
+    expect(trace.splashMounted).toBe(false);
     await captureProof(page, "00-fast-connect-without-splash");
   });
 
@@ -352,7 +395,8 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
 
     await page.goto(server.baseUrl);
     await gateway.waitForRequest("openclaw.setup.detect");
-    await page.locator(".connect-splash").waitFor();
+    expect(await page.locator(".app-shell--booting").count()).toBe(1);
+    expect(await page.locator(".connect-splash").count()).toBe(0);
     expect([...requestedWorkspaceModules]).toEqual([]);
 
     await gateway.resolveDeferred("openclaw.setup.detect", {
@@ -415,33 +459,6 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await page.locator("openclaw-app-shell").waitFor();
   });
 
-  it("paints a stored transcript while the first connect is still pending", async () => {
-    const page = await createPage();
-    const loginGateMounted = await traceLoginGateMounts(page);
-    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
-
-    // First visit settles credentials and the shell, then leaves a saved
-    // transcript behind — the state of any returning browser.
-    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
-    await gateway.waitForRequest("connect");
-    await gateway.resolveDeferred("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
-
-    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
-    await gateway.waitForRequest("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
-    await page.getByText("cached-transcript-marker").first().waitFor();
-    expect(await page.locator(".connect-splash").count()).toBe(0);
-    expect(await loginGateMounted()).toBe(false);
-    await captureProof(page, "07-saved-transcript-while-connecting");
-
-    await gateway.resolveDeferred("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
-  });
-
   it("keeps the splash when the stored transcript is empty", async () => {
     const page = await createPage();
     const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
@@ -486,7 +503,7 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await page.locator("openclaw-app-shell").waitFor();
   });
 
-  it("returns the login gate and drops a painted snapshot when auth is rejected", async () => {
+  it("never mounts a stored transcript when auth is rejected", async () => {
     const page = await createPage();
     const loginGateMounted = await traceLoginGateMounts(page);
     const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
@@ -500,11 +517,11 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
 
     await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
     await gateway.waitForRequest("connect");
-    await page.getByText("cached-transcript-marker").first().waitFor();
+    await page.locator(".shell[aria-busy='true']").waitFor();
+    expect(await page.locator("openclaw-app-shell").count()).toBe(0);
+    expect(await page.getByText("cached-transcript-marker").count()).toBe(0);
     expect(await page.locator("openclaw-login-gate").count()).toBe(0);
 
-    // The gateway rejects the very credentials the painted snapshot assumed:
-    // fail closed — content goes away and the gate returns.
     await gateway.rejectDeferred("connect", {
       code: "UNAUTHORIZED",
       message: "unauthorized: gateway token mismatch",
@@ -560,73 +577,5 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
     await page.locator("openclaw-app-shell").waitFor();
 
     expect(await page.getByText("cached-transcript-marker").count()).toBe(0);
-  });
-
-  it("keeps the painted transcript through a retryable first-handshake failure", async () => {
-    const page = await createPage();
-    const gateway = await installMockGateway(page, {
-      deferredMethods: ["connect"],
-      historyMessages: [
-        { role: "assistant", content: "cached-transcript-marker", timestamp: Date.now() },
-      ],
-    });
-
-    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
-    await gateway.waitForRequest("connect");
-    await gateway.resolveDeferred("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
-
-    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
-    await gateway.waitForRequest("connect");
-    await page.getByText("cached-transcript-marker").first().waitFor();
-
-    // Retryable startup failure: the transport drops mid-paint, but the
-    // conversation stays up while the client retries.
-    const initialConnectCount = (await gateway.getRequests("connect")).length;
-    await gateway.deferNext("connect");
-    await gateway.rejectDeferred("connect", {
-      code: "UNAVAILABLE",
-      message: "gateway starting; retry shortly",
-      details: { reason: "startup-sidecars" },
-      retryable: true,
-    });
-    await expect
-      .poll(async () => (await gateway.getRequests("connect")).length)
-      .toBeGreaterThan(initialConnectCount);
-    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
-    await expect.poll(() => page.getByText("cached-transcript-marker").count()).toBeGreaterThan(0);
-
-    await gateway.resolveDeferred("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    await expect.poll(() => page.getByText("cached-transcript-marker").count()).toBeGreaterThan(0);
-  });
-
-  it("handles in-app navigation attempted before the handshake resolves", async () => {
-    const page = await createPage();
-    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
-
-    await page.goto(`${server.baseUrl}#token=e2e-shared-token`);
-    await gateway.waitForRequest("connect");
-    await gateway.resolveDeferred("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    await seedStoredTranscript(page, undefined, savedTranscriptSessionKey);
-
-    await page.goto(new URL(savedTranscriptPath, server.baseUrl).href);
-    await gateway.waitForRequest("connect");
-    await page.getByText("cached-transcript-marker").first().waitFor();
-
-    // Operator clicks into Automations while the first connect is still
-    // pending: the route is gated offline without breaking the document.
-    await page.getByRole("link", { name: "Automations" }).click();
-    const offlineNotice = page.getByText("Actions are unavailable while the Gateway reconnects.");
-    await offlineNotice.waitFor({ timeout: 10_000 });
-    expect(await page.locator(".lazy-view-error").count()).toBe(0);
-    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
-
-    await gateway.resolveDeferred("connect");
-    await page.locator("openclaw-app-shell").waitFor();
-    await expect.poll(async () => await offlineNotice.count()).toBe(0);
-    expect(await page.locator("openclaw-login-gate").count()).toBe(0);
   });
 });

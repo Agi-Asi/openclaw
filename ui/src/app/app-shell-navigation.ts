@@ -152,14 +152,7 @@ export class ShellNavigationOwner {
     }
     context.replace(
       face,
-      sessionNavigationTarget({
-        context,
-        face,
-        sessionKey: replacementSessionKey,
-        // Carry the exact key so a uuid-short path resolves from this
-        // navigation's own key while the gateway is still connecting.
-        navigationKey: replacementSessionKey,
-      }).options,
+      sessionNavigationTarget({ context, face, sessionKey: replacementSessionKey }).options,
     );
     return true;
   }

@@ -52,7 +52,6 @@ function contextFor(
     agentId?: string;
   }) => SessionsListResult | null,
   cachedSessions: GatewaySessionRow[] = [],
-  persistedSessionKey = "",
 ) {
   const client = {};
   const list = vi.fn(async (options: { search?: string; offset?: number } = {}) =>
@@ -61,7 +60,7 @@ function contextFor(
   const context = {
     basePath: "",
     gateway: {
-      snapshot: { phase: "connected", client, hello: null, sessionKey: persistedSessionKey },
+      snapshot: { phase: "connected", client, hello: null, sessionKey: "" },
       subscribe: vi.fn(() => () => undefined),
     },
     agents: { state: { agentsList: { mainKey: "main" } } },
@@ -618,22 +617,6 @@ describe("gateway-backed session route resolution", () => {
       kind: "session",
       sessionKey: storedRow.key,
     });
-    expect(list).not.toHaveBeenCalled();
-  });
-
-  it("trusts a carried short key that matches the persisted last-active session", async () => {
-    const key = "agent:roboclaw:12345678-0aaa-4000-8000-000000000001";
-    const { context, list } = contextFor(() => result([]), [], key);
-    const target = sessionNavigationTarget({
-      face: "chat",
-      sessionKey: key,
-      fallbackAgentId: "roboclaw",
-      navigationKey: key,
-    });
-
-    await expect(
-      loadChatRoute(context, targetLocation(target), "chat", new AbortController().signal),
-    ).resolves.toMatchObject({ kind: "session", sessionKey: key });
     expect(list).not.toHaveBeenCalled();
   });
 

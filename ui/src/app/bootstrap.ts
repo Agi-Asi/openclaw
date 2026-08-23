@@ -236,7 +236,6 @@ export type ApplicationRuntime = {
   } | null;
   readonly confirmPendingGatewayConnection: () => void;
   readonly cancelPendingGatewayConnection: () => void;
-  readonly transcriptProbeAction: 0 | 2;
   start: () => Promise<void>;
   stop: () => void;
 };
@@ -300,8 +299,6 @@ export function bootstrapApplication(
         }));
 
   const settings = startup.settings;
-  const transcriptCredentialAction =
-    startup.changed || startup.password !== null || startup.pendingBootstrapToken !== null ? 2 : 0;
   const gateway = createApplicationGateway(
     settings,
     startup.password ?? "",
@@ -549,7 +546,6 @@ export function bootstrapApplication(
     },
     confirmPendingGatewayConnection,
     cancelPendingGatewayConnection,
-    transcriptProbeAction: transcriptCredentialAction,
     start: () => {
       const stopRouter = () => router.stop();
       if (startsApplicationRouter) {

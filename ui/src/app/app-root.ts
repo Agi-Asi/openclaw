@@ -61,6 +61,25 @@ function renderConnectingSplash(status?: string) {
   `;
 }
 
+function renderConnectingShell() {
+  return html`<div class="shell shell--chat connect-shell-skeleton" aria-busy="true">
+    <aside class="shell-nav" aria-hidden="true">
+      <div class="sidebar sidebar-shell stack">
+        <div class="skeleton skeleton-line skeleton-line--medium"></div>
+        <div class="skeleton skeleton-line skeleton-line--long"></div>
+        <div class="skeleton skeleton-line skeleton-line--short"></div>
+      </div>
+    </aside>
+    <main class="content content--chat" role="status" aria-label=${t("common.loading")}>
+      <div class="stack">
+        <div class="skeleton skeleton-line skeleton-line--short"></div>
+        <div class="skeleton skeleton-line skeleton-line--long"></div>
+        <div class="skeleton skeleton-line skeleton-line--medium"></div>
+      </div>
+    </main>
+  </div>`;
+}
+
 // A handshake that resolves faster than this never earns the mascot: the
 // document stays on the plain boot background and goes straight to content,
 // so fast connects cannot flash the splash (duration-token timer below).
@@ -78,10 +97,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
   @state() private pendingGatewayUrl: string | null = null;
   @state() private onboarding = resolveOnboardingMode(globalThis.location?.search ?? "");
   @state() private focusDashboardRoute: FocusDashboardRouteState = { kind: "loading" };
-  // Set when the document's locally-named session has a stored transcript, so
-  // the first connect paints that conversation instead of the full-document
-  // splash. One-shot per document load; a probe miss keeps today's splash.
-  @state() private savedTranscriptReady = false;
   // The initial-connect splash is earned only after CONNECT_SPLASH_DELAY_MS;
   // below that the boot background holds until content (or the gate) lands.
   // Settling clears the single timer slot, so no stale fire survives.
@@ -103,28 +118,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
       globalThis.clearTimeout(this.connectSplashTimer);
       this.connectSplashTimer = null;
     }
-  }
-
-  private probeSavedTranscript(): Promise<void> {
-    if (this.savedTranscriptReady || !this.context || !this.runtime) {
-      return Promise.resolve();
-    }
-    const runtime = this.runtime;
-    return import("./saved-transcript-probe.runtime.ts")
-      .then((module) =>
-        module.probeSavedTranscript({
-          basePath: this.context?.basePath,
-          credentialAction: runtime.transcriptProbeAction,
-          documentMode: runtime.documentMode,
-          focusDocument: this.focusTarget !== null,
-          markSavedTranscriptReady: () => {
-            if (this.runtime === runtime) {
-              this.savedTranscriptReady = true;
-            }
-          },
-        }),
-      )
-      .catch(() => undefined);
   }
 
   private runtime: ApplicationRuntime | undefined;
@@ -177,7 +170,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    this.savedTranscriptReady = false;
     this.connectSplashDue = false;
     void import("../components/session-progress-hovercard-registration.ts");
     this.resetLoginSensitivePresentation();
@@ -205,21 +197,13 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // The runtime is created after controller hostConnected hooks run. Ensure
     // their lazy source getters bind on both the initial mount and reconnect.
     this.requestUpdate();
-    void (async () => {
-      if (runtime.transcriptProbeAction === 2) {
-        await this.probeSavedTranscript();
-      } else {
-        void this.probeSavedTranscript();
-      }
-      if (this.runtime !== runtime) {
-        return;
-      }
-      this.armDeferredConnectSplash();
-      await runtime.start();
-      await this.resolveFocusDashboard();
-    })().catch((error: unknown) => {
-      console.error("[openclaw] application start failed", error);
-    });
+    this.armDeferredConnectSplash();
+    void runtime
+      .start()
+      .then(() => this.resolveFocusDashboard())
+      .catch((error: unknown) => {
+        console.error("[openclaw] application start failed", error);
+      });
   }
 
   override disconnectedCallback() {
@@ -249,8 +233,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
     if (sourceChanged) {
       this.loginGatewaySource = gateway;
       this.loginConnectionClient = null;
-      this.savedTranscriptReady = false;
-      this.connectSplashDue = false;
       this.resetLoginSensitivePresentation();
     }
     const snapshot = gateway.snapshot;
@@ -593,37 +575,21 @@ export class OpenClawApp extends OpenClawLightDomElement {
       (gatewaySnapshot.phase === "stopped" ||
         gatewaySnapshot.phase === "starting" ||
         (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
-    const startupProgressVisible = gatewaySnapshot.phase === "starting";
-    if (
-      initialConnectPending &&
-      !this.savedTranscriptReady &&
-      (startupProgressVisible || this.connectSplashDue)
-    ) {
+    if (initialConnectPending && this.connectSplashDue) {
       return html`
         <openclaw-tooltip-provider>
           ${renderConnectingSplash(gatewayStartupStatus)} ${gatewayUrlConfirmation}
         </openclaw-tooltip-provider>
       `;
     }
-    if (initialConnectPending && !this.savedTranscriptReady) {
-      // Below the splash threshold the document holds the plain boot
-      // background so a fast handshake goes straight to content without
-      // flashing the mascot.
-      return html`
-        <openclaw-tooltip-provider>
-          <main class="app-shell app-shell--booting" aria-busy="true"></main>
-          ${gatewayUrlConfirmation}
-        </openclaw-tooltip-provider>
-      `;
+    if (initialConnectPending) {
+      return html`<openclaw-tooltip-provider>
+        ${renderConnectingShell()} ${gatewayUrlConfirmation}
+      </openclaw-tooltip-provider>`;
     }
     const shellOwnsRecovery =
       gatewaySnapshot.phase === "reconnecting" || gatewaySnapshot.phase === "reload-required";
-    // A saved-transcript document paints its last conversation behind the
-    // honest connection indicator while the first connect is in flight; a
-    // failed attempt still publishes lastError and returns the login gate.
-    const savedTranscriptPaintsConnection = initialConnectPending && this.savedTranscriptReady;
-    const showLoginGate =
-      !gatewayConnected && !shellOwnsRecovery && !savedTranscriptPaintsConnection;
+    const showLoginGate = !gatewayConnected && !shellOwnsRecovery;
     if (showLoginGate) {
       return html`
         <openclaw-tooltip-provider>

@@ -44,9 +44,6 @@ export function findCachedShortSession(
     ?.trim();
   const handoffKey = consumeSessionNavigationHandoff(context.gateway, location.pathname);
   const carriedKey = locationKey ?? handoffKey;
-  // The persisted last-active key names this browser's own most recent
-  // conversation, so a matching carried key stays trustworthy before the
-  // session list exists to confirm it (startup restore, offline reopen).
   const carriedByCurrentNavigation = Boolean(handoffKey && handoffKey === carriedKey);
   if (carriedKey) {
     const preserveLocationKeyForCanonicalReload = () => {
