@@ -127,6 +127,51 @@ describe("spawnSignalDaemon", () => {
     expect(process.stdout).toBe(child.stdout);
   });
 
+  it("rejects an occupied managed endpoint with actionable port guidance", async () => {
+    const listener = createServer();
+    await new Promise<void>((resolve, reject) => {
+      listener.once("error", reject);
+      listener.listen(0, "127.0.0.1", resolve);
+    });
+    const address = listener.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP listener address");
+    }
+
+    try {
+      await expect(
+        assertSignalDaemonEndpointAvailable({
+          httpHost: "127.0.0.1",
+          httpPort: address.port,
+        }),
+      ).rejects.toThrow(
+        `Signal managed native endpoint 127.0.0.1:${address.port} is unavailable: Port ${address.port} is already in use. Stop the conflicting service, configure this Signal account with a different transport.httpPort, or use external-native for an intentionally operator-managed daemon.`,
+      );
+      expect(listener.listening).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        listener.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+    await expect(
+      assertSignalDaemonEndpointAvailable({ httpHost: "127.0.0.1", httpPort: address.port }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("defers non-collision bind failures to the operator-selected daemon", async () => {
+    const bindError = Object.assign(new Error("bind EACCES 127.0.0.1:443"), {
+      code: "EACCES",
+    });
+    ensurePortAvailableMock.mockRejectedValueOnce(bindError);
+
+    await expect(
+      assertSignalDaemonEndpointAvailable({
+        httpHost: "127.0.0.1",
+        httpPort: 443,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("expands home-relative configPath before passing it to signal-cli", () => {
     spawnSignalDaemon({
       cliPath: "signal-cli",
