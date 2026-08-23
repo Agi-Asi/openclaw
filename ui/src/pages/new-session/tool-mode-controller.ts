@@ -6,8 +6,26 @@ import type {
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { ChatComposerToolModeMenuProps } from "../chat/components/chat-composer-tool-mode-menu.ts";
+import * as catalog from "./catalog-target.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
+import type { NewSessionRouteData } from "./location.ts";
+
+function resolveToolModeRuntimeId(
+  place: DraftPlaceState,
+  context: ApplicationContext | undefined,
+  data: NewSessionRouteData | undefined,
+): string {
+  if (catalog.isTarget(data)) {
+    return data?.catalogId.trim().toLowerCase() || "external";
+  }
+  return (
+    place.modelControl
+      .resolveAgentRuntime({ agent: place.selectedAgent(), context })
+      ?.id.trim()
+      .toLowerCase() ?? "openclaw"
+  );
+}
 
 export class NewSessionToolModeController {
   modes: PluginSessionToolMode[] = [];
@@ -60,19 +78,19 @@ export class NewSessionToolModeController {
     void this.synchronize(gateway.snapshot.client ?? null);
   }
 
-  reconcile(place: DraftPlaceState, context: ApplicationContext | undefined): void {
-    if (this.modes.length === 0) {
-      return;
-    }
-    const runtimeId =
-      place.modelControl
-        .resolveAgentRuntime({ agent: place.selectedAgent(), context })
-        ?.id.trim()
-        .toLowerCase() ?? "openclaw";
+  reconcile(
+    place: DraftPlaceState,
+    context: ApplicationContext | undefined,
+    data?: NewSessionRouteData,
+  ): void {
+    const runtimeId = resolveToolModeRuntimeId(place, context, data);
     if (runtimeId !== "openclaw") {
       if (this.selectionTarget.toolMode) {
         this.select(undefined);
       }
+      return;
+    }
+    if (this.modes.length === 0) {
       return;
     }
     const selection = this.selectionTarget.toolMode;
@@ -93,14 +111,12 @@ export class NewSessionToolModeController {
   menuProps(
     place: DraftPlaceState,
     context: ApplicationContext | undefined,
+    data?: NewSessionRouteData,
   ): ChatComposerToolModeMenuProps | undefined {
     if (this.modes.length === 0) {
       return undefined;
     }
-    const runtimeId =
-      place.modelControl
-        .resolveAgentRuntime({ agent: place.selectedAgent(), context })
-        ?.id.trim() ?? "openclaw";
+    const runtimeId = resolveToolModeRuntimeId(place, context, data);
     return {
       modes: this.modes,
       selected: this.selectionTarget.toolMode ?? null,

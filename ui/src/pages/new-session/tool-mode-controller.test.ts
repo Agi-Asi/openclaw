@@ -7,6 +7,7 @@ import type {
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { buildDraftSessionCreateParams } from "./create-params.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
+import type { NewSessionRouteData } from "./location.ts";
 import { NewSessionToolModeController } from "./tool-mode-controller.ts";
 
 const modes: PluginsUiDescriptorsResult["toolModes"] = [
@@ -31,9 +32,9 @@ const modes: PluginsUiDescriptorsResult["toolModes"] = [
   },
 ];
 
-function client(): GatewayBrowserClient {
+function client(toolModes = modes): GatewayBrowserClient {
   return {
-    request: vi.fn().mockResolvedValue({ ok: true, descriptors: [], toolModes: modes }),
+    request: vi.fn().mockResolvedValue({ ok: true, descriptors: [], toolModes }),
   } as unknown as GatewayBrowserClient;
 }
 
@@ -90,5 +91,41 @@ describe("NewSessionToolModeController", () => {
     runtime.id = "openclaw";
     controller.reconcile(draftPlace, undefined);
     expect(target.toolMode).toEqual({ pluginId: "developer-mode", modeId: "standard" });
+  });
+
+  it("does not attach Tool mode to external catalog sessions", async () => {
+    const target = {
+      toolMode: { pluginId: "developer-mode", modeId: "code" } as
+        | SessionToolModeSelection
+        | undefined,
+      submitting: false,
+      pendingPlacement: { sessionKey: "" },
+    };
+    const controller = new NewSessionToolModeController(target, vi.fn());
+    const draftPlace = place({ id: "openclaw" });
+    const catalogTarget = { catalogId: "codex" } as NewSessionRouteData;
+
+    await controller.synchronize(client());
+    controller.reconcile(draftPlace, undefined, catalogTarget);
+
+    expect(target.toolMode).toBeUndefined();
+    expect(controller.menuProps(draftPlace, undefined, catalogTarget)?.runtimeId).toBe("codex");
+  });
+
+  it("clears an external catalog selection before descriptors load", () => {
+    const target = {
+      toolMode: { pluginId: "developer-mode", modeId: "code" } as
+        | SessionToolModeSelection
+        | undefined,
+      submitting: false,
+      pendingPlacement: { sessionKey: "" },
+    };
+    const controller = new NewSessionToolModeController(target, vi.fn());
+
+    controller.reconcile(place({ id: "openclaw" }), undefined, {
+      catalogId: "codex",
+    } as NewSessionRouteData);
+
+    expect(target.toolMode).toBeUndefined();
   });
 });

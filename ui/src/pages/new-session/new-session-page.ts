@@ -261,7 +261,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
       agentsReady && this.place.agentId ? (this.place.selectedAgent()?.id ?? "") : "",
       this.context?.config.current.cliAgentsEnabled === true && !catalog.isTarget(this.data),
     );
-    this.toolMode.reconcile(this.place, this.context);
+    this.toolMode.reconcile(this.place, this.context, this.data);
     const openKey = this.data
       ? catalog.routeKey(this.data)
       : catalog.routeKeyFromSearch(window.location.search);
@@ -577,7 +577,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
   private renderDraftBlock() {
     const worktreeNameInvalid =
       this.place.worktree && !isWorktreeNameValid(this.place.worktreeName);
-    const toolModeMenu = this.toolMode.menuProps(this.place, this.context);
+    const toolModeMenu = this.toolMode.menuProps(this.place, this.context, this.data);
     return html`
       <div class="new-session-page__draft" aria-busy=${String(this.submission.submitting)}>
         ${this.renderTargetBar()}

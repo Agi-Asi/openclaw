@@ -92,4 +92,14 @@ describe("chat composer Tool mode menu", () => {
 
     expect(item(container, "Tool mode unavailable").disabled).toBe(true);
   });
+
+  it("surfaces an unavailable selection while keeping replacement modes visible", () => {
+    const { container } = mount({
+      modes: [modes[0]!],
+      selected: { pluginId: "developer-mode", modeId: "removed" },
+    });
+
+    expect(item(container, "Tool mode unavailable").disabled).toBe(true);
+    expect(item(container, "Standard")).toBeTruthy();
+  });
 });

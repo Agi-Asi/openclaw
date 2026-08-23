@@ -2165,6 +2165,33 @@ describe("host-hook fixture plugin contract", () => {
     });
   });
 
+  it("rejects a second global Tool mode default", () => {
+    const { config, registry } = createPluginRegistryFixture();
+    for (const pluginId of ["first-mode-plugin", "second-mode-plugin"]) {
+      registerTestPlugin({
+        registry,
+        config,
+        record: createPluginRecord({ id: pluginId, name: pluginId }),
+        register(api) {
+          api.session.controls.registerToolMode({
+            id: "standard",
+            label: "Standard",
+            controlLabel: "Tool mode",
+            default: true,
+            toolProfile: "coding",
+            codeMode: "direct",
+          });
+        },
+      });
+    }
+
+    expect(registry.registry.sessionToolModes).toHaveLength(1);
+    expect(diagnosticSummaries(registry.registry.diagnostics)).toContainEqual({
+      pluginId: "second-mode-plugin",
+      message: "session Tool modes may register only one global default",
+    });
+  });
+
   it("enforces command requiredScopes for gateway clients and command owners", async () => {
     const handlerCalls: string[] = [];
     const { config, registry } = createPluginRegistryFixture();

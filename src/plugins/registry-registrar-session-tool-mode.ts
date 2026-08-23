@@ -38,8 +38,9 @@ function registerPluginSessionToolMode(params: {
   );
   const error = pluginModes.some((entry) => entry.mode.id === id)
     ? `session Tool mode already registered: ${id}`
-    : mode.default === true && pluginModes.some((entry) => entry.mode.default === true)
-      ? "session Tool modes may register only one default"
+    : mode.default === true &&
+        params.state.registry.sessionToolModes.some((entry) => entry.mode.default === true)
+      ? "session Tool modes may register only one global default"
       : pluginModes.some((entry) => entry.mode.controlLabel !== controlLabel)
         ? "session Tool modes from one plugin must share controlLabel"
         : undefined;

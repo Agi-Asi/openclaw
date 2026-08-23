@@ -65,8 +65,11 @@ export function renderChatComposerToolModeMenu(props: ChatComposerToolModeMenuPr
   for (const mode of props.modes) {
     groups.set(mode.pluginId, [...(groups.get(mode.pluginId) ?? []), mode]);
   }
-  if (groups.size === 0) {
-    return props.selected
+  const selectedAvailable = props.selected
+    ? props.modes.some((mode) => sameSelection(props.selected, mode.pluginId, mode.id))
+    : true;
+  const unavailableSelection =
+    props.selected && !selectedAvailable
       ? html`<wa-dropdown-item
           class="agent-chat__capability-menu-item"
           disabled
@@ -79,9 +82,11 @@ export function renderChatComposerToolModeMenu(props: ChatComposerToolModeMenuPr
           >
         </wa-dropdown-item>`
       : nothing;
+  if (groups.size === 0) {
+    return unavailableSelection;
   }
   const runtimeId = props.runtimeId.trim().toLowerCase();
-  return html`${[...groups.values()].map((modes) => {
+  return html`${unavailableSelection}${[...groups.values()].map((modes) => {
     const first = modes[0];
     if (!first) {
       return nothing;
