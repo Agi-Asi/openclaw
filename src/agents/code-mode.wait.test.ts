@@ -22,6 +22,8 @@ import {
   createCodeModeHarness,
   testing,
 } from "./code-mode.test-support.js";
+import { installCodeModeRepairHook } from "./embedded-agent-runner/run/code-mode-repair.js";
+import type { AfterToolOutcomeContext, Agent, AgentToolResult } from "./runtime/index.js";
 import { createToolSearchCatalogRef } from "./tool-search.js";
 import { jsonResult } from "./tools/common.js";
 
@@ -100,6 +102,40 @@ async function createPersistedWaitingRun(label: string) {
     throw new Error("expected a persisted Code Mode waiting claim");
   }
   return { claim, ctx, scope, tools, waitingRunId };
+}
+
+async function repairFailedWaitResult(params: {
+  result: AgentToolResult<unknown>;
+  runId: string;
+  toolCallId: string;
+}): Promise<AgentToolResult<unknown>> {
+  const agent = {} as Agent;
+  installCodeModeRepairHook({ agent });
+  const repaired = await agent.afterToolOutcome?.({
+    assistantMessage: {
+      role: "assistant",
+      content: [],
+      timestamp: 1,
+    },
+    toolCall: {
+      type: "toolCall",
+      id: params.toolCallId,
+      name: "wait",
+      arguments: { runId: params.runId },
+    },
+    args: { runId: params.runId },
+    result: params.result,
+    isError: true,
+    executionStarted: true,
+    context: { systemPrompt: "", messages: [], tools: [] },
+  } as unknown as AfterToolOutcomeContext);
+  expect(repaired).toBeDefined();
+  return {
+    ...params.result,
+    content: repaired?.content ?? params.result.content,
+    details: repaired?.details ?? params.result.details,
+    terminate: repaired?.terminate ?? params.result.terminate,
+  };
 }
 
 describe("Code Mode wait, scope, and suspended runs", () => {
@@ -536,11 +572,11 @@ describe("Code Mode wait, scope, and suspended runs", () => {
     const { claim, scope, tools, waitingRunId } = await createPersistedWaitingRun("missing-run");
     testing.activeRuns.clear();
 
-    const terminal = await expectDefined(tools[1], "wait tool").execute("wait-missing-run", {
+    const rawTerminal = await expectDefined(tools[1], "wait tool").execute("wait-missing-run", {
       runId: waitingRunId,
     });
 
-    expect(resultDetails(terminal)).toEqual({
+    expect(resultDetails(rawTerminal)).toEqual({
       status: "failed",
       error: "code mode run is unavailable after restart or expired; rerun exec to start fresh.",
       code: "invalid_input",
@@ -549,7 +585,7 @@ describe("Code Mode wait, scope, and suspended runs", () => {
       output: [],
       replaySafe: false,
     });
-    expect(terminal.content).toEqual([
+    expect(rawTerminal.content).toEqual([
       {
         type: "text",
         text: expect.stringContaining(
@@ -557,6 +593,11 @@ describe("Code Mode wait, scope, and suspended runs", () => {
         ),
       },
     ]);
+    const terminal = await repairFailedWaitResult({
+      result: rawTerminal,
+      runId: waitingRunId,
+      toolCallId: "wait-missing-run",
+    });
     expect(readCodeModeWaitingClaimMutation(terminal.details)).toEqual({
       kind: "clear",
       waitingCodeModeRunId: waitingRunId,
@@ -580,8 +621,13 @@ describe("Code Mode wait, scope, and suspended runs", () => {
   it("preserves a replacement claim when an unavailable wait clears its earlier authority", async () => {
     const { claim, scope, tools, waitingRunId } = await createPersistedWaitingRun("replacement");
     testing.activeRuns.clear();
-    const terminal = await expectDefined(tools[1], "wait tool").execute("wait-replacement-old", {
+    const rawTerminal = await expectDefined(tools[1], "wait tool").execute("wait-replacement-old", {
       runId: waitingRunId,
+    });
+    const terminal = await repairFailedWaitResult({
+      result: rawTerminal,
+      runId: waitingRunId,
+      toolCallId: "wait-replacement-old",
     });
     expect(readCodeModeWaitingClaimMutation(terminal.details)).toMatchObject({
       kind: "clear",

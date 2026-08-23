@@ -1,5 +1,10 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
+  readCodeModeWaitingClaimMutation,
+  reattachCodeModeWaitingClaimMutation,
+  type CodeModeWaitingClaimMutation,
+} from "../../../config/sessions/code-mode-waiting-claim.js";
+import {
   CODE_MODE_EXEC_TOOL_NAME,
   CODE_MODE_WAIT_TOOL_NAME,
 } from "../../code-mode-control-tools.js";
@@ -142,6 +147,7 @@ function renderFailure(params: {
   remainingAttempts: number;
   reason: string;
   terminate: boolean;
+  waitingClaimClear?: Extract<CodeModeWaitingClaimMutation, { kind: "clear" }>;
 }): AfterToolCallResult {
   const repair = {
     allowed: params.allowed,
@@ -159,20 +165,23 @@ function renderFailure(params: {
       : {}),
     repair,
   };
-  return {
+  const details = {
+    ...params.failure.details,
+    status: "failed",
+    code: params.failure.code,
+    error: params.failure.error,
+    failurePhase: params.failure.failurePhase,
+    bridgeDispatchStarted: params.failure.bridgeDispatchStarted,
+    repair,
+  };
+  const result: AfterToolCallResult = {
     content: [{ type: "text", text: JSON.stringify(modelPayload) }],
-    details: {
-      ...params.failure.details,
-      status: "failed",
-      code: params.failure.code,
-      error: params.failure.error,
-      failurePhase: params.failure.failurePhase,
-      bridgeDispatchStarted: params.failure.bridgeDispatchStarted,
-      repair,
-    },
+    details,
     isError: true,
     terminate: params.terminate,
   };
+  reattachCodeModeWaitingClaimMutation(result, params.waitingClaimClear);
+  return result;
 }
 
 function mergePriorOutcome(
@@ -229,6 +238,12 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
       context.toolCall.name === CODE_MODE_EXEC_TOOL_NAME ||
       context.toolCall.name === CODE_MODE_WAIT_TOOL_NAME;
     const originalFailure = codeModeTool ? codeModeFailureFromOutcome(context) : undefined;
+    const originalWaitingClaimMutation =
+      context.toolCall.name === CODE_MODE_WAIT_TOOL_NAME
+        ? readCodeModeWaitingClaimMutation(context.result.details)
+        : undefined;
+    const waitingClaimClear =
+      originalWaitingClaimMutation?.kind === "clear" ? originalWaitingClaimMutation : undefined;
     let prior: AfterToolCallResult | undefined;
     try {
       prior = await previousAfterToolOutcome?.(context, signal);
@@ -242,6 +257,7 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
         remainingAttempts: 0,
         reason: "A Code Mode outcome hook failed, so retry safety cannot be established.",
         terminate: true,
+        waitingClaimClear,
       });
     }
     if (!codeModeTool) {
@@ -287,6 +303,7 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
         remainingAttempts: 0,
         reason: "The finalized Code Mode outcome is terminal and cannot be repaired.",
         terminate: true,
+        waitingClaimClear,
       });
     }
 
@@ -302,6 +319,7 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
         reason:
           "A Code Mode bridge call already started; do not retry because nested tools may have side effects.",
         terminate: true,
+        waitingClaimClear,
       });
     }
 
@@ -319,6 +337,7 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
         remainingAttempts: 0,
         reason: "The single Code Mode repair attempt is exhausted.",
         terminate: true,
+        waitingClaimClear,
       });
     }
 
@@ -330,6 +349,7 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
         remainingAttempts: 0,
         reason: "This Code Mode failure is not safely repairable in the current turn.",
         terminate: true,
+        waitingClaimClear,
       });
     }
 
@@ -343,6 +363,7 @@ export function installCodeModeRepairHook(params: { agent: Agent }): void {
       reason:
         "Retry exec once with corrected JavaScript or TypeScript. Do not repeat unchanged input.",
       terminate: false,
+      waitingClaimClear,
     });
   };
 }

@@ -1,4 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  attachCodeModeWaitingClaimMutation,
+  CODE_MODE_WAITING_CLAIM_MUTATION,
+  readCodeModeWaitingClaimMutation,
+  type CodeModeWaitingClaim,
+} from "../../../config/sessions/code-mode-waiting-claim.js";
 import { registerRepairableCodeModeFailure } from "../../code-mode-repair-provenance.js";
 import type { AfterToolOutcomeContext, Agent, AgentToolResult } from "../../runtime/index.js";
 import { installCodeModeRepairHook } from "./code-mode-repair.js";
@@ -70,6 +76,19 @@ function createAgent(previous?: Agent["afterToolOutcome"]): Agent {
   const agent = { afterToolOutcome: previous } as Agent;
   installCodeModeRepairHook({ agent });
   return agent;
+}
+
+function waitingClaim(waitingCodeModeRunId = "waiting-run"): CodeModeWaitingClaim {
+  return {
+    sourceSessionId: "session-1",
+    sourceLifecycleRevision: "lifecycle-1",
+    sourceWriterRunId: "writer-1",
+    sourceToolCallId: "exec-1",
+    waitingCodeModeRunId,
+    expiresAt: 2,
+    transcriptAnchor: { eventId: "event-1", messageIndex: 0 },
+    transcriptEventDigest: "digest-1",
+  };
 }
 
 describe("installCodeModeRepairHook", () => {
@@ -480,6 +499,77 @@ describe("installCodeModeRepairHook", () => {
       terminate: true,
       details: { repair: { allowed: false } },
     });
+  });
+
+  it("preserves only an exact terminal wait claim clear through rewritten details", async () => {
+    const previous = vi.fn(async () => ({
+      details: {
+        status: "failed",
+        code: "invalid_input",
+        error: "rewritten failure",
+        failurePhase: "input",
+        bridgeDispatchStarted: false,
+      },
+    }));
+    const agent = createAgent(previous);
+    const failure = failedResult({
+      code: "invalid_input",
+      failurePhase: "input",
+      bridgeDispatchStarted: false,
+    });
+    const clear = {
+      kind: "clear" as const,
+      waitingCodeModeRunId: "waiting-run",
+      expectedClaim: waitingClaim(),
+    };
+    attachCodeModeWaitingClaimMutation(failure.details as object, clear);
+
+    const result = await agent.afterToolOutcome?.(
+      outcome({
+        toolName: "wait",
+        result: failure,
+      }),
+    );
+
+    expect(readCodeModeWaitingClaimMutation(result?.details)).toEqual(clear);
+    expect(
+      Object.getOwnPropertyDescriptor(result?.details, CODE_MODE_WAITING_CLAIM_MUTATION)
+        ?.enumerable,
+    ).toBe(false);
+    expect(JSON.stringify(result?.details)).not.toContain("waitingCodeModeRunId");
+  });
+
+  it("drops unrelated or mismatched wait claim mutations while repairing", async () => {
+    for (const mutation of [
+      {
+        kind: "set" as const,
+        waitingCodeModeRunId: "waiting-run",
+        expiresAt: 2,
+      },
+      {
+        kind: "clear" as const,
+        waitingCodeModeRunId: "waiting-run",
+        expectedClaim: waitingClaim(),
+      },
+    ]) {
+      const failure = failedResult({
+        code: "invalid_input",
+        failurePhase: "input",
+        bridgeDispatchStarted: false,
+      });
+      if (mutation.kind === "clear") {
+        (failure.details as Record<string, unknown>).runId = "different-run";
+      }
+      attachCodeModeWaitingClaimMutation(failure.details as object, mutation);
+      const result = await createAgent().afterToolOutcome?.(
+        outcome({
+          toolName: "wait",
+          result: failure,
+        }),
+      );
+
+      expect(readCodeModeWaitingClaimMutation(result?.details)).toBeUndefined();
+    }
   });
 
   it("preserves a wait skipped by abort without spending the repair token", async () => {
