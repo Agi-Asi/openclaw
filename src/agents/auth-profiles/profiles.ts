@@ -42,16 +42,24 @@ function listProviderAuthStateEntries<T>(
     .toSorted(([left], [right]) => left.localeCompare(right));
 }
 
+export function resolveProviderAuthStateEntry<T>(
+  entries: Record<string, T> | undefined,
+  provider: string,
+  authAliasLookupParams?: ProviderAuthAliasLookupParams,
+): { provider: string; value: T } | undefined {
+  const canonicalProvider = resolveProviderIdForAuth(provider, authAliasLookupParams);
+  const matches = listProviderAuthStateEntries(entries, canonicalProvider, authAliasLookupParams);
+  const match =
+    matches.find(([key]) => normalizeProviderId(key) === canonicalProvider) ?? matches[0];
+  return match ? { provider: match[0], value: match[1] } : undefined;
+}
+
 function readProviderAuthState<T>(
   entries: Record<string, T> | undefined,
   provider: string,
   authAliasLookupParams?: ProviderAuthAliasLookupParams,
 ): T | undefined {
-  const canonicalProvider = resolveProviderIdForAuth(provider, authAliasLookupParams);
-  const matches = listProviderAuthStateEntries(entries, canonicalProvider, authAliasLookupParams);
-  return (
-    matches.find(([key]) => normalizeProviderId(key) === canonicalProvider)?.[1] ?? matches[0]?.[1]
-  );
+  return resolveProviderAuthStateEntry(entries, provider, authAliasLookupParams)?.value;
 }
 
 function replaceProviderAuthState<T>(
