@@ -198,6 +198,27 @@ describe("collectPluginConfigAssignments bundled plugin manifests", () => {
   });
 
   it("collects voice-call SecretRef assignments from bundled manifest contracts", () => {
+    const numberRouteRefs = [
+      { number: "+15550001001", ref: envRef("VOICE_CALL_ROUTE_ENV_KEY") },
+      {
+        number: "+15550001002",
+        ref: { source: "file" as const, provider: "route-file", id: "/voice-call/apiKey" },
+      },
+      {
+        number: "+15550001003",
+        ref: { source: "exec" as const, provider: "route-exec", id: "voice-call/apiKey" },
+      },
+      {
+        number: "+15550001004",
+        ref: { source: "store" as const, provider: "default", id: "VOICE_CALL_ROUTE_STORE_KEY" },
+      },
+    ];
+    const numberRoutes = Object.fromEntries(
+      numberRouteRefs.map(({ number, ref }) => [
+        number,
+        { tts: { providers: { openai: { apiKey: ref } } } },
+      ]),
+    );
     expect(
       findBundledPluginMetadataById("voice-call", {
         includeChannelConfigs: false,
@@ -208,6 +229,7 @@ describe("collectPluginConfigAssignments bundled plugin manifests", () => {
       { path: "realtime.providers.*.apiKey", expected: "string" },
       { path: "streaming.providers.*.apiKey", expected: "string" },
       { path: "tts.providers.*.apiKey", expected: "string" },
+      { path: "numbers.*.tts.providers.*.apiKey", expected: "string" },
     ]);
     const config = {
       agents: explicitMainRoster,
@@ -243,6 +265,7 @@ describe("collectPluginConfigAssignments bundled plugin manifests", () => {
                   },
                 },
               },
+              numbers: numberRoutes,
             },
           },
         },
@@ -263,6 +286,7 @@ describe("collectPluginConfigAssignments bundled plugin manifests", () => {
       { path: "realtime.providers.*.apiKey", expected: "string" },
       { path: "streaming.providers.*.apiKey", expected: "string" },
       { path: "tts.providers.*.apiKey", expected: "string" },
+      { path: "numbers.*.tts.providers.*.apiKey", expected: "string" },
     ]);
     const context = createResolverContext({
       sourceConfig: config,
@@ -281,6 +305,10 @@ describe("collectPluginConfigAssignments bundled plugin manifests", () => {
       warnings: context.warnings,
     }).toEqual({
       assignments: [
+        ...numberRouteRefs.map(
+          ({ number }) =>
+            `plugins.entries.voice-call.config.numbers.${number}.tts.providers.openai.apiKey`,
+        ),
         "plugins.entries.voice-call.config.realtime.providers.google.apiKey",
         "plugins.entries.voice-call.config.streaming.providers.openai.apiKey",
         "plugins.entries.voice-call.config.tts.providers.elevenlabs.apiKey",
@@ -289,6 +317,24 @@ describe("collectPluginConfigAssignments bundled plugin manifests", () => {
       ],
       warnings: [],
     });
+
+    for (const { number, ref } of numberRouteRefs) {
+      const assignment = context.assignments.find(
+        (candidate) =>
+          candidate.path ===
+          `plugins.entries.voice-call.config.numbers.${number}.tts.providers.openai.apiKey`,
+      );
+      expect(assignment).toMatchObject({
+        ref,
+        expected: "string",
+        ownerKind: "unknown",
+        disposition: "isolate",
+      });
+      assignment?.apply(`resolved-route-${ref.source}`);
+      expect(numberRoutes[number]?.tts.providers.openai.apiKey).toBe(
+        `resolved-route-${ref.source}`,
+      );
+    }
   });
 
   it("collects google-meet realtime provider SecretRefs from its installed manifest", () => {
