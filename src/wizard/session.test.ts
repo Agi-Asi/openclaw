@@ -135,6 +135,42 @@ describe("WizardSession", () => {
     }
   });
 
+  test("retires an expired QR before delayed timer cleanup can project it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    try {
+      const session = new WizardSession(
+        async (prompter) => {
+          await prompter.qrCode?.({
+            title: "Link device",
+            text: "sgnl://linkdevice?uuid=expired",
+            expiresInMs: 100,
+            settled: new Promise(() => {}),
+          });
+        },
+        { supportsQrCode: true },
+      );
+
+      const presented = await session.next({ supportsQrCode: true });
+      expect(presented.step).toMatchObject({ type: "qr", qrExpiresAtMs: 1_100 });
+      if (!presented.step) {
+        throw new Error("expected QR step");
+      }
+
+      // Advance the wall clock without running the scheduled expiry callback.
+      vi.setSystemTime(1_101);
+      expect(session.projectStepForClient(presented.step)).toBeNull();
+      await expect(session.next({ supportsQrCode: true })).resolves.toMatchObject({
+        done: true,
+        status: "error",
+        error: "Error: wizard: QR presentation expired; restart setup to retry",
+      });
+      expect(presented.step?.qrDataUrl).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("cancels and scrubs a delivered QR without exposing the capability by default", async () => {
     let unsupportedQrCode: WizardPrompter["qrCode"];
     const unsupported = new WizardSession(async (prompter) => {

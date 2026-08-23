@@ -70,7 +70,7 @@ export function wizardStepAwaitsInput(step: WizardStep): boolean {
 }
 
 /** Remove secret prefill before a wizard step crosses a client boundary. */
-export function sanitizeWizardStepForClient(step: WizardStep): ProtocolWizardStep {
+function sanitizeWizardStepForClient(step: WizardStep): ProtocolWizardStep {
   if (step.type === "qr") {
     if (!step.qrDataUrl) {
       throw new Error("wizard: QR presentation is no longer active");
@@ -364,6 +364,7 @@ export class WizardSession {
   private settled = false;
   private pendingExternalUrl: string | undefined;
   private deliveredPassiveStepId: string | undefined;
+  private rejectQrExpiry: (() => void) | undefined;
   private answerDeferred = new Map<
     string,
     {
@@ -518,6 +519,11 @@ export class WizardSession {
     return this.abortController.signal;
   }
 
+  /** Project one owned step, retiring an elapsed QR before any client can receive it. */
+  projectStepForClient(step: WizardStep): ProtocolWizardStep | null {
+    return this.retireQrIfExpired(step) ? null : sanitizeWizardStepForClient(step);
+  }
+
   private pushStep(step: WizardStep) {
     this.deliveredPassiveStepId = undefined;
     this.currentStep = step;
@@ -549,8 +555,9 @@ export class WizardSession {
     if (step.qrExpiresAtMs !== undefined) {
       waits.push(
         new Promise<T>((_resolve, reject) => {
+          this.rejectQrExpiry = () => reject(expired);
           expiryTimer = setTimeout(
-            () => reject(expired),
+            () => this.retireQrIfExpired(step),
             Math.max(0, step.qrExpiresAtMs! - Date.now()),
           );
           expiryTimer.unref?.();
@@ -587,6 +594,22 @@ export class WizardSession {
     }
     this.currentStep = null;
     this.deliveredPassiveStepId = undefined;
+    this.rejectQrExpiry = undefined;
+  }
+
+  private retireQrIfExpired(step: WizardStep): boolean {
+    if (step.type !== "qr" || step.qrExpiresAtMs === undefined || step.qrExpiresAtMs > Date.now()) {
+      return false;
+    }
+    if (this.currentStep?.id === step.id) {
+      const rejectExpiry = this.rejectQrExpiry;
+      this.clearCurrentStep();
+      rejectExpiry?.();
+    } else {
+      delete step.qrDataUrl;
+      delete step.qrExpiresAtMs;
+    }
+    return true;
   }
 
   pushProgress(message: string) {

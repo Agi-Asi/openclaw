@@ -18,12 +18,7 @@ import {
 import type { OnboardOptions } from "../../commands/onboard-types.js";
 import { createNonExitingRuntime, ExitError, type RuntimeEnv } from "../../runtime.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
-import {
-  sanitizeWizardStepForClient,
-  WizardClientCapabilityError,
-  WizardSession,
-  type WizardStep,
-} from "../../wizard/session.js";
+import { WizardClientCapabilityError, WizardSession } from "../../wizard/session.js";
 import { formatForLog } from "../ws-log.js";
 import {
   createAdmittedWizardSession,
@@ -80,17 +75,22 @@ function readWizardStatus(session: WizardSession) {
   };
 }
 
-function sanitizeWizardResultForClient<T extends { step?: WizardStep }>(result: T): T {
-  return result.step ? { ...result, step: sanitizeWizardStepForClient(result.step) } : result;
-}
-
 async function readWizardResultForClient(params: {
   session: WizardSession;
   supportsQrCode: boolean;
   respond: RespondFn;
 }) {
   try {
-    return await params.session.next({ supportsQrCode: params.supportsQrCode });
+    while (true) {
+      const result = await params.session.next({ supportsQrCode: params.supportsQrCode });
+      if (!result.step) {
+        return result;
+      }
+      const step = params.session.projectStepForClient(result.step);
+      if (step) {
+        return { ...result, step };
+      }
+    }
   } catch (error) {
     if (error instanceof WizardClientCapabilityError) {
       params.respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, error.message));
@@ -174,14 +174,17 @@ export const wizardHandlers: GatewayRequestHandlers = {
       return;
     }
     context.wizardSessions.set(sessionId, session);
-    const result = await session.next({ supportsQrCode });
+    const result = await readWizardResultForClient({ session, supportsQrCode, respond });
+    if (!result) {
+      return;
+    }
     if (result.done) {
       // Let the runner release setup admission before the terminal response,
       // so an immediate replacement wizard is not rejected as still busy.
       await whenAdmittedWizardSessionSettled(session);
       context.purgeWizardSession(sessionId);
     }
-    respond(true, { sessionId, ...sanitizeWizardResultForClient(result) }, undefined);
+    respond(true, { sessionId, ...result }, undefined);
   },
   "wizard.next": async ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateWizardNextParams, "wizard.next", respond)) {
@@ -213,7 +216,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
           respond(
             true,
             {
-              ...sanitizeWizardResultForClient(result),
+              ...result,
               error: validationError,
             },
             undefined,
@@ -234,7 +237,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
       await whenAdmittedWizardSessionSettled(session);
       context.purgeWizardSession(sessionId);
     }
-    respond(true, sanitizeWizardResultForClient(result), undefined);
+    respond(true, result, undefined);
   },
   "wizard.cancel": ({ params, respond, context }) => {
     if (!assertValidParams(params, validateWizardCancelParams, "wizard.cancel", respond)) {

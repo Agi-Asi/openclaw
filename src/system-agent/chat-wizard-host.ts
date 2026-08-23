@@ -7,12 +7,7 @@ import type {
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { RuntimeEnv } from "../runtime.js";
-import {
-  sanitizeWizardStepForClient,
-  WizardSession,
-  wizardStepAwaitsInput,
-  type WizardStep,
-} from "../wizard/session.js";
+import { WizardSession, wizardStepAwaitsInput, type WizardStep } from "../wizard/session.js";
 import type { MemoryImportProviderOutcome } from "../wizard/setup.memory-import.js";
 import type { SystemAgentOperation } from "./operations.js";
 import { classifySystemAgentApprovalText } from "./operator-approval.js";
@@ -284,13 +279,18 @@ export class ChatWizardHost {
     if (this.bridge?.step?.type === "qr" && !this.bridge.step.qrDataUrl) {
       this.bridge.step = null;
     }
-    const step = this.bridge?.step ?? null;
+    const ownedStep = this.bridge?.step ?? null;
+    const clientStep =
+      ownedStep && this.bridge ? this.bridge.session.projectStepForClient(ownedStep) : null;
+    if (ownedStep && !clientStep && this.bridge) {
+      this.bridge.step = null;
+    }
+    const step = clientStep;
     const completedReply =
       reply.text && step && wizardStepAwaitsInput(step)
         ? { ...reply, text: `${reply.text}\n${WIZARD_CANCEL_HINT}` }
         : reply;
     const question = wizardStepChatQuestion(step);
-    const clientStep = step ? sanitizeWizardStepForClient(step) : null;
     return {
       ...completedReply,
       ...(step?.sensitive === true ? { sensitive: true } : {}),
