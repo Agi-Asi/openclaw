@@ -70,20 +70,24 @@ describe("AppSidebar session delete access", () => {
       },
     });
     const restoreDialogPolyfill = installDialogPolyfill();
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    const toast = document.createElement("openclaw-toast-host");
+    document.body.append(toast);
     try {
       const menu = await openSessionMenu(sidebar, archived.key);
       menu.querySelector<HTMLButtonElement>('[data-shortcut="d"]')?.click();
       answerConfirmDialog(await waitForConfirmDialogActions(), "confirm");
       await waitForFast(() => expect(harness.deleteSession).toHaveBeenCalledOnce());
-      await waitForFast(() => expect(alertSpy).toHaveBeenCalledOnce());
-
-      expect(alertSpy).toHaveBeenCalledWith("Managed Worktrees:\nfeature — owned elsewhere");
+      await waitForFast(() =>
+        expect(toast.querySelector(".app-toast__message")?.textContent).toContain(
+          "Managed Worktrees:\nfeature — owned elsewhere",
+        ),
+      );
+      expect(toast.querySelector(".app-toast")?.getAttribute("role")).toBe("alert");
 
       expect(request).not.toHaveBeenCalledWith("worktrees.remove", expect.anything());
     } finally {
       restoreDialogPolyfill();
-      alertSpy.mockRestore();
+      toast.remove();
     }
   });
 });

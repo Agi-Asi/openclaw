@@ -56,7 +56,9 @@ suite.define(() => {
       await activateSelfRemovingControl(copyItem);
 
       await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(sessionId);
-      await expect.poll(() => page.locator(".app-toast").textContent()).toContain("Copied");
+      await expect
+        .poll(() => page.locator(".app-toast", { hasText: "Copied" }).textContent())
+        .toContain("Copied");
     } finally {
       await context.close();
     }

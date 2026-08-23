@@ -716,33 +716,158 @@ openclaw-session-owner-chip {
   line-height: 1;
 }
 
-/* Passive notifications stay in the trailing top corner, away from the chat
- * composer and other bottom-docked controls. The host shows one toast at a time
- * (`show()` replaces the active one), so there is no stack to offset against. */
-.app-toast {
+/* Global outcomes stay peripheral on wide layouts and stack without hiding
+ * independent events. Session outcomes remain in the owning pane below its topbar. */
+.app-toast-stack {
+  z-index: var(--z-toast);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.app-toast-stack--global {
   position: fixed;
   right: calc(20px + var(--safe-area-right));
+  bottom: calc(20px + var(--safe-area-bottom));
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.app-toast-stack--legacy {
+  position: fixed;
   top: calc(20px + var(--safe-area-top));
-  z-index: var(--z-toast);
+  right: calc(20px + var(--safe-area-right));
+}
+
+.app-toast-stack--session {
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  width: 100%;
+  padding: 8px 16px 0;
+}
+
+.app-toast {
+  --toast-tone: var(--info);
   display: flex;
   align-items: center;
   gap: var(--space-3);
   max-width: min(520px, calc(100vw - 32px));
   padding: 10px 12px 10px 16px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid color-mix(in srgb, var(--toast-tone) 34%, var(--border));
   border-radius: var(--radius-md);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--toast-tone) 14%, var(--popover)) 0%,
+    color-mix(in srgb, var(--toast-tone) 8%, var(--popover)) 100%
+  );
+  color: color-mix(in srgb, var(--toast-tone) 82%, var(--text-strong));
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+.app-toast--legacy {
+  border-color: var(--border-strong);
   background: var(--popover);
   color: var(--popover-foreground);
-  box-shadow: var(--shadow-lg);
+  transition: none;
+
+  @starting-style {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-toast[data-state="exiting"] {
+  opacity: 0;
+  transform: translateX(16px);
+  transition-duration: 150ms;
+}
+
+.app-toast--success {
+  --toast-tone: var(--ok);
+}
+
+.app-toast--warning {
+  --toast-tone: var(--warn);
+}
+
+.app-toast--danger {
+  --toast-tone: var(--danger);
+}
+
+.app-toast--session {
+  min-height: 38px;
+  max-width: min(520px, calc(100% - 32px));
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(0);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.app-toast--session[data-state="exiting"] {
+  transform: translateY(-8px);
+}
+
+.app-toast__indicator {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 /* A corner toast degenerates at phone widths, where it would span nearly the
  * whole viewport anyway. Use the full-width top idiom instead. */
 @media (max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
   .app-toast {
-    left: max(12px, var(--safe-area-left));
-    right: max(12px, var(--safe-area-right));
     max-width: none;
+    width: 100%;
+    transform: translateY(0);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+  }
+
+  .app-toast-stack--global {
+    top: calc(12px + var(--safe-area-top));
+    right: max(12px, var(--safe-area-right));
+    bottom: auto;
+    left: max(12px, var(--safe-area-left));
+    align-items: stretch;
+  }
+
+  .app-toast-stack--legacy {
+    top: calc(20px + var(--safe-area-top));
+    right: max(12px, var(--safe-area-right));
+    left: max(12px, var(--safe-area-left));
+  }
+
+  .app-toast--global[data-state="exiting"] {
+    transform: translateY(-100%);
+  }
+
+  .app-toast--session {
+    width: auto;
+    max-width: calc(100% - 24px);
   }
 }
 
@@ -762,12 +887,17 @@ openclaw-session-owner-chip {
   -webkit-box-orient: vertical;
 }
 
+.app-toast__message a {
+  pointer-events: auto;
+}
+
 .app-toast__action,
 .app-toast__dismiss {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
   color: inherit;
+  pointer-events: auto;
 }
 
 .app-toast__action {

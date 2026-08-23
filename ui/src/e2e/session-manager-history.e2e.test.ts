@@ -137,7 +137,7 @@ suite.define(() => {
           key: research.key,
         });
         const toast = page
-          .locator("openclaw-toast-host .app-toast")
+          .locator("openclaw-toast-host .app-toast--global")
           .filter({ hasText: "Session archived" });
         await toast.waitFor({ state: "visible", timeout: 10_000 });
         await toast.getByRole("button", { name: "Undo" }).waitFor({ state: "visible" });

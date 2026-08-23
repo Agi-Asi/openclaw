@@ -118,14 +118,20 @@ describe("AppSidebar session mutation feedback", () => {
     menu.querySelector<HTMLButtonElement>('[data-shortcut="a"]')?.click();
     await vi.waitFor(() => expect(harness.patch).toHaveBeenCalledOnce());
     await vi.waitFor(() =>
-      expect(toast.querySelector(".app-toast__message")?.textContent).toBe("Session archived"),
+      expect(
+        toast.querySelector(`[data-toast-key="session-archived:${archivedRow.key}"]`)?.textContent,
+      ).toContain("Session archived"),
     );
     expect(harness.patch).toHaveBeenCalledWith(
       archivedRow.key,
       { archived: true },
       { agentId: "main", expectedSessionId: `session:${archivedRow.key}` },
     );
-    toast.querySelector<HTMLButtonElement>(".app-toast__action")?.click();
+    toast
+      .querySelector<HTMLButtonElement>(
+        `[data-toast-key="session-archived:${archivedRow.key}"] .app-toast__action`,
+      )
+      ?.click();
 
     await vi.waitFor(() => expect(harness.patch).toHaveBeenCalledTimes(3));
     expect(setSessionKey).not.toHaveBeenCalled();

@@ -32,7 +32,9 @@ describe("update success notice", () => {
     announceVerifiedUpdateInstall({ version: "2026.8.11", sha: "abcdef1234567890" });
 
     expect(showToastMock).toHaveBeenCalledWith({
+      key: "update-success:abcdef1234567890",
       message: "Gateway updated · now on abcdef1.",
+      variant: "success",
     });
   });
 });

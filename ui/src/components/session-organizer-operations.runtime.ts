@@ -169,7 +169,9 @@ export async function archiveSessionWithUndo(
     return;
   }
   showToast({
+    key: `session-archived:${session.key}`,
     message: t("sessionsView.sessionArchived"),
+    variant: "success",
     actionLabel: t("common.undo"),
     onAction: () =>
       void restoreArchivedSessions(host, [{ session, pinned: session.pinned }], scope),
@@ -192,11 +194,16 @@ async function archiveSessionsWithUndo(
   }
   const archived = archivedRows.map((session) => ({ session, pinned: session.pinned }));
   showToast({
+    key: `sessions-archived:${archived
+      .map(({ session }) => session.key)
+      .toSorted()
+      .join(",")}`,
     message:
       archived.length === 1
         ? t("sessionsView.sessionArchived")
         : t("sessionsView.sessionsArchived", { count: String(archived.length) }),
     actionLabel: t("common.undo"),
+    variant: "success",
     onAction: () => void restoreArchivedSessions(host, archived, scope),
   });
 }
@@ -290,7 +297,14 @@ export async function deleteSessionsBatch(
   // too, so without this order the operator's lost intent would look like an
   // ordinary cancel instead of the reconnect that actually dropped it.
   if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
-    showToast({ message: t("sessionsView.deleteSessionsStale", { count: String(rows.length) }) });
+    showToast({
+      key: `delete-sessions-stale:${rows
+        .map((row) => row.key)
+        .toSorted()
+        .join(",")}`,
+      message: t("sessionsView.deleteSessionsStale", { count: String(rows.length) }),
+      variant: "warning",
+    });
     return;
   }
   if (!confirmed) {
@@ -320,7 +334,14 @@ export async function deleteSessionsBatch(
       }
     }
     if (result.preservedWorktrees.length > 0) {
-      window.alert(formatPreservedWorktreesNotice(result.preservedWorktrees));
+      showToast({
+        key: `worktrees-preserved:${result.preservedWorktrees
+          .map((worktree) => worktree.id)
+          .toSorted()
+          .join(",")}`,
+        message: formatPreservedWorktreesNotice(result.preservedWorktrees),
+        variant: "warning",
+      });
       if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
         return;
       }
@@ -448,7 +469,11 @@ export async function createSessionGroup(
     // Closing on that would leave the skipped rows unaccounted for, so the
     // partial outcome is named here; it is terminal, as the group already exists.
     if (moved === "completed" && targets.length < sessions.length) {
-      showToast({ message: t("sessionsView.newGroupMovePartial") });
+      showToast({
+        key: `new-group-move:${name}`,
+        message: t("sessionsView.newGroupMovePartial"),
+        variant: "warning",
+      });
     }
     return moved;
   }
@@ -461,7 +486,11 @@ export async function createSessionGroup(
   // not proof the sessions are gone — say so rather than closing on a silent
   // non-outcome the operator cannot account for.
   if (sessions.length > 0) {
-    showToast({ message: t("sessionsView.newGroupMoveSkipped") });
+    showToast({
+      key: `new-group-move:${name}`,
+      message: t("sessionsView.newGroupMoveSkipped"),
+      variant: "warning",
+    });
   }
   // Re-render so the new section shows up.
   host.requestUpdate();
@@ -546,7 +575,11 @@ export async function stopCloudWorker(
   // too, so without this order the operator's lost intent would look like an
   // ordinary cancel instead of the reconnect that actually dropped it.
   if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
-    showToast({ message: t("sessionsView.stopCloudWorkerStale", { session: session.label }) });
+    showToast({
+      key: `stop-cloud-worker-stale:${session.key}`,
+      message: t("sessionsView.stopCloudWorkerStale", { session: session.label }),
+      variant: "warning",
+    });
     return;
   }
   if (!confirmed) {
@@ -589,7 +622,11 @@ export async function deleteSession(
   // too, so without this order the operator's lost intent would look like an
   // ordinary cancel instead of the reconnect that actually dropped it.
   if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
-    showToast({ message: t("sessionsView.deleteSessionStale", { session: session.label }) });
+    showToast({
+      key: `delete-session-stale:${session.key}`,
+      message: t("sessionsView.deleteSessionStale", { session: session.label }),
+      variant: "warning",
+    });
     return;
   }
   if (!confirmed) {
@@ -628,7 +665,11 @@ export async function deleteSession(
         requiredScope: "operator.admin",
       });
       if (!removeAccess.allowed) {
-        window.alert(formatPreservedWorktreesNotice([preserved]));
+        showToast({
+          key: `worktree-preserved:${preserved.id}`,
+          message: formatPreservedWorktreesNotice([preserved]),
+          variant: "warning",
+        });
         if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
           return;
         }
@@ -645,7 +686,9 @@ export async function deleteSession(
         // above, so it earns the same visible outcome instead of vanishing quietly.
         if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
           showToast({
+            key: `worktree-preserved:${preserved.id}`,
             message: formatPreservedWorktreesNotice([preserved]),
+            variant: "warning",
           });
           return;
         }

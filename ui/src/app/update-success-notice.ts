@@ -42,7 +42,11 @@ export function announceVerifiedUpdateInstall(identity: UpdateInstallIdentity): 
   }
   if (!reloadControlUiIfStale(identity)) {
     takeRecordedUpdateSuccess();
-    showToast({ message: formatUpdateSuccess(identity) });
+    showToast({
+      key: `update-success:${identity.sha?.trim() || identity.version?.trim() || "unknown"}`,
+      message: formatUpdateSuccess(identity),
+      variant: "success",
+    });
   }
 }
 
@@ -62,5 +66,9 @@ export function announceRecordedUpdateSuccess(): void {
   } catch {
     return;
   }
-  showToast({ message: formatUpdateSuccess(identity) });
+  showToast({
+    key: `update-success:${identity.sha?.trim() || identity.version?.trim() || "unknown"}`,
+    message: formatUpdateSuccess(identity),
+    variant: "success",
+  });
 }

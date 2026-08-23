@@ -406,11 +406,12 @@ describe("AppSidebar catalog session rows", () => {
       // Hiding must announce its own outcome: the section name, undo, and a recovery
       // path that opens the settings block instead of only naming it.
       await toastHost.updateComplete;
-      const message = toastHost.querySelector(".app-toast__message")?.textContent ?? "";
+      const hiddenToast = toastHost.querySelector('[data-toast-key="catalog-hidden:codex"]');
+      const message = hiddenToast?.querySelector(".app-toast__message")?.textContent ?? "";
       expect(message).toContain("Codex");
       expect(message).toContain("Settings > Appearance > Sidebar");
 
-      const recovery = toastHost.querySelector<HTMLAnchorElement>(".app-toast__message a");
+      const recovery = hiddenToast?.querySelector<HTMLAnchorElement>(".app-toast__message a");
       expect(recovery?.getAttribute("href")).toBe(
         "/settings/appearance?section=__appearance__#settings-appearance-sidebar",
       );
@@ -419,7 +420,7 @@ describe("AppSidebar catalog session rows", () => {
         ["appearance", { search: "?section=__appearance__", hash: "#settings-appearance-sidebar" }],
       ]);
 
-      toastHost.querySelector<HTMLButtonElement>(".app-toast__action")?.click();
+      hiddenToast?.querySelector<HTMLButtonElement>(".app-toast__action")?.click();
       await sidebar.updateComplete;
       expect(loadStoredHiddenSessionCatalogIds().has("codex")).toBe(false);
       expect(sidebar.querySelector('[data-session-section="catalog:codex"]')).not.toBeNull();

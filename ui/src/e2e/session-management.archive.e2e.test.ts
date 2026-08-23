@@ -275,7 +275,7 @@ suite.define(() => {
       }
       await expect.poll(() => page.locator("[data-sidebar-session-error]").count()).toBe(0);
       await expect
-        .poll(() => page.locator(".app-toast").textContent())
+        .poll(() => page.locator(".app-toast", { hasText: "Archived 3 sessions" }).textContent())
         .toContain("Archived 3 sessions");
       await captureUiProof(page, "sidebar-multi-select-archive-settled.png");
       await page.waitForTimeout(500);
@@ -464,7 +464,9 @@ suite.define(() => {
         gateway,
         (params) => params.key === selected.key && params.archived === true,
       );
-      const archiveToast = page.locator("openclaw-toast-host .app-toast");
+      const archiveToast = page.locator("openclaw-toast-host .app-toast", {
+        hasText: "Session archived",
+      });
       await expect.poll(() => archiveToast.textContent()).toContain("Session archived");
       await gateway.emitGatewayEvent("sessions.changed", {
         ...selected,

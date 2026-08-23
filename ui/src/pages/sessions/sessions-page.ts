@@ -726,7 +726,14 @@ class SessionsPage extends OpenClawLightDomElement {
         return;
       }
       if (result.preservedWorktrees.length > 0) {
-        window.alert(formatPreservedWorktreesNotice(result.preservedWorktrees));
+        showToast({
+          key: `worktrees-preserved:${result.preservedWorktrees
+            .map((worktree) => worktree.id)
+            .toSorted()
+            .join(",")}`,
+          message: formatPreservedWorktreesNotice(result.preservedWorktrees),
+          variant: "warning",
+        });
       }
       if (result.deleted.length > 0) {
         const deleted = new Set(result.deleted);
@@ -1134,7 +1141,9 @@ class SessionsPage extends OpenClawLightDomElement {
     // page-scope check would silently no-op after navigating away.
     const agentId = this.sessionAgentId(row.key, scope.context);
     showToast({
+      key: `session-archived:${row.key}`,
       message: t("sessionsView.sessionArchived"),
+      variant: "success",
       actionLabel: t("common.undo"),
       onAction: () => {
         void scope.sessions.patch(
@@ -1459,7 +1468,11 @@ class SessionsPage extends OpenClawLightDomElement {
               break;
             case "copy-session-id":
               void copyToClipboard(row.sessionId ?? "").then((copied) => {
-                showToast({ message: t(copied ? "common.copied" : "common.copyFailed") });
+                showToast({
+                  key: `copy-session-id:${row.sessionId ?? row.key}`,
+                  message: t(copied ? "common.copied" : "common.copyFailed"),
+                  variant: copied ? "success" : "danger",
+                });
               });
               break;
             case "toggle-pin":

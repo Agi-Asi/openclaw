@@ -428,6 +428,7 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
     // link that opens the re-enable block for after the toast is gone. Longer than the
     // 6s default because that text is a recovery instruction, not an acknowledgement.
     showToast({
+      key: `catalog-hidden:${catalogId}`,
       message: html`${t("chat.sidebar.sectionHidden", { section: label })}
         <a
           class="session-link"
@@ -444,6 +445,7 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
       actionLabel: t("common.undo"),
       onAction: () => setStoredSessionCatalogHidden(catalogId, false),
       durationMs: 12_000,
+      variant: "info",
     });
   }
 
