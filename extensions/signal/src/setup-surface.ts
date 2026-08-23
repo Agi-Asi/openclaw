@@ -113,7 +113,11 @@ async function prepareManagedSignalLink(params: {
   accountId: string;
   runtime: RuntimeEnv;
   prompter: WizardPrompter;
-  options?: { signal?: AbortSignal; beforePersistentEffect?: () => Promise<void> };
+  options?: {
+    signal?: AbortSignal;
+    beforeExternalEffect?: () => Promise<void>;
+    beforePersistentEffect?: () => Promise<void>;
+  };
   cliPath: string;
 }): Promise<string | undefined> {
   const signal = params.options?.signal;
@@ -156,7 +160,7 @@ async function prepareManagedSignalLink(params: {
     }
     if (accounts.length === 0) {
       signal.throwIfAborted();
-      await params.options?.beforePersistentEffect?.();
+      await params.options?.beforeExternalEffect?.();
       signal.throwIfAborted();
       try {
         deviceLinkUri = parseSignalLinkUri(
@@ -185,7 +189,7 @@ async function prepareManagedSignalLink(params: {
     }
 
     signal.throwIfAborted();
-    await params.options?.beforePersistentEffect?.();
+    await params.options?.beforeExternalEffect?.();
     signal.throwIfAborted();
     try {
       const settled = linkClient

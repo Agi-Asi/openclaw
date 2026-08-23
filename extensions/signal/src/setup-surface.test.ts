@@ -52,6 +52,7 @@ async function prepareSignal(params: {
   prompter?: WizardPrompter;
   signal?: AbortSignal;
   includeSignal?: boolean;
+  beforeExternalEffect?: () => Promise<void>;
   beforePersistentEffect?: () => Promise<void>;
 }) {
   const prepare = signalSetupWizard.prepare;
@@ -66,6 +67,7 @@ async function prepareSignal(params: {
     ...(params.beforePersistentEffect
       ? { beforePersistentEffect: params.beforePersistentEffect }
       : {}),
+    ...(params.beforeExternalEffect ? { beforeExternalEffect: params.beforeExternalEffect } : {}),
   };
   return await prepare({
     cfg: params.cfg ?? {},
@@ -90,6 +92,8 @@ beforeEach(() => {
 describe("Signal hosted setup linking", () => {
   it("links the first managed-native account through one owned multi-account daemon", async () => {
     const events: string[] = [];
+    const beforeExternalEffect = vi.fn(async () => {});
+    const beforePersistentEffect = vi.fn(async () => {});
     const deviceLinkUri = "sgnl://linkdevice?uuid=test&pub_key=test";
     mocks.rpc.mockImplementation(async (method: string) => {
       events.push(method);
@@ -113,6 +117,8 @@ describe("Signal hosted setup linking", () => {
 
     const result = await prepareSignal({
       prompter: prompt.prompter,
+      beforeExternalEffect,
+      beforePersistentEffect,
     });
 
     expect(mocks.createLinkClient).toHaveBeenCalledWith({
@@ -120,6 +126,8 @@ describe("Signal hosted setup linking", () => {
       abortSignal: expect.any(AbortSignal),
     });
     expect(events).toEqual(["listAccounts", "startLink", "finishLink", "qrCode"]);
+    expect(beforeExternalEffect).toHaveBeenCalledTimes(2);
+    expect(beforePersistentEffect).not.toHaveBeenCalled();
     expect(prompt.qrCode).toHaveBeenCalledWith({
       title: "Link Signal",
       message: "In Signal, open Settings → Linked devices and scan this QR code.",
@@ -156,7 +164,7 @@ describe("Signal hosted setup linking", () => {
 
   it("revalidates hosted authority immediately before device linking", async () => {
     const guardError = new Error("verified inference changed");
-    const beforePersistentEffect = vi
+    const beforeExternalEffect = vi
       .fn<() => Promise<void>>()
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(guardError);
@@ -168,11 +176,11 @@ describe("Signal hosted setup linking", () => {
     await expect(
       prepareSignal({
         prompter: prompt.prompter,
-        beforePersistentEffect,
+        beforeExternalEffect,
       }),
     ).rejects.toBe(guardError);
 
-    expect(beforePersistentEffect).toHaveBeenCalledTimes(2);
+    expect(beforeExternalEffect).toHaveBeenCalledTimes(2);
     expect(mocks.rpc.mock.calls.map(([method]) => method)).toEqual(["listAccounts", "startLink"]);
     expect(prompt.qrCode).not.toHaveBeenCalled();
     expect(mocks.linkStop).toHaveBeenCalledOnce();
@@ -223,7 +231,7 @@ describe("Signal hosted setup linking", () => {
 
   it("rejects stale hosted authority before starting device linking", async () => {
     const guardError = new Error("verified inference changed");
-    const beforePersistentEffect = vi.fn(async () => {
+    const beforeExternalEffect = vi.fn(async () => {
       throw guardError;
     });
     const prompt = createPrompter();
@@ -232,11 +240,11 @@ describe("Signal hosted setup linking", () => {
     await expect(
       prepareSignal({
         prompter: prompt.prompter,
-        beforePersistentEffect,
+        beforeExternalEffect,
       }),
     ).rejects.toBe(guardError);
 
-    expect(beforePersistentEffect).toHaveBeenCalledOnce();
+    expect(beforeExternalEffect).toHaveBeenCalledOnce();
     expect(mocks.createLinkClient).toHaveBeenCalledOnce();
     expect(mocks.rpc.mock.calls.map(([method]) => method)).toEqual(["listAccounts"]);
     expect(prompt.qrCode).not.toHaveBeenCalled();
@@ -333,7 +341,7 @@ describe("Signal hosted setup linking", () => {
       prepareSignal({
         prompter: prompt.prompter,
         signal: controller.signal,
-        beforePersistentEffect: vi.fn(async () => {}),
+        beforeExternalEffect: vi.fn(async () => {}),
       }),
     ).rejects.toBeInstanceOf(WizardCancelledError);
 
