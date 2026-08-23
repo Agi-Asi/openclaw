@@ -58,9 +58,8 @@ import {
   guardChatRenderItems,
   trackTranscriptRenderDependencies,
 } from "./chat-transcript-render-guard.ts";
-import { renderChatTypingIndicator } from "./chat-typing-indicator.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
-import { renderTurnRecapRow } from "./chat-working-indicator.ts";
+import { renderTurnRecapRow, renderTurnTerminalStatusRow } from "./chat-working-indicator.ts";
 
 type ChatTranscriptProjection = {
   isDirectThread: boolean;
@@ -587,6 +586,13 @@ export function projectChatTranscript(
         : [],
     ),
   );
+  if (props.runStatus?.phase === "interrupted") {
+    transcriptRows.push({
+      kind: "content",
+      key: `interrupted:${props.runStatus.occurredAt}`,
+      content: renderTurnTerminalStatusRow("interrupted"),
+    });
+  }
   const realtimeConversation = renderRealtimeTalkConversation(props);
   if (realtimeConversation !== nothing) {
     transcriptRows.push({
@@ -611,14 +617,6 @@ export function projectChatTranscript(
       kind: "content",
       key: "background-tasks",
       content: backgroundTasks,
-    });
-  }
-  const typingIndicator = renderChatTypingIndicator(props.typingActors);
-  if (typingIndicator) {
-    transcriptRows.push({
-      kind: "content",
-      key: "presence:typing",
-      content: typingIndicator,
     });
   }
   trackTranscriptRenderDependencies(state, [
@@ -653,7 +651,6 @@ export function projectChatTranscript(
     props.userId,
     props.userName,
     props.userAvatar,
-    props.typingActors,
     props.resourceBasePath,
     (props.localMediaPreviewRoots ?? []).join("\u0000"),
     props.assistantAttachmentAuthToken,
@@ -667,6 +664,8 @@ export function projectChatTranscript(
     props.replyMessageAccess?.revision ?? 0,
     props.replyMessageAccess?.navigationId ?? "",
     turnRecap === null ? "" : `${turnRecap.runtimeMs}:${turnRecap.outputTokens ?? ""}`,
+    props.runStatus?.phase ?? "",
+    props.runStatus?.occurredAt ?? 0,
   ]);
   state.transcriptRenderContext.onSetReply = props.onSetReply;
   state.transcriptRenderContext.onOpenReply = (replyToId) => {

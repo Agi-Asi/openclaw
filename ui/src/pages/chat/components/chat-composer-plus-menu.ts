@@ -126,6 +126,7 @@ function renderCapabilityToggleRow(options: {
   title: string | null | undefined;
   icon?: unknown;
   note?: TemplateResult | typeof nothing;
+  icon?: TemplateResult;
 }) {
   return html`
     <wa-dropdown-item

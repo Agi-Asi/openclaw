@@ -1,6 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
+import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { icons } from "../../components/icons.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.ts";
 import { t } from "../../i18n/index.ts";
@@ -50,6 +51,7 @@ import {
   updateSlashMenu,
 } from "../chat/components/chat-composer-slash-menu.ts";
 import type { CapabilityMenuProps } from "../chat/components/chat-composer-types.ts";
+import { insertComposerDictation } from "../chat/composer-dictation.ts";
 import type { NewSessionAttachmentDraft } from "./attachment-draft.ts";
 import type { NewSessionVisibility } from "./create-params.ts";
 import type { NewSessionModelControl } from "./model-control.ts";
@@ -61,6 +63,7 @@ type NewSessionComposerOptions = {
   getAttachments: () => ChatAttachment[];
   message: string;
   modelControl?: TemplateResult | typeof nothing;
+  permissionControl?: TemplateResult | typeof nothing;
   pendingAttachmentReads: number;
   readSignal: AbortSignal;
   requiresModifier: boolean;
@@ -75,6 +78,7 @@ type NewSessionComposerOptions = {
   };
   submitting: boolean;
   textareaController: NewSessionComposerTextareaController;
+  voiceControl?: TemplateResult;
   messageLocked?: boolean;
   visibility?: NewSessionVisibility;
   draftAvailable?: boolean;
@@ -157,6 +161,15 @@ function renderStartControl(options: NewSessionComposerOptions) {
 
 export class NewSessionComposerTextareaController {
   private textarea: HTMLTextAreaElement | null = null;
+  private placeholderFrame: number | null = null;
+  private placeholderStartedAt: number | null = null;
+  private placeholderText = "";
+  private placeholderTarget = "";
+  private placeholderEntered = false;
+  private capturedSelection: { start: number; end: number } | null = null;
+  private skillCommandClient: GatewayBrowserClient | null = null;
+  private skillCommandAgentId = "";
+  private skillCommandDraftOwnerKey = "";
   readonly skillMenuState = createSkillMenuState();
   readonly slashMenuState = createSlashMenuState();
   capabilityMenuOpen = false;
@@ -166,6 +179,9 @@ export class NewSessionComposerTextareaController {
     const nextTextarea = element instanceof HTMLTextAreaElement ? element : null;
     if (this.textarea && this.textarea !== nextTextarea) {
       disconnectTextareaOverflowObserver(this.textarea);
+    }
+    if (this.textarea && !nextTextarea) {
+      this.resetPlaceholder();
     }
     this.textarea = nextTextarea;
     if (nextTextarea) {
@@ -182,9 +198,142 @@ export class NewSessionComposerTextareaController {
     }
   }
 
+  getPlaceholder(target: string, message: string, requestUpdate: () => void) {
+    if (message.length > 0 || this.placeholderEntered) {
+      this.placeholderEntered = true;
+      if (this.placeholderFrame !== null) {
+        globalThis.cancelAnimationFrame?.(this.placeholderFrame);
+        this.placeholderFrame = null;
+      }
+      return target;
+    }
+    if (this.placeholderTarget !== target) {
+      this.resetPlaceholder();
+      this.placeholderTarget = target;
+    }
+    const requestFrame = globalThis.requestAnimationFrame?.bind(globalThis);
+    if (
+      !requestFrame ||
+      (globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
+    ) {
+      this.placeholderText = target;
+      this.placeholderEntered = true;
+      return target;
+    }
+    if (this.placeholderFrame === null) {
+      const step = (timestamp: number) => {
+        this.placeholderStartedAt ??= timestamp;
+        const elapsed = Math.max(0, timestamp - this.placeholderStartedAt - 220);
+        const length = Math.min(target.length, Math.floor(elapsed / 36));
+        if (length !== this.placeholderText.length) {
+          this.placeholderText = target.slice(0, length);
+          requestUpdate();
+        }
+        if (length < target.length) {
+          this.placeholderFrame = requestFrame(step);
+          return;
+        }
+        this.placeholderFrame = null;
+        this.placeholderEntered = true;
+      };
+      this.placeholderFrame = requestFrame(step);
+    }
+    return this.placeholderText;
+  }
+
+  private resetPlaceholder() {
+    if (this.placeholderFrame !== null) {
+      globalThis.cancelAnimationFrame?.(this.placeholderFrame);
+      this.placeholderFrame = null;
+    }
+    this.placeholderStartedAt = null;
+    this.placeholderText = "";
+    this.placeholderTarget = "";
+    this.placeholderEntered = false;
+  }
+
+  /**
+   * Remembers where the caret was before another control takes focus. Pressing
+   * the microphone blurs the draft, so the caret has to be read while it still
+   * belongs to the writer rather than when the transcript arrives.
+   */
+  captureSelection() {
+    const target = this.textarea;
+    this.capturedSelection = target
+      ? { start: target.selectionStart, end: target.selectionEnd }
+      : null;
+  }
+
+  /**
+   * Writes a transcript into the draft at the remembered caret and returns the
+   * new draft, or null when there is nothing to insert.
+   *
+   * The element is the draft here, not a copy of it: it holds keystrokes that
+   * have not been committed upward yet, so reading the committed value instead
+   * would insert into a stale draft and drop them. It is written directly too,
+   * so the box grows with the speech before the next render commits.
+   */
+  insertTranscript(transcript: string): string | null {
+    const target = this.textarea;
+    if (!target) {
+      return null;
+    }
+    const value = target.value;
+    const selection = this.capturedSelection ?? { start: value.length, end: value.length };
+    this.capturedSelection = null;
+    const insertion = insertComposerDictation(value, transcript, selection.start, selection.end);
+    if (insertion.value === value) {
+      return null;
+    }
+    target.value = insertion.value;
+    adjustTextareaHeight(target);
+    queueMicrotask(() => {
+      if (!target.isConnected) {
+        return;
+      }
+      target.focus({ preventScroll: true });
+      target.selectionStart = insertion.caret;
+      target.selectionEnd = insertion.caret;
+    });
+    return insertion.value;
+  }
+
   readonly getTextarea = () => this.textarea;
 
+  syncSkillCommandOwner(
+    client: GatewayBrowserClient | null,
+    agentId: string,
+    draftOwnerKey: string,
+  ) {
+    const normalizedAgentId = agentId.trim();
+    if (
+      this.skillCommandClient === client &&
+      this.skillCommandAgentId === normalizedAgentId &&
+      this.skillCommandDraftOwnerKey === draftOwnerKey
+    ) {
+      return;
+    }
+    // The controller survives route, agent, and Gateway changes. Invalidate its
+    // menu generation so a prior owner cannot publish into the next draft.
+    this.skillCommandClient = client;
+    this.skillCommandAgentId = normalizedAgentId;
+    this.skillCommandDraftOwnerKey = draftOwnerKey;
+    resetSkillMenuState(this.skillMenuState);
+  }
+
+  ownsSkillCommands(client: GatewayBrowserClient, agentId: string, draftOwnerKey: string): boolean {
+    return (
+      this.skillCommandClient === client &&
+      this.skillCommandAgentId === agentId.trim() &&
+      this.skillCommandDraftOwnerKey === draftOwnerKey
+    );
+  }
+
   disconnect() {
+    this.resetPlaceholder();
+    this.skillCommandClient = null;
+    this.skillCommandAgentId = "";
+    this.skillCommandDraftOwnerKey = "";
     resetSkillMenuState(this.skillMenuState);
     resetSlashMenuState(this.slashMenuState);
     this.capabilityMenuOpen = false;
@@ -194,6 +343,35 @@ export class NewSessionComposerTextareaController {
       this.textarea = null;
     }
   }
+}
+
+/** Draft visibility pill: selecting it clears incognito, re-click returns to normal. */
+function renderVisibilityPill(params: {
+  mode: Exclude<NewSessionVisibility, "normal">;
+  icon: unknown;
+  label: string;
+  description: string;
+  options: NewSessionComposerOptions;
+}) {
+  const active = params.options.visibility === params.mode;
+  const disabled = params.options.submitting || params.options.messageLocked;
+  return html`
+    <button
+      type="button"
+      class="new-session-page__visibility new-session-page__visibility--${params.mode} ${active
+        ? "new-session-page__visibility--active"
+        : ""}"
+      role="switch"
+      aria-label=${params.label}
+      aria-checked=${String(active)}
+      ?disabled=${disabled}
+      title=${params.description}
+      @click=${() => params.options.onVisibilityChange?.(active ? "normal" : params.mode)}
+    >
+      <span class="new-session-page__visibility-icon" aria-hidden="true">${params.icon}</span>
+      <span class="new-session-page__visibility-label">${params.label}</span>
+    </button>
+  `;
 }
 
 export function renderDraftError(message: string, action?: { label: string; onClick: () => void }) {
@@ -261,9 +439,7 @@ function renderNewSessionPlusMenu(
   attachments: Parameters<typeof renderChatComposerPlusMenu>[0]["attachments"],
 ) {
   const capabilityMenu = options.capabilityMenu;
-  const draftEnabled = options.visibility === "draft";
   const overrideCount = countSessionToolOverrides(options.toolOverrides);
-  const selectedCount = overrideCount + (draftEnabled ? 1 : 0);
   const disabled = options.submitting || options.messageLocked === true;
   const controller = options.textareaController;
   return renderChatComposerPlusMenu({
@@ -273,22 +449,9 @@ function renderNewSessionPlusMenu(
     open: controller.capabilityMenuOpen,
     view: controller.capabilityMenuView,
     toolOverrides: options.toolOverrides,
-    rootToggles: options.draftAvailable
-      ? [
-          {
-            value: "new-session-draft",
-            label: t("newSession.draft"),
-            icon: icons.pencil,
-            checked: draftEnabled,
-            disabled,
-            title: t("newSession.draftDescription"),
-            onChange: (checked) => options.onVisibilityChange?.(checked ? "draft" : "normal"),
-          },
-        ]
-      : undefined,
     selectedLabel:
-      selectedCount > 0
-        ? t("newSession.composerOptionsSelected", { count: String(selectedCount) })
+      overrideCount > 0
+        ? t("newSession.composerOptionsSelected", { count: String(overrideCount) })
         : undefined,
     onOpenChange: (open) => {
       controller.capabilityMenuOpen = open;
@@ -304,10 +467,9 @@ function renderNewSessionPlusMenu(
   });
 }
 
-function renderNewSessionSelectionStatus(options: NewSessionComposerOptions) {
-  const draftEnabled = options.visibility === "draft";
+function renderNewSessionOverrideStatus(options: NewSessionComposerOptions) {
   const overrideCount = countSessionToolOverrides(options.toolOverrides);
-  if (!draftEnabled && overrideCount === 0) {
+  if (overrideCount === 0) {
     return nothing;
   }
   const disabled = options.submitting || options.messageLocked === true;
@@ -317,31 +479,19 @@ function renderNewSessionSelectionStatus(options: NewSessionComposerOptions) {
     options.requestUpdate();
   };
   return html`
-    ${draftEnabled
-      ? html`<button
-          type="button"
-          class="new-session-page__selection-status"
-          ?disabled=${disabled}
-          @click=${openMenu}
-        >
-          ${icons.pencil}${t("newSession.draft")}
-        </button>`
-      : nothing}
-    ${overrideCount > 0
-      ? html`<button
-          type="button"
-          class="new-session-page__selection-status"
-          ?disabled=${disabled}
-          @click=${openMenu}
-        >
-          ${t(
-            overrideCount === 1
-              ? "chat.composer.overrides.countOne"
-              : "chat.composer.overrides.count",
-            { count: String(overrideCount) },
-          )}
-        </button>`
-      : nothing}
+    <button
+      type="button"
+      class="new-session-page__selection-status"
+      ?disabled=${disabled}
+      @click=${openMenu}
+    >
+      ${t(
+        overrideCount === 1
+          ? "chat.composer.overrides.countOne"
+          : "chat.composer.overrides.count",
+        { count: String(overrideCount) },
+      )}
+    </button>
   `;
 }
 
@@ -405,6 +555,12 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
     canCompose: !options.submitting && !options.messageLocked,
   });
   options.textareaController.syncDraft(options.message);
+  const messagePlaceholder = t("newSession.messagePlaceholder");
+  const animatedPlaceholder = options.textareaController.getPlaceholder(
+    messagePlaceholder,
+    options.message,
+    options.requestUpdate,
+  );
   const skillMenuVisible =
     !options.submitting && !options.messageLocked && isSkillMenuVisible(skillMenuState);
   const slashMenuVisible =
@@ -449,8 +605,8 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
               class="new-session-page__message"
               rows="1"
               ?disabled=${options.submitting || options.messageLocked}
-              placeholder=${t("newSession.messagePlaceholder")}
-              aria-label=${t("newSession.messagePlaceholder")}
+              placeholder=${animatedPlaceholder}
+              aria-label=${messagePlaceholder}
               .value=${options.message}
               aria-autocomplete="list"
               aria-controls=${ifDefined(menuVisible ? menuListboxId : undefined)}
@@ -481,15 +637,31 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
               >${activeMenuOptionLabel}</span
             >
           </div>
-          <div class="agent-chat__composer-actions">${renderStartControl(options)}</div>
         </div>
         <div class="agent-chat__composer-footer">
-          <div class="agent-chat__composer-controls">
+          <div class="agent-chat__composer-lead">
             ${renderNewSessionPlusMenu(options, attachmentProps)}
-            ${options.modelControl && options.modelControl !== nothing
-              ? html`<div class="chat-composer-model-control">${options.modelControl}</div>`
+            ${options.permissionControl ?? nothing}
+            ${options.draftAvailable
+              ? renderVisibilityPill({
+                  mode: "draft",
+                  icon: icons.pencil,
+                  label: t("newSession.draft"),
+                  description: t("newSession.draftDescription"),
+                  options,
+                })
               : nothing}
-            ${renderNewSessionSelectionStatus(options)}
+            ${renderNewSessionOverrideStatus(options)}
+          </div>
+          <div class="agent-chat__composer-trail">
+            <div class="agent-chat__composer-controls">
+              ${options.modelControl && options.modelControl !== nothing
+                ? html`<div class="chat-composer-model-control">${options.modelControl}</div>`
+                : nothing}
+            </div>
+            <div class="agent-chat__composer-actions">
+              ${options.voiceControl ?? nothing}${renderStartControl(options)}
+            </div>
           </div>
         </div>
         ${options.blockedSubmitNotice
@@ -511,6 +683,7 @@ export function renderNewSessionDraftComposer(options: {
   attachmentDraft: NewSessionAttachmentDraft;
   canSubmit: boolean;
   context: import("../../app/context.ts").ApplicationContext | undefined;
+  draftOwnerKey: string;
   isCatalogTarget: boolean;
   message: string;
   visibility?: NewSessionVisibility;
@@ -518,7 +691,9 @@ export function renderNewSessionDraftComposer(options: {
   capabilityMenu?: CapabilityMenuProps;
   toolOverrides?: SessionToolOverrides | null;
   modelControl: NewSessionModelControl;
+  permissionControl?: TemplateResult;
   textareaController: NewSessionComposerTextareaController;
+  voiceControl?: TemplateResult;
   requiresModifier: boolean;
   requestUpdate: () => void;
   submitDisabledReason?: string;
@@ -536,7 +711,12 @@ export function renderNewSessionDraftComposer(options: {
   onSubmit: () => void;
 }) {
   const readSignal = options.attachmentDraft.readSignal;
-  const commandClient = options.context?.gateway.snapshot.client;
+  const commandClient = options.context?.gateway.snapshot.client ?? null;
+  options.textareaController.syncSkillCommandOwner(
+    commandClient,
+    options.agentId,
+    options.draftOwnerKey,
+  );
   return renderNewSessionComposer({
     attachmentLimits: options.context?.gateway.snapshot.hello?.policy?.attachments,
     attachments: options.attachmentDraft.attachments,
@@ -555,18 +735,30 @@ export function renderNewSessionDraftComposer(options: {
           context: options.context,
           sending: options.submitting,
         }),
+    permissionControl: options.permissionControl,
     pendingAttachmentReads: options.attachmentDraft.pendingReads,
     readSignal,
     requiresModifier: options.requiresModifier,
     requestUpdate: options.requestUpdate,
     refreshCommands: commandClient
-      ? () => refreshSlashCommands({ client: commandClient, agentId: options.agentId })
+      ? () =>
+          refreshSlashCommands({
+            client: commandClient,
+            agentId: options.agentId,
+            shouldApply: () =>
+              options.textareaController.ownsSkillCommands(
+                commandClient,
+                options.agentId,
+                options.draftOwnerKey,
+              ),
+          })
       : undefined,
     submitDisabledReason: options.submitDisabledReason,
     blockedSubmitNotice: options.blockedSubmitNotice,
     terminalAction: options.terminalAction,
     submitting: options.submitting,
     textareaController: options.textareaController,
+    voiceControl: options.voiceControl,
     messageLocked: options.messageLocked,
     onAttachmentsChange: (attachments) => {
       if (!options.submitting && !options.messageLocked) {

@@ -189,6 +189,9 @@ export const icons = {
   target: strokeIcon(svg` <circle cx="12" cy="12" r="10" />
     <circle cx="12" cy="12" r="6" />
     <circle cx="12" cy="12" r="2" />`),
+  goal: strokeIcon(svg` <path d="M12 13V2l8 4-8 4" />
+    <path d="M20.561 10.222a9 9 0 1 1-12.55-5.29" />
+    <path d="M8.002 9.997a5 5 0 1 0 8.9 2.02" />`),
   switchCamera: strokeIcon(svg` <path d="M11 19H6.5a4.5 4.5 0 0 1 0-9H8" />
     <path d="m8 16 3 3-3 3" />
     <path d="M13 5h4.5a4.5 4.5 0 0 1 0 9H16" />
@@ -200,6 +203,14 @@ export const icons = {
     <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
     <path d="m9 15 3-3 3 3" />
     <path d="M12 12v6" />`),
+  shredder:
+    strokeIcon(svg` <path d="M4 13V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v5" />
+    <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+    <path d="M10 22v-5" />
+    <path d="M14 19v-2" />
+    <path d="M18 20v-3" />
+    <path d="M2 13h20" />
+    <path d="M6 20v-3" />`),
   alertTriangle: strokeIcon(svg` <path
       d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
     />
@@ -292,6 +303,15 @@ export const icons = {
     <path d="M13 6h8" />
     <path d="M13 12h8" />
     <path d="M13 18h8" />`),
+  globeOff: strokeIcon(svg` <path
+      d="M10.114 4.462A14.5 14.5 0 0 1 12 2a10 10 0 0 1 9.313 13.643"
+    />
+    <path d="M15.557 15.556A14.5 14.5 0 0 1 12 22 10 10 0 0 1 4.929 4.929" />
+    <path d="M15.892 10.234A14.5 14.5 0 0 0 12 2a10 10 0 0 0-3.643.687" />
+    <path d="M17.656 12H22" />
+    <path d="M19.071 19.071A10 10 0 0 1 12 22 14.5 14.5 0 0 1 8.44 8.45" />
+    <path d="M2 12h10" />
+    <path d="m2 2 20 20" />`),
 
   ...toolIcons,
 } as const;
