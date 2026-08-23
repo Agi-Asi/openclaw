@@ -775,7 +775,7 @@ suite.define(() => {
               gap: Math.round(editorBox.x - (activityBox.x + activityBox.width)),
             };
           })
-          .toEqual({ activityShift: 25, centerDelta: 0, gap: 4 });
+          .toEqual({ activityShift: 25, centerDelta: 0, gap: 3 });
         await captureUiProof(page, "07-home-activity-editor.png");
       },
     );

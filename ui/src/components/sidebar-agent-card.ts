@@ -69,6 +69,9 @@ class SidebarAgentCard extends OpenClawLightDomContentsElement {
 
   private syncNameOverflow() {
     const name = this.querySelector<HTMLElement>(".sidebar-agent-card__name-text");
+    if (name) {
+      name.dataset.direction = getComputedStyle(name).direction;
+    }
     const overflow = Boolean(name && name.scrollWidth > name.clientWidth + 1);
     if (overflow !== this.nameOverflow) {
       this.nameOverflow = overflow;

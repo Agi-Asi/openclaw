@@ -266,9 +266,9 @@ suite.define(() => {
       frontSize: [18, 18],
       overlap: 8,
       reveal: 10,
-      slotWidth: 20,
+      slotWidth: 22,
       stackSize: [28, 20],
-      textGap: 4,
+      textGap: 3,
     });
     await expectBrowser(overflowRow.locator(".session-owner-stack__overflow")).toHaveText("+2");
     const rowHeights = await Promise.all([

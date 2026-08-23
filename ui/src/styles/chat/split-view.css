@@ -367,19 +367,8 @@ openclaw-chat-pane {
   opacity: 0.48;
 }
 
-.chat-pane__session-menu-anchor,
-.chat-pane__session-menu-anchor > openclaw-chat-header-session-menu {
-  width: 28px;
-  height: 28px;
-}
-
 .chat-pane__session-menu-anchor {
   transform: translateY(1px);
-}
-
-.chat-header-session-menu[open] .chat-header-session-menu__trigger {
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  color: var(--text);
 }
 
 /* House separator treatment: an aria-hidden glyph tinted with --muted, spacing

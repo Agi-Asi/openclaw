@@ -1,5 +1,3 @@
-/* Loaded with the lazy sidebar-menu renderer so closed menus add no startup CSS. */
-
 /* The agent switcher marks its selection in the trailing details rail
    (.session-menu__check), so the native leading checkmark is layout-only: it
    reserved a column that pushed avatar rows out of the command rows' gutter. */
@@ -176,12 +174,6 @@ wa-dropdown-item.sidebar-agent-menu__agent-switch--active::part(base) {
   gap: 3px;
 }
 
-/* Help destinations are real hyperlinks; keep them looking like menu rows. */
-.sidebar-identity-menu a.sidebar-customize-menu__item {
-  color: inherit;
-  text-decoration: none;
-}
-
 /* The help flyout must escape the menu box, so the root stays
    overflow-visible; the viewport bound moves to a flex column where only
    the switcher list shrinks and scrolls (the action rows always fit). */
@@ -214,7 +206,6 @@ wa-dropdown.sidebar-agent-menu::part(menu) {
 .sidebar-agent-menu__agent-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: auto;
   align-items: start;
   gap: var(--agent-grid-gap);
   flex: 0 1 auto;
@@ -222,7 +213,6 @@ wa-dropdown.sidebar-agent-menu::part(menu) {
   min-height: 0;
   overflow-y: auto;
   scrollbar-color: color-mix(in srgb, var(--border) 72%, transparent) transparent;
-  scrollbar-width: thin;
 }
 
 .sidebar-agent-menu > .sidebar-customize-menu__separator {

@@ -10,7 +10,6 @@ import {
 
 const suite = createChatFlowE2eSuite();
 const artifactRoot = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
-const captureBaseline = process.env.OPENCLAW_CAPTURE_UI_BASELINE === "1";
 
 async function capture(target: Locator | Page, fileName: string) {
   if (!artifactRoot) {
@@ -107,18 +106,6 @@ suite.define(() => {
         const search = sidebarActions.locator(".sidebar-brand__search");
         const shellControls = page.locator(".shell-chrome-controls");
         await sidebarHeader.waitFor({ state: "visible" });
-        if (captureBaseline) {
-          await capture(page, `before-open-${colorScheme}-context.png`);
-          await capture(sidebarHeader, `before-open-${colorScheme}-sidebar-crop.png`);
-          await capture(shellControls, `before-open-${colorScheme}-topbar-crop.png`);
-          await shellControls.locator(".shell-chrome-controls__nav-toggle").click();
-          await expect
-            .poll(() => page.locator(".shell").getAttribute("class"))
-            .toContain("shell--nav-collapsed");
-          await capture(page, `before-closed-${colorScheme}-context.png`);
-          await capture(shellControls, `before-closed-${colorScheme}-crop.png`);
-          return;
-        }
         await expect.poll(() => sidebarActions.getByRole("button").count()).toBe(3);
         await expect.poll(() => shellControls.count()).toBe(0);
         await expect.poll(() => search.getAttribute("aria-label")).toBe("Open command palette");
@@ -160,8 +147,8 @@ suite.define(() => {
           }),
         );
         expect(collapsedMetrics.map(({ label }) => label)).toEqual([
-          "Open command palette",
           "Expand sidebar",
+          "Open command palette",
         ]);
         expect(new Set(collapsedMetrics.map(({ centerY }) => centerY)).size).toBe(1);
         expect(collapsedMetrics[1]!.left - collapsedMetrics[0]!.right).toBe(4);
@@ -203,9 +190,9 @@ suite.define(() => {
       });
       try {
         await page.goto(`${suite.server.baseUrl}chat`);
-        if (captureBaseline) {
-          return;
-        }
+        await page.evaluate(() => {
+          document.documentElement.dir = "rtl";
+        });
         const sidebarHeader = page.locator(".sidebar-brand");
         const create = sidebarHeader.locator(".sidebar-brand__new-thread");
         await sidebarHeader.waitFor({ state: "visible" });
@@ -224,12 +211,11 @@ suite.define(() => {
         viewport: { height: 900, width: 1440 },
       });
       const page = await context.newPage();
-      await installMockGateway(page, { assistantName: "Roboclaw Research Workspace" });
+      await installMockGateway(page, {
+        assistantName: "2026 مساحة عمل بحث روبوكلاو طويلة جدًا للاختبار",
+      });
       try {
         await page.goto(`${suite.server.baseUrl}chat`);
-        if (captureBaseline) {
-          return;
-        }
         const sidebarHeader = page.locator(".sidebar-brand");
         await sidebarHeader.waitFor({ state: "visible" });
         await expect
@@ -243,6 +229,15 @@ suite.define(() => {
             }),
           )
           .toBe(true);
+        const name = sidebarHeader.locator(".sidebar-agent-card__name-text");
+        await expect.poll(() => name.getAttribute("class")).toContain("--overflow");
+        const rtlStyle = await name.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { direction: style.direction, mask: style.maskImage };
+        });
+        expect(rtlStyle.direction).toBe("rtl");
+        expect(await name.getAttribute("data-direction")).toBe("rtl");
+        expect(rtlStyle.mask).toContain("270deg");
         await capture(sidebarHeader, `after-overflow-${colorScheme}-crop.png`);
       } finally {
         await suite.closeBrowserContext(context);

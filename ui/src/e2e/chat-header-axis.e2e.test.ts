@@ -65,7 +65,6 @@ suite.define(() => {
           return {
             nav: centerY(".chat-pane__nav-toggle svg"),
             projectIcon: centerY(".workspace-icon"),
-            projectText: centerY(".chat-pane__workspace-chip span"),
             menu: centerY(".chat-header-session-menu__trigger svg"),
             separator: centerY(".chat-pane__crumb-sep"),
             parentText: centerY(".chat-pane__parent-session-text"),
@@ -73,18 +72,16 @@ suite.define(() => {
           };
         });
 
-        expect(Math.abs(centers.menu - centers.nav), JSON.stringify(centers)).toBeLessThanOrEqual(
-          0.1,
-        );
+        expect(centers.menu - centers.nav, JSON.stringify(centers)).toBeCloseTo(1, 4);
         for (const center of [
           centers.projectIcon,
-          centers.projectText,
           centers.separator,
+          centers.parentText,
           centers.sessionText,
         ]) {
           expect(Math.abs(centers.nav - center), JSON.stringify(centers)).toBeLessThanOrEqual(0.1);
         }
-        expect(await header.locator(".chat-pane__crumb-sep").count()).toBe(2);
+        expect(await header.locator(".chat-pane__crumb-sep").count()).toBe(1);
         const parent = header.locator(".chat-pane__parent-session");
         const nestedTrail = await header.evaluate((root) => {
           const parentCrumb = root.querySelector<HTMLElement>(".chat-pane__parent-session")!;

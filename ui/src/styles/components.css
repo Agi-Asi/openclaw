@@ -54,9 +54,6 @@ openclaw-session-owner-chip {
   font-size: 10px;
 }
 
-/* Header identity is one scale: the creator matches the 18px viewer avatars it
-   shares the trail with, and drops the row variant's ring and lift so no avatar
-   in the chat header carries decoration of its own. */
 .session-owner-chip--header {
   width: 18px;
   height: 18px;

@@ -12,8 +12,6 @@
   --shell-chrome-controls-gap: 4px;
   --shell-chrome-icon-size: 18px;
   --shell-chrome-icon-stroke-width: 1.75px;
-  --shell-chrome-plus-icon-size: 19px;
-  --shell-chrome-plus-icon-stroke-width: 2px;
   --shell-native-titlebar-cluster-end: 216px;
   --shell-chrome-controls-collapsed-width: calc(
     var(--shell-chrome-control-size) + var(--shell-chrome-control-size) + 10px
@@ -1132,9 +1130,9 @@ openclaw-settings-save-indicator:empty {
 }
 
 .sidebar-brand__new-thread svg {
-  width: var(--shell-chrome-plus-icon-size);
-  height: var(--shell-chrome-plus-icon-size);
-  stroke-width: var(--shell-chrome-plus-icon-stroke-width);
+  width: 19px;
+  height: 19px;
+  stroke-width: 2px;
 }
 
 .sidebar-footer-bar__custodian svg {
@@ -2392,21 +2390,6 @@ openclaw-settings-save-indicator:empty {
   box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 75%, transparent);
 }
 
-.sidebar-customize-menu:not(wa-dropdown) {
-  position: fixed;
-  z-index: 120;
-  min-width: 224px;
-  max-width: 264px;
-  max-height: 420px;
-  overflow-y: auto;
-  padding: var(--menu-padding);
-  border: 1px solid var(--overlay-border);
-  border-radius: var(--menu-radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--overlay-shadow);
-  animation: menu-in 140ms var(--ease-out);
-}
-
 wa-dropdown.sidebar-customize-menu {
   position: fixed;
   z-index: 120;
@@ -2519,19 +2502,6 @@ wa-dropdown-item.sidebar-customize-menu__item {
   color: var(--accent);
 }
 
-.session-menu:not(wa-dropdown) {
-  position: fixed;
-  z-index: 121;
-  min-width: 224px;
-  max-width: 264px;
-  padding: var(--menu-padding);
-  border: 1px solid var(--overlay-border);
-  border-radius: var(--menu-radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--overlay-shadow);
-  animation: menu-in 140ms var(--ease-out);
-}
-
 wa-dropdown.session-menu {
   position: fixed;
   z-index: 121;
@@ -2576,19 +2546,6 @@ openclaw-session-menu[popover] {
   overflow: visible;
   border: 0;
   background: transparent;
-}
-
-.sidebar-session-sort-menu:not(wa-dropdown) {
-  position: fixed;
-  z-index: 121;
-  min-width: 176px;
-  max-width: 220px;
-  padding: var(--menu-padding);
-  border: 1px solid var(--overlay-border);
-  border-radius: var(--menu-radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--overlay-shadow);
-  animation: menu-in 140ms var(--ease-out);
 }
 
 wa-dropdown.sidebar-session-sort-menu {
@@ -2976,12 +2933,6 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
     color var(--duration-fast) ease;
 }
 
-.nav-item .session-glyph .nav-item__icon {
-  width: var(--sb-glyph-col);
-  height: 16px;
-  flex-basis: var(--sb-glyph-col);
-}
-
 .nav-item > .session-glyph {
   width: var(--sb-glyph-col);
   flex-basis: var(--sb-glyph-col);
@@ -3095,10 +3046,6 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
   color: var(--text-strong);
   background: color-mix(in srgb, var(--accent-subtle) 88%, var(--bg-elevated) 12%);
   border-color: color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-.sidebar-zone-entry .sidebar-recent-session__aside {
-  padding-inline-end: 0;
 }
 
 .sidebar-zone-entry .sidebar-recent-session > .sidebar-child-session-toggle {
@@ -3215,7 +3162,7 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
   mask-image: linear-gradient(to right, black calc(100% - 18px), transparent);
 }
 
-.sidebar-agent-card__name-text--overflow:dir(rtl) {
+.sidebar-agent-card__name-text--overflow[data-direction="rtl"] {
   -webkit-mask-image: linear-gradient(to left, black calc(100% - 18px), transparent);
   mask-image: linear-gradient(to left, black calc(100% - 18px), transparent);
 }
@@ -4198,7 +4145,6 @@ html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-
   background: var(--bg);
 }
 
-/* Sidebar sessions redesign: work-session subtitles, agent sections, draft row. */
 .sidebar-session-indicator {
   position: relative;
   display: inline-flex;
@@ -4207,11 +4153,6 @@ html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-
   width: var(--sb-glyph-col);
   height: 16px;
   flex: 0 0 var(--sb-glyph-col);
-}
-
-.sidebar-recent-sessions .sidebar-session-indicator {
-  width: var(--sb-glyph-col);
-  flex-basis: var(--sb-glyph-col);
 }
 
 .sidebar-session-indicator > .session-row-draft-indicator:not(:only-child) {
