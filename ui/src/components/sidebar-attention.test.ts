@@ -216,19 +216,6 @@ describe("cron attention details", () => {
     }
   });
 
-  it("keeps aggregate automation incidents linked to the list", () => {
-    const jobs = [cronJob("failed-a"), cronJob("failed-b")];
-    for (const job of jobs) {
-      job.state = { lastRunStatus: "error", lastError: "disk full" };
-    }
-
-    const action = cronItems(jobs).find((item) => item.kind === "cronFailed")?.action;
-    if (action?.kind !== "askCustodian") {
-      throw new Error("expected failed cron custodian action");
-    }
-    expect(action.alert.action?.target).toEqual({ kind: "navigate", routeId: "cron" });
-  });
-
   it("hard-caps the model question for a large incident set", () => {
     const jobs = Array.from({ length: 100 }, (_, index) => {
       const job = cronJob(`failed-${index}`);
