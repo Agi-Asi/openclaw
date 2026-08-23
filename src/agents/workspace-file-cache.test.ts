@@ -29,6 +29,16 @@ function cacheFile(name: string, sizeBytes: number, identity = name): string {
 }
 
 describe("workspace file byte cache", () => {
+  it("evicts the oldest of 65 empty entries", () => {
+    const oldest = cacheFile("entry-0", 0);
+    for (let index = 1; index <= 64; index += 1) {
+      cacheFile(`entry-${index}`, 0);
+    }
+
+    expect(readWorkspaceFileCache(oldest, "entry-0")).toBeUndefined();
+    expect(readWorkspaceFileCache(path.join(workspaceRoot, "entry-64"), "entry-64")).toBe("");
+  });
+
   it("evicts oldest content by aggregate bytes", () => {
     const oldest = cacheFile("oldest", 7 * MIB);
     const newest = cacheFile("newest", 6 * MIB);

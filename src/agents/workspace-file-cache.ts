@@ -8,6 +8,7 @@ type WorkspaceFileCacheEntry = {
 
 // One fully populated canonical workspace may retain six 2 MiB bootstrap files.
 const MAX_WORKSPACE_FILE_CACHE_BYTES = 12 * 1024 * 1024;
+const MAX_WORKSPACE_FILE_CACHE_ENTRIES = 64;
 const workspaceFileCache = new Map<string, WorkspaceFileCacheEntry>();
 let workspaceFileCacheBytes = 0;
 
@@ -50,7 +51,10 @@ export function writeWorkspaceFileCache(params: {
     sizeBytes,
   });
   workspaceFileCacheBytes += sizeBytes;
-  while (workspaceFileCacheBytes > MAX_WORKSPACE_FILE_CACHE_BYTES) {
+  while (
+    workspaceFileCache.size > MAX_WORKSPACE_FILE_CACHE_ENTRIES ||
+    workspaceFileCacheBytes > MAX_WORKSPACE_FILE_CACHE_BYTES
+  ) {
     const oldest = workspaceFileCache.keys().next();
     if (oldest.done) {
       break;
