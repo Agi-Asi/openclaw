@@ -17,21 +17,7 @@ class MacosTitlebarControls extends OpenClawLightDomContentsElement {
   override render() {
     const toggleLabel = this.navCollapsed ? t("nav.expand") : t("nav.collapse");
     return html`
-      <nav
-        class="macos-titlebar-controls ${this.navCollapsed
-          ? "macos-titlebar-controls--nav-collapsed"
-          : ""}"
-        @mousedown=${beginNativeWindowDrag}
-      >
-        ${!this.historyOnly && !this.navCollapsed
-          ? this.renderButton({
-              label: toggleLabel,
-              icon: icons.panelLeft,
-              ariaExpanded: !this.navCollapsed,
-              onClick: this.onToggleSidebar,
-              className: "macos-titlebar-controls__sidebar-toggle",
-            })
-          : nothing}
+      <nav class="macos-titlebar-controls" @mousedown=${beginNativeWindowDrag}>
         ${this.renderButton({
           label: t("nav.back"),
           icon: icons.chevronLeft,
@@ -55,15 +41,13 @@ class MacosTitlebarControls extends OpenClawLightDomContentsElement {
                 onClick: this.onOpenPalette,
                 className: "macos-titlebar-controls__search",
               })}
-              ${this.navCollapsed
-                ? this.renderButton({
-                    label: toggleLabel,
-                    icon: icons.panelLeft,
-                    ariaExpanded: false,
-                    onClick: this.onToggleSidebar,
-                    className: "macos-titlebar-controls__sidebar-toggle",
-                  })
-                : nothing}
+              ${this.renderButton({
+                label: toggleLabel,
+                icon: icons.panelLeft,
+                ariaExpanded: !this.navCollapsed,
+                onClick: this.onToggleSidebar,
+                className: "macos-titlebar-controls__sidebar-toggle",
+              })}
             `
           : nothing}
       </nav>

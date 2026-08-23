@@ -14,6 +14,7 @@
   --shell-chrome-icon-stroke-width: 1.75px;
   --shell-chrome-plus-icon-size: 19px;
   --shell-chrome-plus-icon-stroke-width: 2px;
+  --shell-native-titlebar-rail-width: 258px;
   --shell-chrome-controls-collapsed-width: calc(
     var(--shell-chrome-control-size) + var(--shell-chrome-control-size) + 10px
   );
@@ -303,9 +304,10 @@ html.openclaw-native-web-chrome .sidebar-brand__search,
   display: flex;
   align-items: center;
   gap: 4px;
-  width: max-content;
-  min-width: 156px;
+  width: calc(var(--shell-native-titlebar-rail-width, 258px) - 92px);
   height: var(--openclaw-native-titlebar-height, 50px);
+  padding-right: 9px;
+  border-inline-end: var(--resize-handle-line-size) solid var(--resize-handle-rest-color);
 }
 
 .macos-titlebar-controls__button.topbar-icon-btn {
@@ -313,7 +315,7 @@ html.openclaw-native-web-chrome .sidebar-brand__search,
   height: 28px;
 }
 
-.macos-titlebar-controls--nav-collapsed .macos-titlebar-controls__search {
+.macos-titlebar-controls__search {
   margin-left: auto;
 }
 

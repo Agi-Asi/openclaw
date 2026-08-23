@@ -1100,12 +1100,12 @@ html.openclaw-native-nav
   padding-left: 204px;
 }
 
-/* 246px = 78px traffic lights + (5 * 28px buttons + 4 * 4px gaps) + 12px.
-     The 554px minimum adds the 234px inset delta to the 320px base column. */
+/* The collapsed native rail keeps the expanded sidebar's 258px boundary.
+   Its identity content then resumes at the normal 12px pane inset. */
 html.openclaw-native-web-chrome
   .shell--nav-collapsed:not(.shell--mobile-nav)
   .chat-split-view__column:first-child {
-  min-width: 554px;
+  min-width: calc(320px + var(--shell-native-titlebar-rail-width));
 }
 
 html.openclaw-native-web-chrome
@@ -1114,5 +1114,5 @@ html.openclaw-native-web-chrome
   > .chat-split-view__cell:first-child
   :is(.chat-main__conversation-column, .chat-pane-primary-column)
   > .chat-pane__header {
-  padding-left: 246px;
+  padding-left: calc(var(--shell-native-titlebar-rail-width) + 12px);
 }
