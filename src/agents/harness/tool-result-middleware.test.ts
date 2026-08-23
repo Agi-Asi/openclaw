@@ -1,8 +1,70 @@
 // Verifies tool-result middleware validation, sanitization, and fail-closed behavior.
 import { describe, expect, it } from "vitest";
+import {
+  attachCodeModeWaitingClaimMutation,
+  readCodeModeWaitingClaimMutation,
+} from "../../config/sessions/code-mode-waiting-claim.js";
 import { createAgentToolResultMiddlewareRunner } from "./tool-result-middleware.js";
 
 describe("createAgentToolResultMiddlewareRunner", () => {
+  it("reattaches a matching private waiting claim after middleware replacement", async () => {
+    const mutation = {
+      kind: "set" as const,
+      waitingCodeModeRunId: "run-1",
+      expiresAt: Date.now() + 60_000,
+    };
+    const details = { status: "waiting", runId: "run-1" };
+    attachCodeModeWaitingClaimMutation(details, mutation);
+    const runner = createAgentToolResultMiddlewareRunner({ runtime: "openclaw" }, [
+      () => ({
+        result: {
+          content: [{ type: "text", text: "compacted" }],
+          details: { status: "waiting", runId: "run-1" },
+        },
+      }),
+    ]);
+
+    const result = await runner.applyToolResultMiddleware({
+      toolCallId: "call-1",
+      toolName: "exec",
+      args: {},
+      result: { content: [{ type: "text", text: "raw" }], details },
+    });
+
+    expect(readCodeModeWaitingClaimMutation(result.details)).toEqual(mutation);
+    expect(Object.keys(result.details as object)).toEqual(["status", "runId"]);
+  });
+
+  it.each([
+    ["different run", { status: "waiting", runId: "run-2" }],
+    ["terminal status", { status: "completed", runId: "run-1" }],
+    ["missing details", undefined],
+  ])("drops a private waiting claim after middleware replacement with %s", async (_label, next) => {
+    const details = { status: "waiting", runId: "run-1" };
+    attachCodeModeWaitingClaimMutation(details, {
+      kind: "set",
+      waitingCodeModeRunId: "run-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    const runner = createAgentToolResultMiddlewareRunner({ runtime: "openclaw" }, [
+      () => ({
+        result: {
+          content: [{ type: "text", text: "replacement" }],
+          ...(next ? { details: next } : {}),
+        },
+      }),
+    ]);
+
+    const result = await runner.applyToolResultMiddleware({
+      toolCallId: "call-1",
+      toolName: "exec",
+      args: {},
+      result: { content: [{ type: "text", text: "raw" }], details },
+    });
+
+    expect(readCodeModeWaitingClaimMutation(result.details)).toBeUndefined();
+  });
+
   it("fails closed when middleware throws", async () => {
     // Middleware errors may contain sensitive tool data. The public result must
     // collapse to a generic error instead of returning the thrown message.

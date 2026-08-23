@@ -1,18 +1,48 @@
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanupTempDirs, makeTempDir } from "../../../test/helpers/temp-dir.js";
+import {
+  executeSqliteQuerySync,
+  executeSqliteQueryTakeFirstSync,
+} from "../../infra/kysely-sync.js";
 import {
   closeOpenClawAgentDatabasesForTest,
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
-import { attachCodeModeWaitingClaimMutation } from "./code-mode-waiting-claim.js";
+import {
+  attachCodeModeWaitingClaimMutation,
+  type CodeModeWaitingClaim,
+  MAX_CODE_MODE_WAITING_CLAIM_MS,
+  MAX_CODE_MODE_WAITING_CLAIMS,
+} from "./code-mode-waiting-claim.js";
 import { loadSessionEntryReadOnly, loadTranscriptEventsSync } from "./session-accessor.js";
 import { replaceSessionEntrySync } from "./session-accessor.sqlite-entry.js";
 import {
+  getSessionKysely,
   resolveSqliteTranscriptScope,
   toDatabaseOptions,
 } from "./session-accessor.sqlite-scope.js";
-import { appendTranscriptMessageSync } from "./session-accessor.sqlite-transcript-write.js";
+import {
+  appendExpectedSessionTranscriptTurn,
+  appendTranscriptMessageSync,
+} from "./session-accessor.sqlite-transcript-write.js";
+
+const claimWarningMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../logging/subsystem.js", async () => {
+  const actual = await vi.importActual<typeof import("../../logging/subsystem.js")>(
+    "../../logging/subsystem.js",
+  );
+  return {
+    ...actual,
+    createSubsystemLogger: (subsystem: string) => {
+      const logger = actual.createSubsystemLogger(subsystem);
+      return subsystem === "sessions/code-mode-claim"
+        ? { ...logger, warn: claimWarningMock }
+        : logger;
+    },
+  };
+});
 
 const tempDirs: string[] = [];
 
@@ -27,6 +57,7 @@ describe("SQLite Code Mode waiting claims", () => {
   };
 
   beforeEach(() => {
+    claimWarningMock.mockReset();
     scope = {
       agentId: "main",
       expectedLifecycleRevision: "lifecycle-a",
@@ -48,23 +79,94 @@ describe("SQLite Code Mode waiting claims", () => {
     cleanupTempDirs(tempDirs);
   });
 
-  function waitingMessage(runId: string, eventId: string) {
+  function waitingMessage(
+    runId: string,
+    eventId: string,
+    options: { expiresAt?: number; toolCallId?: string; toolName?: string } = {},
+  ) {
     const details = { status: "waiting", runId };
     attachCodeModeWaitingClaimMutation(details, {
       kind: "set",
       waitingCodeModeRunId: runId,
-      expiresAt: Date.now() + 60_000,
+      expiresAt: options.expiresAt ?? Date.now() + 60_000,
     });
     return {
       eventId,
       message: {
         role: "toolResult",
-        toolCallId: `exec-${runId}`,
-        toolName: "exec",
+        toolCallId: options.toolCallId ?? `exec-${runId}`,
+        toolName: options.toolName ?? "exec",
         content: [{ type: "text", text: "waiting" }],
         details,
       },
     };
+  }
+
+  function claims() {
+    return loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims;
+  }
+
+  function appendTerminal(
+    runId: string,
+    expectedClaim: CodeModeWaitingClaim,
+    eventId = `terminal-${runId}`,
+    writeScope = scope,
+  ) {
+    const details = { status: "completed" };
+    attachCodeModeWaitingClaimMutation(details, {
+      kind: "clear",
+      waitingCodeModeRunId: runId,
+      expectedClaim,
+    });
+    return appendTranscriptMessageSync(writeScope, {
+      eventId,
+      message: {
+        role: "toolResult",
+        toolCallId: `wait-${runId}`,
+        toolName: "wait",
+        content: [{ type: "text", text: "completed" }],
+        details,
+      },
+    });
+  }
+
+  function rewriteRawEvent(seq: number): void {
+    const resolved = resolveSqliteTranscriptScope(scope);
+    const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
+    const db = getSessionKysely(database.db);
+    const raw = executeSqliteQueryTakeFirstSync(
+      database.db,
+      db
+        .selectFrom("transcript_events")
+        .select("event_json")
+        .where("session_id", "=", scope.sessionId)
+        .where("seq", "=", seq),
+    )?.event_json;
+    if (!raw) {
+      throw new Error("missing raw transcript event");
+    }
+    executeSqliteQuerySync(
+      database.db,
+      db
+        .updateTable("transcript_events")
+        .set({ event_json: JSON.stringify({ ...JSON.parse(raw), rewritten: true }) })
+        .where("session_id", "=", scope.sessionId)
+        .where("seq", "=", seq),
+    );
+  }
+
+  function rewriteActiveMessagePosition(seq: number): void {
+    const resolved = resolveSqliteTranscriptScope(scope);
+    const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
+    const db = getSessionKysely(database.db);
+    executeSqliteQuerySync(
+      database.db,
+      db
+        .updateTable("session_transcript_active_events")
+        .set({ message_position: 99 })
+        .where("session_id", "=", scope.sessionId)
+        .where("event_seq", "=", seq),
+    );
   }
 
   it("records and clears exact transcript-owned claim authority", () => {
@@ -84,22 +186,124 @@ describe("SQLite Code Mode waiting claims", () => {
     });
     expect(claim?.transcriptEventDigest).toMatch(/^[a-f0-9]{64}$/u);
 
-    const details = { status: "completed" };
-    attachCodeModeWaitingClaimMutation(details, {
-      kind: "clear",
-      waitingCodeModeRunId: "run-a",
-    });
-    appendTranscriptMessageSync(scope, {
-      eventId: "terminal-a",
-      message: {
-        role: "toolResult",
-        toolCallId: "wait-run-a",
-        toolName: "wait",
-        content: [{ type: "text", text: "completed" }],
-        details,
-      },
-    });
+    appendTerminal("run-a", claim!, "terminal-a");
     expect(loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims).toBeUndefined();
+  });
+
+  it("clamps claim expiry and rejects already-expired mutations", () => {
+    const startedAt = Date.now();
+    appendTranscriptMessageSync(
+      scope,
+      waitingMessage("run-clamped", "waiting-clamped", {
+        expiresAt: startedAt + MAX_CODE_MODE_WAITING_CLAIM_MS * 2,
+      }),
+    );
+    const clamped = claims()?.["run-clamped"];
+    expect(clamped?.expiresAt).toBeGreaterThan(startedAt);
+    expect(clamped?.expiresAt).toBeLessThanOrEqual(
+      startedAt + MAX_CODE_MODE_WAITING_CLAIM_MS + 100,
+    );
+
+    appendTranscriptMessageSync(
+      scope,
+      waitingMessage("run-expired", "waiting-expired", { expiresAt: Date.now() - 1 }),
+    );
+    expect(claims()).not.toHaveProperty("run-expired");
+  });
+
+  it("bounds active claims, preserves every transcript result, and warns once", () => {
+    for (let index = 0; index < MAX_CODE_MODE_WAITING_CLAIMS + 2; index += 1) {
+      appendTranscriptMessageSync(scope, waitingMessage(`run-${index}`, `waiting-${index}`));
+    }
+
+    expect(Object.keys(claims() ?? {})).toHaveLength(MAX_CODE_MODE_WAITING_CLAIMS);
+    expect(
+      loadTranscriptEventsSync(scope).filter((event) => event.type === "message"),
+    ).toHaveLength(MAX_CODE_MODE_WAITING_CLAIMS + 2);
+    expect(claimWarningMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces a re-wait claim and rejects a late clear from the earlier claim", () => {
+    appendTranscriptMessageSync(
+      scope,
+      waitingMessage("run-a", "waiting-a-1", { toolCallId: "exec-a" }),
+    );
+    const first = claims()?.["run-a"];
+    appendTranscriptMessageSync(
+      scope,
+      waitingMessage("run-a", "waiting-a-2", {
+        toolCallId: "wait-a",
+        toolName: "wait",
+      }),
+    );
+    const replacement = claims()?.["run-a"];
+
+    expect(replacement?.sourceToolCallId).toBe("wait-a");
+    expect(replacement?.transcriptEventDigest).not.toBe(first?.transcriptEventDigest);
+    appendTerminal("run-a", first!, "late-terminal-a");
+    expect(claims()?.["run-a"]).toEqual(replacement);
+  });
+
+  it.each(["lifecycle", "writer", "digest", "active-anchor"] as const)(
+    "preserves exact claim authority when %s validation rejects a clear",
+    (mismatch) => {
+      appendTranscriptMessageSync(scope, waitingMessage("run-a", "waiting-a"));
+      const claim = claims()?.["run-a"];
+      if (!claim) {
+        throw new Error("missing waiting claim");
+      }
+      let writeScope = scope;
+      if (mismatch === "lifecycle") {
+        replaceSessionEntrySync(scope, {
+          ...loadSessionEntryReadOnly(scope)!,
+          lifecycleRevision: "lifecycle-b",
+        });
+        writeScope = { ...scope, expectedLifecycleRevision: "lifecycle-b" };
+      } else if (mismatch === "writer") {
+        replaceSessionEntrySync(scope, {
+          ...loadSessionEntryReadOnly(scope)!,
+          activeWriterRunId: "writer-b",
+        });
+        writeScope = { ...scope, expectedWriterRunId: "writer-b" };
+      } else if (mismatch === "digest") {
+        rewriteRawEvent(claim.transcriptAnchor.rawSeq);
+      } else {
+        rewriteActiveMessagePosition(claim.transcriptAnchor.rawSeq);
+      }
+
+      appendTerminal("run-a", claim, `terminal-${mismatch}`, writeScope);
+      expect(claims()?.["run-a"]).toEqual(claim);
+    },
+  );
+
+  it("preserves context metadata and the prepared transcript root in an atomic turn", async () => {
+    replaceSessionEntrySync(scope, {
+      ...loadSessionEntryReadOnly(scope)!,
+      contextWindow: "128k",
+    });
+    const waiting = waitingMessage("run-atomic", "waiting-atomic");
+
+    await appendExpectedSessionTranscriptTurn(scope, {
+      atomicGroup: true,
+      expectedLifecycleRevision: scope.expectedLifecycleRevision,
+      expectedSessionId: scope.sessionId,
+      expectedWriterRunId: scope.expectedWriterRunId,
+      messages: [waiting],
+      sessionFile: scope.storePath,
+      touchSessionEntry: true,
+    });
+
+    expect(loadSessionEntryReadOnly(scope)).toMatchObject({
+      contextWindow: "128k",
+      codeModeWaitingClaims: { "run-atomic": { waitingCodeModeRunId: "run-atomic" } },
+    });
+    const resolved = resolveSqliteTranscriptScope(scope);
+    const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
+    expect(
+      database.db
+        .prepare("SELECT session_key FROM session_windows WHERE session_id = ?")
+        .get(scope.sessionId),
+    ).toEqual({ session_key: scope.sessionKey });
   });
 
   it("commits the truthful transcript append when claim persistence fails", () => {

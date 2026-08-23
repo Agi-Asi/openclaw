@@ -6,8 +6,11 @@ import { Type } from "typebox";
 import { getAgentToolExecutionContext } from "../../packages/agent-core/src/tool-execution-context.js";
 import {
   attachCodeModeWaitingClaimMutation,
+  type CodeModeWaitingClaim,
   type CodeModeWaitingClaimMutation,
 } from "../config/sessions/code-mode-waiting-claim.js";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
+import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HookContext } from "./agent-tools.before-tool-call.js";
 import { CODE_MODE_NODES_TOOL_ID } from "./code-mode-bridge.js";
@@ -81,6 +84,33 @@ function attachWaitingClaimMutation(
   if (result.details && typeof result.details === "object") {
     attachCodeModeWaitingClaimMutation(result.details, mutation);
   }
+}
+
+function readWaitingClaim(
+  ctx: CodeModeToolContext,
+  waitingCodeModeRunId: string,
+): CodeModeWaitingClaim | undefined {
+  const agentId = ctx.agentId?.trim();
+  const sessionKey = ctx.sessionKey?.trim();
+  const sessionId = ctx.sessionId?.trim();
+  const writerRunId = ctx.runId?.trim();
+  if (!agentId || !sessionKey || !sessionId || !writerRunId) {
+    return undefined;
+  }
+  const config = ctx.runtimeConfig ?? ctx.config;
+  const entry = loadSessionEntryReadOnly({
+    agentId,
+    sessionKey,
+    storePath: resolveSessionStorePathCore(config?.session?.store, { agentId }),
+  });
+  const claim = entry?.codeModeWaitingClaims?.[waitingCodeModeRunId];
+  return entry?.sessionId === sessionId &&
+    entry.lifecycleRevision === claim?.sourceLifecycleRevision &&
+    entry.activeWriterRunId === writerRunId &&
+    claim.sourceSessionId === sessionId &&
+    claim.sourceWriterRunId === writerRunId
+    ? claim
+    : undefined;
 }
 
 const CODE_MODE_CATALOG_INDEX_HEADING = [
@@ -284,6 +314,7 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
       onUpdate?: AgentToolUpdateCallback,
     ) => {
       const requestedRunId = readRunId(args);
+      const expectedClaim = readWaitingClaim(ctx, requestedRunId);
       let runtime: ToolSearchRuntime | undefined;
       const result = normalizeCodeModeTimeoutResult(
         await runWait({
@@ -307,10 +338,11 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
             expiresAt,
           });
         }
-      } else {
+      } else if (expectedClaim) {
         attachWaitingClaimMutation(formatted, {
           kind: "clear",
           waitingCodeModeRunId: requestedRunId,
+          expectedClaim,
         });
       }
       return formatted;

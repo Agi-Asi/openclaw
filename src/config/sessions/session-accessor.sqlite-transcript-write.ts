@@ -677,7 +677,7 @@ function applyCodeModeClaimMutationInTransaction<TMessage>(
     };
   } else {
     const current = claims[mutation.waitingCodeModeRunId];
-    if (!current) {
+    if (!current || !isDeepStrictEqual(current, mutation.expectedClaim)) {
       return;
     }
     const raw = readTranscriptEventJson(database, resolved, current.transcriptAnchor.rawSeq);

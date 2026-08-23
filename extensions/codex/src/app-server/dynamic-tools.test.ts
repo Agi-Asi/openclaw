@@ -56,6 +56,7 @@ import { resolveCodexDynamicToolDirectNames } from "./run-attempt-tools.js";
 import { codexDynamicToolsFingerprint } from "./thread-fingerprints.js";
 
 const CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE = "openclaw";
+const CODE_MODE_WAITING_CLAIM_MUTATION = Symbol.for("openclaw.codeModeWaitingClaimMutation");
 const MEMORY_STORE_ARGS: JsonValue = { text: "Tuesday 09:00 release window" };
 const MEMORY_FORGET_ARGS: JsonValue = {
   memoryId: "9e107d9d-3729-4ff5-a8c0-01d29c61f49d",
@@ -99,6 +100,23 @@ function textToolResult(text: string, details: unknown = {}): AgentToolResult<un
     content: [{ type: "text", text }],
     details,
   };
+}
+
+function attachWaitingClaimMutation(
+  details: object,
+  mutation: { kind: "set"; waitingCodeModeRunId: string; expiresAt: number },
+): void {
+  Object.defineProperty(details, CODE_MODE_WAITING_CLAIM_MUTATION, {
+    configurable: true,
+    enumerable: false,
+    value: mutation,
+  });
+}
+
+function readWaitingClaimMutation(details: unknown): unknown {
+  return details && typeof details === "object"
+    ? (details as Record<PropertyKey, unknown>)[CODE_MODE_WAITING_CLAIM_MUTATION]
+    : undefined;
 }
 
 function createBridgeWithToolResult(
@@ -3955,6 +3973,95 @@ describe("createCodexDynamicToolBridge", () => {
     });
 
     expect(result).toEqual(expectInputText("legacy compacted"));
+  });
+
+  it("reattaches a matching private waiting claim after a legacy extension replacement", async () => {
+    const mutation = {
+      kind: "set" as const,
+      waitingCodeModeRunId: "run-1",
+      expiresAt: Date.now() + 60_000,
+    };
+    const rawDetails = { status: "waiting", runId: "run-1" };
+    attachWaitingClaimMutation(rawDetails, mutation);
+    const registry = createEmptyPluginRegistry();
+    const factory = async (codex: {
+      on: (
+        event: "tool_result",
+        handler: (event: unknown) => Promise<{ result: AgentToolResult<unknown> }>,
+      ) => void;
+    }) => {
+      codex.on("tool_result", async () => ({
+        result: textToolResult("legacy compacted", { status: "waiting", runId: "run-1" }),
+      }));
+    };
+    registry.codexAppServerExtensionFactories.push({
+      pluginId: "tokenjuice",
+      pluginName: "Tokenjuice",
+      rawFactory: factory,
+      factory,
+      source: "test",
+    });
+    setActivePluginRegistry(registry);
+
+    const result = await createBridgeWithToolResult(
+      "exec",
+      textToolResult("raw output", rawDetails),
+    ).handleToolCall({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      callId: "call-1",
+      namespace: null,
+      tool: "exec",
+      arguments: { command: "git status" },
+    });
+
+    expect(readWaitingClaimMutation(result.transcriptDetails)).toEqual(mutation);
+    expect(JSON.stringify(result)).not.toContain("waitingCodeModeRunId");
+  });
+
+  it("drops a private waiting claim after a mismatched legacy extension replacement", async () => {
+    const rawDetails = { status: "waiting", runId: "run-1" };
+    attachWaitingClaimMutation(rawDetails, {
+      kind: "set",
+      waitingCodeModeRunId: "run-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    const registry = createEmptyPluginRegistry();
+    const factory = async (codex: {
+      on: (
+        event: "tool_result",
+        handler: (event: {
+          result: AgentToolResult<{ status: string; runId: string }>;
+        }) => Promise<{ result: AgentToolResult<unknown> }>,
+      ) => void;
+    }) => {
+      codex.on("tool_result", async (event) => {
+        event.result.details.runId = "run-2";
+        return { result: event.result };
+      });
+    };
+    registry.codexAppServerExtensionFactories.push({
+      pluginId: "tokenjuice",
+      pluginName: "Tokenjuice",
+      rawFactory: factory,
+      factory,
+      source: "test",
+    });
+    setActivePluginRegistry(registry);
+
+    const result = await createBridgeWithToolResult(
+      "exec",
+      textToolResult("raw output", rawDetails),
+    ).handleToolCall({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      callId: "call-1",
+      namespace: null,
+      tool: "exec",
+      arguments: { command: "git status" },
+    });
+
+    expect(readWaitingClaimMutation(result.transcriptDetails)).toBeUndefined();
   });
 
   it("keeps config out of Codex tool-result contexts", async () => {

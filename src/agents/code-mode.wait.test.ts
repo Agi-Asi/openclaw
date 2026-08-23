@@ -1,8 +1,15 @@
 /** Tests Code Mode wait, scope, and suspended runs. */
 
+import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { runWithAgentToolExecutionContext } from "../../packages/agent-core/src/tool-execution-context.js";
+import { cleanupTempDirs, makeTempDir } from "../../test/helpers/temp-dir.js";
+import { readCodeModeWaitingClaimMutation } from "../config/sessions/code-mode-waiting-claim.js";
+import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
+import { replaceSessionEntrySync } from "../config/sessions/session-accessor.sqlite-entry.js";
+import { appendTranscriptMessageSync } from "../config/sessions/session-accessor.sqlite-transcript-write.js";
+import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { applyCodeModeCatalog, createCodeModeTools } from "./code-mode.js";
 import {
   resetCodeModeTestState,
@@ -14,6 +21,8 @@ import {
 } from "./code-mode.test-support.js";
 import { createToolSearchCatalogRef } from "./tool-search.js";
 import { jsonResult } from "./tools/common.js";
+
+const tempDirs: string[] = [];
 
 function createTerminalBridgeHarness() {
   const harness = createCodeModeHarness();
@@ -30,6 +39,8 @@ describe("Code Mode wait, scope, and suspended runs", () => {
   afterEach(() => {
     vi.useRealTimers();
     resetCodeModeTestState();
+    closeOpenClawAgentDatabasesForTest();
+    cleanupTempDirs(tempDirs);
   });
 
   it("marks yield suspensions and resumes the snapshot with wait", async () => {
@@ -465,6 +476,83 @@ describe("Code Mode wait, scope, and suspended runs", () => {
       "code mode run is unavailable after restart or expired; rerun exec to start fresh",
     );
     expect(testing.activeRuns.has("invalid-expiry-run")).toBe(false);
+  });
+
+  it("carries the exact persisted claim through a terminal wait result", async () => {
+    const storePath = path.join(makeTempDir(tempDirs, "code-mode-wait-claim-"), "sessions.json");
+    const config = {
+      session: { store: storePath },
+      tools: { codeMode: { enabled: true, timeoutMs: 60_000 } },
+    } as never;
+    const ctx = {
+      config,
+      runtimeConfig: config,
+      agentId: "main",
+      sessionId: "session-code-mode",
+      sessionKey: "agent:main:main",
+      runId: "writer-code-mode",
+      catalogRef: createToolSearchCatalogRef(),
+    };
+    replaceSessionEntrySync(
+      { agentId: ctx.agentId, sessionKey: ctx.sessionKey, storePath },
+      {
+        activeWriterRunId: ctx.runId,
+        lifecycleRevision: "lifecycle-code-mode",
+        sessionId: ctx.sessionId,
+        updatedAt: 1,
+      },
+    );
+    const codeModeTools = createCodeModeTools(ctx);
+    applyCodeModeCatalog({
+      tools: codeModeTools,
+      config,
+      sessionId: ctx.sessionId,
+      sessionKey: ctx.sessionKey,
+      agentId: ctx.agentId,
+      runId: ctx.runId,
+      catalogRef: ctx.catalogRef,
+    });
+    const [execTool, waitTool] = codeModeTools;
+    const waiting = await expectDefined(execTool, "exec tool").execute("exec-wait-claim", {
+      code: 'await yield_control("pause"); return "done";',
+    });
+    const waitingRunId = resultDetails(waiting).runId;
+    expect(typeof waitingRunId).toBe("string");
+    appendTranscriptMessageSync(
+      {
+        agentId: ctx.agentId,
+        expectedLifecycleRevision: "lifecycle-code-mode",
+        expectedWriterRunId: ctx.runId,
+        sessionId: ctx.sessionId,
+        sessionKey: ctx.sessionKey,
+        storePath,
+      },
+      {
+        eventId: "waiting-claim",
+        message: {
+          role: "toolResult",
+          toolCallId: "exec-wait-claim",
+          toolName: "exec",
+          content: waiting.content,
+          details: waiting.details,
+        },
+      },
+    );
+    const claim = loadSessionEntryReadOnly({
+      agentId: ctx.agentId,
+      sessionKey: ctx.sessionKey,
+      storePath,
+    })?.codeModeWaitingClaims?.[waitingRunId as string];
+
+    const terminal = await expectDefined(waitTool, "wait tool").execute("wait-claim", {
+      runId: waitingRunId,
+    });
+
+    expect(readCodeModeWaitingClaimMutation(terminal.details)).toEqual({
+      kind: "clear",
+      waitingCodeModeRunId: waitingRunId,
+      expectedClaim: claim,
+    });
   });
 
   it("rejects wait calls from a different session scope", async () => {

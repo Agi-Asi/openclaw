@@ -65,6 +65,8 @@ import {
 import type { CodexDynamicToolsLoading } from "./config.js";
 import {
   createFailedDynamicToolResponse,
+  readDynamicToolWaitingClaimMutation,
+  reattachDynamicToolWaitingClaimMutation,
   type CodexDynamicToolRuntimeResponse,
   withDynamicToolExecutionState,
   withDynamicToolTranscriptDetails,
@@ -728,6 +730,7 @@ export function createCodexDynamicToolBridge(params: {
         }
         const rawResult = await Reflect.apply(tool.execute, tool, executionArgs);
         captureExecutionBoundary();
+        const waitingClaimMutation = readDynamicToolWaitingClaimMutation(rawResult.details);
         const telemetryRawResult = sanitizeToolResult(rawResult);
         const rawIsError = isToolResultError(rawResult);
         const rawResultFailureKind = resolveToolResultFailureKind(rawResult);
@@ -748,6 +751,7 @@ export function createCodexDynamicToolBridge(params: {
           args: structuredClone(executedArgs),
           result: middlewareResult,
         });
+        reattachDynamicToolWaitingClaimMutation(result, waitingClaimMutation);
         const resultIsError = rawIsError || isToolResultError(result);
         // A successful spawn is durable before presentation middleware can rewrite details.
         const acceptedSessionSpawn =

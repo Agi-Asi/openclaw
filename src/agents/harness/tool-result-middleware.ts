@@ -2,6 +2,10 @@
  * Runs native harness tool-result middleware around tool execution results.
  */
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import {
+  readCodeModeWaitingClaimMutation,
+  reattachCodeModeWaitingClaimMutation,
+} from "../../config/sessions/code-mode-waiting-claim.js";
 import { boundedJsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type {
@@ -435,13 +439,18 @@ export function createAgentToolResultMiddlewareRunner(
     async applyToolResultMiddleware(
       event: AgentToolResultMiddlewareEvent,
     ): Promise<OpenClawAgentToolResult> {
+      const waitingClaimMutation = readCodeModeWaitingClaimMutation(event.result.details);
+      const finalize = (result: OpenClawAgentToolResult): OpenClawAgentToolResult => {
+        reattachCodeModeWaitingClaimMutation(result, waitingClaimMutation);
+        return result;
+      };
       const handlersForRun = await resolveHandlers();
       // Fast path: with no middleware registered the result is delivered
       // unchanged; skip validation entirely so tool emitters that produce
       // dependency payloads on `details` (SDK objects with methods, cycles)
       // are not penalized for behavior the validator was added to police.
       if (handlersForRun.length === 0) {
-        return event.result;
+        return finalize(event.result);
       }
       // Snapshot the confirmed side effect before legacy middleware can mutate
       // or sanitization can collapse the receipt; never expose the raw result.
@@ -467,9 +476,11 @@ export function createAgentToolResultMiddlewareRunner(
                 120,
               )}`,
             );
-            return reconcileDeliveredMessagingFailure(
-              buildMiddlewareFailureResult(),
-              deliveredMessagingFallback,
+            return finalize(
+              reconcileDeliveredMessagingFailure(
+                buildMiddlewareFailureResult(),
+                deliveredMessagingFallback,
+              ),
             );
           }
         } catch {
@@ -479,13 +490,15 @@ export function createAgentToolResultMiddlewareRunner(
               120,
             )}`,
           );
-          return reconcileDeliveredMessagingFailure(
-            buildMiddlewareFailureResult(),
-            deliveredMessagingFallback,
+          return finalize(
+            reconcileDeliveredMessagingFailure(
+              buildMiddlewareFailureResult(),
+              deliveredMessagingFallback,
+            ),
           );
         }
       }
-      return reconcileDeliveredMessagingFailure(current, deliveredMessagingFallback);
+      return finalize(reconcileDeliveredMessagingFailure(current, deliveredMessagingFallback));
     },
   };
 }
