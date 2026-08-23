@@ -337,6 +337,7 @@
   place-items: center;
   flex: 0 0 14px;
   color: var(--muted);
+  transform: translateX(-5px);
 }
 
 .session-progress-card__summary-indicator > svg {
@@ -363,6 +364,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transform: translateX(-5px);
 }
 
 .session-progress-card__step-marker svg {

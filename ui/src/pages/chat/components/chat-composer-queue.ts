@@ -281,6 +281,13 @@ function renderChatQueueItem(
         : undefined}
       @dblclick=${canEdit
         ? (event: MouseEvent) => {
+            const target = event.target;
+            if (
+              target instanceof Element &&
+              target.closest("button, textarea, input, wa-dropdown, wa-dropdown-item")
+            ) {
+              return;
+            }
             markQueueEditFocus(event.currentTarget as Element, false);
             props.onQueueEdit?.(item.id);
           }
@@ -319,7 +326,16 @@ function renderChatQueueItem(
               move?.(item.id, moveIndex + delta);
             }}
           >
-            <span aria-hidden="true">${leadingIcon}</span>
+            <span class="chat-queue__grip-state chat-queue__grip-state--idle" aria-hidden="true"
+              >${leadingIcon}</span
+            >
+            ${canMove
+              ? html`<span
+                  class="chat-queue__grip-state chat-queue__grip-state--active"
+                  aria-hidden="true"
+                  >${icons.gripVertical}</span
+                >`
+              : nothing}
           </button>`
         : html`<span class="chat-queue__leading chat-queue__icon" aria-hidden="true"
             >${leadingIcon}</span

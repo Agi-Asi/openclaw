@@ -1310,13 +1310,13 @@ function renderChatSurface(sessionList: SessionsListResult) {
             revision: 1,
             updatedAt: Date.now(),
             steps: [
-              { step: "Map composer states", status: "completed" },
+              { step: "Map composer states across the full chat surface", status: "completed" },
               {
-                step: "Review interaction gaps",
+                step: "Review interaction gaps across queue, voice, and sheets",
                 status: state.plan === "complete" ? "completed" : "in_progress",
               },
               {
-                step: "Capture visual proof",
+                step: "Capture final proof in both themes",
                 status: state.plan === "complete" ? "completed" : "pending",
               },
             ],

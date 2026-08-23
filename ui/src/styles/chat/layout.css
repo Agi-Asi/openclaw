@@ -1088,12 +1088,16 @@ openclaw-chat-page {
 
 .agent-chat__goal-float .agent-chat__goal-row {
   min-height: 42px;
-  padding: 8px 18px;
+  padding: 8px 8px 8px 18px;
 }
 
 .chat-queue + .agent-chat__goal-float .agent-chat__goal {
   border-top: 1px solid var(--chat-queue-divider);
   border-radius: 0;
+}
+
+.chat-queue + .agent-chat__goal-float {
+  z-index: 1;
 }
 
 .agent-chat__goal-float + :is(.agent-chat__composer-errors, .agent-chat__input) {
@@ -1127,6 +1131,7 @@ openclaw-chat-page {
   width: 14px;
   height: 18px;
   flex-shrink: 0;
+  transform: translateX(-5px);
 }
 
 .agent-chat__goal-icon svg {

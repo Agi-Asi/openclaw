@@ -2945,8 +2945,6 @@ td.data-table-key-col {
 
 .agent-chat__progress-float + .chat-queue {
   z-index: 1;
-  border-top-color: var(--chat-queue-divider);
-  border-radius: 0;
 }
 
 .chat-queue__scroll {
@@ -3091,15 +3089,38 @@ td.data-table-key-col {
   cursor: default;
 }
 
-.chat-queue__grip > span {
+.chat-queue__grip-state {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
+.chat-queue__grip-state--active {
+  display: none;
+}
+
+.chat-queue__item:hover
+  .chat-queue__grip:not(:disabled)
+  .chat-queue__grip-state--idle,
+.chat-queue__grip:is(:focus-visible, :active) .chat-queue__grip-state--idle {
+  display: none;
+}
+
+.chat-queue__item:hover
+  .chat-queue__grip:not(:disabled)
+  .chat-queue__grip-state--active,
+.chat-queue__grip:is(:focus-visible, :active) .chat-queue__grip-state--active {
+  display: inline-flex;
+}
+
 .chat-queue__grip svg {
   width: 14px;
   height: 14px;
+}
+
+.chat-queue__grip .chat-queue__grip-state--active svg {
+  width: 18px;
+  height: 18px;
 }
 
 .chat-queue__item--failed {
@@ -3187,8 +3208,8 @@ td.data-table-key-col {
   min-width: 0;
   overflow: hidden;
   color: var(--chat-text);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.4;
   overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

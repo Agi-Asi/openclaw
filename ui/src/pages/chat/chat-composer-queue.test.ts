@@ -97,6 +97,8 @@ describe("chat composer queue reordering", () => {
     expect(grips[0]?.getAttribute("aria-label")).toBe(t("chat.queue.reorderQueuedMessage"));
     expect(grips[0]?.getAttribute("aria-keyshortcuts")).toBe("ArrowUp ArrowDown");
     expect(grips.map((grip) => grip.getAttribute("draggable"))).toEqual(["true", "true"]);
+    expect(grips[0]?.querySelector(".chat-queue__grip-state--idle")).not.toBeNull();
+    expect(grips[0]?.querySelector(".chat-queue__grip-state--active")).not.toBeNull();
     expect([...rows].every((row) => !row.hasAttribute("draggable"))).toBe(true);
     expect(container.querySelectorAll("wa-dropdown.chat-queue__overflow")).toHaveLength(2);
   });
@@ -228,6 +230,26 @@ describe("chat composer queue reordering", () => {
 
     rows[2]?.querySelector<HTMLButtonElement>(".chat-queue__remove")?.click();
     expect(onQueueRemove).toHaveBeenCalledWith("c");
+  });
+
+  it("starts editing from a row double-click without stealing the reorder handle", () => {
+    const onQueueEdit = vi.fn();
+    const container = renderQueue({
+      queue: [waiting("a", 1), waiting("b", 2)],
+      onQueueEdit,
+      onQueueMove: vi.fn(),
+      onQueueRemove: vi.fn(),
+    });
+
+    container
+      .querySelector(".chat-queue__text")
+      ?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(onQueueEdit).toHaveBeenCalledWith("a");
+
+    container
+      .querySelectorAll(".chat-queue__grip")[1]
+      ?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(onQueueEdit).toHaveBeenCalledTimes(1);
   });
 
   it("routes inline draft changes, submit, cancel, and keyboard shortcuts", () => {
