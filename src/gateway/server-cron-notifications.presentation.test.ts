@@ -24,6 +24,7 @@ describe("sendGatewayCronFailureAlert presentation", () => {
 
   it("adds the run start time without dropping presentation", async () => {
     const job = makeCronJob({
+      id: "nightly.digest",
       delivery: {
         mode: "announce",
         channel: "telegram",
@@ -36,7 +37,13 @@ describe("sendGatewayCronFailureAlert presentation", () => {
       logger: { warn: vi.fn() },
       resolveCronAgent: () => ({
         agentId: "main",
-        cfg: { agents: { defaults: { userTimezone: "America/New_York" } } },
+        cfg: {
+          agents: { defaults: { userTimezone: "America/New_York" } },
+          gateway: {
+            publicOrigin: "https://openclaw.example",
+            controlUi: { basePath: "/control" },
+          },
+        },
       }),
       job,
       payload: {
@@ -65,68 +72,6 @@ describe("sendGatewayCronFailureAlert presentation", () => {
       expect.objectContaining({
         payload: {
           text: "cron failed\nRun started: 2026-01-15 10:30 EST",
-          presentation: {
-            blocks: [
-              {
-                type: "buttons",
-                buttons: [
-                  {
-                    label: "Log in to Codex",
-                    action: { type: "command", command: "/login codex" },
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      }),
-    );
-  });
-
-  it("adds a portable automation link when the Control UI has a public origin", async () => {
-    const job = makeCronJob({
-      id: "nightly.digest",
-      delivery: { mode: "announce", channel: "telegram", to: "channel:ops" },
-    });
-
-    await sendGatewayCronFailureAlert({
-      deps: {} as CliDeps,
-      logger: { warn: vi.fn() },
-      resolveCronAgent: () => ({
-        agentId: "main",
-        cfg: {
-          gateway: {
-            publicOrigin: "https://openclaw.example",
-            controlUi: { basePath: "/control" },
-          },
-        },
-      }),
-      job,
-      payload: {
-        text: "cron failed",
-        presentation: {
-          blocks: [
-            {
-              type: "buttons",
-              buttons: [
-                {
-                  label: "Log in to Codex",
-                  action: { type: "command", command: "/login codex" },
-                },
-              ],
-            },
-          ],
-        },
-      },
-      channel: "telegram",
-      to: "channel:ops",
-      mode: "announce",
-    });
-
-    expect(mocks.sendCronAnnouncePayloadStrict).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payload: {
-          text: "cron failed",
           presentation: {
             blocks: [
               {

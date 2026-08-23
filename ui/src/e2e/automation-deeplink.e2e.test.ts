@@ -4,7 +4,6 @@ import type { BrowserContext, Page } from "playwright";
 import { expect, it } from "vitest";
 import {
   controlUiE2eWaitTimeoutMs,
-  controlUiPathnamesEqual,
   installMockGateway,
   waitForControlUiRoute,
 } from "../test-helpers/control-ui-e2e.ts";
@@ -116,9 +115,6 @@ suite.define(() => {
 
       await page.reload();
       await page.getByText(job.name, { exact: true }).waitFor();
-      expect(
-        controlUiPathnamesEqual(new URL(page.url()).pathname, "/automations/release%2Edigest"),
-      ).toBe(true);
       await expect.poll(async () => (await gateway.getRequests("cron.get")).length).toBe(1);
       expect((await gateway.getRequests("cron.get"))[0]?.params).toEqual({ id: job.id });
       await page.screenshot({

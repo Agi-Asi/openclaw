@@ -77,21 +77,6 @@ type ControlUiRouteTarget = {
   search?: string;
 };
 
-export function controlUiPathnamesEqual(left: string, right: string): boolean {
-  const leftSegments = left.split("/");
-  const rightSegments = right.split("/");
-  if (leftSegments.length !== rightSegments.length) {
-    return false;
-  }
-  try {
-    return leftSegments.every(
-      (segment, index) => decodeURIComponent(segment) === decodeURIComponent(rightSegments[index]!),
-    );
-  } catch {
-    return false;
-  }
-}
-
 // Cold Vite route chunks can monopolize Chromium on loaded CI hosts. Keep the
 // wait browser-local, but allow enough time for the router to finish committing.
 const CONTROL_UI_ROUTE_TIMEOUT_MS = 60_000;

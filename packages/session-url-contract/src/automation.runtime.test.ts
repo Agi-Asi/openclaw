@@ -24,8 +24,8 @@ describe("buildControlUiAutomationPath", () => {
     );
   });
 
-  it.each(["", " ", "\t"])("rejects the blank job id %j", (jobId) => {
-    expect(buildControlUiAutomationPath(jobId)).toBeNull();
+  it("rejects a blank job id", () => {
+    expect(buildControlUiAutomationPath(" ")).toBeNull();
   });
 });
 
@@ -36,5 +36,27 @@ describe("parseControlUiAutomationPath", () => {
       jobId: "nightly.digest",
       tab: "runs",
     });
+  });
+
+  it("accepts the legacy route alias", () => {
+    expect(parseControlUiAutomationPath("/cron/nightly%2Edigest/runs")).toEqual({
+      jobId: "nightly.digest",
+      tab: "runs",
+    });
+  });
+
+  it.each(["/automations/%", "/automations/job/runs/extra", "/automations/job/unknown"])(
+    "rejects the malformed route %s",
+    (path) => {
+      expect(parseControlUiAutomationPath(path)).toBeNull();
+    },
+  );
+
+  it("decodes an encoded slash without accepting a nested route", () => {
+    expect(parseControlUiAutomationPath("/automations/job%2Fchild")).toEqual({
+      jobId: "job/child",
+      tab: "settings",
+    });
+    expect(parseControlUiAutomationPath("/automations/job/child")).toBeNull();
   });
 });

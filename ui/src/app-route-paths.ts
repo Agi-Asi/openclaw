@@ -266,7 +266,7 @@ export function routeIdFromPath(pathname: string, basePath = ""): RouteId | null
   // this pre-gate must too — otherwise /Usage is rewritten to /chat before the
   // router, which would have matched it, ever starts.
   const routePathKey = routePath.toLowerCase();
-  if (routePathKey.startsWith("/automations/") || routePathKey.startsWith("/cron/")) {
+  if (/^\/(?:automations|cron)\//u.test(routePathKey)) {
     return "cron";
   }
   for (const routeId of APP_ROUTE_IDS) {

@@ -11,7 +11,7 @@ struct DashboardRouteMapTests {
         #expect(DashboardRouteMap.devicesSettingsPath == "/settings/devices")
     }
 
-    @Test(arguments: ["/settings/channels", "/skills", "/automations"])
+    @Test(arguments: ["/settings/channels", "/skills", "/cron"])
     func `same-app path validation accepts rooted paths`(_ path: String) {
         #expect(DashboardRouteMap.isValidSameAppPath(path))
     }

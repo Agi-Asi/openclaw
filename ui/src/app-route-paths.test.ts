@@ -439,13 +439,8 @@ describe("Agent panel route paths", () => {
 });
 
 describe("Automation route paths", () => {
-  it.each([
-    ["settings", "/automations/nightly%2Edigest", "settings"],
-    ["runs", "/automations/nightly%2Edigest/runs", "runs"],
-    ["legacy alias", "/cron/nightly%2Edigest/runs", "runs"],
-  ] as const)("round-trips the %s path", (_label, pathname, tab) => {
-    expect(automationRouteFromPath(pathname)).toEqual({ jobId: "nightly.digest", tab });
-    expect(routeIdFromPath(pathname)).toBe("cron");
+  it("admits the legacy alias as an automation route", () => {
+    expect(routeIdFromPath("/cron/nightly%2Edigest/runs")).toBe("cron");
   });
 
   it("builds canonical paths under a configured base path", () => {
@@ -458,15 +453,8 @@ describe("Automation route paths", () => {
     expect(inferBasePathFromPathname(pathname)).toBe("/ui");
   });
 
-  it("rejects malformed, empty, and nested automation paths", () => {
+  it("rejects a blank job id", () => {
     expect(() => pathForAutomation(" ")).toThrow("Invalid automation job id");
-    expect(automationRouteFromPath("/automations/%")).toBeNull();
-    expect(automationRouteFromPath("/automations/job/runs/extra")).toBeNull();
-    expect(automationRouteFromPath("/automations/job/unknown")).toBeNull();
-    expect(automationRouteFromPath("/automations/job%2Fchild")).toEqual({
-      jobId: "job/child",
-      tab: "settings",
-    });
   });
 });
 
