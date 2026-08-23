@@ -10,6 +10,7 @@ import {
   finalizeTaskRunByRunId,
   startTaskRunByRunId,
 } from "../../../tasks/detached-task-runtime.js";
+import { publishTaskRecordAfterAtomicStore } from "../../../tasks/task-registry.js";
 import { normalizeDeliveryContext } from "../../../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../../../utils/delivery-context.types.js";
 import { resolveSubagentRequesterAgentId } from "../../subagent-requester-owner.js";
@@ -250,25 +251,31 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
           error instanceof Error ? error.message : String(error)
         }`;
         const endedAt = Date.now();
-        const terminal = transitionSubagentLaunchToTerminal({
+        const committed = transitionSubagentLaunchToTerminal({
           runId: prepared.runId,
           terminalAt: endedAt,
           terminalReason: "failed",
           error: message,
         });
-        if (terminal) {
+        if (committed) {
+          const terminal = committed.entry;
           this.options.runs.set(terminal.runId, terminal);
           publishPersistedSubagentRunsSnapshot(this.options.runs, [terminal.runId]);
-          finalizeTaskRunByRunId({
-            runId: terminal.taskRunId ?? terminal.runId,
-            runtime: "subagent",
-            sessionKey: terminal.childSessionKey,
-            status: "failed",
-            endedAt,
-            lastEventAt: endedAt,
-            error: message,
-            suppressDelivery: true,
-          });
+          for (const task of committed.tasks) {
+            publishTaskRecordAfterAtomicStore(task);
+          }
+          if (committed.tasks.length === 0) {
+            finalizeTaskRunByRunId({
+              runId: terminal.taskRunId ?? terminal.runId,
+              runtime: "subagent",
+              sessionKey: terminal.childSessionKey,
+              status: "failed",
+              endedAt,
+              lastEventAt: endedAt,
+              error: message,
+              suppressDelivery: true,
+            });
+          }
         }
       }
       throw error;
@@ -378,6 +385,7 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
     }
     const snapshot = structuredClone(entry);
     const endedAt = Date.now();
+    let taskSettledAtomically = false;
     entry.endedReason = SUBAGENT_ENDED_REASON_ERROR;
     entry.execution = {
       ...entry.execution,
@@ -386,14 +394,18 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       outcome: { status: "error", error, endedAt },
     };
     if (entry.launch && entry.launch.phase !== "terminal") {
-      const terminal = transitionSubagentLaunchToTerminal({
+      const committed = transitionSubagentLaunchToTerminal({
         runId: entry.runId,
         terminalAt: endedAt,
         terminalReason: "failed",
         error,
       });
-      if (terminal?.launch) {
-        entry.launch = terminal.launch;
+      if (committed) {
+        Object.assign(entry, committed.entry);
+        taskSettledAtomically = committed.tasks.length > 0;
+        for (const task of committed.tasks) {
+          publishTaskRecordAfterAtomicStore(task);
+        }
       }
     }
     entry.queuedLaunch = undefined;
@@ -406,24 +418,26 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       this.restoreRunRecord(entry, snapshot);
       throw persistError;
     }
-    try {
-      finalizeTaskRunByRunId({
-        runId: entry.taskRunId ?? entry.runId,
-        runtime: "subagent",
-        sessionKey: entry.childSessionKey,
-        status: "failed",
-        endedAt,
-        lastEventAt: endedAt,
-        error,
-        suppressDelivery: true,
-      });
-    } catch (taskError) {
-      // Collector failure is already durable. Detached-task cleanup cannot
-      // turn it back into queued work or the scheduler could launch it twice.
-      log.warn("failed to finalize task after collector launch failure", {
-        runId: entry.runId,
-        error: taskError,
-      });
+    if (!taskSettledAtomically) {
+      try {
+        finalizeTaskRunByRunId({
+          runId: entry.taskRunId ?? entry.runId,
+          runtime: "subagent",
+          sessionKey: entry.childSessionKey,
+          status: "failed",
+          endedAt,
+          lastEventAt: endedAt,
+          error,
+          suppressDelivery: true,
+        });
+      } catch (taskError) {
+        // Collector failure is already durable. Detached-task cleanup cannot
+        // turn it back into queued work or the scheduler could launch it twice.
+        log.warn("failed to finalize task after collector launch failure", {
+          runId: entry.runId,
+          error: taskError,
+        });
+      }
     }
     return true;
   };
@@ -448,7 +462,7 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       endedAt: entry.execution.endedAt,
     };
     if (entry.launch && entry.launch.phase !== "terminal") {
-      const terminal = transitionSubagentLaunchToTerminal({
+      const committed = transitionSubagentLaunchToTerminal({
         runId: entry.runId,
         terminalAt: entry.execution.endedAt,
         terminalReason: entry.launch.phase === "dispatching" ? "lost" : "failed",
@@ -457,8 +471,11 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
             ? `${error}; execution may have reached the provider and will not be retried`
             : error,
       });
-      if (terminal?.launch) {
-        entry.launch = terminal.launch;
+      if (committed) {
+        Object.assign(entry, committed.entry);
+        for (const task of committed.tasks) {
+          publishTaskRecordAfterAtomicStore(task);
+        }
       }
     }
     entry.completion = {

@@ -9,6 +9,7 @@ import {
   GatewayDrainingError,
 } from "../../../process/gateway-work-admission.js";
 import { emitSessionLifecycleEvent } from "../../../sessions/session-lifecycle-events.js";
+import { publishTaskRecordAfterAtomicStore } from "../../../tasks/task-registry.js";
 import {
   backfillSubagentRequesterAgentIds,
   resolveSubagentRequesterAgentId,
@@ -23,6 +24,7 @@ import {
   updateSubagentArchiveAtMs,
 } from "./subagent-registry-helpers.js";
 import type { SubagentLifecycleController } from "./subagent-registry-lifecycle.js";
+import { publishPersistedSubagentRunsSnapshot } from "./subagent-registry-state.js";
 import { transitionSubagentLaunchToTerminal } from "./subagent-registry.store.sqlite.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { deleteSubagentSessionForCleanup } from "./subagent-session-cleanup.js";
@@ -194,14 +196,18 @@ export function createSubagentRegistryRestorer(config: {
         const error = dispatching
           ? "Gateway restarted after provider dispatch; execution may have reached the provider and will not be retried"
           : "Gateway restarted while the provider execution was running";
-        const terminal = transitionSubagentLaunchToTerminal({
+        const committed = transitionSubagentLaunchToTerminal({
           runId,
           terminalAt: Date.now(),
           terminalReason: dispatching ? "lost" : "interrupted",
           error,
         });
-        if (terminal) {
-          runs.set(runId, terminal);
+        if (committed) {
+          for (const task of committed.tasks) {
+            publishTaskRecordAfterAtomicStore(task);
+          }
+          runs.set(runId, committed.entry);
+          publishPersistedSubagentRunsSnapshot(runs, [runId]);
         }
         continue;
       }

@@ -23,6 +23,7 @@ import {
   bindTaskDeliveryState,
   bindTaskRecord,
   insertOrMatchTaskRowsInDatabase,
+  transitionTaskRunsToTerminalInDatabase,
 } from "../../../tasks/task-registry.store.sqlite.js";
 import type { TaskDeliveryState, TaskRecord } from "../../../tasks/task-registry.types.js";
 import { normalizeDeliveryContext } from "../../../utils/delivery-context.shared.js";
@@ -275,20 +276,36 @@ export function transitionDispatchingSubagentLaunchToRunning(params: {
   });
 }
 
+function taskStatusForLaunchTerminalReason(
+  reason: "completed" | "failed" | "interrupted" | "lost",
+): Extract<TaskRecord["status"], "succeeded" | "failed" | "lost"> {
+  return reason === "completed" ? "succeeded" : reason === "lost" ? "lost" : "failed";
+}
+
 export function transitionSubagentLaunchToTerminal(params: {
   runId: string;
   terminalAt: number;
   terminalReason: "completed" | "failed" | "interrupted" | "lost";
   error?: string;
-}): SubagentRunRecord | undefined {
+}): { entry: SubagentRunRecord; tasks: TaskRecord[] } | undefined {
   return runOpenClawStateWriteTransaction((database) => {
     const current = readSubagentRunInDatabase(database, params.runId);
     if (!current?.launch) {
       return undefined;
     }
     if (current.launch.phase === "terminal") {
-      return current;
+      return {
+        entry: current,
+        tasks: transitionTaskRunsToTerminalInDatabase(database, {
+          runId: current.taskRunId ?? current.runId,
+          runtime: "subagent",
+          status: taskStatusForLaunchTerminalReason(current.launch.terminalReason),
+          endedAt: current.launch.terminalAt,
+          error: current.launch.error,
+        }),
+      };
     }
+    const resultText = params.error ?? params.terminalReason;
     const next: SubagentRunRecord = {
       ...current,
       queuedLaunch: undefined,
@@ -307,9 +324,17 @@ export function transitionSubagentLaunchToTerminal(params: {
       },
       completion: {
         required: false,
-        resultText: params.error ?? params.terminalReason,
+        resultText,
         capturedAt: params.terminalAt,
       },
+      ...(current.collect
+        ? {
+            collectorCompletion: {
+              status:
+                params.terminalReason === "completed" ? ("done" as const) : ("failed" as const),
+            },
+          }
+        : {}),
       launch: {
         ...current.launch,
         phase: "terminal",
@@ -320,7 +345,14 @@ export function transitionSubagentLaunchToTerminal(params: {
       },
     };
     compareAndSwapSubagentRun(database, current, next, "terminal");
-    return next;
+    const tasks = transitionTaskRunsToTerminalInDatabase(database, {
+      runId: current.taskRunId ?? current.runId,
+      runtime: "subagent",
+      status: taskStatusForLaunchTerminalReason(params.terminalReason),
+      endedAt: params.terminalAt,
+      error: params.error,
+    });
+    return { entry: next, tasks };
   });
 }
 

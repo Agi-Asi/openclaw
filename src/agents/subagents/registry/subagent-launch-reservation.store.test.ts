@@ -7,12 +7,15 @@ import {
   closeOpenClawStateDatabaseForTest,
   openOpenClawStateDatabase,
 } from "../../../state/openclaw-state-db.js";
+import { loadTaskRegistryStateFromSqlite } from "../../../tasks/task-registry.store.sqlite.js";
+import type { TaskRecord } from "../../../tasks/task-registry.types.js";
 import { withEnvAsync } from "../../../test-utils/env.js";
 import {
   prepareSubagentLaunchRecord,
   reserveSubagentLaunchRecord,
   transitionDispatchingSubagentLaunchToRunning,
   transitionPreparedSubagentLaunchToDispatching,
+  transitionSubagentLaunchToTerminal,
 } from "./subagent-registry.store.sqlite.js";
 import { loadSubagentRegistryFromSqlite } from "./subagent-registry.store.sqlite.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
@@ -142,4 +145,106 @@ describe("subagent launch reservation store", () => {
       });
     });
   });
+
+  it.each([
+    {
+      phase: "dispatching" as const,
+      terminalReason: "lost" as const,
+      taskStatus: "lost" as const,
+    },
+    {
+      phase: "running" as const,
+      terminalReason: "interrupted" as const,
+      taskStatus: "failed" as const,
+    },
+  ])(
+    "atomically settles a $phase launch into waitable collector and task terminal state",
+    async ({ phase, terminalReason, taskStatus }) => {
+      await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+        const reserved = reserveSubagentLaunchRecord(reservedRun()).entry;
+        if (!reserved.launch) {
+          throw new Error("expected reserved launch");
+        }
+        const task: TaskRecord = {
+          taskId: "task_swarm_stable",
+          runtime: "subagent",
+          sourceId: reserved.runId,
+          requesterSessionKey: reserved.requesterSessionKey,
+          ownerKey: reserved.requesterSessionKey,
+          scopeKind: "session",
+          childSessionKey: reserved.childSessionKey,
+          runId: reserved.runId,
+          task: reserved.task,
+          status: "queued",
+          deliveryStatus: "not_applicable",
+          notifyPolicy: "silent",
+          createdAt: reserved.createdAt,
+          lastEventAt: reserved.createdAt,
+        };
+        const prepared = prepareSubagentLaunchRecord({
+          expected: reserved,
+          prepared: {
+            ...reserved,
+            queuedLaunch: {
+              request: { idempotencyKey: reserved.runId },
+              timeoutMs: 1000,
+              schedulerGroupKey: "group",
+              maxConcurrent: 1,
+            },
+            launch: {
+              ...reserved.launch,
+              phase: "prepared",
+              revision: 1,
+              preparedAt: 200,
+            },
+          },
+          task,
+        });
+        transitionPreparedSubagentLaunchToDispatching({
+          runId: prepared.runId,
+          executionAttemptId: "gateway-attempt",
+          dispatchingAt: 300,
+        });
+        if (phase === "running") {
+          transitionDispatchingSubagentLaunchToRunning({
+            runId: prepared.runId,
+            runningAt: 350,
+          });
+        }
+        const error =
+          phase === "dispatching"
+            ? "execution may have reached the provider and will not be retried"
+            : "provider execution was interrupted by restart";
+        const committed = transitionSubagentLaunchToTerminal({
+          runId: prepared.runId,
+          terminalAt: 400,
+          terminalReason,
+          error,
+        });
+
+        expect(committed?.entry).toMatchObject({
+          runId: reserved.runId,
+          taskRunId: reserved.taskRunId,
+          schedulerSlotId: reserved.schedulerSlotId,
+          collectorCompletion: { status: "failed" },
+          completion: { resultText: error, capturedAt: 400 },
+          launch: { phase: "terminal", terminalReason, terminalAt: 400 },
+        });
+        expect(committed?.tasks).toEqual([
+          expect.objectContaining({
+            taskId: task.taskId,
+            runId: reserved.runId,
+            status: taskStatus,
+            endedAt: 400,
+            lastEventAt: 400,
+            error,
+          }),
+        ]);
+        expect(loadSubagentRegistryFromSqlite().get(reserved.runId)).toEqual(committed?.entry);
+        expect(loadTaskRegistryStateFromSqlite().tasks.get(task.taskId)).toEqual(
+          committed?.tasks[0],
+        );
+      });
+    },
+  );
 });

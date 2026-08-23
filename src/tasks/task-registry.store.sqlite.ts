@@ -349,6 +349,43 @@ export function insertOrMatchTaskRowsInDatabase(
   }
 }
 
+/** Terminalizes matching task projections inside an enclosing shared-state transaction. */
+export function transitionTaskRunsToTerminalInDatabase(
+  database: OpenClawStateDatabase,
+  params: {
+    runId: string;
+    runtime: TaskRuntime;
+    status: Extract<TaskRecord["status"], "succeeded" | "failed" | "lost">;
+    endedAt: number;
+    error?: string;
+  },
+): TaskRecord[] {
+  const kysely = getTaskRegistryKysely(database.db);
+  executeSqliteQuerySync(
+    database.db,
+    kysely
+      .updateTable("task_runs")
+      .set({
+        status: params.status,
+        ended_at: params.endedAt,
+        last_event_at: params.endedAt,
+        error: params.error ?? null,
+      })
+      .where("run_id", "=", params.runId)
+      .where("runtime", "=", params.runtime)
+      .where("status", "in", ["queued", "running"]),
+  );
+  return executeSqliteQuerySync(
+    database.db,
+    kysely
+      .selectFrom("task_runs")
+      .select(TASK_RUN_SELECT_COLUMNS)
+      .where("run_id", "=", params.runId)
+      .where("runtime", "=", params.runtime)
+      .where("status", "=", params.status),
+  ).rows.map(rowToTaskRecord);
+}
+
 function replaceTaskDeliveryStateRow(
   db: DatabaseSync,
   row: Insertable<TaskDeliveryStateTable>,
