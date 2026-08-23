@@ -580,10 +580,10 @@ export class NewSessionPage extends OpenClawLightDomElement {
                   this.submission.submitting ||
                   Boolean(this.submission.pendingPlacement.sessionKey),
                 disabledReason: this.submission.submitting ? t("newSession.starting") : undefined,
-                mode: this.submission.permissionMode,
+                mode: this.submission.permission.value,
                 sessionRoot: this.place.workspacePath(),
                 onSelect: (permissionMode) =>
-                  this.submission.setPermissionMode(permissionMode ?? undefined),
+                  this.submission.permission.set(permissionMode ?? undefined),
               }),
           requiresModifier: loadSettings().chatSendShortcut === "modifier-enter",
           requestUpdate: () => this.requestUpdate(),
