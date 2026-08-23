@@ -18,5 +18,3 @@ export function handleCriticalObserverDigest(params: HandleParams): void {
 export function resetCriticalObserverTracker(): void {
   tracker.clear();
 }
-
-export { showBackgroundNotice } from "../../app/background-turn-notice.runtime.ts";

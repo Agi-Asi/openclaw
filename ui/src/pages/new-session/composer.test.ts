@@ -32,6 +32,7 @@ function renderComposer(
     message?: string;
     onInput?: (message: string) => void;
     onSubmit?: () => void;
+    onBackgroundSubmit?: () => void;
     textareaController?: NewSessionComposerTextareaController;
   } = {},
 ) {
@@ -74,6 +75,7 @@ function renderComposer(
         },
         onVisibilityChange: overrides.onVisibilityChange,
         onSubmit: overrides.onSubmit ?? (() => undefined),
+        onBackgroundSubmit: overrides.onBackgroundSubmit,
       }),
       container,
     );
@@ -196,6 +198,32 @@ describe("new-session composer keyboard submission", () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { label: "Ctrl+Enter", ctrlKey: true, metaKey: false },
+    { label: "Meta+Enter", ctrlKey: false, metaKey: true },
+  ])("starts in the background with $label", (testCase) => {
+    const onSubmit = vi.fn();
+    const onBackgroundSubmit = vi.fn();
+    const { composer } = renderComposer({ onSubmit, onBackgroundSubmit });
+    const textarea = composer.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea) {
+      throw new Error("Expected composer textarea");
+    }
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: testCase.ctrlKey,
+      key: "Enter",
+      metaKey: testCase.metaKey,
+    });
+
+    textarea.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onBackgroundSubmit).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("forwards Enter to onSubmit while a reasoned gate blocks submission", () => {

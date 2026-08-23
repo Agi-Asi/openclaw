@@ -1,5 +1,4 @@
 import { shouldForwardModelCommandToServer } from "../../../../src/auto-reply/commands-registry.shared.js";
-import type { ModelCatalogEntry, SessionsListResult } from "../../api/types.ts";
 import { normalizeChatFollowUpModeOverride, setLastActiveSessionKey } from "../../app/settings.ts";
 import { t } from "../../i18n/index.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
@@ -7,10 +6,7 @@ import { parseSlashCommand } from "../../lib/chat/commands.ts";
 import { extractCompanionCommandQuestion } from "../../lib/chat/companion-question.ts";
 import { resolveCurrentUserIdentity } from "../../lib/chat/current-user-identity.ts";
 import type { ControlUiFollowUpMode } from "../../lib/chat/follow-up-mode.ts";
-import { resolveChatModelOverrideValue } from "../../lib/chat/model-select-state.ts";
 import { scopedAgentIdForSession, visibleSessionMatches } from "../../lib/sessions/index.ts";
-import { resolveUiSelectedSessionAgentId } from "../../lib/sessions/session-key.ts";
-import { buildChatApiAttachments } from "./attachment-api.ts";
 import {
   getChatAttachmentDataUrl,
   releaseChatAttachmentPayloads,
@@ -105,7 +101,7 @@ function attachmentSubmitSignature(attachment: ChatAttachment): string {
 
 function chatSubmitKey(
   host: ChatHost,
-  kind: "background" | "detached" | "local" | "message" | "queued-edit",
+  kind: "detached" | "local" | "message" | "queued-edit",
   message: string,
   attachments: ChatAttachment[],
 ): string {
@@ -196,88 +192,6 @@ async function sendDetachedCommandMessage(
       releaseChatAttachmentPayloads(excludeComposerAttachments(host, opts.attachments));
     }
   }
-}
-
-export async function handleSendBackgroundSession(
-  host: ChatHost & {
-    chatModelCatalog: ModelCatalogEntry[];
-    sessionsResult?: SessionsListResult | null;
-  },
-  submissionAction?: Event,
-): Promise<void> {
-  const previousDraft = host.chatMessage;
-  const userMessage = previousDraft.trim();
-  const submittedSessionKey = host.sessionKey;
-  const attachmentsToSend = snapshotChatAttachments(host.chatAttachments);
-  if (!userMessage && attachmentsToSend.length === 0) {
-    return;
-  }
-  if (parseSlashCommand(userMessage)) {
-    return handleSendChat(host, undefined, undefined, submissionAction);
-  }
-  const message = composeBrowserAnnotationContext(userMessage, attachmentsToSend);
-  const replyTarget = host.chatReplyTarget;
-  const effectiveMessage = replyTarget ? prependReplyQuote(message, replyTarget) : message;
-  const submitKey = chatSubmitKey(host, "background", effectiveMessage, attachmentsToSend);
-  await withChatSubmitGuard(
-    host,
-    submitKey,
-    async () => {
-      if (!host.connected || !host.client || host.sessionKey !== submittedSessionKey) {
-        return;
-      }
-      const submittedAgentId = resolveUiSelectedSessionAgentId(host, submittedSessionKey);
-      const cleared = clearSubmittedComposerState(host, previousDraft, attachmentsToSend);
-      recordNonTranscriptInputHistory(host, userMessage);
-      const recovery = captureChatCommandComposerRecovery(
-        host,
-        resolveStoredChatOutboxScope(host, submittedSessionKey),
-        cleared.previousDraft === undefined
-          ? undefined
-          : {
-              draft: cleared.previousDraft,
-              attachments: cleared.previousAttachments ?? [],
-            },
-      );
-      const model = resolveChatModelOverrideValue({
-        chatModelCatalog: host.chatModelCatalog,
-        modelOverrides: host.sessions.state.modelOverrides,
-        sessionKey: submittedSessionKey,
-        sessionsResult: host.sessionsResult ?? null,
-      });
-      const thinkingLevel = host.chatThinkingLevel?.trim();
-      const result = await host.sessions.createBackground({
-        ...(submittedAgentId ? { agentId: submittedAgentId } : {}),
-        message: effectiveMessage,
-        attachments: buildChatApiAttachments(attachmentsToSend),
-        ...(model ? { model } : {}),
-        ...(thinkingLevel ? { thinkingLevel } : {}),
-      });
-      if (result?.initialRun.status !== "started") {
-        if (!restoreFailedCommandComposer(host, recovery)) {
-          releaseChatAttachmentPayloads(excludeComposerAttachments(host, attachmentsToSend));
-        }
-        if (!result && submittedCommandScopeIsVisible(host, recovery)) {
-          setChatError(host, host.sessions.state.error ?? t("newSession.createFailed"));
-        }
-        return;
-      }
-      if (submittedCommandConnectionIsCurrent(host, recovery)) {
-        clearOwnedCommandComposerFallback(host, recovery);
-      }
-      if (!commandComposerFallbackRetainsAttachments(host, recovery)) {
-        releaseChatAttachmentPayloads(excludeComposerAttachments(host, attachmentsToSend));
-      }
-      if (
-        replyTarget &&
-        submittedCommandScopeIsVisible(host, recovery) &&
-        host.chatReplyTarget?.messageId === replyTarget.messageId
-      ) {
-        host.chatReplyTarget = null;
-      }
-    },
-    submissionAction,
-  );
 }
 
 export async function handleSendChat(

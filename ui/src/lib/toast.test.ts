@@ -37,10 +37,9 @@ describe("shared toast", () => {
 
   it("keeps queued outcomes behind an unrelated replacement toast", async () => {
     const host = await mountHost();
-    const onAction = vi.fn();
 
     queueToast({ message: "First completion" });
-    queueToast({ message: "Second completion", actionLabel: "Open", onAction });
+    queueToast({ message: "Second completion" });
     await host.updateComplete;
     expect(host.querySelector(".app-toast__message")?.textContent).toBe("First completion");
 
@@ -50,9 +49,6 @@ describe("shared toast", () => {
     host.querySelector<HTMLButtonElement>(".app-toast__dismiss")?.click();
     await host.updateComplete;
     expect(host.querySelector(".app-toast__message")?.textContent).toBe("Second completion");
-
-    host.querySelector<HTMLButtonElement>(".app-toast__action")?.click();
-    expect(onAction).toHaveBeenCalledOnce();
   });
 
   it("uses the active modal's toast layer before the app layer", async () => {

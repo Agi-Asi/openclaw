@@ -533,16 +533,16 @@ export class ChatPane extends ChatPaneLayoutRender {
         state.requestUpdate?.();
       },
       onRemoveAttachment: this.removeBrowserAnnotation,
-      onSend: (submissionAction) =>
+      onSend: (followUpModeOverride, submissionAction) =>
         catalogKey
           ? void this.continueCatalogSession(catalogKey)
           : suggestionViewer
             ? void this.addCurrentSessionSuggestion()
-            : void state.handleSendChat(undefined, undefined, submissionAction),
-      onBackgroundSend:
-        catalogKey || suggestionViewer
-          ? undefined
-          : (submissionAction) => void state.handleSendBackgroundSession(submissionAction),
+            : void state.handleSendChat(
+                undefined,
+                followUpModeOverride ? { followUpMode: followUpModeOverride } : undefined,
+                submissionAction,
+              ),
       onCompact: sessionActionCallbacks.onCompact,
       // Checkpoint deep-link carries the archived filter so the row stays findable.
       onOpenSessionCheckpoints: () => {

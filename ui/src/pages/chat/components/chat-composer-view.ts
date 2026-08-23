@@ -399,8 +399,8 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                     props.disabledReason ? ` ${disabledReasonId}` : ""
                   }`}
                   aria-keyshortcuts=${sendShortcut === "enter"
-                    ? "Enter Control+Enter Meta+Enter"
-                    : "Control+Enter Meta+Enter Control+Shift+Enter Meta+Shift+Enter"}
+                    ? "Enter"
+                    : "Control+Enter Meta+Enter"}
                   @keydown=${handleKeyDown}
                   @beforeinput=${handleBeforeInput}
                   @input=${handleInput}

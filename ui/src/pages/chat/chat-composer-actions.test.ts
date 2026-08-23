@@ -277,17 +277,15 @@ describe("renderChatComposer controls", () => {
       "Steer the live textarea value",
     ],
   ] as const)(
-    "uses %s to start a background session",
+    "uses %s to steer an active queued follow-up",
     (_name, modifiers, draft, getAttachments, liveDraft) => {
       const onSend = vi.fn();
-      const onBackgroundSend = vi.fn();
       const { container } = renderComposer({
         canAbort: true,
         draft,
         followUpMode: "queue",
         getAttachments,
         onAbort: vi.fn(),
-        onBackgroundSend,
         onSend,
         sendShortcut: "enter",
       });
@@ -298,34 +296,32 @@ describe("renderChatComposer controls", () => {
 
       const action = pressComposerEnter(container, modifiers);
 
-      expect(onBackgroundSend).toHaveBeenCalledOnce();
-      expect(onBackgroundSend).toHaveBeenCalledWith(action);
-      expect(onSend).not.toHaveBeenCalled();
+      expect(onSend).toHaveBeenCalledOnce();
+      expect(onSend).toHaveBeenCalledWith("steer", action);
     },
   );
 
   it.each([
-    ["modifier-enter", true, "queue", false, false],
-    ["enter", false, "queue", false, false],
-    ["enter", true, "steer", false, false],
-    ["enter", true, "queue", true, true],
+    ["modifier-enter", true, "queue", false],
+    ["enter", false, "queue", false],
+    ["enter", true, "steer", false],
+    ["enter", true, "queue", true],
   ] as const)(
     "keeps ordinary send semantics for shortcut=%s active=%s mode=%s alt=%s",
-    (sendShortcut, active, followUpMode, altKey, backgroundAvailable) => {
+    (sendShortcut, active, followUpMode, altKey) => {
       const onSend = vi.fn();
       const { container } = renderComposer({
         canAbort: active,
         draft: "Keep the ordinary send path",
         followUpMode,
         onAbort: active ? vi.fn() : undefined,
-        onBackgroundSend: backgroundAvailable ? vi.fn() : undefined,
         onSend,
         sendShortcut,
       });
 
       const action = pressComposerEnter(container, { altKey, ctrlKey: true });
 
-      expect(onSend.mock.calls).toEqual([[action]]);
+      expect(onSend.mock.calls).toEqual([[undefined, action]]);
     },
   );
 
@@ -343,7 +339,7 @@ describe("renderChatComposer controls", () => {
         primaryButton(container).dispatchEvent(action);
       }
 
-      expect(onSend).toHaveBeenCalledWith(action);
+      expect(onSend).toHaveBeenCalledWith(undefined, action);
     },
   );
 
@@ -380,26 +376,12 @@ describe("renderChatComposer controls", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("uses Shift+modified Enter for background send with the modifier preference", () => {
-    const onBackgroundSend = vi.fn();
-    const { container } = renderComposer({
-      draft: "Start separate work",
-      onBackgroundSend,
-      sendShortcut: "modifier-enter",
-    });
-
-    const action = pressComposerEnter(container, { ctrlKey: true, shiftKey: true });
-
-    expect(onBackgroundSend).toHaveBeenCalledWith(action);
-  });
-
-  it("teaches the background shortcut when the action is available", () => {
+  it("teaches the steer shortcut only when the force-steer action is available", () => {
     const available = renderComposer({
       canAbort: true,
       draft: "Follow up now",
       followUpMode: "queue",
       onAbort: vi.fn(),
-      onBackgroundSend: vi.fn(),
       sendShortcut: "enter",
     });
     const availablePrimary = primaryButton(available.container);
@@ -407,7 +389,7 @@ describe("renderChatComposer controls", () => {
       | (HTMLElement & { content?: string })
       | null;
     expect(availablePrimary.getAttribute("aria-label")).toBe(t("chat.runControls.queueMessage"));
-    expect(availableTooltip?.content).toBe("Queue · New session ⌘/Ctrl+Enter");
+    expect(availableTooltip?.content).toBe("Queue ⏎ · Steer ⌘/Ctrl+Enter");
 
     const unavailable = [
       {
@@ -416,19 +398,17 @@ describe("renderChatComposer controls", () => {
           draft: "Follow up later",
           followUpMode: "queue" as const,
           onAbort: vi.fn(),
-          onBackgroundSend: vi.fn(),
           sendShortcut: "modifier-enter" as const,
         },
-        tooltip: "Queue · New session ⇧⌘/Ctrl+Enter",
+        tooltip: t("chat.runControls.queue"),
       },
       {
         overrides: {
           draft: "Send without an active run",
           followUpMode: "queue" as const,
-          onBackgroundSend: vi.fn(),
           sendShortcut: "enter" as const,
         },
-        tooltip: "Send · New session ⌘/Ctrl+Enter",
+        tooltip: t("chat.runControls.send"),
       },
       {
         overrides: {
@@ -436,10 +416,9 @@ describe("renderChatComposer controls", () => {
           draft: "Already steering",
           followUpMode: "steer" as const,
           onAbort: vi.fn(),
-          onBackgroundSend: vi.fn(),
           sendShortcut: "enter" as const,
         },
-        tooltip: "Steer · New session ⌘/Ctrl+Enter",
+        tooltip: t("chat.queue.steer"),
       },
       {
         overrides: {

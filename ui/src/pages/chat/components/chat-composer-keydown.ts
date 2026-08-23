@@ -21,6 +21,7 @@ type ComposerKeyDownDeps = {
   commitDraft: (draft: string) => void;
   syncDraftAfterSend: (target: HTMLTextAreaElement | null) => void;
   showAbortableUi: boolean;
+  steerNowEnabled: boolean;
 };
 
 function handleComposerMenuKeyDown<T>(
@@ -76,6 +77,7 @@ export function createComposerKeyDownHandler({
   commitDraft,
   syncDraftAfterSend,
   showAbortableUi,
+  steerNowEnabled,
 }: ComposerKeyDownDeps): (event: KeyboardEvent) => void {
   return (event) => {
     // The handler only ever binds to the composer textarea; narrowing here
@@ -176,26 +178,7 @@ export function createComposerKeyDownHandler({
       return;
     }
 
-    const hasModifier = event.metaKey || event.ctrlKey;
-    const backgroundShortcutMatches =
-      !event.altKey && hasModifier && (sendShortcut === "enter" ? !event.shiftKey : event.shiftKey);
-    if (
-      event.key === "Enter" &&
-      backgroundShortcutMatches &&
-      props.onBackgroundSend &&
-      canSubmitDraft(target.value)
-    ) {
-      const attachments = props.getAttachments?.() ?? props.attachments ?? [];
-      if (target.value.trim() || attachments.length) {
-        event.preventDefault();
-        commitDraft(target.value);
-        props.onBackgroundSend(event);
-        syncDraftAfterSend(target);
-        return;
-      }
-    }
-
-    const sendShortcutMatches = sendShortcut === "enter" || hasModifier;
+    const sendShortcutMatches = sendShortcut === "enter" || event.metaKey || event.ctrlKey;
     if (event.key === "Enter" && !event.shiftKey && sendShortcutMatches) {
       const attachments = props.getAttachments?.() ?? props.attachments ?? [];
       const hasComposedContent = Boolean(target.value.trim() || attachments.length);
@@ -222,7 +205,12 @@ export function createComposerKeyDownHandler({
       }
       event.preventDefault();
       commitDraft(target.value);
-      props.onSend(event);
+      const steerImmediately = steerNowEnabled && (event.metaKey || event.ctrlKey) && !event.altKey;
+      if (steerImmediately) {
+        props.onSend("steer", event);
+      } else {
+        props.onSend(undefined, event);
+      }
       syncDraftAfterSend(target);
     }
   };

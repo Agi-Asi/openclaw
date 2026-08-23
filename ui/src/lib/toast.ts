@@ -56,21 +56,17 @@ class OpenClawToastHost extends OpenClawLightDomContentsElement {
   /** Keep the active outcome intact while moveBefore() crosses top-layer owners. */
   connectedMoveCallback() {}
 
-  show(options: ToastOptions) {
+  show(options: ToastOptions, enqueue = false) {
+    if (enqueue && this.toast) {
+      this.toastQueue.push(options);
+      return;
+    }
     this.dismiss("replaced");
     this.toast = options;
     this.dismissTimer = globalThis.setTimeout(
       () => this.dismiss("timeout"),
       options.durationMs ?? DEFAULT_TOAST_DURATION_MS,
     );
-  }
-
-  queue(options: ToastOptions) {
-    if (this.toast) {
-      this.toastQueue.push(options);
-      return;
-    }
-    this.show(options);
   }
 
   private clearDismissTimer() {
@@ -153,11 +149,7 @@ function deliverToast(options: ToastOptions, enqueue: boolean): boolean {
     };
     modal.addEventListener("wa-after-hide", handoff);
   }
-  if (enqueue) {
-    host.queue(options);
-  } else {
-    host.show(options);
-  }
+  host.show(options, enqueue);
   return true;
 }
 

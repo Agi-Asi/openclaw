@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionsListResult } from "../../api/types.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import { createSessionCapability } from "../../lib/sessions/index.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
@@ -12,7 +11,7 @@ import {
 import { composeBrowserAnnotationContext } from "./browser-annotation-context.ts";
 import { makeChatHost } from "./chat-host.test-support.ts";
 import type { ChatHost } from "./chat-send-contract.ts";
-import { handleSendBackgroundSession, handleSendChat } from "./chat-send-submit.ts";
+import { handleSendChat } from "./chat-send-submit.ts";
 
 const attachmentsToRelease: ChatAttachment[] = [];
 const attachmentDataUrl = "data:application/pdf;base64,JVBERi0xLjQK";
@@ -77,16 +76,6 @@ function createStagedAttachment(id: string): ChatAttachment {
   });
   attachmentsToRelease.push(attachment);
   return attachment;
-}
-
-function sessionsResult(sessions: SessionsListResult["sessions"]): SessionsListResult {
-  return {
-    ts: Date.now(),
-    path: "",
-    count: sessions.length,
-    defaults: { model: null, modelProvider: null, contextTokens: null },
-    sessions,
-  };
 }
 
 function createImmediateCommandHost(
@@ -157,92 +146,6 @@ describe("composeBrowserAnnotationContext", () => {
     expect(composeBrowserAnnotationContext("Continue", attachments)).toBe(
       "Remaining context\n\nContinue",
     );
-  });
-});
-
-describe("handleSendBackgroundSession", () => {
-  it("creates a top-level session with the current model, effort, prompt, and attachments", async () => {
-    const attachment = createStagedAttachment("background-file");
-    const currentSessions = sessionsResult([
-      {
-        key: "agent:main:dashboard:source",
-        kind: "direct",
-        agentId: "main",
-        model: "gpt-5.6-luna",
-        modelProvider: "openai",
-      },
-    ]);
-    const host = makeChatHost({
-      requestHandlers: {
-        "sessions.create": {
-          key: "agent:main:dashboard:background",
-          runStarted: true,
-          runId: "run-background",
-        },
-        "sessions.list": currentSessions,
-      },
-      sessionKey: "agent:main:dashboard:source",
-      sessionsResult: currentSessions,
-      chatMessage: "Inspect this in parallel.",
-      chatAttachments: [attachment],
-      chatThinkingLevel: "high",
-    });
-
-    await handleSendBackgroundSession(host);
-
-    expect(host.request).toHaveBeenCalledWith(
-      "sessions.create",
-      expect.objectContaining({
-        agentId: "main",
-        message: "Inspect this in parallel.",
-        model: "openai/gpt-5.6-luna",
-        thinkingLevel: "high",
-        attachments: [
-          {
-            type: "file",
-            mimeType: "application/pdf",
-            fileName: "brief.pdf",
-            content: "JVBERi0xLjQK",
-          },
-        ],
-      }),
-    );
-    const createParams = host.request.mock.calls.find(
-      ([method]) => method === "sessions.create",
-    )?.[1] as Record<string, unknown>;
-    expect(createParams).not.toHaveProperty("currentSessionKey");
-    expect(createParams).not.toHaveProperty("parentSessionKey");
-    expect(host.chatMessage).toBe("");
-    expect(host.chatAttachments).toEqual([]);
-  });
-
-  it("restores an untouched composer when the first turn is rejected", async () => {
-    const attachment = createStagedAttachment("background-rejected");
-    const host = makeChatHost({
-      requestHandlers: {
-        "sessions.create": {
-          key: "agent:main:dashboard:background",
-          runStarted: false,
-          runError: { message: "No model available" },
-        },
-        "sessions.list": sessionsResult([]),
-      },
-      sessionKey: "agent:main:dashboard:source",
-      chatMessage: "Keep this draft.",
-      chatAttachments: [attachment],
-    });
-
-    await handleSendBackgroundSession(host);
-
-    expect(host.chatMessage).toBe("Keep this draft.");
-    expect(host.chatAttachments).toEqual([
-      expect.objectContaining({
-        id: attachment.id,
-        fileName: attachment.fileName,
-        mimeType: attachment.mimeType,
-      }),
-    ]);
-    expect(getChatAttachmentDataUrl(host.chatAttachments[0]!)).toBe(attachmentDataUrl);
   });
 });
 

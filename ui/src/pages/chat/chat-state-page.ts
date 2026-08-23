@@ -26,7 +26,7 @@ import {
   steerQueuedChatMessage,
 } from "./chat-send-actions.ts";
 import { setChatError } from "./chat-send-queue-state.ts";
-import { handleSendBackgroundSession, handleSendChat } from "./chat-send-submit.ts";
+import { handleSendChat } from "./chat-send-submit.ts";
 import { OFFLINE_QUEUE_STORAGE_ERROR } from "./chat-send-support.ts";
 import { retireChatModelSelectionOwnership } from "./chat-session.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
@@ -314,8 +314,6 @@ export function createPageState(
     }
     return handleSendChat(state, messageOverride, options as never, submissionAction);
   };
-  state.handleSendBackgroundSession = (submissionAction) =>
-    handleSendBackgroundSession(state, submissionAction);
   state.handleAbortChat = async (options) => {
     await handleAbortChat(state, options as never);
     renderLifecycle.invalidate();

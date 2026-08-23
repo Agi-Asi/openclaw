@@ -67,6 +67,7 @@ type NewSessionComposerOptions = {
   onOpenImage?: (item: ImageLightboxItem) => void;
   onVisibilityChange?: (visibility: NewSessionVisibility) => void;
   onSubmit: () => void;
+  onBackgroundSubmit?: () => void;
 };
 
 function submitNewSession(
@@ -230,6 +231,14 @@ function handleComposerKeydown(
   if (event.key !== "Enter" || event.shiftKey) {
     return;
   }
+  if (!event.altKey && (event.metaKey || event.ctrlKey) && options.onBackgroundSubmit) {
+    if (options.canSubmit || options.submitDisabledReason !== undefined) {
+      event.preventDefault();
+      resetSkillMenuState(options.textareaController.skillMenuState);
+      options.onBackgroundSubmit();
+    }
+    return;
+  }
   if (options.requiresModifier && !event.metaKey && !event.ctrlKey) {
     return;
   }
@@ -311,6 +320,9 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
               ?disabled=${options.submitting || options.messageLocked}
               placeholder=${t("newSession.messagePlaceholder")}
               aria-label=${t("newSession.messagePlaceholder")}
+              aria-keyshortcuts=${options.requiresModifier
+                ? "Control+Enter Meta+Enter"
+                : "Enter Control+Enter Meta+Enter"}
               .value=${options.message}
               aria-autocomplete="list"
               aria-controls=${ifDefined(skillMenuVisible ? skillMenuListboxId : undefined)}
@@ -400,6 +412,7 @@ export function renderNewSessionDraftComposer(options: {
   onOpenImage?: (item: ImageLightboxItem) => void;
   onVisibilityChange?: (visibility: NewSessionVisibility) => void;
   onSubmit: () => void;
+  onBackgroundSubmit?: () => void;
 }) {
   const readSignal = options.attachmentDraft.readSignal;
   const commandClient = options.context?.gateway.snapshot.client;
@@ -442,5 +455,6 @@ export function renderNewSessionDraftComposer(options: {
     onOpenImage: options.onOpenImage,
     onVisibilityChange: options.onVisibilityChange,
     onSubmit: options.onSubmit,
+    onBackgroundSubmit: options.onBackgroundSubmit,
   });
 }
