@@ -223,6 +223,43 @@ describe("ChannelWizardController", () => {
     }
   });
 
+  it("retires QR data while gateway progress remains pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller } = createController(async (method) => {
+        if (method === "wizard.start") {
+          return {
+            sessionId: "s-qr-expiry",
+            done: false,
+            status: "running",
+            step: {
+              id: "qr-expiry",
+              type: "qr",
+              executor: "gateway",
+              qrDataUrl: "data:image/png;base64,aGVsbG8=",
+              expiresInMs: 50,
+            },
+          };
+        }
+        if (method === "wizard.next") {
+          return await new Promise(() => {});
+        }
+        return { status: "cancelled" };
+      });
+
+      await controller.start("signal");
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(controller.state).toMatchObject({
+        phase: "step",
+        step: { id: "qr-expiry", qrDataUrl: "", expiresInMs: 0 },
+      });
+      await controller.cancel();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores a gateway progress response after the wizard is cancelled", async () => {
     let resolveProgress: ((value: unknown) => void) | undefined;
     let progressSignal: AbortSignal | undefined;
