@@ -124,7 +124,7 @@ describe("critical session observer notice", () => {
 
     show("agent:main:other", "stuck", 3);
     await toastHost.updateComplete;
-    expect(toastHost.querySelector(".app-toast")).toBeNull();
+    expect(toastHost.querySelector('.app-toast[data-state="open"]')).toBeNull();
 
     // Broad-only recipients miss recovery digests. A revision gap distinguishes
     // the next critical transition from an exact subscriber's repeat update.

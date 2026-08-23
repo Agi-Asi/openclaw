@@ -484,7 +484,9 @@ suite.define(() => {
     await pin.click();
 
     await expect.poll(async () => (await gateway.getRequests("board.widget.put")).length).toBe(1);
-    const toast = page.locator("openclaw-toast-host .app-toast");
+    const toast = page.locator("openclaw-session-toast-host .app-toast", {
+      hasText: "Could not pin to dashboard. Try again.",
+    });
     await toast.waitFor();
     expect(await toast.textContent()).toContain("Could not pin to dashboard. Try again.");
     expect(await pin.isEnabled()).toBe(true);

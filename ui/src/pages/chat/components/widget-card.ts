@@ -41,7 +41,11 @@ type WidgetCardOptions = {
   boardProvider?: BoardProvider;
 };
 
-async function pinWidget(event: Event, pin: () => Promise<void>): Promise<void> {
+async function pinWidget(
+  event: Event,
+  pin: () => Promise<void>,
+  sessionKey: string | undefined,
+): Promise<void> {
   const button = event.currentTarget;
   if (!(button instanceof HTMLButtonElement)) {
     return;
@@ -59,7 +63,12 @@ async function pinWidget(event: Event, pin: () => Promise<void>): Promise<void> 
     button.ariaLabel = t("chat.toolCards.pinToDashboard");
     const failureLabel = t("chat.toolCards.pinToDashboardFailed");
     button.title = failureLabel;
-    showToast({ message: failureLabel });
+    showToast({
+      key: "widget-pin",
+      message: failureLabel,
+      ...(sessionKey ? { scope: { kind: "session", sessionKey } as const } : {}),
+      variant: "danger",
+    });
   }
 }
 
@@ -68,17 +77,21 @@ async function pinCanvasWidget(
   preview: ToolPreview,
   provider: BoardProvider,
   name: string,
+  sessionKey: string | undefined,
 ): Promise<void> {
   const docId = preview.viewId?.trim();
   if (!docId) {
     return;
   }
-  return pinWidget(event, () =>
-    provider.pinWidget({
-      docId,
-      name,
-      ...(preview.title?.trim() ? { title: preview.title.trim() } : {}),
-    }),
+  return pinWidget(
+    event,
+    () =>
+      provider.pinWidget({
+        docId,
+        name,
+        ...(preview.title?.trim() ? { title: preview.title.trim() } : {}),
+      }),
+    sessionKey,
   );
 }
 
@@ -88,13 +101,17 @@ async function pinMcpAppWidget(
   provider: BoardProvider,
   name: string,
   viewId: string,
+  sessionKey: string | undefined,
 ): Promise<void> {
-  return pinWidget(event, () =>
-    provider.pinMcpApp({
-      viewId,
-      name,
-      ...(preview.title?.trim() ? { title: preview.title.trim() } : {}),
-    }),
+  return pinWidget(
+    event,
+    () =>
+      provider.pinMcpApp({
+        viewId,
+        name,
+        ...(preview.title?.trim() ? { title: preview.title.trim() } : {}),
+      }),
+    sessionKey,
   );
 }
 
@@ -424,7 +441,15 @@ function renderWidgetContent(
 function handleWidgetExportAction(
   event: CustomEvent<{ item: { value?: string } }>,
   title: string | undefined,
+  sessionKey: string | undefined,
 ) {
+  const present = (key: string, message: string, variant: "danger" | "success" | "warning") =>
+    showToast({
+      key,
+      message,
+      ...(sessionKey ? { scope: { kind: "session", sessionKey } as const } : {}),
+      variant,
+    });
   const value = event.detail.item.value;
   if (value === "raw-details") {
     const dropdown = event.currentTarget;
@@ -456,25 +481,29 @@ function handleWidgetExportAction(
           ?.querySelector<HTMLIFrameElement>(".chat-tool-card__preview-frame")
       : null;
   if (!frame) {
-    showToast({ message: t("chat.toolCards.widgetExportFailed") });
+    present("widget-export", t("chat.toolCards.widgetExportFailed"), "danger");
     return;
   }
   void exportWidget(value, frame, title)
     .then((result) => {
       if (result === "rerender-required") {
-        showToast({ message: t("chat.toolCards.widgetExportRerender") });
+        present("widget-export", t("chat.toolCards.widgetExportRerender"), "warning");
       } else if (result === "html") {
-        showToast({ message: t("chat.toolCards.widgetExportHtmlFallback") });
+        present("widget-export", t("chat.toolCards.widgetExportHtmlFallback"), "warning");
       } else if (value === "copy") {
-        showToast({ message: t("common.copied") });
+        present("widget-export", t("common.copied"), "success");
       }
     })
     .catch(() => {
-      showToast({ message: t("chat.toolCards.widgetExportFailed") });
+      present("widget-export", t("chat.toolCards.widgetExportFailed"), "danger");
     });
 }
 
-function renderWidgetActions(preview: ToolPreview, hasRawDetails: boolean) {
+function renderWidgetActions(
+  preview: ToolPreview,
+  hasRawDetails: boolean,
+  sessionKey: string | undefined,
+) {
   const canExportImage = !preview.mcpApp && isInternalCanvasEntryUrl(preview.url);
   if (!canExportImage && !hasRawDetails) {
     return nothing;
@@ -485,7 +514,7 @@ function renderWidgetActions(preview: ToolPreview, hasRawDetails: boolean) {
       placement="bottom-end"
       aria-label=${t("chat.toolCards.widgetActions")}
       @wa-select=${(event: CustomEvent<{ item: { value?: string } }>) =>
-        handleWidgetExportAction(event, preview.title)}
+        handleWidgetExportAction(event, preview.title, sessionKey)}
     >
       <button
         slot="trigger"
@@ -573,13 +602,24 @@ function renderWidgetCard(
           aria-label=${pinLabel}
           @click=${(event: Event) =>
             contentKind === "mcp-app" && mcpAppViewId
-              ? void pinMcpAppWidget(event, preview, provider, pinName, mcpAppViewId)
-              : void pinCanvasWidget(event, preview, provider, pinName)}
+              ? void pinMcpAppWidget(
+                  event,
+                  preview,
+                  provider,
+                  pinName,
+                  mcpAppViewId,
+                  options?.sessionKey,
+                )
+              : void pinCanvasWidget(event, preview, provider, pinName, options?.sessionKey)}
         >
           ${icons.pin}
         </button>`
       : nothing;
-  const widgetActions = renderWidgetActions(preview, Boolean(options?.rawText));
+  const widgetActions = renderWidgetActions(
+    preview,
+    Boolean(options?.rawText),
+    options?.sessionKey,
+  );
   const actions =
     pinAction === nothing && widgetActions === nothing
       ? nothing

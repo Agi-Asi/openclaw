@@ -776,7 +776,7 @@ describe("openclaw-board-view", () => {
     await vi.waitFor(() => expect(allow?.disabled).toBe(false));
   });
 
-  it("toasts failed rejection while keeping controls and leaves successful decisions quiet", async () => {
+  it("shows failed rejection inline while keeping controls and leaves successful decisions quiet", async () => {
     const toastHost = document.createElement("openclaw-toast-host");
     document.body.append(toastHost);
     const grant = vi.fn(async (_name: string, decision: "granted" | "rejected") => {
@@ -798,9 +798,10 @@ describe("openclaw-board-view", () => {
       expect(
         view.querySelector('[data-test-id="board-widget-action-error"]')?.textContent,
       ).toContain("approval service unavailable");
-      expect(toastHost.querySelector(".app-toast__message")?.textContent).toContain(
-        "Could not reject widget access. Try again.",
-      );
+      expect(
+        view.querySelector('[data-test-id="board-widget-action-error"]')?.textContent,
+      ).toContain("Could not reject widget access. Try again.");
+      expect(toastHost.querySelector(".app-toast")).toBeNull();
     });
     expect(allow?.disabled).toBe(false);
     expect(reject?.disabled).toBe(false);

@@ -5,6 +5,7 @@ import type {
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { isDesktopPanelAvailable } from "../../app/app-shell-chrome.ts";
+import { renderSessionToastHost } from "../../lib/toast.ts";
 import { ChatPaneBrowserAnnotationRender } from "./chat-pane-browser-annotation-render.ts";
 import {
   availableSidebarSlots,
@@ -81,14 +82,22 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       workspaceGit,
       sidebarLayout,
     );
+    const sessionToasts = renderSessionToastHost({
+      sessionKey: state.sessionKey,
+      presented: this.presented,
+      active: this.active,
+    });
     const chat = renderChat({
       ...chatProps,
       header: board.face === "dashboard" ? nothing : header,
+      sessionToasts: board.face === "dashboard" ? nothing : sessionToasts,
     });
     // Keep this root stable across board face changes so the guarded board runtime
     // remains connected while Chat is active.
     const primary = html`<div class="chat-pane-primary-column">
-      ${board.face === "dashboard" ? header : nothing}${this.renderBoardPrimary(board, chat)}
+      ${board.face === "dashboard"
+        ? html`${header}${sessionToasts}`
+        : nothing}${this.renderBoardPrimary(board, chat)}
     </div>`;
     const discussion = this.buildSessionDiscussionPanel(state, state.sessionKey.trim());
     const desktopAvailable = isDesktopPanelAvailable(this.context.gateway.snapshot);

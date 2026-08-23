@@ -15,7 +15,7 @@ const sessionKey = "agent:main:dashboard-grant-failure";
 const proofDir = path.resolve(process.cwd(), ".artifacts/control-ui-e2e/workboard-grant-failure");
 
 suite.define(() => {
-  it("keeps a network-capability decision retryable and toasts when Allow fails", async () => {
+  it("keeps a network-capability decision retryable and shows one inline failure", async () => {
     const recordProof = process.env.OPENCLAW_UI_E2E_RECORD === "1";
     if (recordProof) {
       await mkdir(proofDir, { recursive: true });
@@ -87,14 +87,21 @@ suite.define(() => {
         decision: "granted",
         revision: 1,
       });
-      const toast = page.locator("openclaw-toast-host .app-toast");
-      await toast.waitFor();
-      expect(await toast.textContent()).toContain("Could not allow widget access. Try again.");
-      expect(await toast.textContent()).not.toContain("internal capability service detail");
       await expect.poll(() => allow.isEnabled()).toBe(true);
       expect(await reject.isEnabled()).toBe(true);
       await pending.waitFor();
-      await page.locator('[data-test-id="board-widget-action-error"]').waitFor();
+      const inlineError = page.locator('[data-test-id="board-widget-action-error"]');
+      await inlineError.waitFor();
+      expect(await inlineError.textContent()).toContain(
+        "Could not allow widget access. Try again.",
+      );
+      const details = inlineError.locator("details");
+      expect(await details.getAttribute("open")).toBeNull();
+      expect(await details.textContent()).toContain("internal capability service detail");
+      expect(
+        await page.getByText("internal capability service detail", { exact: true }).isVisible(),
+      ).toBe(false);
+      expect(await page.locator("openclaw-toast-host .app-toast").count()).toBe(0);
       if (recordProof) {
         await page.screenshot({ path: path.join(proofDir, "grant-failed.png") });
       }

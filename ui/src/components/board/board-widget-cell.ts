@@ -20,7 +20,6 @@ import {
   type PluginBoardWidgetRenderer,
 } from "../../lib/board/widgets/index.ts";
 import { formatUiError } from "../../lib/format-error.ts";
-import { showToast } from "../../lib/toast.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
 import { renderBoardMcpAppContent } from "./board-mcp-app-content.ts";
 import { BoardMcpAppLifecycle } from "./board-mcp-app-lifecycle.ts";
@@ -164,10 +163,8 @@ class OpenClawBoardWidgetCell extends OpenClawLightDomElement {
     try {
       await action();
     } catch (error) {
-      this.actionError = formatUiError(error);
-      if (failureMessage) {
-        showToast({ message: failureMessage });
-      }
+      const detail = formatUiError(error);
+      this.actionError = failureMessage ? `${failureMessage}\n${detail}` : detail;
     } finally {
       this.actionPending = false;
     }

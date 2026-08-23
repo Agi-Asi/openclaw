@@ -179,9 +179,14 @@ export class ChatPane extends ChatPaneLayoutRender {
       isGatewayMethodAdvertised(gatewaySnapshot, "progressCard.put") === true;
     const onDismissProgressCard = canDismissProgressCard
       ? (card: NonNullable<ChatProps["progressCard"]>) => {
-          void this.progressCard
-            .dismiss(card)
-            .catch(() => showToast({ message: t("sessionProgressCard.dismissFailed") }));
+          void this.progressCard.dismiss(card).catch(() =>
+            showToast({
+              key: `progress-card-dismiss:${state.sessionKey}`,
+              message: t("sessionProgressCard.dismissFailed"),
+              scope: { kind: "session", sessionKey: state.sessionKey },
+              variant: "danger",
+            }),
+          );
         }
       : undefined;
     const restartRecoveryTombstoned = selectedSession?.restartRecoveryStatus === "tombstoned";

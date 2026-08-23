@@ -112,7 +112,9 @@ describe("chat pane header state", () => {
       // operator needs a distinct, visible outcome or their lost intent reads
       // as a click that simply did nothing.
       expect(showToast).toHaveBeenCalledWith({
+        key: "delete-session-stale:agent:main:current",
         message: t("sessionsView.deleteSessionStale", { session: "Current session" }),
+        variant: "warning",
       });
     } finally {
       document.body.replaceChildren();

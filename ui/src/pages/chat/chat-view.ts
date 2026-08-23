@@ -261,6 +261,7 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     onForkMessage?: (entryId: string) => Promise<void> | void;
     backgroundTasks?: BackgroundTasksProps;
     header?: TemplateResult | typeof nothing;
+    sessionToasts?: TemplateResult | typeof nothing;
     sessionSuggestions?: readonly SessionSuggestion[];
     sessionSuggestionRole?: SessionSharingRole;
     sessionSuggestionBusyIds?: ReadonlySet<string>;
@@ -556,7 +557,8 @@ export function renderChat(props: ChatProps) {
           <div class="chat-split-container">
             <div class="chat-main">
               <div class="chat-main__conversation-column">
-                ${props.header ?? nothing} ${renderChatViewNotices(props)}
+                ${props.header ?? nothing} ${props.sessionToasts ?? nothing}
+                ${renderChatViewNotices(props)}
                 ${renderTranscriptSearch(props.paneId, requestUpdate)}
                 <div class="chat-main__conversation">
                   ${thread} ${earlierHistoryButton} ${scrollToBottomButton}

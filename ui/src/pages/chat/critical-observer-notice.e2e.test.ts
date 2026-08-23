@@ -104,7 +104,11 @@ async function emitObserverAndReadToast(
       await runtime;
       await host.updateComplete;
 
-      const toast = host.querySelector<HTMLElement>(".app-toast");
+      const toast = [...host.querySelectorAll<HTMLElement>(".app-toast")].find((candidate) =>
+        candidate.textContent?.includes(
+          String((params.payload as { headline?: unknown }).headline),
+        ),
+      );
       const isVisible = (target: HTMLElement | null): target is HTMLElement => {
         if (!target?.isConnected) {
           return false;
@@ -118,7 +122,7 @@ async function emitObserverAndReadToast(
           bounds.height > 0
         );
       };
-      const visible = isVisible(toast);
+      const visible = isVisible(toast ?? null);
       let actionable: boolean | null = null;
       const result = () => ({
         actionable,
@@ -219,7 +223,9 @@ suite.define(() => {
         await host.locator(".app-toast__action").click({ trial: true });
 
         await modal.evaluate((element) => (element as HTMLElement & { hide: () => void }).hide());
-        const appToast = page.locator(".shell > openclaw-toast-host .app-toast");
+        const appToast = page.locator(".shell > openclaw-toast-host .app-toast", {
+          hasText: headline,
+        });
         await expect.poll(() => appToast.textContent()).toContain(headline);
         await appToast.getByRole("button", { name: "Dismiss" }).click();
       },
@@ -257,7 +263,7 @@ suite.define(() => {
         await page.getByText("Selected session A is ready.").waitFor({ state: "visible" });
         expect(new URL(page.url()).pathname).toBe(controlUiSessionPath(selectedSessionKey));
 
-        const toast = page.locator(".app-toast");
+        const toast = page.locator(".app-toast", { hasText: "Background session is healthy" });
         await gateway.emitGatewayEvent(
           "session.observer",
           observerDigest({
@@ -472,7 +478,7 @@ suite.define(() => {
           revision: 1,
         });
 
-        const toast = page.locator(".app-toast");
+        const toast = page.locator(".app-toast", { hasText: headline });
         if (testCase.visible) {
           const toastState = await emitObserverAndReadToast(page, digest);
           expect(toastState.visible).toBe(true);

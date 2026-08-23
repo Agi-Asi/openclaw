@@ -100,9 +100,11 @@ export function showCriticalSessionObserverNotice(params: {
   );
   const label = resolveSessionDisplayName(sessionKey, row);
   showToast({
+    key: `critical-observer:${sessionKey}`,
     message: `${t("sessionsView.attentionRequired")}: ${label} — ${headline}`,
     actionLabel: t("sessionsView.openSession"),
     onAction: () =>
       digest.agentId ? params.onOpen(sessionKey, digest.agentId) : params.onOpen(sessionKey),
+    variant: "danger",
   });
 }
