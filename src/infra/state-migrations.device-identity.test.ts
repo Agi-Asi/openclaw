@@ -708,6 +708,69 @@ describe("legacy device identity Doctor migration", () => {
     expect(receipt(env)).toMatchObject({ removed_source: 1 });
   });
 
+  it("preserves receipt-covered retired bytes as a notice after canonical identity rotation", async () => {
+    const { env, stateDir } = useStateDir();
+    const sourcePath = await writeLegacy({ stateDir });
+    const sourceBytes = await fsp.readFile(sourcePath, "utf8");
+    await migrate(stateDir, env);
+    const replacement = anotherIdentity();
+    const db = database(env);
+    executeSqliteQuerySync(
+      db,
+      getNodeSqliteKysely<MigrationDatabase>(db)
+        .updateTable("device_identities")
+        .set({
+          device_id: replacement.deviceId,
+          public_key_pem: replacement.publicKeyPem,
+          private_key_pem: replacement.privateKeyPem,
+          created_at_ms: replacement.createdAtMs,
+          updated_at_ms: replacement.createdAtMs,
+        })
+        .where("identity_key", "=", "primary"),
+    );
+    await fsp.writeFile(sourcePath, sourceBytes, "utf8");
+
+    closeOpenClawStateDatabaseForTest();
+    const retry = await migrate(stateDir, env);
+
+    expect(retry.warnings).toEqual([]);
+    expect(retry.notices?.join("\n")).toContain("canonical SQLite identity has since changed");
+    await expect(fsp.readFile(sourcePath, "utf8")).resolves.toBe(sourceBytes);
+    expect(identityRow(env)?.device_id).toBe(replacement.deviceId);
+    expect(receipt(env)).toMatchObject({ removed_source: 1 });
+  });
+
+  it.each(["missing", "invalid"] as const)(
+    "keeps receipt-covered retired bytes fatal when the canonical identity is %s",
+    async (canonicalState) => {
+      const { env, stateDir } = useStateDir();
+      const sourcePath = await writeLegacy({ stateDir });
+      const sourceBytes = await fsp.readFile(sourcePath);
+      await migrate(stateDir, env);
+      await fsp.writeFile(sourcePath, sourceBytes);
+      const db = database(env);
+      const query = getNodeSqliteKysely<MigrationDatabase>(db)
+        .updateTable("device_identities")
+        .set({ public_key_pem: "invalid-public-key", private_key_pem: "invalid-private-key" })
+        .where("identity_key", "=", "primary");
+      executeSqliteQuerySync(
+        db,
+        canonicalState === "missing"
+          ? getNodeSqliteKysely<MigrationDatabase>(db)
+              .deleteFrom("device_identities")
+              .where("identity_key", "=", "primary")
+          : query,
+      );
+
+      closeOpenClawStateDatabaseForTest();
+      const retry = await migrate(stateDir, env);
+
+      expect(retry.warnings.join("\n")).toContain("canonical SQLite device identity");
+      expect(retry.notices ?? []).toEqual([]);
+      expect(fs.existsSync(sourcePath)).toBe(true);
+    },
+  );
+
   it("preserves a divergent recreated identity as a boot-safe notice while the canonical row is valid", async () => {
     const { env, stateDir } = useStateDir();
     const sourcePath = await writeLegacy({ stateDir });

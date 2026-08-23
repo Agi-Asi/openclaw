@@ -166,6 +166,24 @@ function verifyCanonicalIdentity(
   }
 }
 
+function readCanonicalIdentityRelation(
+  identity: NormalizedLegacyDeviceIdentity,
+  env: NodeJS.ProcessEnv,
+): "same" | "different" | "unavailable" {
+  try {
+    const canonical = readStoredDeviceIdentityReadOnly({ env, identityKey: IDENTITY_KEY });
+    if (!canonical) {
+      return "unavailable";
+    }
+    return canonical.deviceId === identity.deviceId &&
+      deviceIdentityKeyMaterialMatches(canonical, identity)
+      ? "same"
+      : "different";
+  } catch {
+    return "unavailable";
+  }
+}
+
 function importAndRecordReceipt(params: {
   env: NodeJS.ProcessEnv;
   sourcePath: string;
@@ -337,15 +355,11 @@ async function cleanupReceiptSources(params: {
     if (snapshot.sha256 !== params.receipt.sourceSha256) {
       // SQLite owns runtime identity; warning about inert retired bytes would
       // make startup refuse an otherwise healthy gateway.
-      try {
-        if (readStoredDeviceIdentityReadOnly({ env: params.env, identityKey: IDENTITY_KEY })) {
-          notices.push(
-            `Preserved retired device identity ${candidate}: bytes differ from the migration receipt; the canonical SQLite identity remains authoritative. Archive or delete the file to clear this notice.`,
-          );
-          continue;
-        }
-      } catch {
-        // Invalid canonical identity must retain its readiness-blocking warning.
+      if (readCanonicalIdentityRelation(snapshot.identity, params.env) !== "unavailable") {
+        notices.push(
+          `Preserved retired device identity ${candidate}: bytes differ from the migration receipt; the canonical SQLite identity remains authoritative. Archive or delete the file to clear this notice.`,
+        );
+        continue;
       }
       warnings.push(
         `Retired device identity cleanup preserved ${candidate}: bytes differ from the migration receipt.`,
@@ -354,6 +368,17 @@ async function cleanupReceiptSources(params: {
     }
     try {
       verifyCanonicalIdentity(snapshot.identity, params.env);
+    } catch (error) {
+      if (readCanonicalIdentityRelation(snapshot.identity, params.env) === "different") {
+        notices.push(
+          `Preserved retired device identity ${candidate}: bytes match the migration receipt, but the canonical SQLite identity has since changed and remains authoritative. Archive or delete the file to clear this notice.`,
+        );
+        continue;
+      }
+      warnings.push(`Retired device identity cleanup failed for ${candidate}: ${String(error)}`);
+      continue;
+    }
+    try {
       await removePath({ ...params, sourcePath: candidate });
       removed += 1;
     } catch (error) {
