@@ -222,9 +222,7 @@ export class ChatPane extends ChatPaneLayoutRender {
         ? t("chat.sessionSharing.readOnlyNotice")
         : placementStartupPending
           ? t("newSession.starting")
-          : worktreeStartupPending
-            ? t("chat.startupStatus.preparingWorkspace")
-            : null;
+          : null;
     const typingEnabled =
       multiIdentity &&
       hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&

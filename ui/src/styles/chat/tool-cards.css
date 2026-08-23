@@ -743,7 +743,7 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 10px;
-  padding-inline: 12px;
+  padding-inline: var(--space-3);
 }
 
 .chat-worktree-startup[open] > .chat-tool-msg-body {
@@ -759,6 +759,7 @@
 }
 
 .chat-worktree-startup__code pre {
+  padding-inline: var(--space-3);
   max-height: min(40vh, 420px);
   overflow: auto;
 }

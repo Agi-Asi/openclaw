@@ -138,7 +138,11 @@ export function renderWorktreeStartupStatus(
             ${actionable
               ? html`<div class="chat-worktree-startup__actions">
                   ${options.onCancel
-                    ? html`<button class="btn btn--sm" type="button" @click=${options.onCancel}>
+                    ? html`<button
+                        class="btn btn--sm btn--ghost"
+                        type="button"
+                        @click=${options.onCancel}
+                      >
                         ${t("common.cancel")}
                       </button>`
                     : nothing}
