@@ -3492,6 +3492,8 @@ export const en: TranslationMap = {
   },
   presence: {
     rosterTitle: "Online",
+    showRoster: "Show online people",
+    hideRoster: "Hide online people",
   },
   activityFeed: {
     sessionsMode: "Sessions",

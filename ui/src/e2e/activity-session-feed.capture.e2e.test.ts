@@ -168,57 +168,52 @@ suite.define(() => {
 
         const response = await page.goto(controlUiSessionUrl(suite.server.baseUrl, releaseKey));
         expect(response?.status()).toBe(200);
-        const onlineToggle = page.getByRole("button", { name: "Online", exact: true });
-        await expect.poll(() => onlineToggle.getAttribute("aria-expanded")).toBe("true");
-        await expect.poll(() => page.locator(".sidebar-online__person").count()).toBe(4);
+        const presenceSidebar = page.locator("openclaw-presence-sidebar");
+        const presencePanel = presenceSidebar.locator(".presence-sidebar__panel");
+        await expect.poll(() => presencePanel.count()).toBe(1);
+        await expect.poll(() => presencePanel.locator(".sidebar-online__person").count()).toBe(4);
+        await expect.poll(() => presencePanel.locator(".viewer-avatar").count()).toBe(4);
+        await expect.poll(() => page.locator(".sidebar-online").isHidden()).toBe(true);
         await mkdir(outputDir, { recursive: true });
-        await page.locator(".sidebar").screenshot({
+        await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "01-sidebar-online-default-open-light.png"),
+          path: path.join(outputDir, "01-presence-sidebar-default-open-light.png"),
         });
 
-        await onlineToggle.focus();
-        await page.keyboard.press("Enter");
-        await expect.poll(() => onlineToggle.getAttribute("aria-expanded")).toBe("false");
-        await expect.poll(() => page.locator(".sidebar-online__person").count()).toBe(0);
-        await expect
-          .poll(() =>
-            page.locator(".sidebar-online .viewer-facepile").getAttribute("data-viewer-count"),
-          )
-          .toBe("4");
-        await expect
-          .poll(() => page.locator(".sidebar-online .viewer-avatar--overflow").textContent())
-          .toContain("+2");
+        await presenceSidebar.getByRole("button", { name: "Hide online people" }).click();
+        await expect.poll(() => presencePanel.count()).toBe(0);
+        const showPresence = presenceSidebar.getByRole("button", { name: "Show online people" });
+        await expect.poll(() => showPresence.isVisible()).toBe(true);
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-        await page.locator(".sidebar").screenshot({
+        await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "02-sidebar-online-user-collapsed-light.png"),
+          path: path.join(outputDir, "02-presence-sidebar-user-closed-light.png"),
         });
 
         expect(
           await page.evaluate(() => {
-            const value = localStorage.getItem("openclaw:sidebar:sessions:collapsed-sections");
-            return value ? JSON.parse(value) : [];
+            const value = localStorage.getItem("openclaw.presence.sidebar.v1");
+            return value ? JSON.parse(value) : null;
           }),
-        ).toEqual(expect.arrayContaining(["work", "online"]));
+        ).toMatchObject({ open: false });
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
         await page.reload();
-        await expect.poll(() => onlineToggle.getAttribute("aria-expanded")).toBe("false");
+        await expect.poll(() => showPresence.isVisible()).toBe(true);
         await page.emulateMedia({ colorScheme: "dark" });
         await expect.poll(() => page.locator("html").getAttribute("data-theme-mode")).toBe("dark");
-        await page.locator(".sidebar").screenshot({
+        await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "03-sidebar-online-persisted-collapsed-dark.png"),
+          path: path.join(outputDir, "03-presence-sidebar-persisted-closed-dark.png"),
         });
-        await onlineToggle.focus();
-        await page.keyboard.press("Space");
-        await expect.poll(() => onlineToggle.getAttribute("aria-expanded")).toBe("true");
-        await expect.poll(() => page.locator(".sidebar-online__person").count()).toBe(4);
+        await showPresence.click();
+        await expect.poll(() => presencePanel.count()).toBe(1);
+        await expect.poll(() => presencePanel.locator(".sidebar-online__person").count()).toBe(4);
+        await expect.poll(() => presencePanel.locator(".viewer-avatar").count()).toBe(4);
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-        await page.locator(".sidebar").screenshot({
+        await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "04-sidebar-online-user-expanded-dark.png"),
+          path: path.join(outputDir, "04-presence-sidebar-user-open-dark.png"),
         });
 
         await page.evaluate(() => {
@@ -302,7 +297,7 @@ suite.define(() => {
           path: path.join(outputDir, "05-global-activity.png"),
         });
 
-        await page.locator('[data-online-user-id="profile-alice"]').click();
+        await presenceSidebar.locator('[data-online-user-id="profile-alice"]').click();
         await expect
           .poll(() => new URL(page.url()).searchParams.get("person"))
           .toBe("profile-alice");

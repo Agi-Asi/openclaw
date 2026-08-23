@@ -627,6 +627,9 @@ export function renderApplicationShell(host: ShellViewHost) {
           .notFoundRecoveryReady=${gatewayConnected}
         ></openclaw-router-outlet>
       </main>
+      <openclaw-presence-sidebar
+        .suppressed=${onboarding || settingsTakeover || mobileNavLayout}
+      ></openclaw-presence-sidebar>
       <openclaw-terminal-panel
         .client=${gatewayConnected ? gatewaySnapshot.client : null}
         .available=${terminalAvailable}

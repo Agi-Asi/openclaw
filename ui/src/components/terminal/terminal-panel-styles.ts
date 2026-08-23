@@ -3,13 +3,13 @@ import { css } from "lit";
 export const terminalPanelStyles = css`
   .tp--bottom {
     left: var(--shell-nav-width, 0);
-    right: 0;
+    right: var(--oc-presence-reserve-right, 0px);
     bottom: 0;
     --tp-session-menu-max-height: calc(var(--tp-panel-height) - 44px);
   }
   .tp--right {
     top: var(--shell-topbar-height, 0);
-    right: 0;
+    right: var(--oc-presence-reserve-right, 0px);
     bottom: 0;
     --tp-session-menu-max-height: calc(100dvh - var(--shell-topbar-height, 0px) - 44px);
   }
@@ -17,7 +17,7 @@ export const terminalPanelStyles = css`
     /* Main mode owns the content region; later sibling docks may overlay it. */
     top: var(--shell-topbar-height, 0);
     left: var(--shell-nav-width, 0);
-    right: 0;
+    right: var(--oc-presence-reserve-right, 0px);
     bottom: 0;
     --tp-session-menu-max-height: calc(100dvh - var(--shell-topbar-height, 0px) - 44px);
   }

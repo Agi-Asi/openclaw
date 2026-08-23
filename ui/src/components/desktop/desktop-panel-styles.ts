@@ -12,12 +12,18 @@ const desktopPanelStyles = css`
   }
   .bp--bottom {
     left: var(--shell-nav-width, 0);
-    right: calc(var(--oc-terminal-reserve-right, 0px) + var(--oc-browser-reserve-right, 0px));
+    right: calc(
+      var(--oc-terminal-reserve-right, 0px) + var(--oc-browser-reserve-right, 0px) +
+        var(--oc-presence-reserve-right, 0px)
+    );
     bottom: calc(var(--oc-terminal-reserve-bottom, 0px) + var(--oc-browser-reserve-bottom, 0px));
   }
   .bp--right {
     top: var(--shell-topbar-height, 0);
-    right: calc(var(--oc-terminal-reserve-right, 0px) + var(--oc-browser-reserve-right, 0px));
+    right: calc(
+      var(--oc-terminal-reserve-right, 0px) + var(--oc-browser-reserve-right, 0px) +
+        var(--oc-presence-reserve-right, 0px)
+    );
     bottom: calc(var(--oc-terminal-reserve-bottom, 0px) + var(--oc-browser-reserve-bottom, 0px));
   }
   .bp-title {

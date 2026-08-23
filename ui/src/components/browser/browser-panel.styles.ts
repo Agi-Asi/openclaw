@@ -9,12 +9,12 @@ export const browserPanelStyles = css`
      overlapping when both are open. */
   .bp--bottom {
     left: var(--shell-nav-width, 0);
-    right: var(--oc-terminal-reserve-right, 0px);
+    right: calc(var(--oc-terminal-reserve-right, 0px) + var(--oc-presence-reserve-right, 0px));
     bottom: var(--oc-terminal-reserve-bottom, 0px);
   }
   .bp--right {
     top: var(--shell-topbar-height, 0);
-    right: var(--oc-terminal-reserve-right, 0px);
+    right: calc(var(--oc-terminal-reserve-right, 0px) + var(--oc-presence-reserve-right, 0px));
     bottom: var(--oc-terminal-reserve-bottom, 0px);
   }
   .bp--embedded {

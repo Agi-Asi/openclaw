@@ -102,6 +102,12 @@ const APP_SIDEBAR_ELEMENT = {
   label: APP_SIDEBAR_TAG,
   loadModule: () => import("../components/app-sidebar.ts"),
 } satisfies OptionalCustomElement;
+const PRESENCE_SIDEBAR_TAG = "openclaw-presence-sidebar";
+const PRESENCE_SIDEBAR_ELEMENT = {
+  tagName: PRESENCE_SIDEBAR_TAG,
+  label: PRESENCE_SIDEBAR_TAG,
+  loadModule: () => import("../components/presence-sidebar.ts"),
+} satisfies OptionalCustomElement;
 
 i18n.setLocaleLoadRecovery({
   isUnrecoverableError: isStaleChunkImportError,
@@ -765,6 +771,7 @@ class OpenClawShell
 
   override render() {
     if (this.workspaceChromeVisible) {
+      this.lazyCustomElements.preload(PRESENCE_SIDEBAR_ELEMENT);
       this.lazyCustomElements.preload(APP_SIDEBAR_ELEMENT);
     }
     return renderApplicationShell(this);
