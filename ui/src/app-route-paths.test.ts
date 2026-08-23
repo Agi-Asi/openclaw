@@ -1,14 +1,13 @@
 // @vitest-environment node
 import { notFound, type RouteLocation, type RouterHistory } from "@openclaw/uirouter";
 import { describe, expect, it, vi } from "vitest";
+import { automationRouteFromPath, pathForAutomation } from "./app-automation-paths.runtime.ts";
 import {
   agentRouteFromPath,
-  automationRouteFromPath,
   inferBasePathFromPathname,
   memoryTabFromPath,
   pathForMemoryTab,
   pathForAgentPanel,
-  pathForAutomation,
   pathForRoute,
   pathForPluginsHubTab,
   pathForWorkboardBoard,

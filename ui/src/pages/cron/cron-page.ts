@@ -3,8 +3,9 @@ import { readCronJobNotFoundError } from "@openclaw/gateway-protocol/gateway-err
 import { html, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { AgentsListResult, CronJob } from "../../api/types.ts";
+import { pathForAutomation } from "../../app-automation-paths.runtime.ts";
 import { titleForRoute } from "../../app-navigation.ts";
-import { pathForAutomation, pathForRoute } from "../../app-route-paths.ts";
+import { pathForRoute } from "../../app-route-paths.ts";
 import { applicationContext, type ApplicationContext } from "../../app/context.ts";
 import { readGatewayOperatorAccess } from "../../app/operator-access.ts";
 import { renderAgentScopeControl } from "../../components/agent-scope-control.ts";
@@ -49,6 +50,8 @@ import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
 import { buildCronSuggestions, THINKING_SUGGESTIONS } from "./form-suggestions.ts";
 import type { CronRouteData } from "./route.ts";
 import { renderCron, type CronDetailTab, type CronListTab } from "./view.ts";
+
+export { loadCronRouteData } from "./route-location.runtime.ts";
 
 class CronPage extends OpenClawLightDomElement {
   @consume({ context: applicationContext, subscribe: true })
@@ -638,7 +641,8 @@ class CronPage extends OpenClawLightDomElement {
 }
 
 export const header = true,
-  render = () => html`<openclaw-cron-page></openclaw-cron-page>`;
+  render = (data: CronRouteData | undefined) =>
+    html`<openclaw-cron-page .routeData=${data}></openclaw-cron-page>`;
 
 // Module re-evaluation can retain the shared registry (for example, in Vitest).
 if (!customElements.get("openclaw-cron-page")) {

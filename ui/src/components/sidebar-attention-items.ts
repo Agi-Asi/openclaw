@@ -7,8 +7,8 @@ import type {
   UpdateAvailable,
   UpdateScheduleState,
 } from "../api/types.ts";
+import { pathForAutomation } from "../app-automation-paths.runtime.ts";
 import type { NavigationRouteId } from "../app-navigation.ts";
-import { pathForAutomation } from "../app-route-paths.ts";
 import type { ExecApprovalRequest } from "../app/exec-approval.ts";
 import {
   formatUpdateTargetLabel,

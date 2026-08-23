@@ -9,7 +9,6 @@ import type {
 } from "@openclaw/uirouter";
 import {
   agentRouteFromPath,
-  automationRouteFromPath,
   INTERNAL_AGENT_PATH_PARAM,
   INTERNAL_AUTOMATION_PATH_PARAM,
   INTERNAL_MEMORY_PATH_PARAM,
@@ -135,8 +134,7 @@ function dynamicRouteFromPath(pathname: string, basePath: string): DynamicRoute 
   if (agentRoute) {
     return ["agents", INTERNAL_AGENT_PATH_PARAM, pathname];
   }
-  const automationRoute = automationRouteFromPath(pathname, basePath);
-  if (automationRoute) {
+  if (routeIdFromPath(pathname, basePath) === "cron") {
     return ["cron", INTERNAL_AUTOMATION_PATH_PARAM, pathname];
   }
   const boardId = workboardBoardIdFromPath(pathname, basePath);

@@ -2,6 +2,7 @@ import { normalizeAgentId } from "@openclaw/normalization-core/agent-id";
 import { normalizeNullableString } from "@openclaw/normalization-core/string-coerce";
 import {
   DEFAULT_MAIN_KEY,
+  encodeControlUiPathSegment,
   isReservedSessionRest,
   normalizeControlUiBasePath,
   parseShortSessionRef,
@@ -33,21 +34,6 @@ type BuildControlUiCatalogSessionUrlParams = {
   thread: string;
 };
 
-export type ControlUiAutomationTab = "settings" | "runs";
-
-export type ControlUiAutomationRoute = {
-  jobId: string;
-  tab: ControlUiAutomationTab;
-};
-
-type BuildControlUiAutomationPathParams = {
-  basePath?: string;
-  tab?: ControlUiAutomationTab;
-};
-
-export const CONTROL_UI_AUTOMATIONS_PATH = "/automations";
-export const CONTROL_UI_AUTOMATIONS_PATH_ALIAS = "/cron";
-
 export const SESSION_UUID_SUFFIX_RE =
   /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/iu;
 export const SHORT_SESSION_ID_RE = /^[0-9a-f]{8,32}$/iu;
@@ -64,69 +50,6 @@ function agentSessionKeyParts(sessionKey: string): { agentId: string; rest: stri
     return null;
   }
   return { agentId: normalizeAgentId(agentId), rest: restSegments.join(":") };
-}
-
-function encodePathSegment(segment: string): string {
-  if (segment === ".") {
-    return "~dot";
-  }
-  if (segment === "..") {
-    return "~dotdot";
-  }
-  // encodeURIComponent leaves "." alone, so a key segment like "release.js" would
-  // reach the server looking like a static asset request and never hit the SPA.
-  // pathForWorkboardBoard escapes dots for the same reason.
-  const encoded = encodeURIComponent(segment).replaceAll(".", "%2E");
-  return encoded.startsWith("~") ? `~${encoded}` : encoded;
-}
-
-function decodePathSegment(segment: string): string | null {
-  const escaped = segment === "~dot" ? "." : segment === "~dotdot" ? ".." : segment;
-  const encoded = escaped.startsWith("~~") ? escaped.slice(1) : escaped;
-  try {
-    return decodeURIComponent(encoded);
-  } catch {
-    return null;
-  }
-}
-
-export function buildControlUiAutomationPath(
-  jobId: string,
-  params: BuildControlUiAutomationPathParams = {},
-): string | null {
-  const normalizedJobId = normalizeNullableString(jobId);
-  if (!normalizedJobId) {
-    return null;
-  }
-  const basePath = normalizeControlUiBasePath(params.basePath);
-  const path = `${basePath}${CONTROL_UI_AUTOMATIONS_PATH}/${encodePathSegment(normalizedJobId)}`;
-  return params.tab === "runs" ? `${path}/runs` : path;
-}
-
-export function parseControlUiAutomationPath(
-  pathname: string,
-  basePath = "",
-): ControlUiAutomationRoute | null {
-  const normalizedBasePath = normalizeControlUiBasePath(basePath);
-  const normalizedPath = pathname.trim().replace(/\/+$/u, "") || "/";
-  const roots = [CONTROL_UI_AUTOMATIONS_PATH, CONTROL_UI_AUTOMATIONS_PATH_ALIAS].map(
-    (path) => `${normalizedBasePath}${path}`,
-  );
-  const root = roots.find((candidate) =>
-    normalizedPath.toLowerCase().startsWith(`${candidate.toLowerCase()}/`),
-  );
-  if (!root) {
-    return null;
-  }
-  const segments = normalizedPath.slice(root.length + 1).split("/");
-  if (segments.length > 2 || !segments[0] || (segments[1] && segments[1] !== "runs")) {
-    return null;
-  }
-  const jobId = decodePathSegment(segments[0]);
-  if (jobId === null || !jobId.trim()) {
-    return null;
-  }
-  return { jobId, tab: segments[1] === "runs" ? "runs" : "settings" };
 }
 
 export function controlUiSessionSlug(displayName: string | undefined | null): string {
@@ -151,7 +74,7 @@ export function buildControlUiSessionPath(params: BuildControlUiSessionPathParam
     return null;
   }
   const namespace = `${normalizeControlUiBasePath(params.basePath)}/${params.namespace}`;
-  const encodedAgentId = encodePathSegment(agentId);
+  const encodedAgentId = encodeControlUiPathSegment(agentId);
   const rest = parsed?.rest ?? rawKey;
   const normalizedRest = rest.toLowerCase();
   const mainKey = normalizeNullableString(params.mainKey)?.toLowerCase() ?? DEFAULT_MAIN_KEY;
@@ -170,8 +93,8 @@ export function buildControlUiSessionPath(params: BuildControlUiSessionPathParam
     const segment = segments[0] ?? "";
     return segments.length === 1 &&
       (isReservedSessionRest(segment, params.mainKey) || parseShortSessionRef(segment))
-      ? `${namespace}/${encodedAgentId}/~key/${encodePathSegment(segment)}`
-      : `${namespace}/${encodedAgentId}/${segments.map(encodePathSegment).join("/")}`;
+      ? `${namespace}/${encodedAgentId}/~key/${encodeControlUiPathSegment(segment)}`
+      : `${namespace}/${encodedAgentId}/${segments.map(encodeControlUiPathSegment).join("/")}`;
   }
   const matchedUuid = parsed?.rest.match(SESSION_UUID_SUFFIX_RE)?.[1];
   const uuid = matchedUuid?.toLowerCase().replaceAll("-", "") ?? null;
@@ -191,10 +114,10 @@ export function buildControlUiSessionPath(params: BuildControlUiSessionPathParam
   if (segments.length === 1) {
     const segment = segments[0] ?? "";
     if (!isReservedSessionRest(segment, params.mainKey) && parseShortSessionRef(segment)) {
-      return `${namespace}/${encodedAgentId}/~key/${encodePathSegment(segment)}`;
+      return `${namespace}/${encodedAgentId}/~key/${encodeControlUiPathSegment(segment)}`;
     }
   }
-  return `${namespace}/${encodedAgentId}/${segments.map(encodePathSegment).join("/")}`;
+  return `${namespace}/${encodedAgentId}/${segments.map(encodeControlUiPathSegment).join("/")}`;
 }
 
 export function buildControlUiCatalogSessionUrl(

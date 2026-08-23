@@ -1,5 +1,7 @@
 import type { RouteLocation } from "@openclaw/uirouter";
-import { automationRouteFromPath, INTERNAL_AUTOMATION_PATH_PARAM } from "../../app-route-paths.ts";
+import { automationRouteFromPath } from "../../app-automation-paths.runtime.ts";
+import { INTERNAL_AUTOMATION_PATH_PARAM } from "../../app-route-paths.ts";
+import type { ApplicationContext } from "../../app/context.ts";
 import type { CronDetailTab } from "./view.ts";
 
 export type CronRouteData = {
@@ -7,7 +9,7 @@ export type CronRouteData = {
   detailTab: CronDetailTab;
 };
 
-export function cronRouteLocation(location: RouteLocation): RouteLocation {
+function cronRouteLocation(location: RouteLocation): RouteLocation {
   const params = new URLSearchParams(location.search);
   const pathname = params.get(INTERNAL_AUTOMATION_PATH_PARAM) ?? location.pathname;
   params.delete(INTERNAL_AUTOMATION_PATH_PARAM);
@@ -15,8 +17,11 @@ export function cronRouteLocation(location: RouteLocation): RouteLocation {
   return { pathname, search: search ? `?${search}` : "", hash: location.hash };
 }
 
-export function resolveCronRouteData(location: RouteLocation, basePath = ""): CronRouteData {
-  const route = automationRouteFromPath(cronRouteLocation(location).pathname, basePath);
+export function loadCronRouteData(
+  context: ApplicationContext,
+  { location }: { location: RouteLocation },
+): CronRouteData {
+  const route = automationRouteFromPath(cronRouteLocation(location).pathname, context.basePath);
   return {
     jobId: route?.jobId ?? null,
     detailTab: route?.tab === "runs" ? "history" : "settings",

@@ -1,8 +1,9 @@
 import { consume } from "@lit/context";
 import { html, nothing, type PropertyValues } from "lit";
 import { property } from "lit/decorators.js";
+import { pathForAutomation } from "../../app-automation-paths.runtime.ts";
 import { titleForRoute } from "../../app-navigation.ts";
-import { pathForAutomation, pathForRoute, pathForWorkboardBoard } from "../../app-route-paths.ts";
+import { pathForRoute, pathForWorkboardBoard } from "../../app-route-paths.ts";
 import { applicationContext, type ApplicationContext } from "../../app/context.ts";
 import { readGatewayOperatorAccess } from "../../app/operator-access.ts";
 import { renderAgentScopeControl } from "../../components/agent-scope-control.ts";

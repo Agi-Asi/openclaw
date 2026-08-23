@@ -1,10 +1,4 @@
-import {
-  buildControlUiAutomationPath,
-  inferControlUiFocusBasePath,
-  parseControlUiAutomationPath,
-  type ControlUiAutomationRoute,
-  type ControlUiAutomationTab,
-} from "@openclaw/session-url-contract";
+import { inferControlUiFocusBasePath } from "@openclaw/session-url-contract";
 import { normalizeRouteBasePath, normalizeRoutePath } from "@openclaw/uirouter";
 import type { RouteLocation } from "@openclaw/uirouter";
 import { isValidWorkboardBoardId } from "@openclaw/workboard-contract";
@@ -112,25 +106,6 @@ export function pathForRoute(routeId: RouteId, basePath = ""): string {
   const normalizedBasePath = normalizeBasePath(basePath);
   const path = APP_ROUTE_DEFINITIONS[routeId].path;
   return normalizedBasePath ? `${normalizedBasePath}${path}` : path;
-}
-
-export function pathForAutomation(
-  jobId: string,
-  tab: ControlUiAutomationTab = "settings",
-  basePath = "",
-): string {
-  const path = buildControlUiAutomationPath(jobId, { tab, basePath });
-  if (!path) {
-    throw new Error("Invalid automation job id for a route path.");
-  }
-  return path;
-}
-
-export function automationRouteFromPath(
-  pathname: string,
-  basePath = "",
-): ControlUiAutomationRoute | null {
-  return parseControlUiAutomationPath(normalizePath(pathname), normalizeBasePath(basePath));
 }
 
 export function pathForWorkboardBoard(boardId: string, basePath = ""): string {
@@ -274,9 +249,6 @@ export function routeIdFromPath(pathname: string, basePath = ""): RouteId | null
   if (agentRouteFromPath(normalizedPath, normalizedBasePath)) {
     return "agents";
   }
-  if (automationRouteFromPath(normalizedPath, normalizedBasePath)) {
-    return "cron";
-  }
   if (workboardBoardIdFromPath(normalizedPath, normalizedBasePath)) {
     return "workboard";
   }
@@ -294,6 +266,9 @@ export function routeIdFromPath(pathname: string, basePath = ""): RouteId | null
   // this pre-gate must too — otherwise /Usage is rewritten to /chat before the
   // router, which would have matched it, ever starts.
   const routePathKey = routePath.toLowerCase();
+  if (routePathKey.startsWith("/automations/") || routePathKey.startsWith("/cron/")) {
+    return "cron";
+  }
   for (const routeId of APP_ROUTE_IDS) {
     const definition = APP_ROUTE_DEFINITIONS[routeId];
     const paths: readonly string[] =
@@ -356,51 +331,16 @@ export function inferBasePathFromPathname(pathname: string): string {
   const routePaths = collectRoutePaths();
   for (let index = 0; index < segments.length; index += 1) {
     const candidate = `/${segments.slice(index).join("/")}`;
-    const routePath = routePaths.find((path) => normalizePath(path) === candidate);
-    const dynamicAgentRoute = agentRouteFromPath(candidate) !== null;
-    const dynamicAutomationRoute = automationRouteFromPath(candidate) !== null;
-    const dynamicWorkboardRoute = workboardBoardIdFromPath(candidate) !== null;
-    const dynamicMemoryRoute = memoryTabFromPath(candidate) !== null;
-    const dynamicPluginsRoute = pluginsHubTabFromPath(candidate) !== null;
-    const sessionNamespace = sessionRouteNamespaceFromPath(candidate);
-    const dynamicSessionRoute = sessionNamespace !== null;
-    if (
-      !routePath &&
-      !dynamicAgentRoute &&
-      !dynamicAutomationRoute &&
-      !dynamicWorkboardRoute &&
-      !dynamicMemoryRoute &&
-      !dynamicPluginsRoute &&
-      !dynamicSessionRoute
-    ) {
+    const routeId = routeIdFromPath(candidate);
+    if (!routeId) {
       continue;
     }
+    const routePath = routePaths.find((path) => normalizePath(path) === candidate);
     const previousSegment = segments[index - 1];
-    const dynamicRoutePath = dynamicAgentRoute
-      ? APP_ROUTE_DEFINITIONS.agents.path
-      : dynamicAutomationRoute
-        ? APP_ROUTE_DEFINITIONS.cron.path
-        : dynamicWorkboardRoute
-          ? APP_ROUTE_DEFINITIONS.workboard.path
-          : dynamicMemoryRoute
-            ? APP_ROUTE_DEFINITIONS.memory.path
-            : dynamicPluginsRoute
-              ? APP_ROUTE_DEFINITIONS.plugins.path
-              : sessionNamespace
-                ? APP_ROUTE_DEFINITIONS[sessionNamespace].path
-                : null;
-    const firstRouteSegment = (routePath ?? dynamicRoutePath ?? "").split("/").find(Boolean);
-    if (
-      index > 0 &&
-      previousSegment === firstRouteSegment &&
-      (candidate === routePath ||
-        dynamicAgentRoute ||
-        dynamicAutomationRoute ||
-        dynamicWorkboardRoute ||
-        dynamicMemoryRoute ||
-        dynamicPluginsRoute ||
-        dynamicSessionRoute)
-    ) {
+    const firstRouteSegment = (routePath ?? APP_ROUTE_DEFINITIONS[routeId].path)
+      .split("/")
+      .find(Boolean);
+    if (index > 0 && previousSegment === firstRouteSegment) {
       return "";
     }
     if (index === 0) {
