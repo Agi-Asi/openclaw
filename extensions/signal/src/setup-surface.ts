@@ -191,6 +191,8 @@ async function prepareManagedSignalLink(params: {
     signal.throwIfAborted();
     await params.options?.beforeExternalEffect?.();
     signal.throwIfAborted();
+    await params.options?.beforePersistentEffect?.();
+    signal.throwIfAborted();
     try {
       const settled = linkClient
         .request(
@@ -204,7 +206,8 @@ async function prepareManagedSignalLink(params: {
         .then(parseLinkedSignalNumber);
       return await params.prompter.qrCode({
         title: "Link Signal",
-        message: "In Signal, open Settings → Linked devices and scan this QR code.",
+        message:
+          "In Signal, open Settings → Linked devices and scan this QR code. Setup will finish or time out.",
         text: deviceLinkUri,
         expiresInMs: SIGNAL_LINK_EXPIRES_IN_MS,
         settled,

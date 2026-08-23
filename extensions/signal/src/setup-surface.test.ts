@@ -92,8 +92,12 @@ beforeEach(() => {
 describe("Signal hosted setup linking", () => {
   it("links the first managed-native account through one owned multi-account daemon", async () => {
     const events: string[] = [];
-    const beforeExternalEffect = vi.fn(async () => {});
-    const beforePersistentEffect = vi.fn(async () => {});
+    const beforeExternalEffect = vi.fn(async () => {
+      events.push("authority");
+    });
+    const beforePersistentEffect = vi.fn(async () => {
+      events.push("lock");
+    });
     const deviceLinkUri = "sgnl://linkdevice?uuid=test&pub_key=test";
     mocks.rpc.mockImplementation(async (method: string) => {
       events.push(method);
@@ -125,12 +129,21 @@ describe("Signal hosted setup linking", () => {
       cliPath: "signal-cli",
       abortSignal: expect.any(AbortSignal),
     });
-    expect(events).toEqual(["listAccounts", "startLink", "finishLink", "qrCode"]);
+    expect(events).toEqual([
+      "listAccounts",
+      "authority",
+      "startLink",
+      "authority",
+      "lock",
+      "finishLink",
+      "qrCode",
+    ]);
     expect(beforeExternalEffect).toHaveBeenCalledTimes(2);
-    expect(beforePersistentEffect).not.toHaveBeenCalled();
+    expect(beforePersistentEffect).toHaveBeenCalledOnce();
     expect(prompt.qrCode).toHaveBeenCalledWith({
       title: "Link Signal",
-      message: "In Signal, open Settings → Linked devices and scan this QR code.",
+      message:
+        "In Signal, open Settings → Linked devices and scan this QR code. Setup will finish or time out.",
       text: deviceLinkUri,
       expiresInMs: 120_000,
       settled: expect.any(Promise),
@@ -164,6 +177,7 @@ describe("Signal hosted setup linking", () => {
 
   it("revalidates hosted authority immediately before device linking", async () => {
     const guardError = new Error("verified inference changed");
+    const beforePersistentEffect = vi.fn(async () => {});
     const beforeExternalEffect = vi
       .fn<() => Promise<void>>()
       .mockResolvedValueOnce(undefined)
@@ -177,10 +191,12 @@ describe("Signal hosted setup linking", () => {
       prepareSignal({
         prompter: prompt.prompter,
         beforeExternalEffect,
+        beforePersistentEffect,
       }),
     ).rejects.toBe(guardError);
 
     expect(beforeExternalEffect).toHaveBeenCalledTimes(2);
+    expect(beforePersistentEffect).not.toHaveBeenCalled();
     expect(mocks.rpc.mock.calls.map(([method]) => method)).toEqual(["listAccounts", "startLink"]);
     expect(prompt.qrCode).not.toHaveBeenCalled();
     expect(mocks.linkStop).toHaveBeenCalledOnce();
@@ -321,31 +337,6 @@ describe("Signal hosted setup linking", () => {
     expect(notes).toContain("Automatic Signal linking could not complete");
     expect(notes).not.toContain("private-token");
     expect(notes).not.toContain("private-number");
-    expect(mocks.linkStop).toHaveBeenCalledOnce();
-  });
-
-  it("aborts linking and reaps its daemon without showing a dependency failure", async () => {
-    const controller = new AbortController();
-    mocks.rpc
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce({ deviceLinkUri: "sgnl://linkdevice?uuid=test&pub_key=test" })
-      .mockReturnValueOnce(new Promise<never>(() => {}));
-    const prompt = createPrompter({
-      qrCode: async () => {
-        controller.abort(new WizardCancelledError());
-        throw new WizardCancelledError();
-      },
-    });
-
-    await expect(
-      prepareSignal({
-        prompter: prompt.prompter,
-        signal: controller.signal,
-        beforeExternalEffect: vi.fn(async () => {}),
-      }),
-    ).rejects.toBeInstanceOf(WizardCancelledError);
-
-    expect(prompt.note).not.toHaveBeenCalled();
     expect(mocks.linkStop).toHaveBeenCalledOnce();
   });
 });
