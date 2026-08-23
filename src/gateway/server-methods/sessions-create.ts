@@ -821,9 +821,7 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
         }
         let accepted = false;
         let dispatchError: unknown;
-        let dispatchSessionIdentity:
-          | { lifecycleRevision?: string; sessionId: string }
-          | undefined;
+        let dispatchSessionIdentity: { lifecycleRevision?: string; sessionId: string } | undefined;
         let releaseDispatchSettlement: (() => void) | undefined;
         const startupStateCleared = new Promise<void>((resolve) => {
           releaseDispatchSettlement = resolve;
