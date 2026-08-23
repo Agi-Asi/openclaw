@@ -1,7 +1,7 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type {
-  SessionsFilesRevealResult,
   PluginsUiDescriptorsResult,
+  SessionsFilesRevealResult,
   SystemInfoResult,
   WorktreesBranchesResult,
   WorktreesListResult,
@@ -20,7 +20,7 @@ import { isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { ChatPaneContext } from "./chat-pane-context.ts";
-import { headerPlatformByClient, headerToolModesByClient } from "./chat-pane-shared.ts";
+import { headerPlatformByClient, sessionToolModesByClient } from "./chat-pane-shared.ts";
 import { patchChatSessionLabel } from "./chat-state-route.ts";
 import type { HeaderMenuAction } from "./components/chat-header-session-menu.ts";
 import type { ChatPaneHeaderAction } from "./components/chat-pane-header.ts";
@@ -52,6 +52,24 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       }
     } catch {
       // Optional label refinement. Generic file-manager copy remains correct.
+    }
+  }
+
+  protected async loadSessionToolModes(
+    client: GatewayBrowserClient,
+    generation: number,
+  ): Promise<void> {
+    let request = sessionToolModesByClient.get(client);
+    if (!request) {
+      request = client
+        .request<PluginsUiDescriptorsResult>("plugins.uiDescriptors", {})
+        .then((result) => result.toolModes)
+        .catch(() => []);
+      sessionToolModesByClient.set(client, request);
+    }
+    const modes = await request;
+    if (this.connectedClient === client && this.connectionGeneration === generation) {
+      this.sessionToolModes = modes;
     }
   }
 
@@ -113,9 +131,6 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
         sidebarSessionStatusFilter: () => "active",
       };
       switch (action.kind) {
-        case "tool-mode":
-          await operations.patchSession(host, session, { toolMode: action.selection }, scope);
-          break;
         case "assign-owner":
           await operations.assignSessionOwner(host, session, action.owner, scope);
           break;
@@ -308,21 +323,6 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       return;
     }
     const loads: Promise<void>[] = [];
-    let toolModesRequest = headerToolModesByClient.get(client);
-    if (!toolModesRequest) {
-      toolModesRequest = client
-        .request<PluginsUiDescriptorsResult>("plugins.uiDescriptors", {})
-        .then((result) => result.toolModes)
-        .catch(() => []);
-      headerToolModesByClient.set(client, toolModesRequest);
-    }
-    loads.push(
-      toolModesRequest.then((toolModes) => {
-        if (this.connectedClient === client) {
-          this.headerToolModes = toolModes;
-        }
-      }),
-    );
     // Same precedence as resolveChatPaneWorkspace/loadSessionFileRoot.
     const immediateRoot =
       (row.execNode ? row.execCwd?.trim() : undefined) ||

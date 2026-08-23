@@ -239,7 +239,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   @litState() protected headerEditing = false;
   @litState() protected headerRenameValue = "";
   @litState() protected headerPlatform: string | null = null;
-  @litState() protected headerToolModes: PluginSessionToolMode[] = [];
+  @litState() protected sessionToolModes: PluginSessionToolMode[] | null = null;
   @litState() protected headerCopiedAction: ChatPaneHeaderAction | null = null;
   protected continueInTerminalDialog: {
     qualifiedSessionKey: string;
@@ -495,6 +495,10 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   protected abstract publishHeaderError(error: unknown, owner?: string): void;
   protected abstract probeSessionDiscussion(sessionKey: string): Promise<void>;
   protected abstract loadHeaderPlatform(
+    client: GatewayBrowserClient,
+    generation: number,
+  ): Promise<void>;
+  protected abstract loadSessionToolModes(
     client: GatewayBrowserClient,
     generation: number,
   ): Promise<void>;

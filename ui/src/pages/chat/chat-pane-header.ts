@@ -555,10 +555,6 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
               .panelActions=${panelMenuActions}
               .layoutActions=${layoutMenuActions}
               .statusActions=${this.compactHeaderStatusActions()}
-              .toolModes=${this.headerToolModes}
-              .selectedToolMode=${row.toolMode ?? null}
-              .activeToolMode=${row.activeToolMode ?? null}
-              .agentRuntimeId=${row.agentRuntime?.id ?? "openclaw"}
               .ownerOptions=${ownerOptions}
               .selfOwner=${selfOwner}
               .currentOwnerId=${row.owner?.actor.id ?? null}

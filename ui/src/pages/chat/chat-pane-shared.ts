@@ -176,7 +176,7 @@ export const CHAT_HISTORY_INTENT_IDLE_MS = 200;
 export const CHAT_HISTORY_TOUCH_INTENT_PX = 8;
 export const CHAT_HISTORY_UPWARD_KEYS = new Set(["ArrowUp", "PageUp", "Home"]);
 export const headerPlatformByClient = new WeakMap<GatewayBrowserClient, Promise<string | null>>();
-export const headerToolModesByClient = new WeakMap<
+export const sessionToolModesByClient = new WeakMap<
   GatewayBrowserClient,
   Promise<PluginSessionToolMode[]>
 >();

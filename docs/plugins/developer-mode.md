@@ -26,9 +26,8 @@ openclaw plugins enable developer-mode
 openclaw gateway restart
 ```
 
-After restart, open a session's top-right menu and choose
-**Developer → Tool mode**. On the New session screen, Tool mode appears in the
-target row immediately after the Worktree selector.
+After restart, open the composer **+** menu and choose **Tool mode**. The same
+menu is available before the first message on the New session screen.
 
 ## Modes
 

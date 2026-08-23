@@ -400,8 +400,6 @@ export class NewSessionPage extends OpenClawLightDomElement {
       : t("newSession.gateway");
     const submitting = this.submission.submitting;
     const pendingPlacement = Boolean(this.submission.pendingPlacement.sessionKey);
-    const toolModeDisabled = submitting || pendingPlacement;
-    const toolModePicker = this.toolMode.renderPicker(this.place, this.context, toolModeDisabled);
     return html`${renderWhereChip({
       state: whereState,
       gatewayName: this.gateway.gatewayName,
@@ -505,7 +503,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
           onBaseRefInput: (baseRef) => this.place.setBaseRef(baseRef),
           onWorktreeNameInput: (worktreeName) => this.place.setWorktreeName(worktreeName),
         })
-      : nothing}${toolModePicker}`;
+      : nothing}`;
   }
 
   private openConnectMachine() {
@@ -578,6 +576,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
   private renderDraftBlock() {
     const worktreeNameInvalid =
       this.place.worktree && !isWorktreeNameValid(this.place.worktreeName);
+    const toolModeMenu = this.toolMode.menuProps(this.place, this.context);
     return html`
       <div class="new-session-page__draft" aria-busy=${String(this.submission.submitting)}>
         ${this.renderTargetBar()}
@@ -605,6 +604,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
           visibility: this.submission.visibility,
           draftAvailable: this.submission.canStartAsDraft(),
           modelControl: this.place.modelControl,
+          toolModeMenu,
           requiresModifier: loadSettings().chatSendShortcut === "modifier-enter",
           requestUpdate: () => this.requestUpdate(),
           submitting: this.submission.submitting,

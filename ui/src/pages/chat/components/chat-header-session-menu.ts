@@ -1,10 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { ref } from "lit/directives/ref.js";
-import type {
-  PluginSessionToolMode,
-  SessionToolModeSelection,
-} from "../../../../../packages/gateway-protocol/src/index.js";
 import type { UiSettings } from "../../../app/settings.ts";
 import { icons } from "../../../components/icons.ts";
 import { activateMenuShortcut, menuShortcutHint } from "../../../components/menu-shortcuts.ts";
@@ -14,7 +9,6 @@ import {
   renderSessionOwnerAssignmentOptions,
   sessionOwnerAssignmentFromMenuValue,
 } from "../../../components/session-owner-menu.ts";
-import { syncDropdownItemRadio } from "../../../components/web-awesome.ts";
 import { t } from "../../../i18n/index.ts";
 import { EDITOR_IDS, EDITOR_LABELS, type EditorId } from "../../../lib/editor-links.ts";
 import { OpenClawLightDomElement } from "../../../lit/openclaw-element.ts";
@@ -25,7 +19,6 @@ export type HeaderMenuAction =
   | { kind: "assign-owner"; owner: Pick<SessionOwnerOption, "type" | "id"> }
   | { kind: "fork" }
   | { kind: "continue-in-terminal" }
-  | { kind: "tool-mode"; selection: SessionToolModeSelection }
   | { kind: "toggle-archived" }
   | { kind: "delete" };
 export type HeaderMenuActionKind = Exclude<HeaderMenuAction["kind"], "open-in">;
@@ -74,10 +67,6 @@ class ChatHeaderSessionMenu extends OpenClawLightDomElement {
   @property({ attribute: false }) panelActions: HeaderMenuQuickAction[] = [];
   @property({ attribute: false }) layoutActions: HeaderMenuQuickAction[] = [];
   @property({ attribute: false }) statusActions: HeaderMenuStatusAction[] = [];
-  @property({ attribute: false }) toolModes: PluginSessionToolMode[] = [];
-  @property({ attribute: false }) selectedToolMode: SessionToolModeSelection | null = null;
-  @property({ attribute: false }) activeToolMode: SessionToolModeSelection | null = null;
-  @property({ attribute: false }) agentRuntimeId = "";
   @property({ attribute: false }) ownerOptions: readonly SessionOwnerOption[] = [];
   @property({ attribute: false }) selfOwner: SessionOwnerOption | null = null;
   @property({ attribute: false }) currentOwnerId: string | null = null;
@@ -153,14 +142,6 @@ class ChatHeaderSessionMenu extends OpenClawLightDomElement {
         this.onSettingsChange({
           chatPersistCommentary: this.settings.chatPersistCommentary === false,
         });
-      }
-      return;
-    }
-    if (value.startsWith("tool-mode:")) {
-      const [, pluginId, modeId] = value.split(":").map((part) => decodeURIComponent(part));
-      if (pluginId && modeId) {
-        event.currentTarget.open = false;
-        this.onAction({ kind: "tool-mode", selection: { pluginId, modeId } });
       }
       return;
     }
@@ -419,7 +400,6 @@ class ChatHeaderSessionMenu extends OpenClawLightDomElement {
             <span class="session-menu__text">${t("chat.view.menu")}</span>
             ${this.renderViewSubmenu()}
           </wa-dropdown-item>`}
-      ${this.renderToolModes()}
       <wa-dropdown-item
         class="session-menu__item"
         value="fork"
@@ -480,103 +460,6 @@ class ChatHeaderSessionMenu extends OpenClawLightDomElement {
         ${menuShortcutHint("d")}
       </wa-dropdown-item>
     `;
-  }
-
-  private renderToolModes() {
-    const groups = new Map<string, PluginSessionToolMode[]>();
-    for (const mode of this.toolModes) {
-      groups.set(mode.pluginId, [...(groups.get(mode.pluginId) ?? []), mode]);
-    }
-    if (groups.size === 0) {
-      return this.selectedToolMode
-        ? html`<div class="session-menu__separator" role="separator"></div>
-            <div class="session-menu__section-label">
-              ${t("chat.sessionHeader.developerSection")}
-            </div>
-            <wa-dropdown-item
-              class="session-menu__item"
-              disabled
-              title=${t("chat.sessionHeader.toolModeUnavailableDetail")}
-            >
-              <span slot="icon" class="session-menu__icon" aria-hidden="true"
-                >${icons.settings}</span
-              >
-              <span class="session-menu__text">${t("chat.sessionHeader.toolModeUnavailable")}</span>
-              <span slot="details" class="session-menu__sub"
-                >${t("chat.sessionHeader.usingDefaults")}</span
-              >
-            </wa-dropdown-item>
-            <div class="session-menu__separator" role="separator"></div>`
-        : nothing;
-    }
-    return html`${[...groups.values()].map((modes) => {
-      const first = modes[0];
-      if (!first) {
-        return nothing;
-      }
-      const runtimeId = this.agentRuntimeId.trim().toLowerCase();
-      const compatible = modes.some((mode) => mode.supportedRuntimeIds.includes(runtimeId));
-      const title = compatible
-        ? nothing
-        : `Available for ${modes.flatMap((mode) => mode.supportedRuntimeIds).join(", ")} sessions`;
-      if (this.compact) {
-        return html`
-          <div class="session-menu__separator" role="separator"></div>
-          <div class="session-menu__section-label">${first.sectionLabel}</div>
-          ${modes.map((mode) => this.renderToolModeOption(mode, true, !compatible, title))}
-          <div class="session-menu__separator" role="separator"></div>
-        `;
-      }
-      return html`
-        <div class="session-menu__separator" role="separator"></div>
-        <div class="session-menu__section-label">${first.sectionLabel}</div>
-        <wa-dropdown-item class="session-menu__item" ?disabled=${!compatible} title=${title}>
-          <span slot="icon" class="session-menu__icon" aria-hidden="true">${icons.settings}</span>
-          <span class="session-menu__text">${first.controlLabel}</span>
-          ${modes.map((mode) => this.renderToolModeOption(mode, false, !compatible, title))}
-        </wa-dropdown-item>
-        <div class="session-menu__separator" role="separator"></div>
-      `;
-    })}`;
-  }
-
-  private renderToolModeOption(
-    mode: PluginSessionToolMode,
-    inline: boolean,
-    disabled: boolean,
-    title: string | typeof nothing,
-  ) {
-    const checked = this.selectedToolMode
-      ? this.selectedToolMode.pluginId === mode.pluginId && this.selectedToolMode.modeId === mode.id
-      : mode.default === true;
-    const active =
-      this.activeToolMode?.pluginId === mode.pluginId && this.activeToolMode.modeId === mode.id;
-    const pending = checked && this.activeToolMode !== null && !active;
-    return html`<wa-dropdown-item
-      slot=${inline ? nothing : "submenu"}
-      class="session-menu__item"
-      value=${`tool-mode:${encodeURIComponent(mode.pluginId)}:${encodeURIComponent(mode.id)}`}
-      role="menuitemradio"
-      aria-checked=${String(checked)}
-      ${ref((element) => syncDropdownItemRadio(element, checked))}
-      ?disabled=${disabled || checked}
-      title=${title}
-    >
-      <span class="session-menu__text">${mode.label}</span>
-      ${pending
-        ? html`<span slot="details" class="session-menu__sub"
-            >${t("chat.sessionHeader.toolModeNext")}</span
-          >`
-        : active
-          ? html`<span slot="details" class="session-menu__sub"
-              >${t("chat.sessionHeader.toolModeActive")}</span
-            >`
-          : checked
-            ? html`<span slot="details" class="session-menu__check" aria-hidden="true"
-                >${icons.check}</span
-              >`
-            : nothing}
-    </wa-dropdown-item>`;
   }
 
   private readonly handleShow = () => {

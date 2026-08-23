@@ -37,7 +37,7 @@ identically-named `exec`/`wait` tools.
 For an operator-facing per-session choice between direct tools and this
 QuickJS-WASI surface, enable the bundled
 [Developer Mode plugin](/plugins/developer-mode) and choose **Code** from
-**Developer → Tool mode**.
+**Tool mode** in the composer **+** menu.
 
 In OpenClaw code mode, `command` is a JavaScript or TypeScript alias for
 `code`, not a shell command. For shell or file operations, call the appropriate
