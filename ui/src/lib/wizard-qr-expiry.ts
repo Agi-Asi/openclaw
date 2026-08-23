@@ -1,3 +1,4 @@
+import { MAX_WIZARD_QR_EXPIRES_IN_MS } from "@openclaw/gateway-protocol";
 import type { WizardStep } from "../api/types.ts";
 
 type QrStep = Extract<WizardStep, { type: "qr" }>;
@@ -13,7 +14,7 @@ export function scheduleWizardQrExpiry(
   }
   const timer = setTimeout(
     () => onExpire({ ...step, qrDataUrl: "", expiresInMs: 0 }),
-    step.expiresInMs,
+    Math.min(step.expiresInMs, MAX_WIZARD_QR_EXPIRES_IN_MS),
   );
   return () => clearTimeout(timer);
 }

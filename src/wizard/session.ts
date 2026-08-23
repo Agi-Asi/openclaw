@@ -1,6 +1,9 @@
 // Wizard session helpers track onboarding session ids and state.
 import { randomUUID } from "node:crypto";
-import type { WizardStep as ProtocolWizardStep } from "../../packages/gateway-protocol/src/index.js";
+import {
+  MAX_WIZARD_QR_EXPIRES_IN_MS,
+  type WizardStep as ProtocolWizardStep,
+} from "../../packages/gateway-protocol/src/index.js";
 import { QR_PNG_DATA_URL_MAX_LENGTH } from "../../packages/gateway-protocol/src/schema/primitives.js";
 import { renderQrPngDataUrlWithinLimit } from "../media/qr-image.js";
 import { createDeferredCore, type Deferred } from "../shared/deferred.js";
@@ -128,9 +131,13 @@ class WizardSessionPrompter implements WizardPrompter {
       this.qrCode = async <T>(params: WizardQrCodeParams<T>): Promise<T> => {
         if (
           params.expiresInMs !== undefined &&
-          (!Number.isSafeInteger(params.expiresInMs) || params.expiresInMs < 0)
+          (!Number.isSafeInteger(params.expiresInMs) ||
+            params.expiresInMs < 0 ||
+            params.expiresInMs > MAX_WIZARD_QR_EXPIRES_IN_MS)
         ) {
-          throw new RangeError("expiresInMs must be a non-negative safe integer.");
+          throw new RangeError(
+            `expiresInMs must be an integer from 0 through ${MAX_WIZARD_QR_EXPIRES_IN_MS}.`,
+          );
         }
         const qrExpiresAtMs =
           params.expiresInMs === undefined ? undefined : Date.now() + params.expiresInMs;

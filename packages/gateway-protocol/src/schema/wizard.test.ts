@@ -1,3 +1,4 @@
+import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 import { Compile } from "typebox/compile";
 import { describe, expect, it } from "vitest";
 import { WizardNextResultSchema, WizardStepSchema } from "./wizard.js";
@@ -43,5 +44,10 @@ describe("WizardStepSchema", () => {
   it("keeps QR-only fields off interactive steps", () => {
     expect(validate.Check({ id: "text-1", type: "text", qrDataUrl: qr.qrDataUrl })).toBe(false);
     expect(validate.Check({ id: "text-1", type: "text", canCancel: true })).toBe(false);
+  });
+
+  it("bounds QR expiry to timer-safe delays", () => {
+    expect(validate.Check({ ...qr, expiresInMs: MAX_TIMER_TIMEOUT_MS })).toBe(true);
+    expect(validate.Check({ ...qr, expiresInMs: MAX_TIMER_TIMEOUT_MS + 1 })).toBe(false);
   });
 });

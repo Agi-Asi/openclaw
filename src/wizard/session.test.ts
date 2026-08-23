@@ -1,5 +1,6 @@
 // Wizard session tests cover session creation and state transitions.
 
+import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 import { describe, expect, test, vi } from "vitest";
 import * as qrImage from "../media/qr-image.js";
 import { DEVICE_CODE_PHISHING_WARNING } from "./prompts.js";
@@ -169,6 +170,52 @@ describe("WizardSession", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("bounds QR deadlines to the timer-safe maximum", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    try {
+      const accepted = new WizardSession(
+        async (prompter) => {
+          await prompter.qrCode?.({
+            title: "Link device",
+            text: "sgnl://linkdevice?uuid=max",
+            expiresInMs: MAX_TIMER_TIMEOUT_MS,
+            settled: new Promise(() => {}),
+          });
+        },
+        { supportsQrCode: true },
+      );
+      await expect(accepted.next({ supportsQrCode: true })).resolves.toMatchObject({
+        step: { type: "qr", qrExpiresAtMs: 1_000 + MAX_TIMER_TIMEOUT_MS },
+      });
+      accepted.cancel();
+      await accepted.whenSettled();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    let rejected: unknown;
+    const session = new WizardSession(
+      async (prompter) => {
+        try {
+          await prompter.qrCode?.({
+            title: "Link device",
+            text: "sgnl://linkdevice?uuid=overflow",
+            expiresInMs: MAX_TIMER_TIMEOUT_MS + 1,
+            settled: new Promise(() => {}),
+          });
+        } catch (error) {
+          rejected = error;
+        }
+      },
+      { supportsQrCode: true },
+    );
+
+    await session.whenSettled();
+
+    expect(rejected).toBeInstanceOf(RangeError);
   });
 
   test("cancels and scrubs a delivered QR without exposing the capability by default", async () => {

@@ -1,3 +1,4 @@
+import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 // Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
@@ -60,13 +61,16 @@ const WizardDeviceCodeSchema = closedObject({
   message: Type.Optional(Type.String()),
 });
 
+/** Largest QR lifetime that every JavaScript timer owner can schedule safely. */
+export const MAX_WIZARD_QR_EXPIRES_IN_MS = MAX_TIMER_TIMEOUT_MS;
+
 const WizardQrStepSchema = closedObject({
   id: NonEmptyString,
   type: Type.Literal("qr"),
   title: Type.Optional(Type.String()),
   message: Type.Optional(Type.String()),
   qrDataUrl: QrPngDataUrlSchema,
-  expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: MAX_WIZARD_QR_EXPIRES_IN_MS })),
   canCancel: Type.Optional(Type.Boolean()),
   executor: Type.Literal("gateway"),
 });
@@ -96,7 +100,7 @@ const WizardStepObjectSchema = Type.Object(
     externalUrl: Type.Optional(Type.String()),
     deviceCode: Type.Optional(WizardDeviceCodeSchema),
     qrDataUrl: Type.Optional(QrPngDataUrlSchema),
-    expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    expiresInMs: Type.Optional(Type.Integer({ minimum: 0, maximum: MAX_WIZARD_QR_EXPIRES_IN_MS })),
     canCancel: Type.Optional(Type.Boolean()),
   },
   {
