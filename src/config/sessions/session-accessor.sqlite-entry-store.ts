@@ -21,20 +21,14 @@ import {
   sqliteSessionEntriesEqual,
   sqliteSessionSnapshotRowsEqual,
 } from "./session-accessor.sqlite-entry-equality.js";
+import { assertSessionDeletionWriteAllowed } from "./session-accessor.sqlite-finalization.js";
+import { clearSessionCollaborationForKey } from "./session-accessor.sqlite-node-artifacts.js";
 import {
-  clearSessionCollaborationForKey,
-  copySessionNodeArtifactsForRepair,
-  deleteSessionDeliveryArtifacts,
-  deleteSessionNodeArtifacts,
-} from "./session-accessor.sqlite-node-artifacts.js";
-import {
-  hasSqliteSessionOwnerColumns,
   projectSqliteSessionOwner,
   type SqliteSessionOwnerRow,
 } from "./session-accessor.sqlite-owner-projection.js";
 import { projectSqliteSessionParticipants } from "./session-accessor.sqlite-participant-projection.js";
 import { resolveSessionEntryProvenanceRow } from "./session-accessor.sqlite-provenance.js";
-import { collectSessionStateIdsForEntry } from "./session-accessor.sqlite-references.js";
 import {
   cloneSessionEntry,
   getSessionKysely,
@@ -358,220 +352,6 @@ export function normalizeLifecycleTarget(target: { canonicalKey: string; storeKe
   };
 }
 
-export function deleteSessionEntryRows(
-  database: OpenClawAgentDatabase,
-  sessionKey: string,
-  options: { deleteOwnedWindows?: boolean; deliveryCleanupKeys?: readonly string[] } = {},
-): void {
-  const db = getSessionKysely(database.db);
-  const windows = executeSqliteQuerySync(
-    database.db,
-    db.selectFrom("session_windows").select("session_id").where("session_key", "=", sessionKey),
-  ).rows;
-  const survivingNodes = executeSqliteQuerySync(
-    database.db,
-    db
-      .selectFrom("session_nodes")
-      .select(["current_session_id", "entry_json", "session_key"])
-      .where("session_key", "!=", sessionKey)
-      .orderBy("session_key", "asc"),
-  ).rows;
-  for (const window of windows) {
-    const survivingNode = survivingNodes.find((node) => {
-      if (node.current_session_id === window.session_id) {
-        return true;
-      }
-      const entry = parseSessionEntryRow(node);
-      return entry ? collectSessionStateIdsForEntry(entry).includes(window.session_id) : false;
-    });
-    if (survivingNode) {
-      executeSqliteQuerySync(
-        database.db,
-        db
-          .updateTable("session_windows")
-          .set({ session_key: survivingNode.session_key })
-          .where("session_id", "=", window.session_id),
-      );
-    }
-  }
-  if (options.deleteOwnedWindows) {
-    deleteSessionDeliveryArtifacts(database, sessionKey, options.deliveryCleanupKeys);
-    deleteSessionNodeArtifacts(database, sessionKey);
-    executeSqliteQuerySync(
-      database.db,
-      db.deleteFrom("session_nodes").where("session_key", "=", sessionKey),
-    );
-    publishSessionEntryCacheInvalidation(database);
-    return;
-  }
-  const remainingWindow = executeSqliteQueryTakeFirstSync(
-    database.db,
-    db
-      .selectFrom("session_windows")
-      .select(["session_id", "updated_at"])
-      .where("session_key", "=", sessionKey)
-      .orderBy("updated_at", "desc")
-      .orderBy("session_id", "asc")
-      .limit(1),
-  );
-  if (remainingWindow) {
-    deleteSessionNodeArtifacts(database, sessionKey);
-    clearSqliteSessionEntryPreservingWindows(database, {
-      sessionId: remainingWindow.session_id,
-      sessionKey,
-      updatedAt: remainingWindow.updated_at,
-    });
-    publishSessionEntryCacheInvalidation(database);
-    return;
-  }
-  executeSqliteQuerySync(
-    database.db,
-    db.deleteFrom("session_nodes").where("session_key", "=", sessionKey),
-  );
-  publishSessionEntryCacheInvalidation(database);
-}
-
-/** Remove the logical entry while retaining its node-owned transcript windows. */
-function clearSqliteSessionEntryPreservingWindows(
-  database: OpenClawAgentDatabase,
-  params: { sessionId: string; sessionKey: string; updatedAt: number },
-): void {
-  const db = getSessionKysely(database.db);
-  const cleared = {
-    current_session_id: params.sessionId,
-    entry_json: "{}",
-    entry_valid: -1,
-    updated_at: params.updatedAt,
-    status: null,
-    created_at: null,
-    created_via: null,
-    created_actor_type: null,
-    created_actor_id: null,
-    project_id: null,
-    parent_session_key: null,
-    spawned_by: null,
-    fork_source_session_key: null,
-    fork_source_session_id: null,
-    fork_source_entry_id: null,
-    label: null,
-    display_name: null,
-    category: null,
-    icon: null,
-    pinned_at: null,
-    archived_at: null,
-    last_read_at: null,
-    last_interaction_at: null,
-    last_activity_at: null,
-    ...(hasSqliteSessionOwnerColumns(database.db)
-      ? {
-          owner_actor_type: null,
-          owner_actor_id: null,
-          owner_assigned_by_type: null,
-          owner_assigned_by_id: null,
-          owner_assigned_at: null,
-        }
-      : {}),
-  } as const;
-  executeSqliteQuerySync(
-    database.db,
-    db
-      .insertInto("session_nodes")
-      .values({ session_key: params.sessionKey, ...cleared })
-      .onConflict((conflict) => conflict.column("session_key").doUpdateSet(cleared)),
-  );
-  executeSqliteQuerySync(
-    database.db,
-    db
-      .updateTable("session_nodes")
-      .set({ entry_valid: -1 })
-      .where("session_key", "=", params.sessionKey),
-  );
-}
-
-export function deleteLifecycleTargetRows(
-  database: OpenClawAgentDatabase,
-  target: { canonicalKey: string; storeKeys: string[] },
-): void {
-  for (const sessionKey of uniqueStrings([target.canonicalKey, ...target.storeKeys])) {
-    const trimmed = sessionKey.trim();
-    if (trimmed) {
-      deleteSessionEntryRows(database, trimmed);
-    }
-  }
-}
-
-function sqliteLifecycleTargetMatchesExpectedEntry(
-  database: OpenClawAgentDatabase,
-  target: { canonicalKey: string; storeKeys: string[] },
-  expectedEntry: SessionEntry | undefined,
-): boolean {
-  const current = resolveLifecyclePrimaryEntry(database, target)?.entry;
-  if (!current || !expectedEntry) {
-    return current === expectedEntry;
-  }
-  return sqliteSessionEntriesEqual(current, expectedEntry);
-}
-
-export function assertLifecycleTargetUnchanged(
-  database: OpenClawAgentDatabase,
-  target: { canonicalKey: string; storeKeys: string[] },
-  expectedEntry: SessionEntry | undefined,
-  operation: "deleted" | "reset",
-): void {
-  if (sqliteLifecycleTargetMatchesExpectedEntry(database, target, expectedEntry)) {
-    return;
-  }
-  throw new Error(`SQLite session entry changed before ${operation} lifecycle mutation`);
-}
-
-export function deleteLegacySessionEntryRows(
-  database: OpenClawAgentDatabase,
-  legacyKeys: string[],
-  sessionKey: string,
-  options: { rehomeMembers?: boolean } = {},
-): void {
-  if (legacyKeys.length === 0) {
-    return;
-  }
-  const db = getSessionKysely(database.db);
-  for (const legacyKey of legacyKeys) {
-    if (legacyKey === sessionKey) {
-      continue;
-    }
-    rehomeSessionWindows(database, sessionKey, [legacyKey]);
-    copySessionNodeArtifactsForRepair(database, database, [legacyKey], sessionKey, {
-      includeMembers: options.rehomeMembers,
-    });
-    executeSqliteQuerySync(
-      database.db,
-      db.deleteFrom("session_nodes").where("session_key", "=", legacyKey),
-    );
-    publishSessionEntryCacheInvalidation(database);
-  }
-}
-
-/** Move retained generations to the canonical node before removing key aliases. */
-export function rehomeSessionWindows(
-  database: OpenClawAgentDatabase,
-  canonicalKey: string,
-  previousKeys: Iterable<string>,
-): void {
-  const legacyKeys = uniqueStrings([...previousKeys].map((key) => key.trim())).filter(
-    (key) => key && key !== canonicalKey,
-  );
-  if (legacyKeys.length === 0) {
-    return;
-  }
-  const db = getSessionKysely(database.db);
-  executeSqliteQuerySync(
-    database.db,
-    db
-      .updateTable("session_windows")
-      .set({ session_key: canonicalKey })
-      .where("session_key", "in", legacyKeys),
-  );
-}
-
 export function writeSessionEntry(
   database: OpenClawAgentDatabase,
   sessionKey: string,
@@ -609,6 +389,12 @@ export function writeSessionEntry(
     (options.allowStoredAliases && options.previousEntry !== undefined
       ? (options.previousEntry ?? undefined)
       : undefined);
+  assertSessionDeletionWriteAllowed(
+    database.path,
+    sessionKey,
+    normalizedEntry,
+    canonicalPreviousEntry,
+  );
   const previousEntry =
     options.previousEntry === undefined
       ? canonicalPreviousEntry

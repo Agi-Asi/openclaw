@@ -145,9 +145,15 @@ export async function runQueuedStoreWrite<T>(params: {
     return await params.fn();
   }
   const queue = getOrCreateStoreWriterQueue(params.queues, params.storePath);
+  // A shared drain inherits its first caller; each task must restore every
+  // submitting async context before installing its own writer authority.
+  const runInCallerContext = AsyncLocalStorage.snapshot();
   return await new Promise<T>((resolve, reject) => {
     const task: StoreWriterTask = {
-      fn: async () => await runActiveStoreWriter(params.queues, params.storePath, params.fn),
+      fn: async () =>
+        await runInCallerContext(
+          async () => await runActiveStoreWriter(params.queues, params.storePath, params.fn),
+        ),
       resolve: (value) => resolve(value as T),
       reject,
     };

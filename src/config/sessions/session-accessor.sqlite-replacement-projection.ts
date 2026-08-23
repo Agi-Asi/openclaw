@@ -9,9 +9,9 @@ import type {
   SessionEntryReplacementUpdate,
   SessionEntryStatus,
 } from "./session-accessor.sqlite-contract.js";
+import { deleteLegacySessionEntryRows } from "./session-accessor.sqlite-entry-delete.js";
 import { sqliteSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
 import {
-  deleteLegacySessionEntryRows,
   readExactSessionEntryRow,
   readSessionEntryStore,
   type ResolvedSessionEntryRow,

@@ -48,6 +48,10 @@ function createStateStore() {
       return value;
     },
     delete: (key) => values.delete(key),
+    deleteIf(key, predicate) {
+      const current = values.get(key);
+      return current !== undefined && predicate(current) ? values.delete(key) : false;
+    },
     entries: () => [...values].map(([key, value]) => ({ key, value, createdAt: 0 })),
     clear: () => values.clear(),
   };
@@ -797,6 +801,93 @@ describe("Codex app-server binding store", () => {
 
     await expect(store.retireSessionGeneration(identity)).resolves.toBe("absent");
     expect(values.size).toBe(0);
+  });
+
+  it("removes only its exact unleased retired session generation", async () => {
+    const { state, values } = createStateStore();
+    const store = createCodexAppServerBindingStore(state);
+    const identity = {
+      kind: "session" as const,
+      agentId: "main",
+      sessionId: "session-1",
+      sessionKey: "agent:main:telegram:chat-1",
+    };
+    const key = bindingStoreKey(identity);
+    const protectedRows: StoredCodexAppServerBinding[] = [
+      {
+        version: 1,
+        state: "active",
+        sessionId: identity.sessionId,
+        binding: { threadId: "successor-thread", cwd: "/repo" },
+      },
+      { version: 1, state: "cleared", retired: true, sessionId: identity.sessionId },
+      {
+        version: 1,
+        state: "cleared",
+        retired: true,
+        retirementReason: "deleted",
+        sessionId: "session-successor",
+      },
+      {
+        version: 1,
+        state: "cleared",
+        retired: true,
+        retirementReason: "deleted",
+        sessionId: identity.sessionId,
+        lease: { token: "live-owner", expiresAt: Date.now() + 60_000 },
+      },
+    ];
+
+    for (const row of protectedRows) {
+      values.set(key, row);
+      await expect(store.removeRetiredSessionGeneration(identity)).resolves.toBe(false);
+      expect(values.get(key)).toEqual(row);
+    }
+
+    values.set(key, {
+      version: 1,
+      state: "cleared",
+      retired: true,
+      retirementReason: "deleted",
+      sessionId: identity.sessionId,
+    });
+    await expect(store.removeRetiredSessionGeneration(identity)).resolves.toBe(true);
+    expect(values.has(key)).toBe(false);
+  });
+
+  it("keeps a failed deletion tombstone fenced against same-generation reclamation", async () => {
+    const { state, values } = createStateStore();
+    const store = createCodexAppServerBindingStore(state);
+    const identity = {
+      kind: "session" as const,
+      agentId: "main",
+      sessionId: "session-deleted",
+      sessionKey: "agent:main:telegram:chat-deleted",
+    };
+    await store.mutate(identity, {
+      kind: "set",
+      binding: { threadId: "thread-deleted", cwd: "/repo" },
+    });
+
+    await expect(store.retireSessionGeneration(identity, undefined, "deleted")).resolves.toBe(
+      "applied",
+    );
+    await expect(store.prepareSessionGenerationReclaim(identity)).resolves.toEqual({
+      kind: "resolved",
+      result: false,
+    });
+    await expect(
+      store.mutate(identity, {
+        kind: "reclaim-generation",
+        expectedPreviousSessionId: identity.sessionId,
+      }),
+    ).resolves.toBe(false);
+    expect(values.get(bindingStoreKey(identity))).toMatchObject({
+      state: "cleared",
+      retired: true,
+      retirementReason: "deleted",
+      sessionId: identity.sessionId,
+    });
   });
 
   it("expires physical-session retirement fences but retains stable-key fences", async () => {
@@ -1659,6 +1750,42 @@ describe("Codex app-server binding store", () => {
     releaseOwner();
     await expect(ownerRun).rejects.toThrow("Lost Codex binding lease");
     expect(values.get(key)?.lease?.token).toBe("peer-owner");
+  });
+
+  it("leaves a bounded binding lease untouched when its plugin authority expires", async () => {
+    const { state, values } = createStateStore();
+    const store = createCodexAppServerBindingStore(state);
+    const identity = {
+      kind: "session" as const,
+      agentId: "main",
+      sessionId: "session-revoked",
+      sessionKey: "agent:main:session-revoked",
+    };
+    await store.mutate(identity, {
+      kind: "set",
+      binding: { threadId: "thread-revoked", cwd: "/repo" },
+    });
+    let current = true;
+    const assertCurrent = () => {
+      if (!current) {
+        throw new Error("plugin registration was replaced");
+      }
+    };
+
+    await expect(
+      store.withLease(
+        identity,
+        async () => {
+          current = false;
+        },
+        assertCurrent,
+      ),
+    ).rejects.toThrow("plugin registration was replaced");
+
+    expect(values.get(bindingStoreKey(identity))?.lease).toMatchObject({
+      token: expect.any(String),
+      expiresAt: expect.any(Number),
+    });
   });
 
   it("rejects empty storage identities", () => {

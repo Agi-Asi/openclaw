@@ -16,6 +16,7 @@ import {
   readSessionEntryStore,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";
+import { SessionDeletionFinalizationError } from "./session-accessor.sqlite-finalization.js";
 import { emitCommittedSessionEntryRemovals } from "./session-accessor.sqlite-identity.js";
 import {
   assertPlannedLifecycleArtifactEntriesUnchanged,
@@ -369,6 +370,9 @@ async function finalizeSqliteSessionEntryMaintenancePlansWithCommit(
     });
   } catch (error) {
     warn("SQLite session maintenance cleanup failed", error);
+    if (error instanceof SessionDeletionFinalizationError) {
+      throw error;
+    }
     return emptyResult;
   }
   emitCommittedSessionEntryRemovals(entryRemovals);

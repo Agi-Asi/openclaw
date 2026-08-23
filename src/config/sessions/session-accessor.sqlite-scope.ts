@@ -23,6 +23,7 @@ import type {
   SessionTranscriptReadScope,
   SessionTranscriptWriteScope,
 } from "./session-accessor.sqlite-contract.js";
+import { runWithSessionDeletionFinalization } from "./session-accessor.sqlite-finalization.js";
 import { resolveSqliteTargetFromSessionStorePath } from "./session-sqlite-target.js";
 import { normalizeStoreSessionKey } from "./store-entry.js";
 import { SQLITE_SESSION_WRITER_QUEUES } from "./store-writer-state.js";
@@ -58,6 +59,7 @@ export type ResolvedSqliteScope = {
   agentId: string;
   databaseAgentId?: string;
   env?: NodeJS.ProcessEnv;
+  ownerStorePath?: string;
   path?: string;
   sessionKey: string;
 };
@@ -66,6 +68,7 @@ export type ResolvedSqliteReadScope = {
   agentId: string;
   databaseAgentId?: string;
   env?: NodeJS.ProcessEnv;
+  ownerStorePath?: string;
   path?: string;
   sessionKey?: string;
 };
@@ -90,18 +93,25 @@ export function getSessionKysely(database: import("node:sqlite").DatabaseSync) {
 }
 
 export async function runExclusiveSqliteSessionWrite<T>(
-  scope: Pick<ResolvedSqliteReadScope, "agentId" | "env" | "path">,
+  scope: Pick<ResolvedSqliteReadScope, "agentId" | "env" | "ownerStorePath" | "path">,
   fn: () => Promise<T>,
 ): Promise<T> {
   const databaseOptions = toDatabaseOptions(scope);
   const storePath = resolveOpenClawAgentSqlitePath(databaseOptions);
+  const ownerStorePath = scope.ownerStorePath ?? storePath;
   const startedAt = Date.now();
   try {
     const result = await runQueuedStoreWrite({
       queues: SQLITE_SESSION_WRITER_QUEUES,
       storePath,
       label: "runExclusiveSqliteSessionWrite",
-      fn,
+      // Finalizers remain inside this physical owner until their asynchronous
+      // cleanup settles; no logical or lifecycle lock is acquired here.
+      fn: async () =>
+        await runWithSessionDeletionFinalization(
+          { agentId: scope.agentId, ownerStorePath, physicalStorePath: storePath },
+          fn,
+        ),
     });
     const elapsedMs = Date.now() - startedAt;
     if (elapsedMs >= SQLITE_SESSION_SLOW_WRITE_MS) {
@@ -166,6 +176,7 @@ export function resolveSqliteScope(
     agentId,
     ...(storeTarget?.shared && storeTarget.agentId ? { databaseAgentId: storeTarget.agentId } : {}),
     ...(scope.env ? { env: scope.env } : {}),
+    ...(effectiveStorePath ? { ownerStorePath: effectiveStorePath } : {}),
     ...(storeTarget ? { path: storeTarget.path } : {}),
     sessionKey,
   };
@@ -212,6 +223,7 @@ export function resolveSqliteReadScope(
     agentId,
     ...(storeTarget?.shared && storeTarget.agentId ? { databaseAgentId: storeTarget.agentId } : {}),
     ...(scope.env ? { env: scope.env } : {}),
+    ...(effectiveStorePath ? { ownerStorePath: effectiveStorePath } : {}),
     ...(storeTarget ? { path: storeTarget.path } : {}),
     ...(sessionKey ? { sessionKey } : {}),
   };

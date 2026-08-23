@@ -17,11 +17,11 @@ import type {
   TranscriptMessageAppendOptions,
   TranscriptMessageAppendResult,
 } from "./session-accessor.sqlite-contract.js";
+import { deleteLegacySessionEntryRows } from "./session-accessor.sqlite-entry-delete.js";
 import type { ResolvedSessionEntryRow } from "./session-accessor.sqlite-entry-store.js";
 import {
   assertSessionEntrySelectionUnchanged,
   collectSessionEntryLookupKeys,
-  deleteLegacySessionEntryRows,
   readSessionEntryRow,
   readSessionEntrySelectionSnapshot,
   readSessionIdentitySnapshot,

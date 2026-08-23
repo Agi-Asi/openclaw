@@ -28,15 +28,17 @@ import type {
   SessionLifecycleArtifactCleanupResult,
 } from "./session-accessor.sqlite-contract.js";
 import {
+  assertLifecycleTargetUnchanged,
+  deleteLifecycleTargetRows,
+  deleteLegacySessionEntryRows,
+  rehomeSessionWindows,
+} from "./session-accessor.sqlite-entry-delete.js";
+import {
   sqliteLifecycleTargetSnapshotsEqual,
   sqliteSessionEntriesEqual,
 } from "./session-accessor.sqlite-entry-equality.js";
 import {
-  assertLifecycleTargetUnchanged,
-  deleteLifecycleTargetRows,
-  deleteLegacySessionEntryRows,
   readLifecycleTargetSnapshot,
-  rehomeSessionWindows,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";
 import { emitArchivedTranscriptUpdates } from "./session-accessor.sqlite-events.js";

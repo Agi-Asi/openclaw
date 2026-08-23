@@ -692,7 +692,7 @@ describe("codex plugin", () => {
         binding: { threadId: "thread-1", cwd: "/repo" },
       });
 
-    for (const reason of ["shutdown", "restart", "compaction", "unknown"] as const) {
+    for (const reason of ["shutdown", "restart", "compaction", "unknown", "deleted"] as const) {
       await setBinding();
       await sessionEnd(
         { sessionId: "session-1", sessionKey: "agent:worker:session-1", reason },
@@ -700,7 +700,7 @@ describe("codex plugin", () => {
       );
       await expect(bindingStore.read(identity)).resolves.toMatchObject({ threadId: "thread-1" });
     }
-    for (const reason of ["new", "reset", "idle", "daily", "deleted"] as const) {
+    for (const reason of ["new", "reset", "idle", "daily"] as const) {
       await setBinding();
       await sessionEnd(
         { sessionId: "session-1", sessionKey: "agent:worker:session-1", reason },

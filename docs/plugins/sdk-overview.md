@@ -718,10 +718,19 @@ engine unchanged, and tries that engine again on the next logical turn.
 
 ### Events and lifecycle
 
-| Method                                       | What it does                  |
-| -------------------------------------------- | ----------------------------- |
-| `api.on(hookName, handler, opts?)`           | Typed lifecycle hook          |
-| `api.onConversationBindingResolved(handler)` | Conversation binding callback |
+| Method                                              | What it does                                   |
+| --------------------------------------------------- | ---------------------------------------------- |
+| `api.on(hookName, handler, opts?)`                  | Typed lifecycle hook                           |
+| `api.onConversationBindingResolved(handler)`        | Conversation binding callback                  |
+| `api.onSessionDeleted({ agentHarnessId, handler })` | Awaited deletion cleanup for one agent harness |
+
+`onSessionDeleted` runs only when a committed deletion removes the final session
+generation owned by the matching `agentHarnessId`. Its handler receives
+`{ agentId, agentHarnessId, sessionKey, sessionId, lifecycleRevision? }` and
+`{ assertCurrent }`. Call `assertCurrent()` after awaited work and immediately
+before irreversible actions; it rejects if the plugin or registry generation has
+been replaced. Handler failures are surfaced to the deletion caller after the
+session row commits.
 
 See [Plugin hooks](/plugins/hooks) for examples, common hook names, and guard
 semantics.

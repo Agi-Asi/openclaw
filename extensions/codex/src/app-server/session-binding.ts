@@ -442,6 +442,7 @@ const storedBindingSchema = z.discriminatedUnion("state", [
     sessionId: storedSessionIdSchema,
     lease: bindingLeaseSchema.optional().catch(undefined),
     retired: z.literal(true).optional().catch(undefined),
+    retirementReason: z.literal("deleted").optional().catch(undefined),
   }),
 ]);
 
@@ -550,12 +551,13 @@ export function createStoredCodexAppServerBinding(
 
 type BindingStateStore = Pick<
   PluginStateSyncKeyedStore<StoredCodexAppServerBinding>,
-  "entries" | "lookup" | "update"
+  "deleteIf" | "entries" | "lookup" | "update"
 >;
 
 type BindingLeaseOwner = {
   token: string;
   failure?: Error;
+  assertCurrent?: () => void;
 };
 
 function bindingLeaseLostError(key: string, cause?: unknown): Error {
@@ -586,9 +588,19 @@ export type CodexAppServerBindingStore = {
   ): Promise<CodexSessionGenerationRetirementResult>;
   retireSessionGeneration(
     identity: Extract<CodexAppServerBindingIdentity, { kind: "session" }>,
+    assertCurrent?: () => void,
+    reason?: "deleted",
   ): Promise<CodexSessionGenerationRetirementResult>;
+  removeRetiredSessionGeneration(
+    identity: Extract<CodexAppServerBindingIdentity, { kind: "session" }>,
+    assertCurrent?: () => void,
+  ): Promise<boolean>;
   withThreadArchiveFence<T>(run: () => Promise<T>): Promise<T>;
-  withLease<T>(identity: CodexAppServerBindingIdentity, run: () => Promise<T>): Promise<T>;
+  withLease<T>(
+    identity: CodexAppServerBindingIdentity,
+    run: () => Promise<T>,
+    assertCurrent?: () => void,
+  ): Promise<T>;
 };
 
 /** Carries one prepared run identity through callers that rederive it from public params. */
@@ -625,10 +637,16 @@ export function scopeCodexRunBindingStore(params: {
       ),
     resetSessionGeneration: (identity) =>
       params.bindingStore.resetSessionGeneration(mapSessionIdentity(identity)),
-    retireSessionGeneration: (identity) =>
-      params.bindingStore.retireSessionGeneration(mapSessionIdentity(identity)),
+    retireSessionGeneration: (identity, ...options) =>
+      params.bindingStore.retireSessionGeneration(mapSessionIdentity(identity), ...options),
+    removeRetiredSessionGeneration: (identity, assertCurrent) =>
+      params.bindingStore.removeRetiredSessionGeneration(
+        mapSessionIdentity(identity),
+        assertCurrent,
+      ),
     withThreadArchiveFence: (run) => params.bindingStore.withThreadArchiveFence(run),
-    withLease: (identity, run) => params.bindingStore.withLease(mapIdentity(identity), run),
+    withLease: (identity, run, assertCurrent) =>
+      params.bindingStore.withLease(mapIdentity(identity), run, assertCurrent),
   };
 }
 
@@ -729,6 +747,7 @@ export function createCodexAppServerBindingStore(
     }
     try {
       let renewed = false;
+      owner.assertCurrent?.();
       const stored = update(key, (raw) => {
         const current = readStoredCodexAppServerBinding(raw);
         if (raw !== undefined && !current) {
@@ -763,6 +782,7 @@ export function createCodexAppServerBindingStore(
       result: T;
     },
     ttlMs?: number,
+    assertCurrent?: () => void,
   ): Promise<T> => {
     const deadline = Date.now() + BINDING_LEASE_WAIT_MS;
     while (true) {
@@ -774,6 +794,7 @@ export function createCodexAppServerBindingStore(
         throw ownedLease.failure;
       }
       const ownedToken = ownedLease?.token;
+      assertCurrent?.();
       update(
         key,
         (raw) => {
@@ -867,6 +888,9 @@ export function createCodexAppServerBindingStore(
         };
       }
       if (currentSessionId === identity.sessionId) {
+        if (current.state === "cleared" && current.retirementReason === "deleted") {
+          return { kind: "resolved", result: false };
+        }
         return current.state === "cleared" && current.retired === true
           ? { kind: "verify", expectedPreviousSessionId: currentSessionId }
           : { kind: "resolved", result: true };
@@ -900,6 +924,9 @@ export function createCodexAppServerBindingStore(
                   current.retired === true &&
                   current.sessionId === mutation.expectedPreviousSessionId
                 ) {
+                  if (current.retirementReason === "deleted") {
+                    return { result: false };
+                  }
                   // Reset boundaries now retain the OpenClaw session id. The
                   // authoritative session-store check above proves this fence
                   // belongs to the previous in-place lifecycle, not live work.
@@ -1100,7 +1127,7 @@ export function createCodexAppServerBindingStore(
       });
     },
 
-    async retireSessionGeneration(identity) {
+    async retireSessionGeneration(identity, assertCurrent, reason) {
       return await runBindingMutation(async () => {
         const key = bindingStoreKey(identity);
         return await transactKey(
@@ -1113,7 +1140,9 @@ export function createCodexAppServerBindingStore(
               return { result: "conflict" as const };
             }
             if (current.state === "cleared" && current.retired === true) {
-              return { result: "applied" as const };
+              if (reason !== "deleted" || current.retirementReason === "deleted") {
+                return { result: "applied" as const };
+              }
             }
             return {
               result: "applied" as const,
@@ -1121,6 +1150,7 @@ export function createCodexAppServerBindingStore(
                 version: 1,
                 state: "cleared",
                 retired: true,
+                ...(reason === "deleted" ? { retirementReason: "deleted" as const } : {}),
                 ...storedSessionGeneration(identity, current),
                 ...(current.lease && current.lease.token === leaseToken
                   ? { lease: current.lease }
@@ -1129,6 +1159,25 @@ export function createCodexAppServerBindingStore(
             };
           },
           identity.sessionKey?.trim() ? undefined : PHYSICAL_SESSION_RETIRE_TTL_MS,
+          assertCurrent,
+        );
+      });
+    },
+
+    async removeRetiredSessionGeneration(identity, assertCurrent) {
+      const deleteIf = state.deleteIf;
+      if (!deleteIf) {
+        throw new Error("Codex app-server bindings require conditional plugin-state deletion");
+      }
+      assertCurrent?.();
+      return deleteIf.call(state, bindingStoreKey(identity), (raw) => {
+        const current = readStoredCodexAppServerBinding(raw);
+        return (
+          current?.state === "cleared" &&
+          current.retired === true &&
+          current.retirementReason === "deleted" &&
+          current.sessionId === identity.sessionId.trim() &&
+          current.lease === undefined
         );
       });
     },
@@ -1150,7 +1199,8 @@ export function createCodexAppServerBindingStore(
       }
     },
 
-    async withLease(identity, run) {
+    async withLease(identity, run, assertCurrent) {
+      assertCurrent?.();
       const key = bindingStoreKey(identity);
       const owned = leaseContext.getStore();
       const existingOwner = owned?.get(key);
@@ -1160,6 +1210,7 @@ export function createCodexAppServerBindingStore(
           throw failureBeforeRun;
         }
         const result = await run();
+        assertCurrent?.();
         const failureAfterRun = existingOwner.failure;
         if (failureAfterRun) {
           throw failureAfterRun;
@@ -1167,38 +1218,46 @@ export function createCodexAppServerBindingStore(
         return result;
       }
       const token = randomUUID();
-      const acquired = await transactKey(key, (current) => {
-        if (
-          current?.state === "cleared" &&
-          current.retired === true &&
-          ownsStoredSessionGeneration(identity, current)
-        ) {
-          return { result: false };
-        }
-        const lease = { token, expiresAt: Date.now() + BINDING_LEASE_STALE_MS };
-        if (current?.state === "active") {
+      const acquired = await transactKey(
+        key,
+        (current) => {
+          if (
+            current?.state === "cleared" &&
+            current.retired === true &&
+            ownsStoredSessionGeneration(identity, current)
+          ) {
+            return { result: false };
+          }
+          const lease = { token, expiresAt: Date.now() + BINDING_LEASE_STALE_MS };
+          if (current?.state === "active") {
+            return {
+              result: true,
+              next: { ...current, ...preservedSessionGeneration(identity, current), lease },
+            };
+          }
+          if (current?.state === "cleared" && current.retired === true) {
+            return { result: true, next: { ...current, lease } };
+          }
           return {
             result: true,
-            next: { ...current, ...preservedSessionGeneration(identity, current), lease },
+            next: {
+              version: 1,
+              state: "cleared",
+              ...preservedSessionGeneration(identity, current),
+              lease,
+            },
           };
-        }
-        if (current?.state === "cleared" && current.retired === true) {
-          return { result: true, next: { ...current, lease } };
-        }
-        return {
-          result: true,
-          next: {
-            version: 1,
-            state: "cleared",
-            ...preservedSessionGeneration(identity, current),
-            lease,
-          },
-        };
-      });
+        },
+        undefined,
+        assertCurrent,
+      );
       if (!acquired) {
         throw new Error(`Codex binding generation was retired: ${key}`);
       }
-      const owner: BindingLeaseOwner = { token };
+      const owner: BindingLeaseOwner = {
+        token,
+        ...(assertCurrent ? { assertCurrent } : {}),
+      };
       const nested = new Map(owned);
       nested.set(key, owner);
       // Long app-server RPCs can outlive the stale-owner window. Renew with an
@@ -1207,46 +1266,41 @@ export function createCodexAppServerBindingStore(
       heartbeat.unref();
       try {
         const result = await leaseContext.run(nested, run);
+        assertCurrent?.();
         if (owner.failure) {
           throw owner.failure;
         }
         return result;
       } finally {
         clearInterval(heartbeat);
+        // A revoked plugin must leave its bounded lease for the current owner to recover.
+        assertCurrent?.();
         try {
-          const removeOwnedLease = (
-            raw: unknown,
-            matches: (current: StoredCodexAppServerBinding) => boolean,
-          ) => {
-            const current = readStoredCodexAppServerBinding(raw);
-            if (!current || !matches(current) || current.lease?.token !== token) {
-              return undefined;
-            }
-            const { lease: _lease, ...released } = current;
-            return released;
-          };
-          const releasedActive = update(key, (raw) =>
-            removeOwnedLease(raw, (current) => current.state === "active"),
-          );
-          if (!releasedActive) {
-            const releasedRetired = update(
+          const current = readStoredCodexAppServerBinding(state.lookup(key));
+          if (current?.lease?.token === token) {
+            const ttlMs =
+              current.state === "active" ||
+              (current.retired === true && !key.startsWith("session:"))
+                ? undefined
+                : current.retired === true
+                  ? PHYSICAL_SESSION_RETIRE_TTL_MS
+                  : 1;
+            assertCurrent?.();
+            update(
               key,
-              (raw) =>
-                removeOwnedLease(
-                  raw,
-                  (current) => current.state === "cleared" && current.retired === true,
-                ),
-              key.startsWith("session:") ? { ttlMs: PHYSICAL_SESSION_RETIRE_TTL_MS } : undefined,
+              (raw) => {
+                const storedOwner = readStoredCodexAppServerBinding(raw);
+                if (storedOwner?.lease?.token !== token) {
+                  return undefined;
+                }
+                const { lease: _lease, ...released } = storedOwner;
+                return released;
+              },
+              ttlMs === undefined ? undefined : { ttlMs },
             );
-            if (!releasedRetired) {
-              update(
-                key,
-                (raw) => removeOwnedLease(raw, (current) => current.state === "cleared"),
-                { ttlMs: 1 },
-              );
-            }
           }
         } catch (error) {
+          assertCurrent?.();
           // The bounded lease expires after a crashed or disconnected owner.
           embeddedAgentLog.warn("failed to release codex app-server binding lease", {
             key,

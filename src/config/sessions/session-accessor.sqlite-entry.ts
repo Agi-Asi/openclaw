@@ -32,18 +32,20 @@ import {
   type SessionEntryCacheSnapshot,
 } from "./session-accessor.sqlite-entry-cache.js";
 import {
+  deleteLegacySessionEntryRows,
+  rehomeSessionWindows,
+} from "./session-accessor.sqlite-entry-delete.js";
+import {
   assertLifecycleTargetSnapshotUnchanged,
   assertSessionEntrySelectionUnchanged,
   collectSessionEntryLookupKeys,
   createSessionIdentitySnapshot,
-  deleteLegacySessionEntryRows,
   parseReadableSqliteSessionEntryRow,
   readExactSessionEntryRowValidated,
   readSessionEntryRow,
   readLifecycleTargetSnapshot,
   readSessionEntrySelectionSnapshot,
   readSessionIdentitySnapshot,
-  rehomeSessionWindows,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";
 import { listTranscriptInstancesFromDatabase } from "./session-accessor.sqlite-history.js";

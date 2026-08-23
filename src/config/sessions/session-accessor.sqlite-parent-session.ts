@@ -13,9 +13,11 @@ import type {
 } from "./session-accessor.sqlite-contract.js";
 import {
   deleteLegacySessionEntryRows,
+  rehomeSessionWindows,
+} from "./session-accessor.sqlite-entry-delete.js";
+import {
   normalizeLifecycleTarget,
   readSessionIdentitySnapshot,
-  rehomeSessionWindows,
   resolveLifecyclePrimaryEntry,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";

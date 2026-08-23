@@ -87,6 +87,7 @@ export function createPluginApiFactory(
     registerSecurityAuditCollector,
     registerInteractiveHandler,
     registerConversationBindingResolvedHandler,
+    registerSessionDeletionFinalizer,
     registerCommand,
     registerContextEngine,
     registerCompactionProvider,
@@ -231,6 +232,8 @@ export function createPluginApiFactory(
                 registerInteractiveHandler(record, registration),
               onConversationBindingResolved: (handler) =>
                 registerConversationBindingResolvedHandler(record, handler),
+              onSessionDeleted: (registration) =>
+                registerSessionDeletionFinalizer(record, registration),
               registerCommand: (command) => registerCommand(record, command),
               registerContextEngine: (id, factory) =>
                 registerContextEngine(record, id, factory, registrationMode),

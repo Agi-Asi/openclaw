@@ -57,6 +57,7 @@ type BuildPluginApiParams = {
       | "registerWebSearchProvider"
       | "registerInteractiveHandler"
       | "onConversationBindingResolved"
+      | "onSessionDeleted"
       | "registerCommand"
       | "registerContextEngine"
       | "registerCompactionProvider"
@@ -257,6 +258,7 @@ export function buildPluginApi(params: BuildPluginApiParams): OpenClawPluginApi 
       handlers.registerInteractiveHandler ?? noopRegisterInteractiveHandler,
     onConversationBindingResolved:
       handlers.onConversationBindingResolved ?? noopOnConversationBindingResolved,
+    ...(handlers.onSessionDeleted ? { onSessionDeleted: handlers.onSessionDeleted } : {}),
     registerCommand: handlers.registerCommand ?? noopRegisterCommand,
     registerContextEngine: handlers.registerContextEngine ?? noopRegisterContextEngine,
     registerCompactionProvider:

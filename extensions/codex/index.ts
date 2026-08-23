@@ -60,13 +60,7 @@ import {
 } from "./src/supervision-tools.js";
 import { createCodexWebSearchProvider } from "./src/web-search-provider.js";
 
-const ENDED_SESSION_REASONS: ReadonlySet<string> = new Set([
-  "new",
-  "reset",
-  "idle",
-  "daily",
-  "deleted",
-]);
+const ENDED_SESSION_REASONS: ReadonlySet<string> = new Set(["new", "reset", "idle", "daily"]);
 
 export default definePluginEntry({
   id: "codex",
@@ -129,11 +123,14 @@ export default definePluginEntry({
     // store only when a proxied runtime performs the first binding operation.
     const lazyBindingStateStore: Pick<
       PluginStateSyncKeyedStore<StoredCodexAppServerBinding>,
-      "delete" | "entries" | "lookup" | "update"
+      "deleteIf" | "entries" | "lookup" | "update"
     > = {
-      delete: (key) => openBindingStateStore().delete(key),
       entries: () => openBindingStateStore().entries(),
       lookup: (key) => openBindingStateStore().lookup(key),
+      get deleteIf() {
+        const store = openBindingStateStore();
+        return store.deleteIf?.bind(store);
+      },
       get update() {
         const store = openBindingStateStore();
         return store.update?.bind(store);
@@ -347,6 +344,33 @@ export default definePluginEntry({
     api.onConversationBindingResolved?.((event) =>
       codexConversationBindingRuntime.handleBindingResolved(event, { bindingStore }),
     );
+    api.onSessionDeleted?.({
+      agentHarnessId: "codex",
+      handler: async (event, { assertCurrent }) => {
+        const [{ sessionBindingIdentity }, { retireCodexAppServerSessionGeneration }] =
+          await Promise.all([
+            import("./src/app-server/session-binding.js"),
+            import("./src/app-server/session-retirement.js"),
+          ]);
+        assertCurrent();
+        const result = await retireCodexAppServerSessionGeneration({
+          bindingStore,
+          identity: sessionBindingIdentity({
+            agentId: event.agentId,
+            sessionId: event.sessionId,
+            sessionKey: event.sessionKey,
+          }),
+          mode: "deleted",
+          assertCurrent,
+        });
+        assertCurrent();
+        if (result === "conflict") {
+          throw new Error(
+            `Codex session deletion conflicts with its binding owner: ${event.sessionKey}`,
+          );
+        }
+      },
+    });
     api.on("after_compaction", async (event, ctx) => {
       const previousSessionId = event.previousSessionId?.trim();
       const sessionId = ctx.sessionId?.trim();
@@ -382,7 +406,7 @@ export default definePluginEntry({
       // under a different session key. The only cross-key emitter (gateway child
       // creation) keeps the parent row live; same-key rollovers omit or repeat
       // the key and still retire, as do unknown-current-key ends (no provable
-      // handoff) and later idle/daily/deleted ends. See #106778.
+      // handoff) and later idle/daily ends. Deletion has its awaited owner finalizer.
       const endedSessionKey = sessionKey?.trim();
       const nextSessionKey = event.nextSessionKey?.trim();
       if (endedSessionKey && nextSessionKey && nextSessionKey !== endedSessionKey) {

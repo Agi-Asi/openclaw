@@ -52,6 +52,162 @@ function createDoctorContext(
   };
 }
 
+type DoctorSessionEvidence = Awaited<
+  ReturnType<NonNullable<PluginDoctorStateMigrationContext["readSessionIdentityEvidenceBatch"]>>
+>[number];
+type DoctorPluginStateRow = ReturnType<
+  NonNullable<PluginDoctorStateMigrationContext["readPluginStateEntriesInKeyRange"]>
+>[number];
+
+function createOrphanedBindingMigrationFixture(
+  options: {
+    defaultEvidence?: "absent" | "unknown";
+    replaceBeforeDelete?: (entry: DoctorPluginStateRow) => DoctorPluginStateRow;
+  } = {},
+) {
+  const migration = stateMigrations.find(
+    (candidate) => candidate.id === "codex-app-server-orphaned-session-bindings",
+  );
+  if (!migration) {
+    throw new Error("missing Codex orphaned session binding migration");
+  }
+  const rows = new Map<string, DoctorPluginStateRow>();
+  const evidence = new Map<string, DoctorSessionEvidence>();
+  const pageReads: Array<{ prefix: string; after?: string; limit: number }> = [];
+  const evidenceBatchSizes: number[] = [];
+  const deletionBatchSizes: number[] = [];
+  let sortedKeys: string[] | undefined;
+  let nextCreatedAt = 1;
+  let replaceBeforeDelete = options.replaceBeforeDelete;
+  const env: NodeJS.ProcessEnv = {};
+
+  function seedBinding(params: {
+    agentId?: string;
+    key?: string;
+    sessionId: string;
+    sessionKey?: string;
+    value?: unknown;
+    valueJson?: string;
+  }): string {
+    const agentId = params.agentId ?? "main";
+    const key =
+      params.key ??
+      bindingStoreKey({
+        kind: "session",
+        agentId,
+        sessionId: params.sessionId,
+        ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+      });
+    const value = params.value ?? {
+      version: 1,
+      state: "active",
+      sessionId: params.sessionId,
+      binding: { threadId: `thread-${params.sessionId}`, cwd: "/workspace" },
+    };
+    const valueJson = params.valueJson ?? JSON.stringify(value);
+    let parsedValue: unknown;
+    try {
+      parsedValue = JSON.parse(valueJson);
+    } catch {
+      // Physical corruption remains enumerable so healthy sibling rows can converge.
+    }
+    rows.set(key, {
+      key,
+      valueJson,
+      ...(parsedValue !== undefined ? { value: parsedValue } : {}),
+      createdAt: nextCreatedAt++,
+      expiresAt: null,
+    });
+    sortedKeys = undefined;
+    return key;
+  }
+
+  const context: PluginDoctorStateMigrationContext = {
+    ...createDoctorContext(env),
+    readPluginStateEntriesInKeyRange(storeOptions, range) {
+      expect(storeOptions.namespace).toBe(CODEX_APP_SERVER_BINDING_NAMESPACE);
+      expect(range.limit).toBeLessThanOrEqual(512);
+      pageReads.push(range);
+      sortedKeys ??= [...rows.keys()].toSorted();
+      const start = range.after === undefined ? range.prefix : `${range.after}\0`;
+      let lower = 0;
+      let upper = sortedKeys.length;
+      while (lower < upper) {
+        const middle = Math.floor((lower + upper) / 2);
+        if (sortedKeys[middle]! < start) {
+          lower = middle + 1;
+        } else {
+          upper = middle;
+        }
+      }
+      const page: DoctorPluginStateRow[] = [];
+      for (let index = lower; index < sortedKeys.length; index += 1) {
+        const key = sortedKeys[index]!;
+        if (!key.startsWith(range.prefix)) {
+          break;
+        }
+        const entry = rows.get(key);
+        if (entry) {
+          page.push(structuredClone(entry));
+        }
+        if (page.length === range.limit) {
+          break;
+        }
+      }
+      return page;
+    },
+    async readSessionIdentityEvidenceBatch(requests) {
+      expect(requests.length).toBeLessThanOrEqual(512);
+      evidenceBatchSizes.push(requests.length);
+      return requests.map(
+        (request) =>
+          evidence.get(`${request.agentId}\0${request.sessionId}`) ?? {
+            ...request,
+            state: options.defaultEvidence ?? "absent",
+          },
+      );
+    },
+    deletePluginStateEntriesIfUnchanged(storeOptions, entries) {
+      expect(storeOptions.namespace).toBe(CODEX_APP_SERVER_BINDING_NAMESPACE);
+      expect(entries.length).toBeLessThanOrEqual(512);
+      deletionBatchSizes.push(entries.length);
+      const firstEntry = entries[0];
+      if (replaceBeforeDelete && firstEntry) {
+        rows.set(firstEntry.key, replaceBeforeDelete(firstEntry));
+        replaceBeforeDelete = undefined;
+      }
+      let deleted = 0;
+      for (const entry of entries) {
+        const current = rows.get(entry.key);
+        if (
+          current &&
+          current.createdAt === entry.createdAt &&
+          current.expiresAt === entry.expiresAt &&
+          current.valueJson === entry.valueJson
+        ) {
+          rows.delete(entry.key);
+          deleted += 1;
+        }
+      }
+      return { deleted, changed: entries.length - deleted };
+    },
+  };
+
+  return {
+    context,
+    deletionBatchSizes,
+    evidenceBatchSizes,
+    migration,
+    pageReads,
+    params: { config: {}, env, stateDir: "/unused", oauthDir: "/unused/oauth", context },
+    rows,
+    seedBinding,
+    setEvidence(value: DoctorSessionEvidence) {
+      evidence.set(`${value.agentId}\0${value.sessionId}`, value);
+    },
+  };
+}
+
 function openBindingStore(env: NodeJS.ProcessEnv) {
   return createDoctorContext(env).openPluginStateKeyedStore<StoredCodexAppServerBinding>({
     namespace: CODEX_APP_SERVER_BINDING_NAMESPACE,
@@ -1382,6 +1538,295 @@ describe("codex doctor contract", () => {
       },
     });
     expect(original.plugins.entries.codex.config.appServer.approvalPolicy).toBe("on-failure");
+  });
+
+  describe("orphaned session binding repair", () => {
+    it("removes multiple pages of stale rows in bounded batches without touching live ownership", async () => {
+      const fixture = createOrphanedBindingMigrationFixture();
+      const stableOrphanCount = 1_137;
+      const physicalOrphanCount = 73;
+      for (let index = 0; index < stableOrphanCount; index += 1) {
+        fixture.seedBinding({
+          sessionId: `orphan-stable-${index}`,
+          sessionKey: `agent:main:orphan-stable-${index}`,
+        });
+      }
+      for (let index = 0; index < physicalOrphanCount; index += 1) {
+        fixture.seedBinding({ sessionId: `orphan-physical-${index}` });
+      }
+
+      const currentStableKey = fixture.seedBinding({
+        sessionId: "current-stable",
+        sessionKey: "agent:main:current-stable",
+      });
+      fixture.setEvidence({
+        agentId: "main",
+        sessionId: "current-stable",
+        state: "current",
+        sessionKey: "agent:main:current-stable",
+      });
+      const currentPhysicalKey = fixture.seedBinding({ sessionId: "current-physical" });
+      fixture.setEvidence({
+        agentId: "main",
+        sessionId: "current-physical",
+        state: "current",
+        sessionKey: "agent:main:current-physical",
+      });
+      const mismatchedStableKey = fixture.seedBinding({
+        sessionId: "moved-stable",
+        sessionKey: "agent:main:previous-stable-key",
+      });
+      fixture.setEvidence({
+        agentId: "main",
+        sessionId: "moved-stable",
+        state: "current",
+        sessionKey: "agent:main:replacement-stable-key",
+      });
+
+      const preservedKeys = [currentStableKey, currentPhysicalKey];
+      const activeBinding = (sessionId: string, binding: Record<string, unknown> = {}) => ({
+        version: 1,
+        state: "active",
+        sessionId,
+        binding: { threadId: `thread-${sessionId}`, cwd: "/workspace", ...binding },
+      });
+      preservedKeys.push(
+        fixture.seedBinding({
+          sessionId: "leased",
+          value: {
+            ...activeBinding("leased"),
+            lease: { token: "live-owner", expiresAt: Date.now() + 60_000 },
+          },
+        }),
+        fixture.seedBinding({
+          sessionId: "supervised",
+          value: activeBinding("supervised", { connectionScope: "supervision" }),
+        }),
+        fixture.seedBinding({
+          sessionId: "native-source",
+          value: activeBinding("native-source", { supervisionSourceThreadId: "native-thread" }),
+        }),
+        fixture.seedBinding({
+          sessionId: "pending-supervision",
+          value: activeBinding("pending-supervision", {
+            pendingSupervisionBranch: {
+              sourceThreadId: "native-thread",
+              cleanupThreadIds: ["pending-cleanup-thread"],
+            },
+          }),
+        }),
+        fixture.seedBinding({
+          sessionId: "missing-session-id",
+          value: { version: 1, state: "cleared" },
+        }),
+        fixture.seedBinding({
+          sessionId: "malformed-row",
+          value: { version: 1, state: "unrecognized", sessionId: "malformed-row" },
+        }),
+        fixture.seedBinding({
+          key: "session-key:main:not-a-canonical-hash",
+          sessionId: "malformed-key",
+        }),
+        fixture.seedBinding({
+          key: "conversation:active-native-thread",
+          sessionId: "conversation",
+        }),
+      );
+      const unknownKey = fixture.seedBinding({ sessionId: "unavailable-session-store" });
+      fixture.setEvidence({
+        agentId: "main",
+        sessionId: "unavailable-session-store",
+        state: "unknown",
+      });
+      preservedKeys.push(unknownKey);
+
+      fixture.seedBinding({
+        sessionId: "retired-orphan",
+        value: { version: 1, state: "cleared", sessionId: "retired-orphan", retired: true },
+      });
+      fixture.seedBinding({
+        sessionId: "expired-lease",
+        value: {
+          ...activeBinding("expired-lease"),
+          lease: { token: "expired-owner", expiresAt: Date.now() - 1_000 },
+        },
+      });
+      const expectedDeleted = stableOrphanCount + physicalOrphanCount + 3;
+      const initialRowCount = fixture.rows.size;
+
+      expect(fixture.migration).toMatchObject({ doctorOnly: true, phase: "after-session-repair" });
+      await expect(fixture.migration.detectLegacyState(fixture.params)).resolves.toMatchObject({
+        preview: [expect.stringContaining("orphaned session ownership")],
+      });
+      expect(fixture.rows.size).toBe(initialRowCount);
+      expect(fixture.deletionBatchSizes).toEqual([]);
+      expect(fixture.pageReads).toHaveLength(1);
+      fixture.pageReads.length = 0;
+      fixture.evidenceBatchSizes.length = 0;
+
+      await expect(fixture.migration.migrateLegacyState(fixture.params)).resolves.toEqual({
+        changes: [`Removed ${expectedDeleted} orphaned Codex app-server session binding(s)`],
+        warnings: [],
+      });
+      expect(fixture.rows.size).toBe(initialRowCount - expectedDeleted);
+      expect(fixture.rows.has(mismatchedStableKey)).toBe(false);
+      expect(preservedKeys.every((key) => fixture.rows.has(key))).toBe(true);
+      expect(fixture.deletionBatchSizes.reduce((total, size) => total + size, 0)).toBe(
+        expectedDeleted,
+      );
+      expect(fixture.deletionBatchSizes.length).toBeGreaterThan(2);
+      expect(fixture.deletionBatchSizes.length).toBeLessThan(10);
+      expect(fixture.deletionBatchSizes.every((size) => size > 1 && size <= 512)).toBe(true);
+      expect(fixture.evidenceBatchSizes.every((size) => size <= 512)).toBe(true);
+      expect(fixture.pageReads.every((page) => page.limit <= 512)).toBe(true);
+      expect(fixture.pageReads.some((page) => page.after !== undefined)).toBe(true);
+
+      const completedBatchCount = fixture.deletionBatchSizes.length;
+      await expect(fixture.migration.detectLegacyState(fixture.params)).resolves.toBeNull();
+      await expect(fixture.migration.migrateLegacyState(fixture.params)).resolves.toEqual({
+        changes: [],
+        warnings: [],
+      });
+      expect(fixture.deletionBatchSizes).toHaveLength(completedBatchCount);
+    });
+
+    it.each([
+      { store: "initialized empty", state: "absent", retained: false },
+      { store: "missing", state: "unknown", retained: true },
+      { store: "broken", state: "unknown", retained: true },
+      { store: "ambiguous", state: "unknown", retained: true },
+    ] as const)(
+      "treats a $store authoritative session store safely",
+      async ({ state, retained }) => {
+        const fixture = createOrphanedBindingMigrationFixture({ defaultEvidence: state });
+        const bindingKey = fixture.seedBinding({
+          sessionId: "orphan-or-unknown",
+          sessionKey: "agent:main:orphan-or-unknown",
+        });
+
+        await fixture.migration.migrateLegacyState(fixture.params);
+
+        expect(fixture.rows.has(bindingKey)).toBe(retained);
+        expect(fixture.deletionBatchSizes).toHaveLength(retained ? 0 : 1);
+      },
+    );
+
+    it("preserves an exact-row successor replacing the observed orphan before bulk deletion", async () => {
+      const successor = {
+        version: 1,
+        state: "active",
+        sessionId: "same-session-id",
+        binding: { threadId: "replacement-native-thread", cwd: "/workspace" },
+      };
+      const fixture = createOrphanedBindingMigrationFixture({
+        replaceBeforeDelete: (observed) => ({
+          ...observed,
+          value: successor,
+          valueJson: JSON.stringify(successor),
+        }),
+      });
+      const bindingKey = fixture.seedBinding({
+        sessionId: "same-session-id",
+        sessionKey: "agent:main:same-session-id",
+      });
+
+      await expect(fixture.migration.migrateLegacyState(fixture.params)).resolves.toEqual({
+        changes: [],
+        warnings: ["Preserved 1 Codex app-server session binding(s) changed during repair"],
+      });
+
+      expect(fixture.rows.get(bindingKey)?.value).toEqual(successor);
+      expect(fixture.deletionBatchSizes).toEqual([1]);
+    });
+
+    it("preserves malformed physical rows while repairing valid siblings", async () => {
+      const fixture = createOrphanedBindingMigrationFixture();
+      const malformedKey = fixture.seedBinding({
+        sessionId: "malformed-physical-row",
+        valueJson: "{",
+      });
+      const staleKey = fixture.seedBinding({ sessionId: "valid-stale-sibling" });
+
+      await expect(fixture.migration.migrateLegacyState(fixture.params)).resolves.toEqual({
+        changes: ["Removed 1 orphaned Codex app-server session binding(s)"],
+        warnings: [],
+      });
+
+      expect(fixture.rows.get(malformedKey)).toMatchObject({ valueJson: "{" });
+      expect(fixture.rows.has(staleKey)).toBe(false);
+    });
+
+    it("preserves a same-value successor whose physical JSON bytes changed", async () => {
+      const fixture = createOrphanedBindingMigrationFixture({
+        replaceBeforeDelete: (observed) => ({
+          ...observed,
+          valueJson: JSON.stringify(observed.value, null, 2),
+        }),
+      });
+      const bindingKey = fixture.seedBinding({ sessionId: "same-value-new-bytes" });
+
+      await expect(fixture.migration.migrateLegacyState(fixture.params)).resolves.toEqual({
+        changes: [],
+        warnings: ["Preserved 1 Codex app-server session binding(s) changed during repair"],
+      });
+
+      expect(fixture.rows.get(bindingKey)?.valueJson).toContain("\n");
+    });
+
+    it.each([
+      { state: "absent", retained: false },
+      { state: "current", retained: true },
+      { state: "unknown", retained: true },
+    ] as const)(
+      "repairs a deleted retirement tombstone only when ownership is $state",
+      async ({ state, retained }) => {
+        const fixture = createOrphanedBindingMigrationFixture();
+        const sessionId = "deleted-retirement-generation";
+        const key = fixture.seedBinding({
+          sessionId,
+          sessionKey: "agent:main:deleted-retirement-generation",
+          value: {
+            version: 1,
+            state: "cleared",
+            sessionId,
+            retired: true,
+            retirementReason: "deleted",
+          },
+        });
+        fixture.setEvidence(
+          state === "current"
+            ? {
+                agentId: "main",
+                sessionId,
+                state,
+                sessionKey: "agent:main:new-owner",
+              }
+            : { agentId: "main", sessionId, state },
+        );
+
+        await fixture.migration.migrateLegacyState(fixture.params);
+
+        expect(fixture.rows.has(key)).toBe(retained);
+      },
+    );
+
+    it("refuses destructive repair without locked host ownership", async () => {
+      const fixture = createOrphanedBindingMigrationFixture();
+      const bindingKey = fixture.seedBinding({ sessionId: "unlocked-orphan" });
+      const unlockedContext = {
+        ...fixture.context,
+        deletePluginStateEntriesIfUnchanged: undefined,
+      };
+
+      await expect(
+        fixture.migration.migrateLegacyState({ ...fixture.params, context: unlockedContext }),
+      ).resolves.toMatchObject({
+        changes: [],
+        warnings: [expect.stringContaining("locked SQLite maintenance ownership")],
+      });
+      expect(fixture.rows.has(bindingKey)).toBe(true);
+      expect(fixture.deletionBatchSizes).toEqual([]);
+    });
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

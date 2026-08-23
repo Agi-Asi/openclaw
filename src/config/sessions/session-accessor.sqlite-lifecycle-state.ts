@@ -22,9 +22,9 @@ import {
   readSessionStateDeleteSnapshot,
   sqliteSessionStateDeleteSnapshotsEqual,
 } from "./session-accessor.sqlite-delete-snapshot.js";
+import { deleteSessionEntryRows } from "./session-accessor.sqlite-entry-delete.js";
 import { sqliteSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
 import {
-  deleteSessionEntryRows,
   readExactSessionEntryJson,
   readExactSessionEntryRow,
   readSessionEntryStore,

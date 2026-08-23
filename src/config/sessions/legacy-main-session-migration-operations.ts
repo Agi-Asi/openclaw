@@ -16,15 +16,18 @@ import type {
   TranscriptDigest,
 } from "./legacy-main-session-migration.contract.js";
 import { readExactSessionEntryRowForCanonicalRepair } from "./session-accessor.sqlite-canonical-repair.js";
+import { deleteLegacySessionEntryRows } from "./session-accessor.sqlite-entry-delete.js";
 import {
-  deleteLegacySessionEntryRows,
   readExactSessionEntryRow,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";
 import { importSqliteSessionRows } from "./session-accessor.sqlite-import.js";
 import { deleteSessionEntryLifecycle } from "./session-accessor.sqlite-lifecycle.js";
 import { replaceSessionOwnerInTransaction } from "./session-accessor.sqlite-owner.js";
-import { getSessionKysely } from "./session-accessor.sqlite-scope.js";
+import {
+  getSessionKysely,
+  runExclusiveSqliteSessionWrite,
+} from "./session-accessor.sqlite-scope.js";
 import type { SessionEntry } from "./types.js";
 
 function projectEntryIdentity(entry: SessionEntry): SessionEntry {
@@ -121,47 +124,59 @@ function writeMigratedSessionClaim(
   replaceSessionOwnerInTransaction(database, sessionKey, entry.owner);
 }
 
-function migrateClaimsInPlace(params: {
+function resolveLegacyMainMigrationWriterScope(store: PhysicalStore, env: NodeJS.ProcessEnv) {
+  return {
+    agentId: store.databaseAgentId,
+    env,
+    ownerStorePath: store.ownerStorePath,
+    path: store.path,
+  };
+}
+
+async function migrateClaimsInPlace(params: {
   aliases: readonly SessionClaim[];
   canonical?: SessionClaim;
   canonicalKey: string;
   env: NodeJS.ProcessEnv;
   store: PhysicalStore;
   winner: SessionClaim;
-}): boolean {
-  let committed = false;
-  runOpenClawAgentWriteTransaction(
-    (database) => {
-      const currentAliases = params.aliases.map((claim) =>
-        readClaim(database, params.store, claim.key, params.canonicalKey),
-      );
-      const currentCanonical = params.canonical
-        ? readClaim(database, params.store, params.canonicalKey, params.canonicalKey)
-        : undefined;
-      if (
-        currentAliases.some(
-          (claim, index) => !claim || !claimsMatch(claim, params.aliases[index]!),
-        ) ||
-        (params.canonical &&
-          (!currentCanonical || !claimsMatch(currentCanonical, params.canonical)))
-      ) {
-        return;
-      }
-      if (!currentCanonical) {
-        writeMigratedSessionClaim(database, params.canonicalKey, params.winner.entry);
-      }
-      deleteLegacySessionEntryRows(
-        database,
-        params.aliases.map((claim) => claim.key),
-        params.canonicalKey,
-        { rehomeMembers: true },
-      );
-      committed = true;
-    },
-    { agentId: params.store.databaseAgentId, env: params.env, path: params.store.path },
-    { operationLabel: "session-migration.legacy-main-in-place" },
-  );
-  return committed;
+}): Promise<boolean> {
+  const scope = resolveLegacyMainMigrationWriterScope(params.store, params.env);
+  return await runExclusiveSqliteSessionWrite(scope, async () => {
+    let committed = false;
+    runOpenClawAgentWriteTransaction(
+      (database) => {
+        const currentAliases = params.aliases.map((claim) =>
+          readClaim(database, params.store, claim.key, params.canonicalKey),
+        );
+        const currentCanonical = params.canonical
+          ? readClaim(database, params.store, params.canonicalKey, params.canonicalKey)
+          : undefined;
+        if (
+          currentAliases.some(
+            (claim, index) => !claim || !claimsMatch(claim, params.aliases[index]!),
+          ) ||
+          (params.canonical &&
+            (!currentCanonical || !claimsMatch(currentCanonical, params.canonical)))
+        ) {
+          return;
+        }
+        if (!currentCanonical) {
+          writeMigratedSessionClaim(database, params.canonicalKey, params.winner.entry);
+        }
+        deleteLegacySessionEntryRows(
+          database,
+          params.aliases.map((claim) => claim.key),
+          params.canonicalKey,
+          { rehomeMembers: true },
+        );
+        committed = true;
+      },
+      scope,
+      { operationLabel: "session-migration.legacy-main-in-place" },
+    );
+    return committed;
+  });
 }
 
 async function copyClaimCrossStore(params: {
@@ -173,7 +188,7 @@ async function copyClaimCrossStore(params: {
   await importSqliteSessionRows({
     agentId: params.destination.databaseAgentId,
     env: params.env,
-    storePath: params.destination.path,
+    storePath: params.destination.ownerStorePath,
     sessionKey: params.canonicalKey,
     entry: params.source.entry,
     skipIfExists: true,
@@ -205,49 +220,48 @@ async function deleteExpectedClaim(claim: SessionClaim): Promise<boolean> {
       eventJson: claim.eventRows.map((row) => row.eventJson),
     },
     requireWriteSuccess: true,
-    storePath: claim.store.path,
+    storePath: claim.store.ownerStorePath,
     target: { canonicalKey: claim.key, storeKeys: [claim.key] },
   });
   return result.deleted;
 }
 
-function quarantineClaim(params: {
+async function quarantineClaim(params: {
   claim: SessionClaim;
   env: NodeJS.ProcessEnv;
   ownerAgentId: string;
-}): string | undefined {
-  let quarantineKey: string | undefined;
-  runOpenClawAgentWriteTransaction(
-    (database) => {
-      const fresh = readClaim(
-        database,
-        params.claim.store,
-        params.claim.key,
-        params.claim.canonicalKey,
-      );
-      if (!fresh || !claimsMatch(fresh, params.claim)) {
-        return;
-      }
-      for (let index = 1; ; index += 1) {
-        const candidate = `agent:${params.ownerAgentId}:legacy-main-conflict-${index}`;
-        if (!readExactSessionEntryRow(database, candidate)) {
-          quarantineKey = candidate;
-          break;
+}): Promise<string | undefined> {
+  const scope = resolveLegacyMainMigrationWriterScope(params.claim.store, params.env);
+  return await runExclusiveSqliteSessionWrite(scope, async () => {
+    let quarantineKey: string | undefined;
+    runOpenClawAgentWriteTransaction(
+      (database) => {
+        const fresh = readClaim(
+          database,
+          params.claim.store,
+          params.claim.key,
+          params.claim.canonicalKey,
+        );
+        if (!fresh || !claimsMatch(fresh, params.claim)) {
+          return;
         }
-      }
-      writeMigratedSessionClaim(database, quarantineKey, params.claim.entry);
-      deleteLegacySessionEntryRows(database, [params.claim.key], quarantineKey, {
-        rehomeMembers: true,
-      });
-    },
-    {
-      agentId: params.claim.store.databaseAgentId,
-      env: params.env,
-      path: params.claim.store.path,
-    },
-    { operationLabel: "session-migration.legacy-main-quarantine" },
-  );
-  return quarantineKey;
+        for (let index = 1; ; index += 1) {
+          const candidate = `agent:${params.ownerAgentId}:legacy-main-conflict-${index}`;
+          if (!readExactSessionEntryRow(database, candidate)) {
+            quarantineKey = candidate;
+            break;
+          }
+        }
+        writeMigratedSessionClaim(database, quarantineKey, params.claim.entry);
+        deleteLegacySessionEntryRows(database, [params.claim.key], quarantineKey, {
+          rehomeMembers: true,
+        });
+      },
+      scope,
+      { operationLabel: "session-migration.legacy-main-quarantine" },
+    );
+    return quarantineKey;
+  });
 }
 
 export async function processIdenticalClaims(params: {
@@ -282,13 +296,13 @@ export async function processIdenticalClaims(params: {
   if (!canonical && destinationAliases.length > 0) {
     const inPlaceWinner = freshestClaim(destinationAliases);
     if (
-      !migrateClaimsInPlace({
+      !(await migrateClaimsInPlace({
         aliases: destinationAliases,
         canonicalKey: params.canonicalKey,
         env: params.env,
         store: params.destination,
         winner: inPlaceWinner,
-      })
+      }))
     ) {
       return {
         kind: "divergent-aliases",
@@ -362,14 +376,14 @@ export async function processIdenticalClaims(params: {
   }
   if (params.canonical && destinationAliases.length > 0) {
     if (
-      !migrateClaimsInPlace({
+      !(await migrateClaimsInPlace({
         aliases: destinationAliases,
         canonical: params.canonical,
         canonicalKey: params.canonicalKey,
         env: params.env,
         store: params.destination,
         winner: params.canonical,
-      })
+      }))
     ) {
       return {
         kind: "divergent-canonical",
@@ -431,7 +445,7 @@ export async function repairDivergentClaims(params: {
     }
     if (claimsMatch(claim, canonical)) {
       const cleaned = samePhysicalStore(claim.store, params.destination)
-        ? migrateClaimsInPlace({
+        ? await migrateClaimsInPlace({
             aliases: [claim],
             canonical,
             canonicalKey: params.canonicalKey,
@@ -445,7 +459,7 @@ export async function repairDivergentClaims(params: {
       }
       continue;
     }
-    const quarantineKey = quarantineClaim({
+    const quarantineKey = await quarantineClaim({
       claim,
       env: params.env,
       ownerAgentId: params.ownerAgentId,

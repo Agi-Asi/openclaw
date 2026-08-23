@@ -17,6 +17,7 @@ import {
   type PluginTrustedToolPolicyRegistration,
 } from "./host-hooks.js";
 import { validateControlUiNativeRoutePlacement } from "./registry-control-ui-policy.js";
+import { createSessionLifecycleRegistrars } from "./registry-registrars-session-lifecycle.js";
 import type { PluginRegistryState } from "./registry-state.js";
 import type {
   PluginRecord,
@@ -30,7 +31,6 @@ import {
   normalizePluginToolContractNames,
 } from "./tool-contracts.js";
 import { normalizePluginToolMatcher } from "./tool-hook-matcher.js";
-import type { PluginConversationBindingResolvedEvent } from "./types.js";
 
 const controlUiSurfaces = new Set<PluginControlUiDescriptor["surface"]>([
   "session",
@@ -71,6 +71,8 @@ function normalizeHostHookStringList(value: unknown): string[] | undefined | nul
 
 export function createHostRegistrars(state: PluginRegistryState) {
   const { registry, registryParams, pushDiagnostic } = state;
+  const { registerConversationBindingResolvedHandler, registerSessionDeletionFinalizer } =
+    createSessionLifecycleRegistrars(state);
 
   const validateSessionActionSchema = (
     record: PluginRecord,
@@ -690,20 +692,6 @@ export function createHostRegistrars(state: PluginRegistryState) {
     } satisfies PluginSessionActionRegistryRegistration);
   };
 
-  const registerConversationBindingResolvedHandler = (
-    record: PluginRecord,
-    handler: (event: PluginConversationBindingResolvedEvent) => void | Promise<void>,
-  ) => {
-    registry.conversationBindingResolvedHandlers.push({
-      pluginId: record.id,
-      pluginName: record.name,
-      pluginRoot: record.rootDir,
-      handler,
-      source: record.source,
-      rootDir: record.rootDir,
-    });
-  };
-
   return {
     registerSessionExtension,
     registerTrustedToolPolicy,
@@ -715,5 +703,6 @@ export function createHostRegistrars(state: PluginRegistryState) {
     registerSessionSchedulerJob,
     registerSessionAction,
     registerConversationBindingResolvedHandler,
+    registerSessionDeletionFinalizer,
   };
 }

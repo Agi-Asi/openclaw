@@ -69,12 +69,14 @@ export async function retainCodexAppServerBindingSubscription(
     client,
     threadId,
     ownership?.release ??
-      (async (releasedThreadId) => {
+      (async (releasedThreadId, assertCurrent) => {
         const unsubscribed = await unsubscribeCodexThreadBestEffort(client, {
           threadId: releasedThreadId,
           timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
+          assertCurrent,
         });
         if (!unsubscribed) {
+          assertCurrent?.();
           await closeCodexStartupClientBestEffort(client);
           throw new CodexAppServerUnsafeSubscriptionError(
             `Codex thread subscription could not be released: ${releasedThreadId}`,

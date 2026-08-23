@@ -98,6 +98,24 @@ type ChannelPlugin = import("../channels/plugins/types.plugin.js").ChannelPlugin
 
 export type PluginTextTransformRegistration = PluginTextTransforms;
 
+export type PluginSessionDeletionEvent = Readonly<{
+  agentId: string;
+  agentHarnessId: string;
+  sessionKey: string;
+  sessionId: string;
+  lifecycleRevision?: string;
+}>;
+
+export type PluginSessionDeletionFinalizer = (
+  event: PluginSessionDeletionEvent,
+  context: Readonly<{ assertCurrent: () => void }>,
+) => void | Promise<void>;
+
+export type PluginSessionDeletionRegistration = Readonly<{
+  agentHarnessId: string;
+  handler: PluginSessionDeletionFinalizer;
+}>;
+
 type OpenClawPluginSessionStateApi = {
   /** Register plugin-owned session state projected into Gateway session rows. */
   registerSessionExtension: (extension: PluginSessionExtensionRegistration) => void;
@@ -304,6 +322,8 @@ export type OpenClawPluginApi = {
   onConversationBindingResolved: (
     handler: (event: PluginConversationBindingResolvedEvent) => void | Promise<void>,
   ) => void;
+  /** Register awaited committed-session cleanup for this plugin's agent harness. */
+  onSessionDeleted?: (registration: PluginSessionDeletionRegistration) => void;
   /**
    * Register a custom command that bypasses the LLM agent.
    * Plugin commands are processed before built-in commands and before agent invocation.

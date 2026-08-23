@@ -33,15 +33,18 @@ import type {
   SessionEntryReplacementUpdate,
   SessionEntryStatus,
 } from "./session-accessor.sqlite-contract.js";
-import { sqliteSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
 import {
+  captureSessionEntryDeletion,
   deleteLegacySessionEntryRows,
   deleteSessionEntryRows,
+  rehomeSessionWindows,
+} from "./session-accessor.sqlite-entry-delete.js";
+import { sqliteSessionEntriesEqual } from "./session-accessor.sqlite-entry-equality.js";
+import {
   readExactSessionEntryJson,
   readExactSessionEntryRow,
   readSessionEntryCount,
   readSessionEntryStore,
-  rehomeSessionWindows,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";
 import { emitArchivedTranscriptUpdates } from "./session-accessor.sqlite-events.js";
@@ -378,6 +381,9 @@ export async function applySessionEntryLifecycleMutation(params: {
           if (appended !== 1) {
             throw new Error(`Failed to append reset boundary for ${sessionKey}`);
           }
+        }
+        if (sameKeyRemoval && currentEntry?.sessionId !== entry.sessionId) {
+          captureSessionEntryDeletion(transactionDb, sessionKey, "replace");
         }
         writeSessionEntry(transactionDb, sessionKey, entry, {
           allowStoredAliases: params.allowCanonicalRepair === true,

@@ -19,6 +19,7 @@ import {
 } from "../config/sessions/transcript-tree.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HealthFinding, HealthRepairEffect } from "../flows/health-checks.js";
+import { runPostSessionPluginDoctorStateRepairs } from "../infra/state-migrations.doctor.js";
 import { shortenHomePath } from "../utils.js";
 import {
   repairCanonicalSessionKeys,
@@ -36,6 +37,7 @@ import {
 import {
   DoctorSqliteMaintenanceLockUnavailableError,
   withDoctorSqliteMaintenanceLock,
+  type DoctorSqliteMaintenanceAuthority,
 } from "./doctor-sqlite-maintenance-lock.js";
 import { isLegacyCodexProviderId } from "./doctor/shared/codex-route-model-ref.js";
 
@@ -544,7 +546,7 @@ async function noteSessionSqliteMigrationHealth(params: {
         >
       >
     | undefined;
-  const runSessionSqlite = async () => {
+  const runSessionSqlite = async (maintenanceAuthority?: DoctorSqliteMaintenanceAuthority) => {
     const report = await runDoctorSessionSqlite({
       allAgents: true,
       ...(params.cfg ? { cfg: params.cfg } : {}),
@@ -580,6 +582,22 @@ async function noteSessionSqliteMigrationHealth(params: {
       cfg: params.cfg ?? {},
       env: params.env,
     });
+    if (params.shouldRepair) {
+      if (!maintenanceAuthority) {
+        throw new Error(
+          "Post-session plugin repair requires current SQLite maintenance ownership.",
+        );
+      }
+      const pluginRepair = await runPostSessionPluginDoctorStateRepairs({
+        config: params.cfg ?? {},
+        env: params.env,
+        maintenanceAuthority,
+      });
+      const messages = [...pluginRepair.changes, ...pluginRepair.warnings];
+      if (messages.length > 0) {
+        note(messages.map((message) => `- ${message}`).join("\n"), "Plugin session repair");
+      }
+    }
     return report;
   };
   let report: Awaited<ReturnType<typeof runSessionSqlite>>;

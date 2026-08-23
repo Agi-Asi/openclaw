@@ -40,6 +40,7 @@ import type {
   PluginManifestDashboardDataBinding,
   PluginManifestMcpServer,
 } from "./manifest.js";
+import type { PluginSessionDeletionFinalizer } from "./plugin-api.types.js";
 import type { PluginKind } from "./plugin-kind.types.js";
 import type {
   ContextEngineRegistration,
@@ -460,6 +461,12 @@ type PluginConversationBindingResolvedHandlerRegistration = {
   rootDir?: string;
 };
 
+type PluginSessionDeletionFinalizerRegistration = {
+  agentHarnessId: string;
+  record: PluginRecord;
+  handler: PluginSessionDeletionFinalizer;
+};
+
 export type PluginRecord = {
   id: string;
   name: string;
@@ -591,6 +598,7 @@ export type PluginRegistry = {
   sessionSchedulerJobs: PluginSessionSchedulerJobRegistryRegistration[];
   sessionActions: PluginSessionActionRegistryRegistration[];
   conversationBindingResolvedHandlers: PluginConversationBindingResolvedHandlerRegistration[];
+  sessionDeletionFinalizers: PluginSessionDeletionFinalizerRegistration[];
   diagnostics: PluginDiagnostic[];
 };
 

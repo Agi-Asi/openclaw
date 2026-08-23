@@ -94,6 +94,7 @@ export function loadExactSessionEntryReadOnlyResult(
 
 type SessionIdentityEvidenceProbe = {
   agentId: string;
+  env?: NodeJS.ProcessEnv;
   sessionId: string;
   sessionKey: string;
   storePath: string;

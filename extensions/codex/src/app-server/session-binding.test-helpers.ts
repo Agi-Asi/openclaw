@@ -39,6 +39,10 @@ export function createCodexTestBindingStateStore(): PluginStateSyncKeyedStore<St
       return value;
     },
     delete: (key) => values.delete(key),
+    deleteIf(key, predicate) {
+      const current = values.get(key);
+      return current !== undefined && predicate(current) ? values.delete(key) : false;
+    },
     entries: () => [...values].map(([key, value]) => ({ key, value, createdAt: 0 })),
     clear: () => values.clear(),
   };

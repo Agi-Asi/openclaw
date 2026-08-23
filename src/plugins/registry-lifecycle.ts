@@ -24,6 +24,9 @@ export function markPluginRegistryActive(registry: PluginRegistry | null | undef
     // Every activation owns a fresh opaque generation. A retired closure cannot
     // regain authority merely because the same registry object becomes active.
     registryEpochs.set(registry, Object.freeze({}));
+    for (const { record } of registry.sessionDeletionFinalizers) {
+      activatePluginRecordLifecycleEpoch(registry, record);
+    }
   }
 }
 
@@ -41,6 +44,22 @@ export function activatePluginRecordLifecycleEpoch(
   epochs.set(record, epoch);
   recordEpochs.set(registry, epochs);
   return epoch;
+}
+
+/** Capture existing owner authority; observation must never reactivate a revoked record. */
+export function capturePluginLifecycleAuthority(
+  registry: PluginRegistry,
+  record?: PluginRecord,
+): (() => boolean) | undefined {
+  const registryEpoch = registryEpochs.get(registry);
+  const recordEpoch = record && recordEpochs.get(registry)?.get(record);
+  if (!registryEpoch || retiredRegistries.has(registry) || (record && !recordEpoch)) {
+    return undefined;
+  }
+  return () =>
+    !retiredRegistries.has(registry) &&
+    registryEpochs.get(registry) === registryEpoch &&
+    (!record || recordEpochs.get(registry)?.get(record) === recordEpoch);
 }
 
 /** Return an epoch only while its exact registry activation and record remain current. */

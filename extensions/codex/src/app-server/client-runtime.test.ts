@@ -343,6 +343,36 @@ describe("Codex app-server client runtime", () => {
     expect(isCodexAppServerLiveThreadClaimed(client, "thread-direct")).toBe(false);
   });
 
+  it.each([
+    { boundary: "retained-thread release", failAt: 1 },
+    { boundary: "native unsubscribe request", failAt: 2 },
+  ])("fences stale plugin authority immediately before $boundary", async ({ failAt }) => {
+    const request = vi.fn(async () => ({}));
+    const client = {
+      request,
+      addCloseHandler: vi.fn(),
+      addNotificationHandler: vi.fn(),
+      addRequestHandler: vi.fn(),
+    } as unknown as CodexAppServerClient;
+    ensureCodexAppServerClientRuntime(client, { agentDir: "/tmp/agent" });
+    await retainCodexAppServerLiveThread(client, "thread-owned");
+
+    let checks = 0;
+    const assertCurrent = () => {
+      checks += 1;
+      if (checks === failAt) {
+        throw new Error("plugin registration was replaced");
+      }
+    };
+    await expect(
+      releaseCodexAppServerLiveThread(client, "thread-owned", assertCurrent),
+    ).rejects.toThrow("plugin registration was replaced");
+
+    expect(request).not.toHaveBeenCalled();
+    await expect(releaseCodexAppServerLiveThread(client, "thread-owned")).resolves.toBe(true);
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it("clears claimed ownership when Codex closes the thread or its physical client", async () => {
     const harness = createClientHarness();
     clients.push(harness.client);

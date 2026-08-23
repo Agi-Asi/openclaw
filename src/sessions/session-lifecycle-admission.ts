@@ -436,56 +436,10 @@ export async function beginSessionWorkAdmission(params: {
     run: async () => {
       await params.assertAllowed();
       // assertAllowed can yield while a host suspension acquires its fence.
-      // Recheck immediately before registration to close that admission race.
+      // Recheck before queueing this work on the session-owner lane.
       if (isGatewaySubordinateWorkAdmissionClosed()) {
         throw new GatewayDrainingError();
       }
-      let resolveReleased = () => {};
-      const admission: SessionWorkAdmission = {
-        handoffIds: new Set(),
-        identities: new Set(identities),
-        interrupt: params.onInterrupt,
-        interrupted: false,
-        released: new Promise<void>((resolve) => {
-          resolveReleased = resolve;
-        }),
-      };
-      for (const identity of identities) {
-        const active = ACTIVE_SESSION_WORK_ADMISSIONS.get(identity) ?? new Set();
-        active.add(admission);
-        ACTIVE_SESSION_WORK_ADMISSIONS.set(identity, active);
-      }
-      let released = false;
-      const release = () => {
-        if (released) {
-          return;
-        }
-        released = true;
-        for (const identity of identities) {
-          const active = ACTIVE_SESSION_WORK_ADMISSIONS.get(identity);
-          active?.delete(admission);
-          if (!active?.size) {
-            ACTIVE_SESSION_WORK_ADMISSIONS.delete(identity);
-          }
-        }
-        clearSessionWorkAdmissionHandoffs(admission);
-        resolveReleased();
-      };
-      const lease: SessionWorkAdmissionLease = {
-        createHandoff: () => {
-          if (released) {
-            throw new Error("cannot hand off a released session work admission");
-          }
-          return createSessionWorkAdmissionHandoff(admission, lease);
-        },
-        release,
-        released: admission.released,
-        run: async <T>(run: () => Promise<T>) => {
-          const current = new Set(CURRENT_SESSION_WORK_ADMISSIONS.getStore());
-          current.add(admission);
-          return await CURRENT_SESSION_WORK_ADMISSIONS.run(current, run);
-        },
-      };
       const signal = params.signal;
       let writerBarrierStarted = false;
       let removeAbortListener = () => {};
@@ -509,24 +463,73 @@ export async function beginSessionWorkAdmission(params: {
               }
             })
           : undefined;
-        // Register before crossing the writer barrier. Earlier maintenance then
-        // either preserves this admission or commits first and fails revalidation.
+        // Storage owners and admissions publish authority on the same lane, so
+        // maintenance cannot snapshot preserve keys between validation and registration.
         const writerBarrier = runExclusiveSessionStoreWrite(
           params.scope,
           async () => {
             writerBarrierStarted = true;
-            params.signal?.throwIfAborted();
+            signal?.throwIfAborted();
             await (params.revalidateAllowed ?? params.assertAllowed)();
+            signal?.throwIfAborted();
+            // Suspension can close while the final owner validation awaits.
+            if (isGatewaySubordinateWorkAdmissionClosed()) {
+              throw new GatewayDrainingError();
+            }
+
+            let resolveReleased = () => {};
+            const admission: SessionWorkAdmission = {
+              handoffIds: new Set(),
+              identities: new Set(identities),
+              interrupt: params.onInterrupt,
+              interrupted: false,
+              released: new Promise<void>((resolve) => {
+                resolveReleased = resolve;
+              }),
+            };
+            let released = false;
+            const release = () => {
+              if (released) {
+                return;
+              }
+              released = true;
+              for (const identity of identities) {
+                const active = ACTIVE_SESSION_WORK_ADMISSIONS.get(identity);
+                active?.delete(admission);
+                if (!active?.size) {
+                  ACTIVE_SESSION_WORK_ADMISSIONS.delete(identity);
+                }
+              }
+              clearSessionWorkAdmissionHandoffs(admission);
+              resolveReleased();
+            };
+            const lease: SessionWorkAdmissionLease = {
+              createHandoff: () => {
+                if (released) {
+                  throw new Error("cannot hand off a released session work admission");
+                }
+                return createSessionWorkAdmissionHandoff(admission, lease);
+              },
+              release,
+              released: admission.released,
+              run: async <T>(run: () => Promise<T>) => {
+                const current = new Set(CURRENT_SESSION_WORK_ADMISSIONS.getStore());
+                current.add(admission);
+                return await CURRENT_SESSION_WORK_ADMISSIONS.run(current, run);
+              },
+            };
+            for (const identity of identities) {
+              const active = ACTIVE_SESSION_WORK_ADMISSIONS.get(identity) ?? new Set();
+              active.add(admission);
+              ACTIVE_SESSION_WORK_ADMISSIONS.set(identity, active);
+            }
+            return lease;
           },
           // Writer-owned rollover callbacks can open replacement admissions.
           // Reenter that lane or the writer waits on work queued behind itself.
           { reentrant: true },
         );
-        await (queuedAbort ? Promise.race([writerBarrier, queuedAbort]) : writerBarrier);
-        return lease;
-      } catch (error) {
-        release();
-        throw error;
+        return await (queuedAbort ? Promise.race([writerBarrier, queuedAbort]) : writerBarrier);
       } finally {
         removeAbortListener();
       }

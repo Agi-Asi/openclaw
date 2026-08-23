@@ -2,9 +2,11 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { runOpenClawAgentWriteTransaction } from "../../state/openclaw-agent-db.js";
 import {
   deleteLegacySessionEntryRows,
+  rehomeSessionWindows,
+} from "./session-accessor.sqlite-entry-delete.js";
+import {
   normalizeLifecycleTarget,
   readSessionIdentitySnapshot,
-  rehomeSessionWindows,
   resolveLifecyclePrimaryEntry,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";

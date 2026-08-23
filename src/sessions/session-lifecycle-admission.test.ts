@@ -18,6 +18,7 @@ import {
   getSessionWorkAdmissionRelease,
   hasOnlySessionLifecycleMutationKindActive,
   interruptSessionWorkAdmissions,
+  isCompetingSessionWorkAdmissionActive,
   isSessionLifecycleMutationActive,
   isSessionWorkAdmissionActive,
   runExclusiveSessionLifecycleMutation,
@@ -63,6 +64,42 @@ it("waits for a competing session admission outside the caller context", async (
   await release;
   await Promise.resolve();
   expect(settled).toBe(true);
+});
+
+it("distinguishes the caller's admission from a competing owner across session aliases", async () => {
+  const scope = "store-competing-admission-owner";
+  const sessionKey = "agent:main:competing-admission-owner";
+  const sessionId = "session-competing-admission-owner";
+  const admission = await beginSessionWorkAdmission({
+    scope,
+    identities: [sessionKey, sessionId],
+    assertAllowed: () => {},
+  });
+
+  try {
+    expect(isCompetingSessionWorkAdmissionActive(scope, [sessionId])).toBe(true);
+    await admission.run(async () => {
+      expect(isCompetingSessionWorkAdmissionActive(scope, [sessionKey, sessionId])).toBe(false);
+      const competing = await beginSessionWorkAdmission({
+        scope,
+        identities: [sessionKey],
+        assertAllowed: () => {},
+      });
+      try {
+        expect(isCompetingSessionWorkAdmissionActive(scope, [sessionKey])).toBe(true);
+        await competing.run(async () => {
+          expect(isCompetingSessionWorkAdmissionActive(scope, [sessionKey])).toBe(false);
+        });
+      } finally {
+        competing.release();
+      }
+      expect(isCompetingSessionWorkAdmissionActive(scope, [sessionKey])).toBe(false);
+    });
+  } finally {
+    admission.release();
+  }
+
+  expect(isCompetingSessionWorkAdmissionActive(scope, [sessionId])).toBe(false);
 });
 
 it("atomically hands admitted work across an interrupted RPC boundary", async () => {
@@ -440,6 +477,36 @@ it("rejects an admission that resumes after suspension closes the async gap", as
   resetGatewayWorkAdmission();
 });
 
+it("rejects an admission when suspension closes during owner-lane revalidation", async () => {
+  resetGatewayWorkAdmission();
+  const scope = "store-suspend-revalidation-race";
+  const identities = ["session-suspend-revalidation-race"];
+  const revalidationStarted = createDeferred();
+  const releaseRevalidation = createDeferred();
+  const admission = beginSessionWorkAdmission({
+    scope,
+    identities,
+    assertAllowed: () => {},
+    revalidateAllowed: async () => {
+      revalidationStarted.resolve();
+      await releaseRevalidation.promise;
+    },
+  });
+  await revalidationStarted.promise;
+  const suspension = tryBeginGatewaySuspendAdmission(() => {});
+
+  try {
+    expect(suspension?.commit()).toBe(true);
+    releaseRevalidation.resolve();
+    await expect(admission).rejects.toMatchObject({ name: "GatewayDrainingError" });
+    expect(isSessionWorkAdmissionActive(scope, identities)).toBe(false);
+  } finally {
+    releaseRevalidation.resolve();
+    suspension?.release();
+    resetGatewayWorkAdmission();
+  }
+});
+
 it("lets an admitted root enter session work while suspension preparation refuses new roots", async () => {
   resetGatewayWorkAdmission();
   const continueRoot = createDeferred();
@@ -473,12 +540,13 @@ it("lets an admitted root enter session work while suspension preparation refuse
   }
 });
 
-it("registers active work before waiting for the store writer barrier", async () => {
+it("waits for earlier session-store writes before admitting work", async () => {
   const storePath = "store-writer-barrier";
   const writerStarted = createDeferred();
   const releaseWriter = createDeferred();
   const firstValidation = createDeferred();
   let validationCount = 0;
+  let admitted = false;
   const writer = runExclusiveSessionStoreWrite(storePath, async () => {
     writerStarted.resolve();
     await releaseWriter.promise;
@@ -495,15 +563,19 @@ it("registers active work before waiting for the store writer barrier", async ()
       }
     },
   });
+  void admissionPromise.then(() => {
+    admitted = true;
+  });
   await firstValidation.promise;
   await Promise.resolve();
-
-  expect(isSessionWorkAdmissionActive(storePath, ["session-writer-barrier"])).toBe(true);
+  expect(admitted).toBe(false);
 
   releaseWriter.resolve();
   const admission = await admissionPromise;
   try {
     expect(validationCount).toBe(2);
+    expect(admitted).toBe(true);
+    expect(isSessionWorkAdmissionActive(storePath, ["session-writer-barrier"])).toBe(true);
   } finally {
     admission.release();
     await writer;
@@ -587,7 +659,6 @@ it("rejects and releases an admission invalidated by an earlier store writer", a
   });
   await firstValidation.promise;
   await Promise.resolve();
-  expect(isSessionWorkAdmissionActive(storePath, ["session-writer-revalidation"])).toBe(true);
 
   releaseWriter.resolve();
   await writer;
