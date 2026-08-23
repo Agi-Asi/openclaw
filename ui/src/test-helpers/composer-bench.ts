@@ -1773,6 +1773,7 @@ function renderBench(): void {
   stage.style.setProperty("--composer-bench-width", `${state.width}px`);
   stage.dataset.composerBenchSurface = state.surface;
   stage.dataset.composerBenchWidth = state.width === 1200 ? "desktop" : "custom";
+  stage.dataset.composerBenchMenu = state.menu;
   stage.dataset.composerBenchAttachments = state.attachments;
   stage.dataset.composerProductionOwner =
     state.surface === "chat"

@@ -476,6 +476,11 @@ body {
   width: min(100%, var(--composer-bench-width, 640px));
 }
 
+.composer-bench__stage[data-composer-bench-menu="slash"] .composer-bench__surface,
+.composer-bench__stage[data-composer-bench-menu="skills"] .composer-bench__surface {
+  transform: translateY(clamp(56px, 10vh, 80px));
+}
+
 .composer-bench__stage[data-composer-bench-width="desktop"] .composer-bench__surface {
   width: 100%;
 }
