@@ -100,11 +100,14 @@ function renderCapabilityToggleRow(options: {
   title: string | null | undefined;
   note?: TemplateResult | typeof nothing;
   icon?: TemplateResult;
+  checkbox?: boolean;
 }) {
   return html`
     <wa-dropdown-item
       class="agent-chat__capability-menu-item agent-chat__capability-menu-toggle"
       value=${options.value}
+      type=${options.checkbox ? "checkbox" : "normal"}
+      .checked=${options.checked}
       ?disabled=${options.disabled}
       title=${options.title ?? ""}
     >
@@ -121,6 +124,7 @@ function renderCapabilityToggleRow(options: {
         .checked=${options.checked}
         ?disabled=${options.disabled}
         aria-label=${options.label}
+        aria-hidden=${options.checkbox ? "true" : nothing}
       ></wa-switch>
     </wa-dropdown-item>
   `;
@@ -180,6 +184,7 @@ function renderRootView(props: ChatComposerPlusMenuProps) {
       disabled: props.mutationBlockedReason !== null,
       title: props.mutationBlockedReason,
       icon: icons.globe,
+      checkbox: true,
     })}
     ${menuDivider()}
     <wa-dropdown-item class="agent-chat__capability-menu-item" value="manage-plugins">
