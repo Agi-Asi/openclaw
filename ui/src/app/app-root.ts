@@ -61,28 +61,7 @@ function renderConnectingSplash(status?: string) {
   `;
 }
 
-function renderConnectingShell() {
-  return html`<div class="shell shell--chat connect-shell-skeleton" aria-busy="true">
-    <aside class="shell-nav" aria-hidden="true">
-      <div class="sidebar sidebar-shell stack">
-        <div class="skeleton skeleton-line skeleton-line--medium"></div>
-        <div class="skeleton skeleton-line skeleton-line--long"></div>
-        <div class="skeleton skeleton-line skeleton-line--short"></div>
-      </div>
-    </aside>
-    <main class="content content--chat" role="status" aria-label=${t("common.loading")}>
-      <div class="stack">
-        <div class="skeleton skeleton-line skeleton-line--short"></div>
-        <div class="skeleton skeleton-line skeleton-line--long"></div>
-        <div class="skeleton skeleton-line skeleton-line--medium"></div>
-      </div>
-    </main>
-  </div>`;
-}
-
-// A handshake that resolves faster than this never earns the mascot: the
-// document stays on the plain boot background and goes straight to content,
-// so fast connects cannot flash the splash (duration-token timer below).
+// Fast handshakes never earn the mascot, preventing a one-frame splash.
 const CONNECT_SPLASH_DELAY_MS = 300;
 
 export class OpenClawApp extends OpenClawLightDomElement {
@@ -104,9 +83,6 @@ export class OpenClawApp extends OpenClawLightDomElement {
   private connectSplashTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
   private armDeferredConnectSplash(): void {
-    if (this.connectSplashTimer !== null) {
-      return;
-    }
     this.connectSplashTimer = globalThis.setTimeout(() => {
       this.connectSplashTimer = null;
       this.connectSplashDue = true;
@@ -584,7 +560,11 @@ export class OpenClawApp extends OpenClawLightDomElement {
     }
     if (initialConnectPending) {
       return html`<openclaw-tooltip-provider>
-        ${renderConnectingShell()} ${gatewayUrlConfirmation}
+        <div class="shell" aria-busy="true">
+          <aside class="shell-nav"></aside>
+          <main class="content"></main>
+        </div>
+        ${gatewayUrlConfirmation}
       </openclaw-tooltip-provider>`;
     }
     const shellOwnsRecovery =

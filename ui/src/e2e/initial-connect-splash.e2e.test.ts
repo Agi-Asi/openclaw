@@ -107,8 +107,7 @@ async function traceConnectStartup(page: Page): Promise<
           const surface =
             node.matches(".connect-splash") || node.querySelector(".connect-splash")
               ? "splash"
-              : node.matches(".connect-shell-skeleton") ||
-                  node.querySelector(".connect-shell-skeleton")
+              : node.matches(".shell[aria-busy]") || node.querySelector(".shell[aria-busy]")
                 ? "skeleton"
                 : node.matches("openclaw-app-shell") || node.querySelector("openclaw-app-shell")
                   ? "shell"
