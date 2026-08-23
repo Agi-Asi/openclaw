@@ -11,24 +11,27 @@ class MacosTitlebarControls extends OpenClawLightDomContentsElement {
   @property({ attribute: false }) historyOnly = false;
   @property({ attribute: false }) canGoBack = false;
   @property({ attribute: false }) canGoForward = false;
-  @property({ attribute: false }) newSessionDisabledReason?: string;
   @property({ attribute: false }) onToggleSidebar?: () => void;
   @property({ attribute: false }) onOpenPalette?: () => void;
-  @property({ attribute: false }) onOpenNewSession?: () => void;
 
   override render() {
     const toggleLabel = this.navCollapsed ? t("nav.expand") : t("nav.collapse");
     return html`
-      <nav class="macos-titlebar-controls" @mousedown=${beginNativeWindowDrag}>
-        ${this.historyOnly
-          ? nothing
-          : this.renderButton({
+      <nav
+        class="macos-titlebar-controls ${this.navCollapsed
+          ? "macos-titlebar-controls--nav-collapsed"
+          : ""}"
+        @mousedown=${beginNativeWindowDrag}
+      >
+        ${!this.historyOnly && !this.navCollapsed
+          ? this.renderButton({
               label: toggleLabel,
               icon: icons.panelLeft,
               ariaExpanded: !this.navCollapsed,
               onClick: this.onToggleSidebar,
               className: "macos-titlebar-controls__sidebar-toggle",
-            })}
+            })
+          : nothing}
         ${this.renderButton({
           label: t("nav.back"),
           icon: icons.chevronLeft,
@@ -54,14 +57,11 @@ class MacosTitlebarControls extends OpenClawLightDomContentsElement {
               })}
               ${this.navCollapsed
                 ? this.renderButton({
-                    // While the sidebar rail is collapsed, this mirrors the native
-                    // new-session item and its current Gateway authorization.
-                    label: t("chat.runControls.newSession"),
-                    tooltip: this.newSessionDisabledReason,
-                    icon: icons.plus,
-                    disabled: Boolean(this.newSessionDisabledReason),
-                    onClick: this.onOpenNewSession,
-                    className: "macos-titlebar-controls__new-session",
+                    label: toggleLabel,
+                    icon: icons.panelLeft,
+                    ariaExpanded: false,
+                    onClick: this.onToggleSidebar,
+                    className: "macos-titlebar-controls__sidebar-toggle",
                   })
                 : nothing}
             `

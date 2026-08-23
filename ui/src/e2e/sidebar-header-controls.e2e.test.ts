@@ -141,11 +141,31 @@ suite.define(() => {
         await capture(sidebarHeader, `after-focus-${colorScheme}-crop.png`);
 
         await collapse.click();
+        const collapsedSearch = shellControls.locator(".shell-chrome-controls__search");
         const expand = shellControls.locator(".shell-chrome-controls__nav-toggle");
         const separator = shellControls.locator(".shell-chrome-controls__separator");
+        await expect.poll(() => collapsedSearch.isVisible()).toBe(true);
         await expect.poll(() => expand.isVisible()).toBe(true);
         await expect.poll(() => separator.isVisible()).toBe(true);
-        await expect.poll(() => shellControls.getByRole("button").count()).toBe(1);
+        await expect.poll(() => shellControls.getByRole("button").count()).toBe(2);
+        const collapsedMetrics = await shellControls.getByRole("button").evaluateAll((buttons) =>
+          buttons.map((button) => {
+            const bounds = button.getBoundingClientRect();
+            return {
+              centerY: bounds.y + bounds.height / 2,
+              label: button.getAttribute("aria-label"),
+              left: bounds.left,
+              right: bounds.right,
+            };
+          }),
+        );
+        expect(collapsedMetrics.map(({ label }) => label)).toEqual([
+          "Open command palette",
+          "Expand sidebar",
+        ]);
+        expect(new Set(collapsedMetrics.map(({ centerY }) => centerY)).size).toBe(1);
+        expect(collapsedMetrics[1]!.left - collapsedMetrics[0]!.right).toBe(4);
+        expect(await page.locator(".sidebar-attention--floating").count()).toBe(0);
         await expect
           .poll(() =>
             expand.evaluate((element) => {

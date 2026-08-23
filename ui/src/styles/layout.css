@@ -14,7 +14,9 @@
   --shell-chrome-icon-stroke-width: 1.75px;
   --shell-chrome-plus-icon-size: 19px;
   --shell-chrome-plus-icon-stroke-width: 2px;
-  --shell-chrome-controls-collapsed-width: calc(var(--shell-chrome-control-size) + 10px);
+  --shell-chrome-controls-collapsed-width: calc(
+    var(--shell-chrome-control-size) + var(--shell-chrome-control-size) + 10px
+  );
   /* Expanded navigation owns its controls inside the sidebar header, so nothing
      floats over the content and there is no strip for banners to clear. The
      collapsed shell restores the recovery toggle and reinstates the inset. */
@@ -106,8 +108,8 @@
   display: none;
 }
 
-/* The collapsed web-shell expand control mirrors its native titlebar peer. On
-   older native macOS hosts, it sits below the AppKit drag region. */
+/* Collapsed web chrome keeps search beside the sidebar recovery toggle. On
+   older native macOS hosts, the pair sits below the AppKit drag region. */
 .shell-chrome-controls {
   position: fixed;
   top: 8px;
@@ -164,11 +166,11 @@
 }
 
 .shell-chrome-controls__button svg {
-  width: 18px;
-  height: 18px;
+  width: var(--shell-chrome-icon-size);
+  height: var(--shell-chrome-icon-size);
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--shell-chrome-icon-stroke-width);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -270,7 +272,7 @@ html.openclaw-native-nav:not(.openclaw-native-web-chrome)
   left: var(--shell-chrome-controls-inset);
 }
 
-/* Web-chrome hosts provide the recovery control in the native titlebar. */
+/* Web-chrome hosts provide search and the recovery control in the titlebar. */
 html.openclaw-native-web-chrome .shell-chrome-controls {
   display: none;
 }
@@ -309,6 +311,10 @@ html.openclaw-native-web-chrome .sidebar-brand__search,
 .macos-titlebar-controls__button.topbar-icon-btn {
   width: 28px;
   height: 28px;
+}
+
+.macos-titlebar-controls--nav-collapsed .macos-titlebar-controls__search {
+  margin-left: auto;
 }
 
 .macos-titlebar-controls__button:active:not(:disabled) {

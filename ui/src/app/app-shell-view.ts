@@ -324,10 +324,6 @@ export function renderApplicationShell(host: ShellViewHost) {
   const selectedAgentId = routeAgentIsKnown
     ? routeAgentId
     : normalizeAgentId(context.agentSelection.state.selectedId ?? gatewaySnapshot.assistantAgentId);
-  const newSessionAccess = readSessionMethodAccess(gatewaySnapshot, {
-    method: "sessions.create",
-    params: {},
-  });
   const openNewSession = (agentId: string, target?: NewSessionTarget) => {
     const access = readSessionMethodAccess(context.gateway.snapshot, {
       method: "sessions.create",
@@ -472,12 +468,8 @@ export function renderApplicationShell(host: ShellViewHost) {
               .historyOnly=${settingsTakeover}
               .canGoBack=${host.nativeHistoryState.canGoBack}
               .canGoForward=${host.nativeHistoryState.canGoForward}
-              .newSessionDisabledReason=${newSessionAccess.allowed
-                ? undefined
-                : newSessionAccess.reason}
               .onToggleSidebar=${() => host.toggleNavigationSurface()}
               .onOpenPalette=${() => host.openPalette()}
-              .onOpenNewSession=${() => host.handleNativeNewSession()}
             ></openclaw-macos-titlebar-controls>
           `
         : nothing}
@@ -494,6 +486,16 @@ export function renderApplicationShell(host: ShellViewHost) {
       ${navCollapsed && !onboarding && !settingsTakeover && !mobileNavLayout
         ? html`
             <div class="shell-chrome-controls">
+              <openclaw-tooltip .content=${t("chat.commandPaletteTitle")} .hoverOnly=${true}>
+                <button
+                  type="button"
+                  class="shell-chrome-controls__button shell-chrome-controls__search"
+                  aria-label=${t("chat.openCommandPalette")}
+                  @click=${() => host.openPalette()}
+                >
+                  ${icons.search}
+                </button>
+              </openclaw-tooltip>
               <openclaw-tooltip .content=${`${t("nav.expand")} (⌘B)`} .hoverOnly=${true}>
                 <button
                   type="button"
@@ -553,7 +555,6 @@ export function renderApplicationShell(host: ShellViewHost) {
       >
         ${renderFloatingUpdateCard({
           navigationSurfaceHidden,
-          mobileNavLayout,
           onboarding,
           compact: mergedChatChrome,
           updateAvailable: overlaySnapshot.updateAvailable,
@@ -569,8 +570,6 @@ export function renderApplicationShell(host: ShellViewHost) {
           onRefresh: () => host.refreshControlUi(),
           onHoldUpdate: () => context.overlays.holdUpdate(),
           onReviewUpdate: () => host.navigate("updates"),
-          onNavigate: (routeId) => host.navigate(routeId),
-          onOpenApprovals: () => host.openApprovals(),
         })}
         ${pageActionsBlocked && gatewaySnapshot.phase !== "reload-required"
           ? html`<div class="connection-action-block" role="status" aria-live="polite">

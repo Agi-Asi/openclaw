@@ -569,8 +569,8 @@ suite.define(() => {
       await page.keyboard.press("Escape");
       await expect.poll(() => paletteInput.isVisible()).toBe(false);
 
-      // Expanded navigation owns collapse in its header; collapsed navigation
-      // leaves one recovery toggle in the pane header (there is no icon rail).
+      // Expanded navigation owns its header actions; collapsed navigation
+      // keeps search beside the recovery toggle (there is no icon rail).
       const collapseButton = page.locator(".sidebar-brand__collapse");
       await expect.poll(() => collapseButton.isVisible()).toBe(true);
       await collapseButton.click();
@@ -586,6 +586,9 @@ suite.define(() => {
         .toBe("0px");
       await expect.poll(() => sidebarResizer.count()).toBe(0);
       await expect.poll(() => sidebar.isVisible()).toBe(false);
+      await expect
+        .poll(() => page.locator(".shell-chrome-controls__search").isVisible())
+        .toBe(true);
       const navExpand = page.locator(".shell-chrome-controls__nav-toggle");
       await expect.poll(() => navExpand.isVisible()).toBe(true);
       await expect

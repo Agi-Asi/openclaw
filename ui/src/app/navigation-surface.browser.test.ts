@@ -32,6 +32,11 @@ describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
         <div class="shell shell--nav-collapsed" style="animation: none">
           <div class="shell-chrome-controls">
             <button
+              class="shell-chrome-controls__button shell-chrome-controls__search"
+              type="button"
+              aria-label="Open command palette"
+            ></button>
+            <button
               class="shell-chrome-controls__button shell-chrome-controls__nav-toggle"
               type="button"
               aria-label="Expand navigation"
@@ -41,7 +46,6 @@ describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
           <main class="content">
             ${renderFloatingUpdateCard({
               navigationSurfaceHidden: true,
-              mobileNavLayout: false,
               onboarding: false,
               updateAvailable: null,
               updateBusy: false,
@@ -64,7 +68,7 @@ describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
       document.querySelectorAll<HTMLElement>(".shell-chrome-controls__button"),
     );
     expect(refreshCard).not.toBeNull();
-    expect(buttons).toHaveLength(1);
+    expect(buttons).toHaveLength(2);
 
     const cardBounds = refreshCard!.getBoundingClientRect();
     const buttonBounds = buttons.map((button) => button.getBoundingClientRect());
