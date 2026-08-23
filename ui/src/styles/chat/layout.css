@@ -385,6 +385,7 @@ openclaw-chat-page {
 }
 
 .chat-workspace-conflict-notice {
+  display: block;
   padding: 0;
 }
 
@@ -401,8 +402,8 @@ openclaw-chat-page {
   grid-template-columns: 18px minmax(0, 1fr) 26px 26px;
   align-items: center;
   gap: 10px;
-  min-height: 52px;
-  padding: 0 12px;
+  min-height: 58px;
+  padding: 6px 12px;
   cursor: pointer;
 }
 
@@ -419,8 +420,10 @@ openclaw-chat-page {
 }
 
 .chat-workspace-conflict-notice__content {
+  display: grid;
   gap: 10px;
-  padding: 0 12px 12px 40px;
+  padding: 12px 12px 14px 40px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 54%, transparent);
 }
 
 .chat-workspace-conflict-paths {
@@ -464,6 +467,14 @@ openclaw-chat-page {
 }
 
 @media (max-width: 640px) {
+  .chat-workspace-conflict-paths li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-workspace-conflict-path-actions {
+    flex-wrap: wrap;
+  }
+
   .chat-workspace-conflict-ref,
   .chat-workspace-conflict-commands > div {
     grid-template-columns: minmax(0, 1fr) max-content;
