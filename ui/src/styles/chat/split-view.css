@@ -233,39 +233,93 @@ openclaw-chat-pane {
 }
 
 .chat-pane__people {
+  --chat-pane-people-z-avatar: 0;
+  --chat-pane-people-z-control: 1;
+  --chat-pane-people-z-hover: 2;
   display: inline-flex;
   align-items: center;
 }
 
-.chat-pane__people :is(.session-owner-chip--header, .viewer-avatar--session) {
-  width: 22px;
-  height: 22px;
-  border: 0;
-  box-shadow: 0 0 0 1.5px var(--chat-surface);
+.chat-pane__people
+  :is(
+    .session-owner-chip--header,
+    .viewer-facepile .viewer-avatar--session,
+    .viewer-facepile .viewer-avatar--overflow
+  ) {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--chat-surface);
+  box-shadow: none;
+  transition:
+    transform var(--duration-fast) ease,
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
 }
 
 .chat-pane__people > openclaw-viewer-facepile:not(:first-child) .viewer-facepile {
-  margin-inline-start: -6px;
+  margin-inline-start: -8px;
+}
+
+.chat-pane__people
+  .viewer-facepile
+  > openclaw-tooltip:not(:first-child)
+  > .viewer-facepile__tooltip-anchor
+  .viewer-avatar,
+.chat-pane__people
+  .viewer-facepile
+  > openclaw-tooltip:not(:first-child)
+  > .viewer-avatar--overflow {
+  margin-inline-start: -8px;
+}
+
+.chat-pane__people .viewer-avatar--overflow {
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
 }
 
 .chat-pane__people .chat-pane__sharing-anchor {
   position: relative;
-  z-index: 3;
-  isolation: isolate;
-  margin-inline-start: -6px;
+  z-index: var(--chat-pane-people-z-control);
+  margin-inline-start: 6px;
 }
 
+/* Avatar peers share the base layer; the trailing control owns the one raised
+   layer, keeping overlap deterministic without borrowing global overlay levels. */
 .chat-pane__people > :not(.chat-pane__sharing-anchor) {
   position: relative;
-  z-index: 1;
+  z-index: var(--chat-pane-people-z-avatar);
+}
+
+.chat-pane__people > openclaw-session-owner-chip:hover {
+  z-index: var(--chat-pane-people-z-hover);
+}
+
+.chat-pane__people .viewer-facepile > openclaw-tooltip > :first-child {
+  position: relative;
+  z-index: var(--chat-pane-people-z-avatar);
+}
+
+.chat-pane__people .viewer-facepile > openclaw-tooltip:hover > :first-child {
+  z-index: var(--chat-pane-people-z-hover);
+}
+
+.chat-pane__people
+  :is(
+    openclaw-session-owner-chip:hover .session-owner-chip--header,
+    .viewer-facepile > openclaw-tooltip:hover .viewer-avatar--session,
+    .viewer-facepile > openclaw-tooltip:hover .viewer-avatar--overflow
+  ) {
+  transform: translateY(-2px);
 }
 
 .chat-pane__people .chat-pane__sharing-anchor button.chat-pane__sharing-trigger {
   position: relative;
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 24px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -275,22 +329,23 @@ openclaw-chat-pane {
 
 .chat-pane__people .chat-pane__sharing-trigger::before {
   position: absolute;
-  inset: -1.5px;
-  border: 1px solid currentColor;
+  inset: 0;
+  border: 1px dashed currentColor;
   border-radius: inherit;
   opacity: 0.32;
   content: "";
   pointer-events: none;
-  z-index: 0;
 }
 
-.chat-pane__sharing-trigger-plus {
-  position: relative;
-  z-index: 1;
+.chat-pane__sharing-trigger-icon {
   display: inline-flex;
 }
 
-.chat-pane__sharing-trigger-plus > svg {
+.chat-pane__sharing-tooltip-anchor {
+  display: inline-flex;
+}
+
+.chat-pane__sharing-trigger-icon > svg {
   width: 16px;
   height: 16px;
   overflow: visible;
@@ -307,14 +362,24 @@ openclaw-chat-pane {
 
 .chat-pane__people .chat-pane__sharing-trigger:is(:hover, :focus-visible)::before,
 .chat-pane__people .chat-pane__sharing-menu[open] .chat-pane__sharing-trigger::before {
+  border-style: solid;
   color: var(--muted);
-  opacity: 0.32;
+  opacity: 0.48;
 }
 
 .chat-pane__session-menu-anchor,
 .chat-pane__session-menu-anchor > openclaw-chat-header-session-menu {
   width: 28px;
   height: 28px;
+}
+
+.chat-pane__session-menu-anchor {
+  transform: translateY(1px);
+}
+
+.chat-header-session-menu[open] .chat-header-session-menu__trigger {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
 }
 
 /* House separator treatment: an aria-hidden glyph tinted with --muted, spacing
@@ -433,13 +498,13 @@ openclaw-chat-pane {
 
 .chat-pane__incognito svg,
 .chat-pane__workspace-chip svg {
-  width: 18px;
-  height: 18px;
+  width: var(--shell-chrome-icon-size);
+  height: var(--shell-chrome-icon-size);
   /* Lucide outline icons: without this the paths render browser-default
      black fill, which reads as a solid dark blob on the chip. */
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5px;
+  stroke-width: var(--shell-chrome-icon-stroke-width);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -452,8 +517,8 @@ openclaw-chat-pane {
    matters in practice the escape hatch is a plate applied conditionally, not a
    blanket effect here. */
 .chat-pane__workspace-chip .workspace-icon {
-  width: 18px;
-  height: 18px;
+  width: var(--shell-chrome-icon-size);
+  height: var(--shell-chrome-icon-size);
   flex: 0 0 auto;
   border-radius: 2px;
   object-fit: contain;

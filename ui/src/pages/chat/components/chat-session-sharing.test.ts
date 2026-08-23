@@ -50,6 +50,11 @@ describe("chat session sharing menu", () => {
     );
     const dropdown = root.querySelector("wa-dropdown");
     expect(dropdown).not.toBeNull();
+    expect(
+      (dropdown?.closest("openclaw-tooltip") as (HTMLElement & { content?: string }) | null)
+        ?.content,
+    ).toBe("Visibility");
+    expect(root.querySelector(".chat-pane__sharing-trigger")?.hasAttribute("title")).toBe(false);
     expect(root.textContent).toContain("Shared");
     expect(root.textContent).toContain("Read-only");
     expect(root.textContent).not.toContain("Suggest");

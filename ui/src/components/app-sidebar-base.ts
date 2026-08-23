@@ -58,8 +58,6 @@ export abstract class AppSidebarBase extends OpenClawLightDomContentsElement {
     agentId: string,
     target?: NewSessionTarget,
   ) => void;
-  @property({ attribute: false }) onOpenPalette?: () => void;
-  @property({ attribute: false }) onToggleSidebar?: () => void;
   @property({ attribute: false }) onUpdateSidebarEntries?: (entries: string[]) => void;
   @property({ attribute: false }) onPairMobile?: () => void;
   @property({ attribute: false })

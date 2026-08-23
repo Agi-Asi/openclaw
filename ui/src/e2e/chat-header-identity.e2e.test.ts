@@ -18,33 +18,42 @@ const LONG_TITLE =
 
 /**
  * Session list that puts every header identity state on screen at once: two
- * distinct creators (which is what turns on creator attribution), a project
+ * distinct owners (which is what turns on owner attribution), a project
  * with a resolvable icon, and a long title for the truncation case.
  */
 function identitySessions() {
-  return chatSessionListResponse([
-    {
-      createdActor: { id: "profile-ada", label: "Ada Lovelace", type: "human" },
-      key: "agent:main:session-a",
-      kind: "direct",
-      label: "Header identity trail",
-      spawnedCwd: "/repo/openclaw",
-      updatedAt: 2,
-    },
-    {
-      createdActor: { id: "profile-grace", label: "Grace Hopper", type: "human" },
-      key: "agent:main:session-b",
-      kind: "direct",
-      label: LONG_TITLE,
-      spawnedCwd: "/repo/openclaw",
-      updatedAt: 1,
-    },
-  ]);
+  const owners = [
+    { id: "profile-ada", label: "Ada Lovelace", type: "human" as const },
+    { id: "profile-grace", label: "Grace Hopper", type: "human" as const },
+  ];
+  return {
+    ...chatSessionListResponse([
+      {
+        createdActor: owners[0],
+        key: "agent:main:session-a",
+        kind: "direct",
+        label: "Header identity trail",
+        owner: { actor: owners[0] },
+        spawnedCwd: "/repo/openclaw",
+        updatedAt: 2,
+      },
+      {
+        createdActor: owners[1],
+        key: "agent:main:session-b",
+        kind: "direct",
+        label: LONG_TITLE,
+        owner: { actor: owners[1] },
+        spawnedCwd: "/repo/openclaw",
+        updatedAt: 1,
+      },
+    ]),
+    owners,
+  };
 }
 
 suite.define(() => {
   for (const theme of ["light", "dark"] as const) {
-    it(`groups project, creator, session, and viewers in the ${theme} chat header`, async () => {
+    it(`groups project, session, owner, and viewers in the ${theme} chat header`, async () => {
       const context = await suite.newBrowserContext({
         colorScheme: theme,
         locale: "en-US",
@@ -107,24 +116,26 @@ suite.define(() => {
             }
             return node.getBoundingClientRect();
           };
-          const creator = box(".chat-pane__session-identity .session-owner-chip");
-          const creatorStyle = getComputedStyle(
-            root.querySelector(".chat-pane__session-identity .session-owner-chip")!,
+          const owner = box(".chat-pane__session-controls .session-owner-chip");
+          const ownerStyle = getComputedStyle(
+            root.querySelector(".chat-pane__session-controls .session-owner-chip")!,
           );
           const centerY = (selector: string) => {
             const rect = box(selector);
             return rect.top + rect.height / 2;
           };
           return {
-            creator: { height: creator.height, width: creator.width },
-            creatorShadow: creatorStyle.boxShadow,
+            owner: { height: owner.height, width: owner.width },
+            ownerLeft: owner.left,
+            ownerShadow: ownerStyle.boxShadow,
             menuGlyphCenter: centerY(".chat-pane__session-menu-anchor svg"),
             menuLeft: box(".chat-pane__session-menu-anchor").left,
+            menuRight: box(".chat-pane__session-menu-anchor").right,
             headerCenter: (() => {
               const rect = root.getBoundingClientRect();
               return rect.top + rect.height / 2;
             })(),
-            projectRight: box(".chat-pane__workspace-chip").right,
+            projectRight: box(".chat-pane__workspace-chip .workspace-icon").right,
             titleLeft: box(".chat-pane__session-title").left,
             titleTextLeft: box(".chat-pane__session-title-text").left,
             titleRight: box(".chat-pane__session-title").right,
@@ -135,23 +146,23 @@ suite.define(() => {
           };
         });
 
-        // Reading order is the ownership story: project, then creator, then the
-        // name, then the controls that act on it, then who else is watching.
+        // Reading order is the ownership story: project, then session and its
+        // menu, then the owner and everyone else watching.
         expect(trail.projectRight).toBeLessThan(trail.titleLeft);
         expect(trail.titleRight).toBeLessThanOrEqual(trail.menuLeft + 1);
-        expect(trail.menuLeft).toBeLessThan(trail.viewerLeft);
+        expect(trail.menuRight).toBeLessThanOrEqual(trail.ownerLeft);
+        expect(trail.ownerLeft).toBeLessThan(trail.viewerLeft);
         // One avatar scale across the trail, and no decoration on it.
-        expect(trail.creator).toEqual({ height: 18, width: 18 });
-        expect(trail.viewerHeight).toBe(18);
-        expect(trail.creatorShadow).toBe("none");
-        // The 48px header centers its 28px actions on the chrome centerline, and
-        // the trail lifts its text 1px above that. A button that moved into the
-        // trail must not inherit the lift, or session management would sit a
-        // pixel above every other action in the row.
+        expect(trail.owner.height).toBeCloseTo(26, 4);
+        expect(trail.owner.width).toBeCloseTo(26, 4);
+        expect(trail.viewerHeight).toBeCloseTo(26, 4);
+        expect(trail.ownerShadow).toBe("none");
+        // The menu's explicit 1px optical adjustment stays stable against the
+        // geometric centerline instead of inheriting text-baseline movement.
         expect(
           Math.abs(trail.menuGlyphCenter - trail.headerCenter),
           JSON.stringify(trail),
-        ).toBeLessThanOrEqual(0.5);
+        ).toBeCloseTo(1, 4);
 
         // Renaming edits in place: same row height, same text origin.
         await header.locator(".chat-pane__session-title-button").click();
