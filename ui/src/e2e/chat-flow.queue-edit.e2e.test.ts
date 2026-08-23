@@ -1,3 +1,4 @@
+import type { Locator } from "playwright";
 import { expect, it } from "vitest";
 import {
   createChatFlowE2eSuite,
@@ -11,6 +12,11 @@ import {
 const suite = createChatFlowE2eSuite();
 
 const QUEUED = ["review the migration", "then update the docs", "finally run the smoke"] as const;
+
+async function openQueueEditor(row: Locator) {
+  await row.locator(".chat-queue__more").click();
+  await row.locator('wa-dropdown-item[value="edit"]').click();
+}
 
 suite.define(() => {
   it("edits a queued message in its row and returns it to its place", async () => {
@@ -48,27 +54,60 @@ suite.define(() => {
 
       await composer.fill("a separate composer draft");
 
-      // Double-click is the shortcut; the pencil on the row is the visible path.
       await page.locator(".chat-queue__item").nth(1).dblclick();
 
       const rowEditor = page.locator(".chat-queue__item").nth(1).locator(".chat-queue__edit-input");
       await rowEditor.waitFor({ timeout: 10_000 });
+      expect(
+        await page.locator(".chat-queue__item").nth(1).getAttribute("data-edit-keyboard-focus"),
+      ).toBeNull();
       expect(await rowEditor.inputValue()).toBe(QUEUED[1]);
       expect(await composer.inputValue()).toBe("a separate composer draft");
       // The row stays where it is, marked as the one being edited.
       expect(await queueText()).toEqual([...QUEUED]);
       expect(await page.locator(".chat-queue__item--editing").count()).toBe(1);
-      expect(
-        await page.locator(".chat-queue__item").nth(1).locator(".chat-queue__badge").textContent(),
-      ).toBe("Editing");
 
-      await rowEditor.fill("then update the docs and the changelog");
+      await rowEditor.press("Control+A");
+      await rowEditor.pressSequentially("then update the docs and the changelog");
+      expect(
+        await page.locator(".chat-queue__item").first().locator(".chat-queue__more").isDisabled(),
+      ).toBe(true);
+
+      await composer.dblclick();
+
+      expect(await rowEditor.inputValue()).toBe("then update the docs and the changelog");
+      expect(await page.locator(".chat-queue__item--editing").count()).toBe(1);
       await page.locator(".chat-queue__edit-submit").click();
 
       await expect
         .poll(queueText, { timeout: 10_000 })
         .toEqual([QUEUED[0], "then update the docs and the changelog", QUEUED[2]]);
       expect(await composer.inputValue()).toBe("a separate composer draft");
+
+      const keyboardRow = page.locator(".chat-queue__item").first();
+      const keyboardTrigger = keyboardRow.locator(".chat-queue__more");
+      const keyboardItem = keyboardRow.locator('wa-dropdown-item[value="edit"]');
+      await keyboardTrigger.focus();
+      await page.keyboard.press("Enter");
+      await expect
+        .poll(() =>
+          keyboardItem.evaluate(
+            (item) => item === document.activeElement && item.matches(":focus-visible"),
+          ),
+        )
+        .toBe(true);
+      await page.keyboard.press("Enter");
+
+      const keyboardEditor = keyboardRow.locator(".chat-queue__edit-input");
+      await keyboardEditor.waitFor({ timeout: 10_000 });
+      expect(await keyboardRow.getAttribute("data-edit-keyboard-focus")).toBe("");
+      expect(
+        await keyboardEditor.evaluate((editor) => ({
+          active: editor === document.activeElement,
+          outlineStyle: getComputedStyle(editor).outlineStyle,
+        })),
+      ).toEqual({ active: true, outlineStyle: "solid" });
+      await keyboardEditor.press("Escape");
     } finally {
       await suite.closeBrowserContext(context);
     }
@@ -97,7 +136,7 @@ suite.define(() => {
 
       await composer.fill("a separate composer draft");
       const row = page.locator(".chat-queue__item").nth(1);
-      await row.locator(".chat-queue__edit").click();
+      await openQueueEditor(row);
       const rowEditor = row.locator(".chat-queue__edit-input");
       await rowEditor.waitFor({ timeout: 10_000 });
       await rowEditor.fill("a replacement the operator abandons");
@@ -137,7 +176,7 @@ suite.define(() => {
       }
 
       const row = page.locator(".chat-queue__item").nth(1);
-      await row.locator(".chat-queue__edit").click();
+      await openQueueEditor(row);
       const rowEditor = row.locator(".chat-queue__edit-input");
       await rowEditor.waitFor({ timeout: 10_000 });
       await composer.fill("a separate composer send");
@@ -207,15 +246,25 @@ suite.define(() => {
           '.agent-chat__composer-underlaps[data-tone="warn"] .agent-chat__composer-status-band',
         )
         .waitFor({ timeout: 10_000 });
+      await expect
+        .poll(
+          () =>
+            page
+              .locator(".chat-queue__item .chat-queue__badge", {
+                hasText: "Waiting for reconnect",
+              })
+              .count(),
+          { timeout: 10_000 },
+        )
+        .toBe(4);
 
       const editRow = page.locator(".chat-queue__item", { hasText: "edit before send" });
-      const editButton = editRow.locator(".chat-queue__edit");
-      expect(await editButton.isDisabled()).toBe(false);
-      await editButton.click();
+      await openQueueEditor(editRow);
       // `hasText` stops matching once the row text becomes a textarea value.
       const inlineEditor = page.locator(".chat-queue__edit-input");
       await inlineEditor.waitFor({ timeout: 10_000 });
-      await inlineEditor.fill("edited before send");
+      await inlineEditor.press("Control+A");
+      await inlineEditor.pressSequentially("edited before send");
       await page.locator(".chat-queue__edit-submit").click();
       await page.locator(".chat-queue__item", { hasText: "edited before send" }).waitFor();
 
@@ -297,20 +346,18 @@ suite.define(() => {
         );
       });
       await row.locator(".chat-queue__remove").dblclick();
-      expect(
-        await page.evaluate(
-          () =>
-            (
-              window as Window & {
-                queueRemovalEventTrace?: Array<{ detail: number; rowText?: string }>;
-              }
-            ).queueRemovalEventTrace,
-        ),
-      ).toEqual([
-        { detail: 1, rowText: "remove me" },
-        { detail: 2, rowText: "edited before send" },
-      ]);
+      const removalTrace = await page.evaluate(
+        () =>
+          (
+            window as Window & {
+              queueRemovalEventTrace?: Array<{ detail: number; rowText?: string }>;
+            }
+          ).queueRemovalEventTrace,
+      );
+      expect(removalTrace?.map(({ detail }) => detail)).toEqual([1, 2]);
+      expect(removalTrace?.[0]?.rowText).toBe("remove me");
       await row.waitFor({ state: "detached", timeout: 10_000 });
+      expect(await page.locator(".chat-queue__item--editing").count()).toBe(0);
       await page.getByRole("alert").waitFor({ state: "detached", timeout: 10_000 });
       await expect
         .poll(() => page.locator(".chat-queue__item .chat-queue__text").allTextContents())
@@ -362,6 +409,9 @@ suite.define(() => {
       expect(first.message).toBe("send last");
       const firstRunId = requireString(first.idempotencyKey, "first queued send idempotency key");
       await gateway.resolveDeferred("chat.send", { runId: firstRunId, status: "started" });
+      await expect
+        .poll(() => page.locator(".agent-chat__run-status-announcement").textContent())
+        .toContain("OpenClaw is");
       await gateway.emitChatFinal({ runId: firstRunId, text: "First queued turn completed." });
 
       const second = requireRecord((await waitForRequests(gateway, "chat.send", 3))[2]?.params);
