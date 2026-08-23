@@ -6,6 +6,7 @@ import {
   validateUsersSetAvatarResult,
   validateUsersSetDisplayNameResult,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { ControlUiGitHubError } from "../control-ui-github-api.js";
 import { usersHandlers } from "./users.js";
 
 const linkEmail = vi.hoisted(() => vi.fn());
@@ -166,7 +167,9 @@ describe("users gateway methods", () => {
     };
     const authenticatedGitHubIdentitySync = vi
       .fn()
-      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockRejectedValueOnce(
+        new ControlUiGitHubError(429, "private upstream detail", { retryAfterMs: 42_000 }),
+      )
       .mockImplementationOnce(async () => {
         providerClient.authenticatedUserProfile = {
           profileId: profile.id,
@@ -186,6 +189,7 @@ describe("users gateway methods", () => {
       expect.objectContaining({
         code: "UNAVAILABLE",
         retryable: true,
+        retryAfterMs: 42_000,
         details: { code: "AUTHENTICATED_PROFILE_UNAVAILABLE" },
       }),
     );
