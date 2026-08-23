@@ -15,8 +15,5 @@ describe("Developer Mode plugin registration", () => {
       expect.objectContaining({ id: "code", toolProfile: "coding", codeMode: "code" }),
       expect.objectContaining({ id: "minimal", toolProfile: "minimal", codeMode: "direct" }),
     ]);
-    expect(
-      captured.sessionToolModes.every((mode) => mode.supportedRuntimeIds[0] === "openclaw"),
-    ).toBe(true);
   });
 });

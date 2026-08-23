@@ -1,6 +1,6 @@
 import type { SessionsPatchParams } from "../../packages/gateway-protocol/src/index.js";
 import type { SessionEntry, SessionToolOverrides } from "../config/sessions.js";
-import { resolveSessionToolMode } from "../plugins/session-tool-modes.js";
+import { sessionToolModeSelectionError } from "../plugins/session-tool-modes.js";
 
 function normalizeSessionToolOverrides(
   raw: SessionToolOverrides,
@@ -37,6 +37,7 @@ function normalizeSessionToolOverrides(
 export function applySessionToolsPatch(
   entry: SessionEntry,
   patch: SessionsPatchParams,
+  runtimeId: string,
 ): string | undefined {
   if ("toolOverrides" in patch) {
     if (patch.toolOverrides === null) {
@@ -61,9 +62,12 @@ export function applySessionToolsPatch(
   if (patch.toolMode === undefined) {
     return undefined;
   }
-  const resolved = resolveSessionToolMode({ selection: patch.toolMode });
-  if (resolved?.status !== "available") {
-    return `unavailable session Tool mode: ${patch.toolMode.pluginId}/${patch.toolMode.modeId}`;
+  const selectionError = sessionToolModeSelectionError({
+    selection: patch.toolMode,
+    runtimeId,
+  });
+  if (selectionError) {
+    return selectionError;
   }
   entry.toolMode = { pluginId: patch.toolMode.pluginId, modeId: patch.toolMode.modeId };
   return undefined;

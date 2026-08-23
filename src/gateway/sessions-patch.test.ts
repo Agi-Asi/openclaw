@@ -757,16 +757,14 @@ describe("gateway sessions patch", () => {
       mode: {
         id: "code",
         label: "Code",
-        sectionLabel: "Developer",
         controlLabel: "Tool mode",
-        supportedRuntimeIds: ["openclaw"],
         toolProfile: "coding",
         codeMode: "code",
       },
       source: "test",
     });
     setActivePluginRegistry(registry);
-    const store = mainStoreEntry({});
+    const store = mainStoreEntry({ agentRuntimeOverride: "openclaw" });
 
     const set = expectPatchOk(
       await runPatch({
@@ -783,6 +781,21 @@ describe("gateway sessions patch", () => {
       await runPatch({ store, patch: { key: MAIN_SESSION_KEY, toolMode: null } }),
     );
     expect(cleared.toolMode).toBeUndefined();
+
+    expectPatchError(
+      await runPatch({
+        store: mainStoreEntry({
+          providerOverride: "openai",
+          modelOverride: "gpt-5.6-luna",
+          agentRuntimeOverride: "codex",
+        }),
+        patch: {
+          key: MAIN_SESSION_KEY,
+          toolMode: { pluginId: "developer-mode", modeId: "code" },
+        },
+      }),
+      "session Tool mode requires the openclaw runtime (resolved codex)",
+    );
   });
 
   test("persists verboseLevel=full", async () => {

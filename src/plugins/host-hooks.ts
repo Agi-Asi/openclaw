@@ -121,10 +121,8 @@ export type PluginSessionToolModeRegistration = {
   id: string;
   label: string;
   description?: string;
-  sectionLabel: string;
   controlLabel: string;
   default?: boolean;
-  supportedRuntimeIds: readonly string[];
   toolProfile: "minimal" | "coding" | "messaging" | "full";
   codeMode: "direct" | "code";
 };

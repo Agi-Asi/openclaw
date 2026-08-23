@@ -1,9 +1,7 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
 const common = {
-  sectionLabel: "Developer",
   controlLabel: "Tool mode",
-  supportedRuntimeIds: ["openclaw"],
 } as const;
 
 export default definePluginEntry({

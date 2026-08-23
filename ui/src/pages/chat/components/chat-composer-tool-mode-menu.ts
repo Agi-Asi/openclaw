@@ -86,10 +86,8 @@ export function renderChatComposerToolModeMenu(props: ChatComposerToolModeMenuPr
     if (!first) {
       return nothing;
     }
-    const compatible = modes.some((mode) => mode.supportedRuntimeIds.includes(runtimeId));
-    const compatibilityTitle = compatible
-      ? ""
-      : `Available for ${modes.flatMap((mode) => mode.supportedRuntimeIds).join(", ")} sessions`;
+    const compatible = runtimeId === "openclaw";
+    const compatibilityTitle = compatible ? "" : "Available for openclaw sessions";
     return html`<wa-dropdown-item
       class="agent-chat__capability-menu-item agent-chat__tool-mode-menu"
       ?disabled=${!compatible || props.disabled}

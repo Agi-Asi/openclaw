@@ -772,6 +772,46 @@ test("createGatewaySession rejects explicit and key-derived unconfigured creatio
   expect(prepareLifecycle).not.toHaveBeenCalled();
 });
 
+test("createGatewaySession rejects Tool mode for a non-OpenClaw runtime", async () => {
+  const registry = createEmptyPluginRegistry();
+  registry.sessionToolModes.push({
+    pluginId: "developer-mode",
+    mode: {
+      id: "code",
+      label: "Code",
+      controlLabel: "Tool mode",
+      toolProfile: "coding",
+      codeMode: "code",
+    },
+    source: "test",
+  });
+  setActivePluginRegistry(registry);
+  try {
+    const { createGatewaySession } = await import("./session-create-service.js");
+    await expect(
+      createGatewaySession({
+        cfg: getRuntimeConfig(),
+        agentId: "main",
+        commandSource: "test",
+        toolMode: { pluginId: "developer-mode", modeId: "code" },
+        catalogTarget: {
+          model: "openai/gpt-5.6-luna",
+          agentRuntime: "codex",
+          pluginOwnerId: "codex",
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_REQUEST",
+        message: "session Tool mode requires the openclaw runtime (resolved codex)",
+      },
+    });
+  } finally {
+    setActivePluginRegistry(createEmptyPluginRegistry());
+  }
+});
+
 test("createGatewaySession rechecks admin scope after incognito inheritance resolves", async () => {
   await createSessionStoreDir();
   try {

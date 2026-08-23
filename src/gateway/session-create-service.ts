@@ -11,6 +11,7 @@ import {
   errorShape,
   missingScopeErrorShape,
 } from "../../packages/gateway-protocol/src/index.js";
+import { readAcpSessionMetaForEntry } from "../acp/runtime/session-meta.js";
 import { normalizeOptionalAgentRuntimeId } from "../agents/agent-runtime-id.js";
 import { resolveAgentDir, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { isEmbeddedAgentRunActive } from "../agents/embedded-agent.js";
@@ -24,6 +25,7 @@ import {
   resolveSubagentConfiguredModelSelection,
 } from "../agents/model-selection.js";
 import { resolveSessionModelRef } from "../agents/session-model-ref.js";
+import { resolveEffectiveAgentRuntime } from "../agents/thinking-runtime.js";
 import {
   forkSessionFromParentWithDecision,
   MODEL_SELECTION_LOCKED_PARENT_FORK_MESSAGE,
@@ -50,7 +52,7 @@ import {
   hasInternalHookListeners,
   triggerInternalHook,
 } from "../hooks/internal-hooks.js";
-import { resolveSessionToolMode } from "../plugins/session-tool-modes.js";
+import { sessionToolModeSelectionError } from "../plugins/session-tool-modes.js";
 import {
   isIncognitoSessionKey,
   isSubagentSessionKey,
@@ -138,6 +140,82 @@ export function resolveSessionCreateModelSelection(
     ...(agentRuntimeOverride ? { agentRuntimeOverride } : {}),
     ...(resolved.profile ? { authProfileOverride: resolved.profile } : {}),
   };
+}
+
+function resolveSessionCreateToolModeRuntime(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  sessionKey: string;
+  modelSelection: GatewaySessionTitleModelSelection | null;
+  parentEntry?: SessionEntry;
+  targetEntry?: SessionEntry;
+  sourceSessionKey?: string;
+  sourceAgentId?: string;
+  catalogTarget?: TrustedCatalogSessionTarget;
+  initialEntry?: TrustedInitialSessionEntry;
+}): string | undefined {
+  const pinnedRuntime = normalizeOptionalAgentRuntimeId(
+    params.catalogTarget?.agentRuntime ?? params.initialEntry?.agentHarnessId,
+  );
+  if (pinnedRuntime) {
+    return pinnedRuntime;
+  }
+  if (!params.modelSelection) {
+    return undefined;
+  }
+  const defaults = resolveDefaultModelForAgent({ cfg: params.cfg, agentId: params.agentId });
+  const sourceEntry = params.targetEntry ?? params.parentEntry;
+  const acpMeta = sourceEntry
+    ? readAcpSessionMetaForEntry({
+        sessionKey: params.sourceSessionKey ?? params.sessionKey,
+        agentId: params.sourceAgentId ?? params.agentId,
+        entry: sourceEntry,
+      })
+    : undefined;
+  if (acpMeta?.backend) {
+    return acpMeta.backend;
+  }
+  const provider =
+    params.modelSelection.providerOverride ??
+    sourceEntry?.providerOverride ??
+    sourceEntry?.modelProvider ??
+    defaults.provider;
+  const modelId =
+    params.modelSelection.modelOverride ?? sourceEntry?.modelOverride ?? defaults.model;
+  return resolveEffectiveAgentRuntime({
+    cfg: params.cfg,
+    provider,
+    modelId,
+    agentId: params.agentId,
+    sessionKey: params.sessionKey,
+    sessionEntry: {
+      agentHarnessId: sourceEntry?.agentHarnessId,
+      agentRuntimeOverride:
+        params.modelSelection.agentRuntimeOverride ?? sourceEntry?.agentRuntimeOverride,
+    },
+  });
+}
+
+function sessionCreateToolModeError(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  sessionKey: string;
+  selection?: SessionToolModeSelection;
+  modelSelection: GatewaySessionTitleModelSelection | null;
+  parentEntry?: SessionEntry;
+  targetEntry?: SessionEntry;
+  sourceSessionKey?: string;
+  sourceAgentId?: string;
+  catalogTarget?: TrustedCatalogSessionTarget;
+  initialEntry?: TrustedInitialSessionEntry;
+}): string | undefined {
+  if (!params.selection) {
+    return undefined;
+  }
+  const runtimeId = resolveSessionCreateToolModeRuntime(params);
+  return runtimeId
+    ? sessionToolModeSelectionError({ selection: params.selection, runtimeId })
+    : undefined;
 }
 
 async function existingModelSelectionWouldChange(params: {
@@ -354,18 +432,6 @@ export async function createGatewaySession(params: {
   /** Synchronous caller-authority guard checked by each durable owner boundary. */
   commitGuard?: () => void;
 }): Promise<CreateGatewaySessionResult> {
-  if (
-    params.toolMode &&
-    resolveSessionToolMode({ selection: params.toolMode })?.status !== "available"
-  ) {
-    return {
-      ok: false,
-      error: errorShape(
-        ErrorCodes.INVALID_REQUEST,
-        `unavailable session Tool mode: ${params.toolMode.pluginId}/${params.toolMode.modeId}`,
-      ),
-    };
-  }
   const requestedKey = normalizeOptionalString(params.key);
   const parentSessionKey = normalizeOptionalString(params.parentSessionKey);
   const projectId = normalizeOptionalString(params.projectId);
@@ -651,6 +717,34 @@ export async function createGatewaySession(params: {
     key: targetSessionKey,
     agentId,
   });
+  const initialTargetEntry = loadGatewaySessionEntryReadOnly(creationTarget.canonicalKey, {
+    agentId: creationTarget.agentId,
+  }).entry;
+  const initialModelSelection = resolveSessionCreateModelSelection(
+    params.cfg,
+    creationTarget.agentId,
+    params.catalogTarget ?? params.model,
+    parentSessionEntry,
+  );
+  const initialToolModeError = sessionCreateToolModeError({
+    cfg: params.cfg,
+    agentId: creationTarget.agentId,
+    sessionKey: creationTarget.canonicalKey,
+    selection: params.toolMode,
+    modelSelection: initialModelSelection,
+    parentEntry: parentSessionEntry,
+    targetEntry: initialTargetEntry,
+    sourceSessionKey: initialTargetEntry ? creationTarget.canonicalKey : canonicalParentSessionKey,
+    sourceAgentId: initialTargetEntry ? creationTarget.agentId : parentSelectedAgentId,
+    catalogTarget: params.catalogTarget,
+    initialEntry: params.initialEntry,
+  });
+  if (initialToolModeError) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.INVALID_REQUEST, initialToolModeError),
+    };
+  }
   if (explicitTargetKey && !params.initialEntry) {
     // A trusted initializer holds the lifecycle fence through afterCreate. Waiting
     // on that fence would deadlock callers that must reject its visible pending row.
@@ -875,6 +969,25 @@ export async function createGatewaySession(params: {
       params.catalogTarget ?? params.model,
       currentParentSessionEntry,
     );
+    const currentToolModeError = sessionCreateToolModeError({
+      cfg: params.cfg,
+      agentId: target.agentId,
+      sessionKey: target.canonicalKey,
+      selection: params.toolMode,
+      modelSelection: titleModelSelection,
+      parentEntry: currentParentSessionEntry,
+      targetEntry: currentTargetEntry,
+      sourceSessionKey: currentTargetEntry ? target.canonicalKey : canonicalParentSessionKey,
+      sourceAgentId: currentTargetEntry ? target.agentId : parentSelectedAgentId,
+      catalogTarget: params.catalogTarget,
+      initialEntry: params.initialEntry,
+    });
+    if (currentToolModeError) {
+      return {
+        ok: false,
+        error: errorShape(ErrorCodes.INVALID_REQUEST, currentToolModeError),
+      };
+    }
     const preparationResult = params.prepareLifecycle
       ? await params.prepareLifecycle({
           agentId: target.agentId,

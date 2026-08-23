@@ -39,10 +39,8 @@ export const PluginSessionToolModeSchema = closedObject({
   id: NonEmptyString,
   label: NonEmptyString,
   description: Type.Optional(Type.String()),
-  sectionLabel: NonEmptyString,
   controlLabel: NonEmptyString,
   default: Type.Optional(Type.Boolean()),
-  supportedRuntimeIds: Type.Array(NonEmptyString, { minItems: 1 }),
   toolProfile: Type.Union([
     Type.Literal("minimal"),
     Type.Literal("coding"),

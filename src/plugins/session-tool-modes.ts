@@ -8,22 +8,24 @@ type ResolvedSessionToolMode = {
   status: "available" | "unavailable" | "incompatible";
 };
 
+const SESSION_TOOL_MODE_RUNTIME_ID = "openclaw";
+
 function listActiveSessionToolModes(): PluginSessionToolModeRegistryRegistration[] {
   return [...(getActivePluginSessionExtensionRegistry()?.sessionToolModes ?? [])];
 }
 
 export function resolveSessionToolMode(params: {
   selection?: SessionToolModeSelection;
-  runtimeId?: string;
+  runtimeId: string;
 }): ResolvedSessionToolMode | undefined {
   const registrations = listActiveSessionToolModes();
+  const runtimeId = params.runtimeId.trim().toLowerCase();
   let selection = params.selection;
   if (!selection) {
-    const defaultRegistration = registrations.find(
-      (entry) =>
-        entry.mode.default === true &&
-        entry.mode.supportedRuntimeIds.includes(params.runtimeId ?? ""),
-    );
+    if (runtimeId !== SESSION_TOOL_MODE_RUNTIME_ID) {
+      return undefined;
+    }
+    const defaultRegistration = registrations.find((entry) => entry.mode.default === true);
     selection = defaultRegistration
       ? { pluginId: defaultRegistration.pluginId, modeId: defaultRegistration.mode.id }
       : undefined;
@@ -37,9 +39,22 @@ export function resolveSessionToolMode(params: {
   if (!registration) {
     return { selection, status: "unavailable" };
   }
-  const runtimeId = params.runtimeId?.trim().toLowerCase();
-  if (runtimeId && !registration.mode.supportedRuntimeIds.includes(runtimeId)) {
+  if (runtimeId !== SESSION_TOOL_MODE_RUNTIME_ID) {
     return { selection, registration, status: "incompatible" };
   }
   return { selection, registration, status: "available" };
+}
+
+export function sessionToolModeSelectionError(params: {
+  selection: SessionToolModeSelection;
+  runtimeId: string;
+}): string | undefined {
+  const resolved = resolveSessionToolMode(params);
+  if (resolved?.status === "available") {
+    return undefined;
+  }
+  if (resolved?.status === "incompatible") {
+    return `session Tool mode requires the ${SESSION_TOOL_MODE_RUNTIME_ID} runtime (resolved ${params.runtimeId})`;
+  }
+  return `unavailable session Tool mode: ${params.selection.pluginId}/${params.selection.modeId}`;
 }

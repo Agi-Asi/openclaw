@@ -261,6 +261,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
       agentsReady && this.place.agentId ? (this.place.selectedAgent()?.id ?? "") : "",
       this.context?.config.current.cliAgentsEnabled === true && !catalog.isTarget(this.data),
     );
+    this.toolMode.reconcile(this.place, this.context);
     const openKey = this.data
       ? catalog.routeKey(this.data)
       : catalog.routeKeyFromSearch(window.location.search);

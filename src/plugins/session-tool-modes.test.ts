@@ -13,10 +13,8 @@ function installModes() {
       mode: {
         id: "standard",
         label: "Standard",
-        sectionLabel: "Developer",
         controlLabel: "Tool mode",
         default: true,
-        supportedRuntimeIds: ["openclaw"],
         toolProfile: "coding",
         codeMode: "direct",
       },

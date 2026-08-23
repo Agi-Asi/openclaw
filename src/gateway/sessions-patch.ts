@@ -404,11 +404,6 @@ export async function projectSessionsPatchEntry(params: {
     }
   }
 
-  const toolModeError = applySessionToolsPatch(next, patch);
-  if (toolModeError) {
-    return invalid(toolModeError);
-  }
-
   if ("verboseLevel" in patch) {
     const raw = patch.verboseLevel;
     const parsed = parseVerboseOverride(raw);
@@ -611,6 +606,19 @@ export async function projectSessionsPatchEntry(params: {
     if (agentModelFallback) {
       next.modelFallback = agentModelFallback;
     }
+  }
+
+  const toolModeRuntime =
+    patch.toolMode && patch.toolMode !== null
+      ? resolveThinkingRuntime(
+          next.providerOverride ?? resolvedDefault.provider,
+          next.modelOverride ?? resolvedDefault.model,
+          next,
+        )
+      : "openclaw";
+  const toolModeError = applySessionToolsPatch(next, patch, toolModeRuntime);
+  if (toolModeError) {
+    return invalid(toolModeError);
   }
 
   if ("thinkingLevel" in patch || "model" in patch) {

@@ -33,10 +33,17 @@ export class NewSessionToolModeController {
         return;
       }
       this.modes = result.toolModes;
-      const defaultMode = this.modes.find((mode) => mode.default === true);
-      this.select(
-        defaultMode ? { pluginId: defaultMode.pluginId, modeId: defaultMode.id } : undefined,
-      );
+      const selection = this.selectionTarget.toolMode;
+      if (
+        selection &&
+        !this.modes.some(
+          (mode) => mode.pluginId === selection.pluginId && mode.id === selection.modeId,
+        )
+      ) {
+        this.select(undefined);
+      } else {
+        this.requestUpdate();
+      }
     } catch {
       if (this.client === client) {
         this.modes = [];
@@ -51,6 +58,36 @@ export class NewSessionToolModeController {
   ): void {
     draftGateway.synchronize(gateway);
     void this.synchronize(gateway.snapshot.client ?? null);
+  }
+
+  reconcile(place: DraftPlaceState, context: ApplicationContext | undefined): void {
+    if (this.modes.length === 0) {
+      return;
+    }
+    const runtimeId =
+      place.modelControl
+        .resolveAgentRuntime({ agent: place.selectedAgent(), context })
+        ?.id.trim()
+        .toLowerCase() ?? "openclaw";
+    if (runtimeId !== "openclaw") {
+      if (this.selectionTarget.toolMode) {
+        this.select(undefined);
+      }
+      return;
+    }
+    const selection = this.selectionTarget.toolMode;
+    if (
+      selection &&
+      this.modes.some(
+        (mode) => mode.pluginId === selection.pluginId && mode.id === selection.modeId,
+      )
+    ) {
+      return;
+    }
+    const defaultMode = this.modes.find((mode) => mode.default === true);
+    this.select(
+      defaultMode ? { pluginId: defaultMode.pluginId, modeId: defaultMode.id } : undefined,
+    );
   }
 
   menuProps(
@@ -77,6 +114,10 @@ export class NewSessionToolModeController {
   }
 
   private select(selection: SessionToolModeSelection | undefined): void {
+    const current = this.selectionTarget.toolMode;
+    if (current?.pluginId === selection?.pluginId && current?.modeId === selection?.modeId) {
+      return;
+    }
     this.selectionTarget.toolMode = selection;
     this.requestUpdate();
   }

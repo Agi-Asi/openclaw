@@ -47,7 +47,7 @@ not expose JavaScript engine, tool-profile, or schema terminology.
 - New sessions default to Standard unless another mode is selected before send.
 - Retries and recovery keep the Tool surface frozen for the admitted turn.
 - If the selected plugin mode becomes unavailable, OpenClaw uses configured
-  defaults and shows the unavailable selection in the session menu.
+  defaults and shows the unavailable selection in the composer **+** menu.
 
 ## Runtime compatibility
 

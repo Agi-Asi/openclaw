@@ -11,9 +11,7 @@ import {
 
 const common = {
   pluginId: "developer-mode",
-  sectionLabel: "Developer",
   controlLabel: "Tool mode",
-  supportedRuntimeIds: ["openclaw"],
   toolProfile: "coding",
 } as const;
 

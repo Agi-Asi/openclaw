@@ -2104,10 +2104,8 @@ describe("host-hook fixture plugin contract", () => {
         api.session.controls.registerToolMode({
           id: "standard",
           label: "Standard",
-          sectionLabel: "Developer",
           controlLabel: "Tool mode",
           default: true,
-          supportedRuntimeIds: ["openclaw"],
           toolProfile: "coding",
           codeMode: "direct",
         });
@@ -2117,7 +2115,12 @@ describe("host-hook fixture plugin contract", () => {
     if (!descriptorEntry) {
       throw new Error("expected control UI descriptor registration");
     }
+    const toolModeEntry = registry.registry.sessionToolModes[0];
+    if (!toolModeEntry) {
+      throw new Error("expected session Tool mode registration");
+    }
     Object.assign(descriptorEntry.descriptor, { leakedRegistryField: true });
+    Object.assign(toolModeEntry.mode, { leakedRegistryField: true });
     setActivePluginRegistry(registry.registry);
 
     const calls: Array<[boolean, unknown, unknown]> = [];
@@ -2153,10 +2156,8 @@ describe("host-hook fixture plugin contract", () => {
           pluginName: "Host Hook Fixture",
           id: "standard",
           label: "Standard",
-          sectionLabel: "Developer",
           controlLabel: "Tool mode",
           default: true,
-          supportedRuntimeIds: ["openclaw"],
           toolProfile: "coding",
           codeMode: "direct",
         },

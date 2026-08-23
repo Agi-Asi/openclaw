@@ -8,14 +8,6 @@ function normalizeLabel(value: unknown): string {
   return typeof value === "string" ? normalizePluginHostHookId(value) : "";
 }
 
-function normalizeRuntimeIds(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const normalized = value.map(normalizeLabel);
-  return normalized.every(Boolean) ? normalized : undefined;
-}
-
 function registerPluginSessionToolMode(params: {
   state: PluginRegistryState;
   record: PluginRecord;
@@ -24,16 +16,12 @@ function registerPluginSessionToolMode(params: {
   const { mode, record } = params;
   const id = normalizeLabel(mode.id);
   const label = normalizeLabel(mode.label);
-  const sectionLabel = normalizeLabel(mode.sectionLabel);
   const controlLabel = normalizeLabel(mode.controlLabel);
-  const supportedRuntimeIds = normalizeRuntimeIds(mode.supportedRuntimeIds);
   const description = mode.description?.trim();
   if (
     !id ||
     !label ||
-    !sectionLabel ||
     !controlLabel ||
-    !supportedRuntimeIds?.length ||
     !profiles.has(mode.toolProfile) ||
     (mode.codeMode !== "direct" && mode.codeMode !== "code")
   ) {
@@ -41,8 +29,7 @@ function registerPluginSessionToolMode(params: {
       level: "error",
       pluginId: record.id,
       source: record.source,
-      message:
-        "session Tool mode registration requires valid labels, runtimes, profile, and Code mode",
+      message: "session Tool mode registration requires valid labels, profile, and Code mode",
     });
     return;
   }
@@ -53,11 +40,8 @@ function registerPluginSessionToolMode(params: {
     ? `session Tool mode already registered: ${id}`
     : mode.default === true && pluginModes.some((entry) => entry.mode.default === true)
       ? "session Tool modes may register only one default"
-      : pluginModes.some(
-            (entry) =>
-              entry.mode.sectionLabel !== sectionLabel || entry.mode.controlLabel !== controlLabel,
-          )
-        ? "session Tool modes from one plugin must share sectionLabel and controlLabel"
+      : pluginModes.some((entry) => entry.mode.controlLabel !== controlLabel)
+        ? "session Tool modes from one plugin must share controlLabel"
         : undefined;
   if (error) {
     params.state.pushDiagnostic({
@@ -75,9 +59,7 @@ function registerPluginSessionToolMode(params: {
       ...mode,
       id,
       label,
-      sectionLabel,
       controlLabel,
-      supportedRuntimeIds,
       ...(description ? { description } : {}),
     },
     source: record.source,
