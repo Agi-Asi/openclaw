@@ -91,6 +91,7 @@ class TrajectoryPanel extends OpenClawLightDomElement {
       if (key !== this.hydratedKey) {
         this.hydratedKey = key;
         void this.loadTail();
+        return;
       }
     }
     if (changed.has("presented") && this.presented && this.records.length === 0) {

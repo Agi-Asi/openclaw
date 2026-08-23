@@ -1,5 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { sql } from "kysely";
 import type {
   SessionsTrajectoryDetailResult,
   SessionsTrajectoryPageResult,
@@ -79,6 +80,27 @@ function parseStoredEvent(eventJson: string): unknown {
   }
 }
 
+function sqliteTranscriptTrajectoryRecordIsCanonical(sessionId: string) {
+  // Runtime rows own the richer tool-result timing/payload record. Suppress the
+  // transcript duplicate in the SQL domain so cursors page semantic rows only.
+  return /* kysely-allow-raw: Cross-source identity lives inside two canonical JSON envelopes. */ sql<boolean>`NOT (
+    json_valid(event.event_json)
+    AND CASE WHEN json_valid(event.event_json)
+      THEN json_extract(event.event_json, '$.message.role') END = 'toolResult'
+    AND CASE WHEN json_valid(event.event_json)
+      THEN json_extract(event.event_json, '$.message.toolCallId') END IS NOT NULL
+    AND CASE WHEN json_valid(event.event_json)
+      THEN json_extract(event.event_json, '$.message.toolCallId') END IN (
+      SELECT CASE WHEN json_valid(runtime_result.event_json)
+        THEN json_extract(runtime_result.event_json, '$.data.toolCallId') END
+      FROM trajectory_runtime_events AS runtime_result
+      WHERE runtime_result.session_id = ${sessionId}
+        AND CASE WHEN json_valid(runtime_result.event_json)
+          THEN json_extract(runtime_result.event_json, '$.type') END = 'tool.result'
+    )
+  )`;
+}
+
 function sourceRank(source: Source): number {
   return source === "runtime" ? 0 : 1;
 }
@@ -136,7 +158,8 @@ function readRows(params: { target: TrajectoryReadTarget; cursor?: Cursor; limit
           .onRef("event.seq", "=", "active.event_seq"),
       )
       .select(["event.seq", "event.created_at", "event.event_json"])
-      .where("active.session_id", "=", projection.resolved.sessionId);
+      .where("active.session_id", "=", projection.resolved.sessionId)
+      .where(sqliteTranscriptTrajectoryRecordIsCanonical(projection.resolved.sessionId));
     let runtimeQuery = db
       .selectFrom("trajectory_runtime_events")
       .select(["seq", "created_at", "event_json"])
@@ -347,7 +370,13 @@ function runtimeRecord(row: SourceRow): { detail: unknown; record: TrajectoryRec
       : {}),
     ...(data?.truncated === true ? { truncated: true } : {}),
   };
-  return { record, detail: sanitizeDiagnosticPayload(event) };
+  return {
+    record,
+    detail: sanitizeDiagnosticPayload({
+      type,
+      ...(data ? { data } : {}),
+    }),
+  };
 }
 
 function transcriptRecord(row: SourceRow): { detail: unknown; record: TrajectoryRecord } {
@@ -499,23 +528,7 @@ export function readTrajectoryPage(params: {
   }
   const { rows, runtimeMinSeq } = readRows({ target: params.target, cursor, limit });
   const selected = rows.slice(Math.max(0, rows.length - limit));
-  const projectedRecords = selected.map((row) => projectRow(row).record);
-  const runtimeToolResults = new Set(
-    projectedRecords.flatMap((record) =>
-      record.source === "runtime" && record.type === "tool.result" && record.toolCallId
-        ? [record.toolCallId]
-        : [],
-    ),
-  );
-  const records = projectedRecords.filter(
-    (record) =>
-      !(
-        record.source === "transcript" &&
-        (record.kind === "tool" || record.kind === "subtool") &&
-        record.toolCallId &&
-        runtimeToolResults.has(record.toolCallId)
-      ),
-  );
+  const records = selected.map((row) => projectRow(row).record);
   pairRuntimeSpans(records);
   const hasMore = rows.length > limit;
   const captureDisabled =

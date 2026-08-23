@@ -31,10 +31,18 @@ export function trajectoryDetailTabs(record: TrajectoryRecord, detail: unknown):
   }
   if (record.kind === "tool" || record.kind === "subtool") {
     const raw = isRecord(detail) ? detail : undefined;
+    const data = isRecord(raw?.data) ? raw.data : undefined;
+    const hasPayload =
+      data && ["arguments", "input", "options", "payload"].some((key) => Object.hasOwn(data, key));
+    const hasResult = Boolean(
+      raw?.message !== undefined ||
+      (data &&
+        ["error", "errorMessage", "output", "result"].some((key) => Object.hasOwn(data, key))),
+    );
     return [
       "Summary",
-      ...(raw?.data !== undefined ? ["Payload"] : []),
-      ...(raw?.message !== undefined ? ["Result"] : []),
+      ...(hasPayload ? ["Payload"] : []),
+      ...(hasResult ? ["Result"] : []),
       "Schema",
       "Timing",
     ];

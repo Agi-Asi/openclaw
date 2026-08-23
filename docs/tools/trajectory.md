@@ -31,6 +31,12 @@ Enable **Settings → Labs → Trajectory view**, open a chat session, then choo
 **Trajectory** from the side-panel page picker. The view loads the newest
 recorded window first and keeps the normal chat composer available.
 
+An administrator must enable the Lab through the admin-scoped configuration
+surface. Once enabled, the bounded page and detail reads require
+`operator.read`, so read-scoped operators in the same trusted Gateway domain
+can inspect trajectories. Operator scopes are not a multi-tenant privacy
+boundary; use separate Gateways when operators must not share session data.
+
 The fixed overview has Input, Model, and Tools lanes. The ledger groups the
 loaded window into turns and request attempts; select a row to open its local
 details inspector. Search, folding, range focus, and displayed request numbers
@@ -85,7 +91,9 @@ Other flags: `--output <path>` (directory name inside
 ## Access
 
 Trajectory export is an owner command. The sender must pass the normal command
-authorization checks plus the owner check for the channel.
+authorization checks plus the owner check for the channel. This approval
+protects creating and sharing a support-bundle artifact; it is separate from
+the in-place Control UI reads described above.
 
 ## What gets recorded
 
