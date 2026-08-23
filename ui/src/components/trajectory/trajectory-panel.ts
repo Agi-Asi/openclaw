@@ -151,14 +151,17 @@ class TrajectoryPanel extends OpenClawLightDomElement {
       this.hasMore = result.hasMore;
       this.capture = result.capture;
       this.trimmedPrefix = result.trimmedPrefix;
+      this.loading = false;
       await this.updateComplete;
-      this.scrollToLatest();
+      if (generation === this.loadGeneration) {
+        this.scrollToLatest();
+      }
     } catch (error) {
       if (generation === this.loadGeneration) {
         this.error = formatUiError(error);
       }
     } finally {
-      if (generation === this.loadGeneration) {
+      if (generation === this.loadGeneration && this.loading) {
         this.loading = false;
       }
     }

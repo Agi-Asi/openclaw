@@ -1,7 +1,9 @@
 .trajectory-panel {
   container-type: inline-size;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
+  inline-size: 100%;
   block-size: 100%;
   min-block-size: 0;
   background: var(--bg);
@@ -165,6 +167,14 @@
 
 .trajectory-group-header strong {
   color: var(--text);
+}
+
+.trajectory-group-header span {
+  min-inline-size: 0;
+  margin-inline-start: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trajectory-record {
@@ -412,6 +422,12 @@
   }
 
   .trajectory-record__meta {
+    display: none;
+  }
+}
+
+@container (max-width: 400px) {
+  .trajectory-turn-header span {
     display: none;
   }
 }
