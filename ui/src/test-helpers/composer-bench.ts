@@ -1808,6 +1808,7 @@ function applyTransientState(): void {
   if (!textarea) {
     return;
   }
+  textarea.readOnly = true;
   if (pendingMenuActivation) {
     pendingMenuActivation = false;
     textarea.focus({ preventScroll: true });
@@ -2080,29 +2081,20 @@ document.querySelector<HTMLButtonElement>("[data-bench-scenario-prev]")?.addEven
 document.querySelector<HTMLButtonElement>("[data-bench-scenario-next]")?.addEventListener("click", () => {
   moveScenario(1);
 });
-document.querySelector<HTMLElement>("[data-bench-scenario]")?.addEventListener("keydown", (event) => {
-  if (!["ArrowLeft", "ArrowRight", "<", ">"].includes(event.key)) return;
-  event.preventDefault();
-  moveScenario(event.key === "ArrowLeft" || event.key === "<" ? -1 : 1);
-});
-
 document.addEventListener("keydown", (event) => {
   if (
     event.defaultPrevented ||
     event.metaKey ||
     event.ctrlKey ||
     event.altKey ||
-    !["<", ">"].includes(event.key)
+    !["ArrowLeft", "ArrowRight", "<", ">"].includes(event.key)
   ) {
     return;
   }
-  const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) {
-    return;
-  }
   event.preventDefault();
-  moveScenario(event.key === "<" ? -1 : 1);
-});
+  event.stopImmediatePropagation();
+  moveScenario(event.key === "ArrowLeft" || event.key === "<" ? -1 : 1);
+}, { capture: true });
 
 const benchControls = document.querySelector<HTMLElement>("[data-composer-bench-controls]");
 const syncBenchControlFades = () => {
