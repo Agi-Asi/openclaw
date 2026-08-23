@@ -1,7 +1,4 @@
-import type {
-  ProjectsAddResult,
-  SessionPermissionMode,
-} from "../../../../packages/gateway-protocol/src/index.js";
+import type { ProjectsAddResult } from "../../../../packages/gateway-protocol/src/index.js";
 import { t } from "../../i18n/index.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import {
@@ -39,6 +36,7 @@ import type {
   DraftSubmissionCallbacks,
   DraftSubmissionSnapshot,
 } from "./draft-submission-contract.ts";
+import { NewSessionPermissionSelection } from "./permission-selection.ts";
 import { retainRejectedInitialTurn } from "./rejected-initial-turn.ts";
 import {
   PendingSessionPlacementRecoveryState,
@@ -55,7 +53,6 @@ import { readNewSessionTerminalStartAccess, startNewSessionInTerminal } from "./
 export class DraftSubmissionFlow {
   private visibilityValue: NewSessionVisibility = "normal";
   private messageValue = "";
-  private permissionModeValue: SessionPermissionMode | undefined;
   private submittingValue = false;
   private blockedSubmitGate: string | null = null;
   private submissionOutcomeUnknownValue: SubmissionOutcomeReason | null = null;
@@ -65,6 +62,7 @@ export class DraftSubmissionFlow {
   readonly pendingPlacement = new PendingSessionPlacementRecoveryState();
   readonly attachmentDraft: NewSessionAttachmentDraft;
   readonly composerTextarea = new NewSessionComposerTextareaController();
+  readonly permission = new NewSessionPermissionSelection(() => this.callbacks.requestUpdate());
   readonly draftPersistence: NewSessionDraftPersistence;
 
   constructor(
@@ -109,10 +107,6 @@ export class DraftSubmissionFlow {
     return this.submittingValue;
   }
 
-  get permissionMode(): SessionPermissionMode | undefined {
-    return this.permissionModeValue;
-  }
-
   get submissionOutcomeUnknown(): SubmissionOutcomeReason | null {
     return this.submissionOutcomeUnknownValue;
   }
@@ -127,11 +121,6 @@ export class DraftSubmissionFlow {
   restoreMessage(message: string) {
     this.draftPersistence.noteDraftReplaced();
     this.messageValue = message;
-    this.callbacks.requestUpdate();
-  }
-
-  setPermissionMode(permissionMode: SessionPermissionMode | undefined) {
-    this.permissionModeValue = permissionMode;
     this.callbacks.requestUpdate();
   }
 
@@ -232,7 +221,7 @@ export class DraftSubmissionFlow {
       message: options.message ?? "",
       model: this.place.modelControl.selected,
       thinkingLevel: this.place.modelControl.thinkingLevel,
-      permissionMode: this.permissionModeValue,
+      permissionMode: this.permission.value,
       visibility: options.visibility ?? this.visibilityValue,
       attachments: options.attachments,
       projectId: this.place.browser.remoteProject?.projectId ?? this.place.browser.projectId,
@@ -387,7 +376,7 @@ export class DraftSubmissionFlow {
       ? (this.submissionOutcomeUnknownValue ?? "placement-interrupted")
       : null;
     this.visibilityValue = "normal";
-    this.permissionModeValue = undefined;
+    this.permission.reset();
     this.attachmentDraft.reset({ release: true });
     if (preservePendingPlacement) {
       if (!this.pendingPlacement.restored) {
