@@ -750,22 +750,20 @@ describe("chat typing status", () => {
       expectedText: "Ayaan, Liam, Maya, Zoe are typing…",
       expectedAvatars: 3,
     },
-  ])("renders $expectedText above the composer", ({ actors, expectedText, expectedAvatars }) => {
+  ])("renders $expectedText in the transcript", ({ actors, expectedText, expectedAvatars }) => {
     const container = renderChatView({ typingActors: actors });
     const indicator = container.querySelector(".agent-chat__typing-indicator--outside");
 
-    expect(indicator?.nextElementSibling?.classList.contains("agent-chat__composer-shell")).toBe(
-      true,
-    );
+    expect(indicator?.closest('[data-virtual-row-key="presence:typing"]')).not.toBeNull();
     expect(indicator?.closest(".agent-chat__composer-shell")).toBeNull();
-    expect(indicator?.querySelectorAll(".chat-author-avatar")).toHaveLength(expectedAvatars);
+    expect(indicator?.querySelectorAll(".chat-avatar")).toHaveLength(expectedAvatars);
     expect(
       indicator?.querySelector(".agent-chat__typing-avatars")?.getAttribute("aria-hidden"),
     ).toBe("true");
     expect(indicator?.textContent).toContain(expectedText);
   });
 
-  it("keeps queue and error state above the typing status", () => {
+  it("keeps queue and error state outside the transcript typing row", () => {
     const container = renderChatView({
       typingActors: [{ id: "ayaan", label: "Ayaan" }],
       runError: { summary: "Gateway unavailable" },
@@ -777,23 +775,22 @@ describe("chat typing status", () => {
       "typing status",
     );
 
-    expect(indicator.previousElementSibling?.classList.contains("chat-queue")).toBe(true);
+    expect(indicator.closest('[data-virtual-row-key="presence:typing"]')).not.toBeNull();
+    expect(container.querySelector(".chat-queue")).not.toBeNull();
     expect(container.querySelector(".chat-error__content")?.textContent).toContain(
       "Gateway unavailable",
     );
-    expect(indicator.nextElementSibling?.classList.contains("agent-chat__composer-shell")).toBe(
-      true,
-    );
+    expect(container.querySelector(".agent-chat__composer-shell")).not.toBeNull();
   });
 
-  it("hides typing status with the model setup composer", () => {
+  it("keeps transcript typing status with the model setup composer", () => {
     const container = renderChatView({
       canSend: false,
       modelSetupRequired: true,
       typingActors: [{ id: "ayaan", label: "Ayaan" }],
     });
 
-    expect(container.querySelector(".agent-chat__typing-indicator--outside")).toBeNull();
+    expect(container.querySelector(".agent-chat__typing-indicator--outside")).not.toBeNull();
   });
 });
 

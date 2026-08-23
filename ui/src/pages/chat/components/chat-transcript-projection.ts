@@ -58,6 +58,7 @@ import {
   guardChatRenderItems,
   trackTranscriptRenderDependencies,
 } from "./chat-transcript-render-guard.ts";
+import { renderChatTypingIndicator } from "./chat-typing-indicator.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
 import { renderTurnRecapRow, renderTurnTerminalStatusRow } from "./chat-working-indicator.ts";
 
@@ -618,6 +619,10 @@ export function projectChatTranscript(
       key: "background-tasks",
       content: backgroundTasks,
     });
+  }
+  const typingIndicator = renderChatTypingIndicator(props.typingActors);
+  if (typingIndicator) {
+    transcriptRows.push({ kind: "content", key: "presence:typing", content: typingIndicator });
   }
   trackTranscriptRenderDependencies(state, [
     chatItems,

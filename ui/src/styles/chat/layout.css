@@ -2088,56 +2088,6 @@ button.chat-reply-preview--message:disabled {
   padding-bottom: 26px;
 }
 
-.agent-chat__typing-dots-row,
-.agent-chat__typing-preview-row {
-  display: grid;
-  grid-template-columns: max-content minmax(0, auto);
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.agent-chat__typing-preview-row {
-  align-items: end;
-}
-
-.agent-chat__typing-preview-content {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.agent-chat__typing-preview-label {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.agent-chat__typing-preview-bubble {
-  max-height: 9em;
-  overflow: hidden;
-  /* Preview carries the draft's tail; keep the newest text visible when the
-   * capped bubble overflows (block align-content, harmless where unsupported). */
-  align-content: end;
-  overflow-wrap: anywhere;
-  padding: 8px 12px;
-  border-radius: 15px;
-  background: var(--bg-muted);
-  color: var(--text);
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.agent-chat__typing-preview-bubble::after {
-  content: "";
-  display: inline-block;
-  width: 1px;
-  height: 1em;
-  margin-left: 2px;
-  background: var(--accent);
-  vertical-align: -0.15em;
-  animation: chatTypingCaret 1s steps(2, start) infinite;
-}
-
 .agent-chat__typing-avatars {
   display: inline-flex;
   align-items: center;
@@ -2164,83 +2114,6 @@ button.chat-reply-preview--message:disabled {
 .agent-chat__typing-avatars > :is(.chat-avatar, .chat-avatar-slot) {
   box-shadow: 0 0 0 2px var(--bg);
   border-radius: 50%;
-}
-
-.agent-chat__typing-bubble {
-  --chat-typing-bubble-bg: var(--bg-muted);
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  box-sizing: border-box;
-  width: 50px;
-  height: 30px;
-  padding-inline: 12px;
-  border-radius: 15px;
-  background: var(--chat-typing-bubble-bg);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--bg) 28%, transparent);
-}
-
-.agent-chat__typing-tail {
-  position: absolute;
-  left: -6px;
-  bottom: 1px;
-  width: 12px;
-  height: 12px;
-  overflow: visible;
-  fill: var(--chat-typing-bubble-bg);
-}
-
-:root[data-theme-mode="light"] .agent-chat__typing-bubble {
-  --chat-typing-bubble-bg: color-mix(in srgb, var(--text) 9%, var(--bg));
-}
-
-.agent-chat__typing-bubble > span {
-  position: relative;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: chatTypingDot 1s ease-in-out infinite;
-}
-
-.agent-chat__typing-bubble > span:nth-child(2) {
-  animation-delay: 120ms;
-}
-
-.agent-chat__typing-bubble > span:nth-child(3) {
-  animation-delay: 240ms;
-}
-
-@keyframes chatTypingDot {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.55;
-  }
-
-  30% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-}
-
-@keyframes chatTypingCaret {
-  to {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agent-chat__typing-bubble > span {
-    animation: none;
-    opacity: 0.8;
-  }
-
-  .agent-chat__typing-preview-bubble::after {
-    animation: none;
-  }
 }
 
 @media (max-width: 640px) {
@@ -3251,10 +3124,7 @@ button.chat-pr__diff {
   padding: 0;
   background: var(--chat-composer-surface);
   border: 1px solid var(--chat-composer-hairline);
-  /* Multiline is the resting shape, so it owns the bare-selector radius; the
-     scale token is the shared curvature signal, never a local redeclaration. */
   border-radius: calc(20px * var(--openclaw-corner-radius-scale));
-  corner-shape: superellipse(1.5);
   /* Deliberately lighter than --shadow-sm: with the border and the luminance
      step already doing the separating, a heavier drop reads as a second frame. */
   box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
@@ -3515,73 +3385,6 @@ button.chat-pr__diff {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-/* The compact variant, for a composer whose markup declares it: the footer stops
-   being a row of its own and its three groups join the editor on one baseline,
-   so the whole surface is one pill. `order` puts the leading group ahead of the
-   editor without moving it in the DOM, where it has to stay after the editor for
-   the multiline grid. The transcript composer deliberately does not use this —
-   it declares "multiline", because a writing surface should not change kind
-   between an empty draft and a wrapped one — so this shape belongs to narrow
-   embedded composers that have no room for a second row.
-   No gap here on purpose: the groups carry their own inline spacing, so an empty
-   lede reserves nothing. */
-.agent-chat__input[data-composer-layout="single-line"] {
-  flex-direction: row;
-  align-items: center;
-  min-height: 0;
-  padding: 4px;
-}
-
-/* Pills are excluded from the shared superellipse on purpose: the shape
-   flattens a fully rounded end. Doubling the class outranks the shared
-   opt-in rule in base.css without reaching for !important. */
-.agent-chat__input.agent-chat__input[data-composer-layout="single-line"] {
-  border-radius: var(--radius-full);
-  corner-shape: round;
-}
-
-/* The editor is the one thing on this row that may not be squeezed away: the
-   middle group shrinks first, and below this floor the layout owner has already
-   switched the whole surface to the vertical shape. */
-.agent-chat__input[data-composer-layout="single-line"] .agent-chat__composer-input-row {
-  flex: 1 1 auto;
-  order: 1;
-  align-items: center;
-  min-width: 6ch;
-  padding: 0 4px;
-}
-
-.agent-chat__input[data-composer-layout="single-line"] .agent-chat__composer-footer {
-  display: contents;
-}
-
-.agent-chat__input[data-composer-layout="single-line"] .agent-chat__composer-lead {
-  order: 0;
-}
-
-.agent-chat__input[data-composer-layout="single-line"] .agent-chat__composer-mid {
-  order: 2;
-  flex: 0 1 auto;
-  padding-inline-start: 4px;
-}
-
-.agent-chat__input[data-composer-layout="single-line"] .agent-chat__composer-trail {
-  order: 3;
-  flex: 0 0 auto;
-  padding-inline-start: 4px;
-}
-
-.agent-chat__input[data-composer-layout="single-line"]
-  .agent-chat__composer-combobox
-  > :is(textarea, input) {
-  height: var(--chat-composer-control-height);
-  min-height: var(--chat-composer-control-height);
-  max-height: var(--chat-composer-control-height);
-  padding-block: calc((var(--chat-composer-control-height) - var(--chat-composer-editor-line)) / 2);
-  overflow: hidden;
-  white-space: nowrap;
 }
 
 .agent-chat__composer-combobox {
@@ -4314,42 +4117,8 @@ button.chat-pr__diff {
   overflow-wrap: anywhere;
 }
 
-.agent-chat__composer-notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  min-height: var(--chat-composer-underlap-row-height, 44px);
-  padding: 8px 10px 8px 14px;
-  font-size: var(--control-ui-text-sm);
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.agent-chat__composer-errors:has(> .agent-chat__composer-notice):not(
-  :has(> .agent-chat__composer-error)
-) {
-  background: color-mix(in srgb, var(--info) 9%, var(--chat-composer-surface));
-  color: color-mix(in srgb, var(--info) 72%, var(--text));
-}
-
-:root[data-theme-mode="light"]
-  .agent-chat__composer-errors:has(> .agent-chat__composer-notice):not(
-    :has(> .agent-chat__composer-error)
-  ) {
-  background: color-mix(in srgb, var(--info) 14%, var(--chat-composer-surface));
-}
-
-.agent-chat__composer-error + :is(.agent-chat__composer-error, .agent-chat__composer-notice),
-.agent-chat__composer-notice + :is(.agent-chat__composer-error, .agent-chat__composer-notice),
-.agent-chat__composer-errors + .agent-chat__offline-hint {
+.agent-chat__composer-error + .agent-chat__composer-error {
   border-top: 1px solid color-mix(in srgb, var(--danger) 16%, transparent);
-}
-
-@supports (corner-shape: superellipse(1.5)) {
-  .agent-chat__composer-errors {
-    corner-shape: superellipse(1.5);
-  }
 }
 
 .agent-chat__composer-error-icon {
@@ -4361,19 +4130,6 @@ button.chat-pr__diff {
 }
 
 .agent-chat__composer-error-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.agent-chat__composer-notice-icon {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  color: var(--info);
-}
-
-.agent-chat__composer-notice-icon svg {
   width: 100%;
   height: 100%;
 }
@@ -4630,6 +4386,55 @@ button.chat-pr__diff {
    covered by the thread spark, content arriving, and Stop reverting. */
 .agent-chat__run-status--interrupted {
   color: var(--warn);
+}
+
+.agent-chat__session-overrides-pill {
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: var(--chat-composer-chip-height);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.agent-chat__session-overrides-pill button {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.agent-chat__session-overrides-open {
+  padding: 0 var(--chat-composer-chip-padding-inline);
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chat__session-overrides-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--chat-composer-control-size);
+  width: var(--chat-composer-control-size);
+  padding: 0;
+  color: var(--muted);
+}
+
+.agent-chat__session-overrides-clear svg {
+  width: 13px;
+  height: 13px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .agent-chat__session-overrides-pill button:hover:not(:disabled) {
+    background: var(--chat-composer-hover);
+  }
 }
 
 @keyframes chat-run-status-spin {
@@ -5331,6 +5136,7 @@ button.chat-pr__diff {
     /* Touch targets, not chrome: the composer's own control rules all read this
        token, so raising it here resizes every button on the surface at once. */
     --chat-composer-control-size: 44px;
+    --chat-composer-send-size: 44px;
     /* The labelled chips follow, as one family: raising the family tokens keeps
        the session-mode chip the same size as the pickers it sits beside instead
        of leaving a 24px chip stranded against 44px neighbours. */
@@ -7169,11 +6975,6 @@ button.chat-pr__diff {
     width: calc(100% - 8px);
   }
 
-  .chat-run-error {
-    width: calc(100% - 8px);
-    margin: 6px 4px 0;
-  }
-
   .agent-chat__composer-shell:has(.agent-chat__composer-combobox > :is(textarea, input):focus) {
     margin-bottom: 0;
   }
@@ -7238,6 +7039,7 @@ button.chat-pr__diff {
     flex: 1 1 0;
     min-width: 0;
     order: 3;
+    overflow: hidden;
   }
 
   .agent-chat__input--chat .agent-chat__composer-actions {
@@ -7291,6 +7093,7 @@ button.chat-pr__diff {
 
   .agent-chat__input .chat-controls__model-trigger {
     gap: 3px;
+    padding-inline: 0;
   }
 
   .agent-chat__composer-lead .chat-controls__permission-trigger {

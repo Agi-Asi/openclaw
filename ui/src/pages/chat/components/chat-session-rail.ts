@@ -634,7 +634,6 @@ export class ChatSessionRailElement extends OpenClawLightDomElement {
           : nothing}
         <form
           class="agent-chat__input chat-session-rail__composer"
-          data-composer-layout="multiline"
           @submit=${(event: SubmitEvent) => {
             event.preventDefault();
             this.submit();

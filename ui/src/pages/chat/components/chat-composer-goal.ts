@@ -1,6 +1,7 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { html, nothing, svg, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import type { SessionGoal } from "../../../api/types.ts";
+import { strokeIcon } from "../../../components/icons-tools.ts";
 import { icons } from "../../../components/icons.ts";
 import { t } from "../../../i18n/index.ts";
 import {
@@ -13,6 +14,9 @@ import {
 import type { ChatComposerState } from "./chat-composer-types.ts";
 
 const goalElapsedTimers = new Map<HTMLElement, ReturnType<typeof setInterval>>();
+const goalIcon = strokeIcon(svg` <path d="M12 13V2l8 4-8 4" />
+  <path d="M20.561 10.222a9 9 0 1 1-12.55-5.29" />
+  <path d="M8.002 9.997a5 5 0 1 0 8.9 2.02" />`);
 
 function clearGoalElapsedTimer(el: HTMLElement) {
   const timer = goalElapsedTimers.get(el);
@@ -104,7 +108,7 @@ export function renderChatGoal(
       aria-label=${formatGoalDetail(goal)}
     >
       <div class="agent-chat__goal-row">
-        <span class="agent-chat__goal-icon">${icons.goal}</span>
+        <span class="agent-chat__goal-icon">${goalIcon}</span>
         <span class="agent-chat__goal-copy">
           <span class="agent-chat__goal-label">${formatGoalStatusLabel(goal.status)}</span>
           <span class="agent-chat__goal-objective">${goal.objective}</span>
