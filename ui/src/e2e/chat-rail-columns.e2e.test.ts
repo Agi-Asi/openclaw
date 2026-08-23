@@ -933,7 +933,7 @@ suite.define(() => {
         expect(companionGeometry.railBottom).toBeLessThanOrEqual(companionGeometry.bodyBottom + 1);
 
         const mainComposer = page.locator(
-          ".chat-pane-cache__pane--active .agent-chat__composer-combobox > textarea",
+          '.chat-pane-cache__pane--visible[aria-hidden="false"] .agent-chat__composer-combobox > textarea',
         );
         await mainComposer.click();
         expect(await mainComposer.evaluate((element) => element === document.activeElement)).toBe(
