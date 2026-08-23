@@ -275,11 +275,21 @@ export async function handleDiscordMessageAction(
       readStringParam(params, "path", { trim: false }) ??
       readStringParam(params, "media", { trim: false });
     if (!mediaUrl) {
+      // Buffer attachments are send-only; upload-file covers existing file/media sources.
+      if (readStringParam(params, "buffer", { trim: false })) {
+        throw new Error(
+          'Use action: "send" for base64 buffer attachments; upload-file requires filePath, path, or media.',
+        );
+      }
       throw new Error("upload-file requires filePath, path, or media.");
     }
     const content =
       readStringParam(params, "message", { allowEmpty: true }) ??
-      readStringParam(params, "content", { allowEmpty: true });
+      readStringParam(params, "content", { allowEmpty: true }) ??
+      // `media` is accepted as an alias for the file, so a send-shaped call
+      // arrives with its text in `caption`; without this alias that text is
+      // silently dropped instead of becoming the uploaded message's content.
+      readStringParam(params, "caption", { allowEmpty: true });
     const filename = readStringParam(params, "filename");
     const replyTo = readStringParam(params, "replyTo");
     const silent = readBooleanParam(params, "silent") === true;

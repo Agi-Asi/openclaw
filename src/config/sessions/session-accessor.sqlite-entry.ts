@@ -711,6 +711,7 @@ export async function updateSessionLastRoute(params: {
   ctx?: MsgContext;
   groupResolution?: GroupKeyResolution | null;
   createIfMissing?: boolean;
+  assertCommitAllowed?: () => void;
 }): Promise<SessionEntry | null> {
   const createIfMissing = params.createIfMissing ?? true;
   return await patchSessionEntryCore(
@@ -745,6 +746,7 @@ export async function updateSessionLastRoute(params: {
     {
       // Route updates must not refresh activity timestamps (#49515).
       preserveActivity: true,
+      ...(params.assertCommitAllowed ? { assertCommitAllowed: params.assertCommitAllowed } : {}),
       ...(createIfMissing ? { fallbackEntry: mergeSessionEntry(undefined, {}) } : {}),
     },
   );

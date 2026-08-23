@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 345363,
-  "reason": "confirmed owner assignment reconciliation",
-  "updatedAt": "2026-08-21"
+  "startupJsGzipBytes": 345049,
+  "reason": "streamed-markdown highlighting changes (#127749, #127754) consumed the ratchet",
+  "updatedAt": "2026-08-22"
 }
