@@ -10,6 +10,7 @@ import {
   applySessionEntryLifecycleMutation,
   assignSessionOwner,
   loadSessionEntry,
+  resetSessionEntryLifecycle,
   updateSessionEntry,
   upsertSessionEntryCore,
 } from "./session-accessor.js";
@@ -215,6 +216,57 @@ describe("SQLite session owner assignment", () => {
           assignedAt: 2,
         },
         sessionId: "session-owned-lifecycle-removal",
+      });
+    });
+  });
+
+  it("rejects a lifecycle reset prepared before assigning an owner", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const scope = {
+        agentId: "main",
+        env: state.env,
+        sessionKey: "agent:main:owned-lifecycle-reset",
+      };
+      const storePath = state.statePath("agents", "main", "sessions", "sessions.json");
+      await upsertSessionEntryCore(scope, {
+        sessionId: "session-owned-lifecycle-reset",
+        updatedAt: 1,
+      });
+      let releaseBuilder: () => void = () => undefined;
+      const builderGate = new Promise<void>((resolve) => {
+        releaseBuilder = resolve;
+      });
+      let markBuilderStarted: () => void = () => undefined;
+      const builderStarted = new Promise<void>((resolve) => {
+        markBuilderStarted = resolve;
+      });
+      const mutation = resetSessionEntryLifecycle({
+        agentId: scope.agentId,
+        storePath,
+        target: { canonicalKey: scope.sessionKey, storeKeys: [scope.sessionKey] },
+        buildNextEntry: async () => {
+          markBuilderStarted();
+          await builderGate;
+          return { sessionId: "replacement-session", updatedAt: 3 };
+        },
+      });
+
+      await builderStarted;
+      assignSessionOwner(scope, {
+        owner: { type: "human", id: "profile-owner" },
+        assignedBy: { type: "human", id: "profile-assigner" },
+        assignedAt: 2,
+      });
+      releaseBuilder();
+
+      await expect(mutation).rejects.toThrow("changed before reset lifecycle mutation");
+      expect(loadSessionEntry(scope)).toMatchObject({
+        owner: {
+          actor: { type: "human", id: "profile-owner" },
+          assignedBy: { type: "human", id: "profile-assigner" },
+          assignedAt: 2,
+        },
+        sessionId: "session-owned-lifecycle-reset",
       });
     });
   });

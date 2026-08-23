@@ -510,8 +510,11 @@ export function assertLifecycleTargetUnchanged(
   operation: "deleted" | "reset",
 ): void {
   const current = resolveLifecyclePrimaryEntry(database, target)?.entry;
-  const entriesEqual = operation === "deleted" ? sqliteSessionEntriesEqual : lifecycleEntriesEqual;
-  if (current && expectedEntry ? entriesEqual(current, expectedEntry) : current === expectedEntry) {
+  if (
+    current && expectedEntry
+      ? sqliteSessionEntriesEqual(current, expectedEntry)
+      : current === expectedEntry
+  ) {
     return;
   }
   throw new Error(`SQLite session entry changed before ${operation} lifecycle mutation`);
