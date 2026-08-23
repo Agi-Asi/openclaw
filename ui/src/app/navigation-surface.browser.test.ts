@@ -32,14 +32,14 @@ describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
         <div class="shell shell--nav-collapsed" style="animation: none">
           <div class="shell-chrome-controls">
             <button
-              class="shell-chrome-controls__button shell-chrome-controls__search"
-              type="button"
-              aria-label="Open command palette"
-            ></button>
-            <button
               class="shell-chrome-controls__button shell-chrome-controls__nav-toggle"
               type="button"
               aria-label="Expand navigation"
+            ></button>
+            <button
+              class="shell-chrome-controls__button shell-chrome-controls__search"
+              type="button"
+              aria-label="Open command palette"
             ></button>
             <span class="shell-chrome-controls__separator" aria-hidden="true"></span>
           </div>

@@ -165,7 +165,7 @@ suite.define(() => {
           .locator(".shell-chrome-controls button")
           .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))),
       )
-      .toEqual(["Open command palette", "Expand sidebar"]);
+      .toEqual(["Expand sidebar", "Open command palette"]);
     await expect.poll(() => page.locator(".sidebar-attention--floating").count()).toBe(0);
     await expand.focus();
     await page.keyboard.press("Meta+b");
@@ -276,7 +276,7 @@ suite.define(() => {
     await expect.poll(() => new URL(page.url()).pathname).toBe("/new");
   });
 
-  it("keeps the native control rail separate from chat identity in both sidebar states", async () => {
+  it("keeps native titlebar controls clustered left in both sidebar states", async () => {
     const page = await openPage({ webChrome: true });
     const toolbar = page.locator(".macos-titlebar-controls");
     await expect.poll(() => toolbar.isVisible()).toBe(true);
@@ -304,27 +304,18 @@ suite.define(() => {
       expect(metrics.map(({ label }) => label)).toEqual([
         "Back",
         "Forward",
-        "Open command palette",
         toggleLabel,
+        "Open command palette",
       ]);
       expect(new Set(metrics.map(({ centerY }) => centerY)).size).toBe(1);
       expect(metrics[0]!.left).toBe(92);
       expect(metrics[1]!.left - metrics[0]!.right).toBe(4);
-      expect(metrics[2]!.left - metrics[1]!.right).toBeGreaterThan(4);
+      expect(metrics[2]!.left - metrics[1]!.right).toBe(4);
       expect(metrics[3]!.left - metrics[2]!.right).toBe(4);
-      expect(metrics[3]!.right).toBe(248);
+      expect(metrics[3]!.right).toBe(216);
     };
 
     await expectControlRail("Collapse sidebar");
-    await expect
-      .poll(() =>
-        page.evaluate(() => {
-          const controls = document.querySelector(".macos-titlebar-controls");
-          const identity = document.querySelector(".chat-pane__crumbs");
-          return identity!.getBoundingClientRect().left - controls!.getBoundingClientRect().right;
-        }),
-      )
-      .toBe(12);
     await toolbar.getByRole("button", { name: "Collapse sidebar" }).click();
     await expect
       .poll(() => page.locator(".shell").getAttribute("class"))
@@ -341,22 +332,19 @@ suite.define(() => {
     const collapsedBoundary = await page
       .locator(".macos-titlebar-controls")
       .evaluate((controls) => {
-        const railEnd = Number.parseFloat(
-          getComputedStyle(controls).getPropertyValue("--shell-native-titlebar-rail-width"),
+        const clusterEnd = Number.parseFloat(
+          getComputedStyle(controls).getPropertyValue("--shell-native-titlebar-cluster-end"),
         );
-        const controlsStyle = getComputedStyle(controls);
         const identity = document.querySelector<HTMLElement>(".chat-pane__crumbs");
         return {
-          dividerWidth: Number.parseFloat(controlsStyle.borderRightWidth),
+          clusterEnd,
           identityLeft: identity?.getBoundingClientRect().left ?? 0,
-          railRight: controls.getBoundingClientRect().right,
-          railEnd,
+          clusterRight: controls.getBoundingClientRect().right,
         };
       });
-    expect(collapsedBoundary.railEnd).toBe(258);
-    expect(collapsedBoundary.railRight).toBe(258);
-    expect(collapsedBoundary.dividerWidth).toBe(1);
-    expect(collapsedBoundary.identityLeft - collapsedBoundary.railEnd).toBe(12);
+    expect(collapsedBoundary.clusterEnd).toBe(216);
+    expect(collapsedBoundary.clusterRight).toBe(216);
+    expect(collapsedBoundary.identityLeft - collapsedBoundary.clusterEnd).toBe(12);
     await expect.poll(() => toolbar.getByRole("button", { name: "New session" }).count()).toBe(0);
     await expect.poll(() => page.locator(".sidebar-attention--floating").count()).toBe(0);
     await search.click();

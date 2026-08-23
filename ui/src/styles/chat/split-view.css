@@ -1100,12 +1100,11 @@ html.openclaw-native-nav
   padding-left: 204px;
 }
 
-/* The collapsed native rail keeps the expanded sidebar's 258px boundary.
-   Its identity content then resumes at the normal 12px pane inset. */
+/* Keep chat identity one normal pane inset past the compact native cluster. */
 html.openclaw-native-web-chrome
   .shell--nav-collapsed:not(.shell--mobile-nav)
   .chat-split-view__column:first-child {
-  min-width: calc(320px + var(--shell-native-titlebar-rail-width));
+  min-width: calc(320px + var(--shell-native-titlebar-cluster-end));
 }
 
 html.openclaw-native-web-chrome
@@ -1114,5 +1113,5 @@ html.openclaw-native-web-chrome
   > .chat-split-view__cell:first-child
   :is(.chat-main__conversation-column, .chat-pane-primary-column)
   > .chat-pane__header {
-  padding-left: calc(var(--shell-native-titlebar-rail-width) + 12px);
+  padding-left: calc(var(--shell-native-titlebar-cluster-end) + 12px);
 }

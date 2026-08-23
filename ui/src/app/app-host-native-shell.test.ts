@@ -195,7 +195,7 @@ describe("OpenClaw native shell", () => {
     { navCollapsed: false, toggleLabel: "Collapse sidebar" },
     { navCollapsed: true, toggleLabel: "Expand sidebar" },
   ])(
-    "orders $toggleLabel after titlebar history and search",
+    "clusters $toggleLabel and search after titlebar history",
     async ({ navCollapsed, toggleLabel }) => {
       const onToggleSidebar = vi.fn();
       const onOpenPalette = vi.fn();
@@ -213,7 +213,7 @@ describe("OpenClaw native shell", () => {
         [...controls.querySelectorAll<HTMLButtonElement>("button")].map((button) =>
           button.getAttribute("aria-label"),
         ),
-      ).toEqual(["Back", "Forward", "Open command palette", toggleLabel]);
+      ).toEqual(["Back", "Forward", toggleLabel, "Open command palette"]);
       expect(controls.querySelector('[aria-label="New session"]')).toBeNull();
       controls.querySelector<HTMLButtonElement>(".macos-titlebar-controls__search")?.click();
       controls

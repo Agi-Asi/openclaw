@@ -486,16 +486,6 @@ export function renderApplicationShell(host: ShellViewHost) {
       ${navCollapsed && !onboarding && !settingsTakeover && !mobileNavLayout
         ? html`
             <div class="shell-chrome-controls">
-              <openclaw-tooltip .content=${t("chat.commandPaletteTitle")} .hoverOnly=${true}>
-                <button
-                  type="button"
-                  class="shell-chrome-controls__button shell-chrome-controls__search"
-                  aria-label=${t("chat.openCommandPalette")}
-                  @click=${() => host.openPalette()}
-                >
-                  ${icons.search}
-                </button>
-              </openclaw-tooltip>
               <openclaw-tooltip .content=${`${t("nav.expand")} (⌘B)`} .hoverOnly=${true}>
                 <button
                   type="button"
@@ -510,6 +500,16 @@ export function renderApplicationShell(host: ShellViewHost) {
                     host.toggleNavigationSurface(currentTarget)}
                 >
                   ${icons.panelLeft}
+                </button>
+              </openclaw-tooltip>
+              <openclaw-tooltip .content=${t("chat.commandPaletteTitle")} .hoverOnly=${true}>
+                <button
+                  type="button"
+                  class="shell-chrome-controls__button shell-chrome-controls__search"
+                  aria-label=${t("chat.openCommandPalette")}
+                  @click=${() => host.openPalette()}
+                >
+                  ${icons.search}
                 </button>
               </openclaw-tooltip>
               <span class="shell-chrome-controls__separator" aria-hidden="true"></span>

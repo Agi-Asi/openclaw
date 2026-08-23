@@ -35,18 +35,18 @@ class MacosTitlebarControls extends OpenClawLightDomContentsElement {
         ${!this.historyOnly
           ? html`
               ${this.renderButton({
-                label: t("chat.openCommandPalette"),
-                tooltip: t("chat.commandPaletteTitle"),
-                icon: icons.search,
-                onClick: this.onOpenPalette,
-                className: "macos-titlebar-controls__search",
-              })}
-              ${this.renderButton({
                 label: toggleLabel,
                 icon: icons.panelLeft,
                 ariaExpanded: !this.navCollapsed,
                 onClick: this.onToggleSidebar,
                 className: "macos-titlebar-controls__sidebar-toggle",
+              })}
+              ${this.renderButton({
+                label: t("chat.openCommandPalette"),
+                tooltip: t("chat.commandPaletteTitle"),
+                icon: icons.search,
+                onClick: this.onOpenPalette,
+                className: "macos-titlebar-controls__search",
               })}
             `
           : nothing}
