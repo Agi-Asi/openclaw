@@ -472,6 +472,10 @@ export const claimSubagentRunKill = subagentRunManager.claimSubagentRunKill;
 export const releaseSubagentRunKillClaim = subagentRunManager.releaseSubagentRunKillClaim;
 export const registerSubagentRun: (params: RegisterSubagentRunParams) => void =
   subagentRunManager.registerSubagentRun;
+export const prepareSubagentRunForAtomicStore = subagentRunManager.prepareSubagentRunForAtomicStore;
+export const publishSubagentRunAfterAtomicStore =
+  subagentRunManager.publishSubagentRunAfterAtomicStore;
+export const acceptPreparedSubagentLaunch = subagentRunManager.acceptPreparedSubagentLaunch;
 export const startQueuedSubagentRun = subagentRunManager.startQueuedSubagentRun;
 export const settleFailedQueuedSubagentLaunch = subagentRunManager.settleFailedQueuedSubagentLaunch;
 

@@ -1376,6 +1376,38 @@ describe("subagent registry seam flow", () => {
     );
   });
 
+  it("does not redispatch a canonical launch after Gateway acceptance response is lost", async () => {
+    const accepted = makeQueuedRun({
+      runId: "run-lost-acceptance",
+      childSessionKey: "agent:main:subagent:lost-acceptance",
+      task: "do not dispatch twice",
+      groupId: "lost-acceptance",
+      createdAt: Date.now(),
+    });
+    accepted.gatewayRunId = accepted.runId;
+    accepted.execution = {
+      status: "running",
+      acceptedAt: accepted.createdAt + 1,
+      startedAt: accepted.createdAt + 1,
+    };
+    delete accepted.launch;
+    delete accepted.queuedLaunch;
+    mocks.restoreSubagentRunsFromDisk.mockImplementation(((params: {
+      runs: Map<string, SubagentRunRecord>;
+    }) => {
+      params.runs.set(accepted.runId, accepted);
+      return 1;
+    }) as never);
+
+    hydrateAndActivateRegistry();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.callGateway.mock.calls.filter(([request]) => request.method === "agent")).toEqual(
+      [],
+    );
+  });
+
   it("rehydrates persisted collector FIFO queues after admission reopens", async () => {
     const now = Date.now();
     mockSingleCollectorConcurrency();

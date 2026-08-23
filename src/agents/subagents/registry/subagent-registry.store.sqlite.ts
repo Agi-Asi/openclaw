@@ -3,11 +3,16 @@
  * store preserves typed columns for hot delivery state while retaining the
  * normalized payload JSON for forward-compatible record hydration.
  */
+import { isDeepStrictEqual } from "node:util";
 import { safeParseJson } from "@openclaw/normalization-core";
 import { asFiniteNumber as normalizeFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { sql, type Insertable, type Selectable, type Updateable } from "kysely";
-import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../../infra/kysely-sync.js";
+import {
+  executeSqliteQuerySync,
+  executeSqliteQueryTakeFirstSync,
+  getNodeSqliteKysely,
+} from "../../../infra/kysely-sync.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../../../state/openclaw-state-db.generated.js";
 import {
   openOpenClawStateDatabase,
@@ -21,7 +26,7 @@ import type { SubagentRunReadRecord, SubagentRunRecord } from "./subagent-regist
 type SubagentRunsTable = OpenClawStateKyselyDatabase["subagent_runs"];
 type SubagentRegistryDatabase = Pick<OpenClawStateKyselyDatabase, "subagent_runs">;
 type SubagentRunSqliteRow = Selectable<SubagentRunsTable>;
-type BoundSubagentRunRecord = Insertable<SubagentRunsTable>;
+export type BoundSubagentRunRecord = Insertable<SubagentRunsTable>;
 type SubagentRunSqliteInsert = BoundSubagentRunRecord;
 type SubagentRunSqliteUpdate = Updateable<SubagentRunsTable>;
 type SubagentRunReadSqliteRow = Pick<
@@ -88,7 +93,7 @@ function boolToSqlite(value: boolean | undefined): number | null {
 }
 
 /** Rehydrates one sqlite row into the normalized subagent run record shape. */
-function rowToSubagentRunRecord(row: SubagentRunSqliteRow): SubagentRunRecord | null {
+export function rowToSubagentRunRecord(row: SubagentRunSqliteRow): SubagentRunRecord | null {
   const payload = parseJson(row.payload_json);
   if (!isCanonicalSubagentRunRecord(payload)) {
     return null;
@@ -203,6 +208,27 @@ export function upsertSubagentRunRowInDatabase(
         conflict.column("run_id").doUpdateSet(subagentRunRecordToSqliteUpdate(row)),
       ),
   );
+}
+
+export function insertOrMatchSubagentRunRowInDatabase(
+  database: OpenClawStateDatabase,
+  row: BoundSubagentRunRecord,
+): void {
+  const stateDb = getNodeSqliteKysely<SubagentRegistryDatabase>(database.db);
+  executeSqliteQuerySync(
+    database.db,
+    stateDb
+      .insertInto("subagent_runs")
+      .values(row)
+      .onConflict((conflict) => conflict.doNothing()),
+  );
+  const stored = executeSqliteQueryTakeFirstSync(
+    database.db,
+    stateDb.selectFrom("subagent_runs").selectAll().where("run_id", "=", row.run_id),
+  );
+  if (!stored || !isDeepStrictEqual({ ...stored }, row)) {
+    throw new Error(`subagent launch conflicts with ${row.run_id}`);
+  }
 }
 
 function subagentRunRecordToSqliteUpdate(values: SubagentRunSqliteInsert): SubagentRunSqliteUpdate {

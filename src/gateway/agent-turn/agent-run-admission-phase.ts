@@ -19,6 +19,8 @@ import {
   resolveExactSubagentCompletionEvent,
   type TrustedSubagentCompletionHandoff,
 } from "../../agents/subagents/announce/subagent-announce-handoff.js";
+import { findAuthorizedSwarmCollectorRequest } from "../../agents/subagents/registry/subagent-registry-memory.js";
+import { acceptPreparedSubagentLaunch } from "../../agents/subagents/registry/subagent-registry.js";
 import { resolveEffectiveAgentRuntime } from "../../agents/thinking-runtime.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import type { SessionEntry } from "../../config/sessions.js";
@@ -509,6 +511,28 @@ export async function prepareAgentRunDispatch(params: {
   if (params.respondToGatewayAdmissionOutcome()) {
     releasePreparedAgentRunUserTurn(userTurn);
     activeRunAbort.cleanup({ force: true });
+    return undefined;
+  }
+  const preparedCollectorLaunch =
+    params.request.swarmCollector === true
+      ? findAuthorizedSwarmCollectorRequest({
+          childSessionKey: params.request.sessionKey,
+          idempotencyKey: params.request.idempotencyKey,
+          outputSchema: params.request.swarmOutputSchema,
+        })
+      : undefined;
+  if (
+    preparedCollectorLaunch?.launch?.phase === "prepared" &&
+    !acceptPreparedSubagentLaunch(params.runId, params.runId, params.context.resolveGatewayContext)
+  ) {
+    releasePreparedAgentRunUserTurn(userTurn);
+    activeRunAbort.cleanup({ force: true });
+    activeGatewayWorkAdmission.release();
+    params.io.emitAcceptance([
+      false,
+      undefined,
+      errorShape(ErrorCodes.UNAVAILABLE, "collector launch reservation was not prepared"),
+    ]);
     return undefined;
   }
   const accepted = {

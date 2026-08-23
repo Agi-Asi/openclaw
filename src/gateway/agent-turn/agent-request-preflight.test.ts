@@ -18,6 +18,7 @@ function runPreflight(
     idempotencyKey?: string;
     includeCollectorFields?: boolean;
     launchPending?: boolean;
+    canonicalPreparedLaunch?: boolean;
     cached?: boolean;
     completed?: boolean;
     ended?: boolean;
@@ -36,8 +37,23 @@ function runPreflight(
       createdAt: 1,
       collect: true,
       outputSchema: swarmOutputSchema,
-      swarmLaunchIdempotencyKey: "collector-run",
-      swarmLaunchPending: options?.launchPending ?? true,
+      ...(options?.canonicalPreparedLaunch
+        ? {
+            launch: {
+              phase: "prepared" as const,
+              replayKey: "code-run:request-1",
+              requestFingerprint: "sha256:request-1",
+              gatewayIdempotencyKey: "collector-run",
+              childSessionId: "collector-session",
+              childLifecycleRevision: "collector-lifecycle",
+              revision: 1,
+              preparedAt: 2,
+            },
+          }
+        : {
+            swarmLaunchIdempotencyKey: "collector-run",
+            swarmLaunchPending: options?.launchPending ?? true,
+          }),
       execution: {
         status: options?.ended
           ? "terminal"
@@ -174,6 +190,18 @@ describe("agent request Swarm preflight", () => {
       enabled: true,
       backend: true,
       register: true,
+    });
+
+    expect(result).toBeDefined();
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it("accepts the canonical prepared launch identity without legacy pending fields", () => {
+    const { respond, result } = runPreflight({ type: "object" }, true, {
+      enabled: true,
+      backend: true,
+      register: true,
+      canonicalPreparedLaunch: true,
     });
 
     expect(result).toBeDefined();

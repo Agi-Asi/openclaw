@@ -45,6 +45,7 @@ import {
   retrySubagentCleanup,
   terminateAcceptedCollectorRun,
 } from "./subagent-spawn-cleanup.js";
+import { createCodeModeSpawnControl } from "./subagent-spawn-code-mode.js";
 import {
   prepareContextEngineSubagentSpawn,
   prepareSubagentSessionContext,
@@ -104,6 +105,7 @@ export async function spawnSubagentDirect(
   const sandboxMode = params.sandbox === "require" ? "require" : "inherit";
   const requesterSessionKey = ctx.agentSessionKey;
   const gatewayContextResolver = getGatewayToolCallerIdentity()?.gatewayContextResolver;
+  const codeModeLaunch = createCodeModeSpawnControl(params);
   let requestedAgentId = params.agentId?.trim();
   const requestResolution = resolveSubagentSpawnRequest(params, ctx, {
     initial: requestedAgentId,
@@ -158,6 +160,7 @@ export async function spawnSubagentDirect(
       targetAgentId,
       sandboxMode,
       swarmEnabled: swarmConfig.enabled,
+      plannedChildSessionKey: codeModeLaunch.authority?.reserved.childSessionKey,
     });
     if (!childPlan.ok) {
       return childPlan.result;
@@ -195,6 +198,7 @@ export async function spawnSubagentDirect(
       swarmGroupId,
       collect: params.collect === true,
       outputSchema: params.outputSchema,
+      plannedIdentity: codeModeLaunch.plannedSessionIdentity,
     });
     if (initialSession.status === "error") {
       return {
@@ -519,6 +523,7 @@ export async function spawnSubagentDirect(
     const pipelineResult = await runSpawnPipeline({
       adapter,
       admissionReservation,
+      register: codeModeLaunch.register,
       progressOrigin,
       progressSessionKey: requesterInternalKey,
       buildRegistration: (_state, runId) => {
@@ -609,15 +614,17 @@ export async function spawnSubagentDirect(
               }),
             });
             try {
-              const started = gatewayContextResolver
-                ? startQueuedSubagentRun(
-                    childRunId,
-                    gatewayRunId,
-                    undefined,
-                    gatewayContextResolver,
-                  )
-                : startQueuedSubagentRun(childRunId, gatewayRunId);
-              if (!started) {
+              if (
+                !codeModeLaunch.authority &&
+                !(gatewayContextResolver
+                  ? startQueuedSubagentRun(
+                      childRunId,
+                      gatewayRunId,
+                      undefined,
+                      gatewayContextResolver,
+                    )
+                  : startQueuedSubagentRun(childRunId, gatewayRunId))
+              ) {
                 throw new Error(
                   "collector registry row could not transition from queued to running",
                 );

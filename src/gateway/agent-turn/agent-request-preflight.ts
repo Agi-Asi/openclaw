@@ -137,7 +137,8 @@ export function prepareAgentRequestPreflight(params: {
           : selectedAgentId),
     ).enabled;
     const pendingCollectorLaunch =
-      registeredCollector?.swarmLaunchPending === true &&
+      (registeredCollector?.launch?.phase === "prepared" ||
+        registeredCollector?.swarmLaunchPending === true) &&
       !registeredCollector.collectorCompletion &&
       typeof registeredCollector.execution.endedAt !== "number";
     if (

@@ -204,6 +204,7 @@ export function createSubagentRegistryRestorer(config: {
         continue;
       }
       if (entry.collect && entry.execution.status === "queued") {
+        const codeModePreparedLaunch = entry.launch?.phase === "prepared";
         const cleanupSessionEntry = loadSubagentSessionEntry({
           childSessionKey: entry.childSessionKey,
           storeCache: restoredSessionCache,
@@ -257,7 +258,11 @@ export function createSubagentRegistryRestorer(config: {
               );
               const gatewayRunId = readGatewayRunId(response) ?? runId;
               try {
-                if (!startQueuedSubagentRun(runId, gatewayRunId, launchLifecycleGeneration)) {
+                const acceptedPrepared = codeModePreparedLaunch
+                  ? runs.get(runId)?.execution.status === "running" &&
+                    runs.get(runId)?.gatewayRunId === gatewayRunId
+                  : startQueuedSubagentRun(runId, gatewayRunId, launchLifecycleGeneration);
+                if (!acceptedPrepared) {
                   throw new Error(
                     "collector registry row could not transition from queued to running",
                   );

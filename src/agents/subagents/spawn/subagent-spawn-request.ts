@@ -8,6 +8,7 @@ import { resolveSessionAgentId } from "../../agent-scope.js";
 import { reserveChildAdmissionSlot } from "../../child-admission.js";
 import { resolveSpawnAdmission, resolveSpawnMode } from "../../spawn-plan.js";
 import { listSwarmRunsForGroup } from "../registry/subagent-registry.js";
+import { readSwarmCodeModeLaunchAuthority } from "../swarm/swarm-code-mode.js";
 import { resolveSwarmConfig } from "../swarm/swarm-config.js";
 import { validateStructuredOutputSchema } from "../swarm/swarm-output-schema.js";
 import { reserveSwarmRun } from "../swarm/swarm-scheduler.js";
@@ -204,6 +205,21 @@ export function resolveSubagentSpawnRequest(
   const targetAgentId = effectiveRequestedAgentId
     ? normalizeAgentId(effectiveRequestedAgentId)
     : requesterAgentId;
+  const codeModeLaunchAuthority = readSwarmCodeModeLaunchAuthority(params);
+  if (
+    codeModeLaunchAuthority &&
+    (params.collect !== true ||
+      codeModeLaunchAuthority.reserved.requesterAgentId !== requesterAgentId ||
+      codeModeLaunchAuthority.reserved.requesterSessionKey !== requesterInternalKey ||
+      codeModeLaunchAuthority.reserved.launch?.replayKey !== params.swarmLaunchReplayKey ||
+      codeModeLaunchAuthority.reserved.launch.requestFingerprint !==
+        params.swarmLaunchRequestFingerprint)
+  ) {
+    return rejectSubagentSpawnRequest(
+      "error",
+      "Code Mode launch authority does not match request.",
+    );
+  }
   const configuredAgentIds = listAgentIds(cfg);
   const explicitSwarmGroupId = normalizeOptionalString(params.groupId);
   const requesterRunId = normalizeOptionalString(ctx.requesterRunId);
@@ -263,13 +279,15 @@ export function resolveSubagentSpawnRequest(
   const maxSpawnDepth = admission.maxSpawnDepth ?? childDepth;
   const swarmLaunchReplayKey = normalizeOptionalString(params.swarmLaunchReplayKey);
   // Registry and Gateway identities are global, while host replay keys are requester-scoped.
-  const childIdem = swarmLaunchReplayKey
-    ? `swarm_${crypto
-        .createHash("sha256")
-        .update(JSON.stringify([requesterInternalKey, swarmLaunchReplayKey]))
-        .digest("hex")
-        .slice(0, 32)}`
-    : crypto.randomUUID();
+  const childIdem = codeModeLaunchAuthority
+    ? codeModeLaunchAuthority.reserved.runId
+    : swarmLaunchReplayKey
+      ? `swarm_${crypto
+          .createHash("sha256")
+          .update(JSON.stringify([requesterInternalKey, swarmLaunchReplayKey]))
+          .digest("hex")
+          .slice(0, 32)}`
+      : crypto.randomUUID();
   let reservationPending = false;
   if (params.collect && swarmGroupId && swarmSchedulerGroupKey) {
     const groupRuns = listSwarmRunsForGroup(swarmGroupId, requesterInternalKey, requesterAgentId);

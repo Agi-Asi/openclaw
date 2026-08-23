@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
 /** Owns subagent registration and queued collector launch transitions. */
 import {
@@ -17,8 +18,10 @@ import type { DeliveryContext } from "../../../utils/delivery-context.types.js";
 import { resolveSubagentRequesterAgentId } from "../../subagent-requester-owner.js";
 import { updateSwarmCollectorCompletion } from "../swarm/swarm-collector.js";
 import { normalizeSubagentRunState } from "./subagent-delivery-state.js";
+import { acceptPreparedSubagentLaunch } from "./subagent-launch-reservation.store.js";
 import { SUBAGENT_ENDED_REASON_ERROR } from "./subagent-lifecycle-events.js";
 import { SubagentRecoveryManager } from "./subagent-registry-run-recovery.js";
+import { publishPersistedSubagentRunsSnapshot } from "./subagent-registry-state.js";
 import type {
   SubagentProgressOrigin,
   SubagentRunRecord,
@@ -100,16 +103,18 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
     );
   }
 
-  readonly registerSubagentRun = (registerParams: RegisterSubagentRunParams): void => {
+  readonly prepareSubagentRunForAtomicStore = (
+    registerParams: RegisterSubagentRunParams,
+    createdAt = Date.now(),
+  ) => {
     const runId = registerParams.runId.trim();
     const childSessionKey = registerParams.childSessionKey.trim();
     const requesterSessionKey = registerParams.requesterSessionKey.trim();
     const requesterTurnRunId = registerParams.requesterTurnRunId?.trim();
     const controllerSessionKey = registerParams.controllerSessionKey?.trim() || requesterSessionKey;
     if (!runId || !childSessionKey || !requesterSessionKey) {
-      return;
+      return undefined;
     }
-    const now = Date.now();
     const generation = nextSubagentRunGeneration(
       this.options.getRunsForChildSession(childSessionKey),
       childSessionKey,
@@ -162,10 +167,10 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       outputSchema: registerParams.outputSchema,
       queuedLaunch: registerParams.queuedLaunch,
       generation,
-      createdAt: now,
+      createdAt,
       execution: {
         status: queued ? "queued" : "running",
-        startedAt: queued ? undefined : now,
+        startedAt: queued ? undefined : createdAt,
         lifecycleGeneration: getAgentEventLifecycleGeneration(),
       },
       completion: {
@@ -174,7 +179,7 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       delivery: {
         status: registerParams.expectsCompletionMessage === false ? "not_required" : "pending",
       },
-      sessionStartedAt: queued ? undefined : now,
+      sessionStartedAt: queued ? undefined : createdAt,
       accumulatedRuntimeMs: 0,
       cleanupHandled: false,
       wakeOnDescendantSettle: undefined,
@@ -183,6 +188,81 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       attachmentsRootDir: registerParams.attachmentsRootDir,
       retainAttachmentsOnKeep: registerParams.retainAttachmentsOnKeep,
     });
+    const taskParams = {
+      runtime: "subagent",
+      sourceId: runId,
+      ownerKey: requesterSessionKey,
+      scopeKind: "session",
+      requesterOrigin: requesterOrigin ? structuredClone(requesterOrigin) : undefined,
+      childSessionKey,
+      runId,
+      label: registerParams.label,
+      task: registerParams.task,
+      agentId: registerParams.agentId,
+      requesterAgentId: resolveSubagentRequesterAgentId(cfg, registerParams),
+      deliveryStatus:
+        registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
+    } as const;
+    return { cfg, entry, queued, requesterOrigin, taskParams, waitTimeoutMs };
+  };
+
+  readonly publishSubagentRunAfterAtomicStore = (
+    entry: SubagentRunRecord,
+    gatewayContextResolver?: GatewayContextResolver,
+  ): SubagentRunRecord => {
+    const current = this.options.runs.get(entry.runId);
+    if (current && current.launch?.phase !== "reserved" && !isDeepStrictEqual(current, entry)) {
+      throw new Error(`atomic subagent publication conflicts with live run ${entry.runId}`);
+    }
+    this.options.runs.set(entry.runId, entry);
+    bindGatewayContextResolver(entry, gatewayContextResolver);
+    publishPersistedSubagentRunsSnapshot(this.options.runs, [entry.runId]);
+    this.options.ensureListener();
+    this.options.startSweeper();
+    return entry;
+  };
+
+  readonly acceptPreparedSubagentLaunch = (
+    runId: string,
+    gatewayRunId: string,
+    gatewayContextResolver?: GatewayContextResolver,
+  ): boolean => {
+    const prepared = this.options.runs.get(runId);
+    const accepted = acceptPreparedSubagentLaunch({ runId, gatewayRunId });
+    if (!accepted) {
+      return false;
+    }
+    this.options.runs.set(accepted.runId, accepted);
+    bindGatewayContextResolver(accepted, gatewayContextResolver);
+    publishPersistedSubagentRunsSnapshot(this.options.runs, [accepted.runId]);
+    try {
+      startTaskRunByRunId({
+        runId: accepted.runId,
+        childSessionKey: accepted.childSessionKey,
+        startedAt: accepted.execution.startedAt ?? Date.now(),
+      });
+    } catch (error) {
+      if (prepared?.launch?.phase === "prepared") {
+        this.options.runs.set(prepared.runId, prepared);
+        this.failQueuedSubagentRun(
+          prepared.runId,
+          `detached task runtime start failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+      throw error;
+    }
+    return true;
+  };
+
+  readonly registerSubagentRun = (registerParams: RegisterSubagentRunParams): void => {
+    const prepared = this.prepareSubagentRunForAtomicStore(registerParams);
+    if (!prepared) {
+      return;
+    }
+    const { entry, queued, taskParams, waitTimeoutMs } = prepared;
+    const { runId } = entry;
     this.options.runs.set(runId, entry);
     bindGatewayContextResolver(entry, registerParams.gatewayContextResolver);
     const killReconciliationSnapshots = this.markOlderKillReconciliationsSuperseded(entry);
@@ -220,29 +300,12 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
     }
     if (registerParams.taskRowOwnership !== "gateway_best_effort") {
       try {
-        const taskParams = {
-          runtime: "subagent",
-          sourceId: runId,
-          ownerKey: requesterSessionKey,
-          scopeKind: "session",
-          // Detached task runtimes are plugin-replaceable. Isolate their input so
-          // mutation cannot change the already-persisted registry record.
-          requesterOrigin: requesterOrigin ? structuredClone(requesterOrigin) : undefined,
-          childSessionKey,
-          runId,
-          label: registerParams.label,
-          task: registerParams.task,
-          agentId: registerParams.agentId,
-          requesterAgentId: resolveSubagentRequesterAgentId(cfg, registerParams),
-          deliveryStatus:
-            registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
-        } as const;
         const task = queued
           ? createQueuedTaskRun(taskParams)
           : createRunningTaskRun({
               ...taskParams,
-              startedAt: now,
-              lastEventAt: now,
+              startedAt: entry.createdAt,
+              lastEventAt: entry.createdAt,
             });
         if (!task) {
           if (registerParams.taskRowOwnership === "required") {
