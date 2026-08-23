@@ -37,6 +37,7 @@ const HIDDEN_WEB_CHROME_HOSTS = [
 ] as const;
 const MANUAL_UPGRADE_GUIDANCE =
   "This browser has limited access. Manage it with openclaw devices on the Gateway or from Devices on an admin browser.";
+const CHAT_PAGE_MODULE_ROUTE = /chat-page(?:-[^/.]+)?\.(?:js|ts)(?:\?.*)?$/u;
 const BANNER_MODULE_ROUTE = /device-scope-upgrade\.runtime(?:-[^/.]+)?\.(?:js|ts)/u;
 const BANNER_RETRY_MODULE_ROUTE = /device-scope-upgrade-retry\.runtime(?:-[^/.]+)?\.(?:js|ts)/u;
 
@@ -180,6 +181,21 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
   it("anchors desktop chat access status in the active header actions", async () => {
     const context = await createContext();
     const page = await context.newPage();
+    let releaseChatPageModule = () => {};
+    const chatPageModuleRelease = new Promise<void>((resolve) => {
+      releaseChatPageModule = resolve;
+    });
+    let heldChatPageModule = false;
+    let chatPageModuleRouteSettled: Promise<void> | undefined;
+    await page.route(CHAT_PAGE_MODULE_ROUTE, async (route) => {
+      if (!heldChatPageModule) {
+        heldChatPageModule = true;
+        chatPageModuleRouteSettled = chatPageModuleRelease.then(() => route.continue());
+        await chatPageModuleRouteSettled;
+        return;
+      }
+      await route.continue();
+    });
     await installMockGateway(page, {
       methodResponses: {
         "sessions.list": chatSessionListResponse([
@@ -195,7 +211,18 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
       operatorScopes: LIMITED_SCOPES,
       sessionKey: "agent:main:session-a",
     });
-    await page.goto(`${server.baseUrl}chat/main/session-a`);
+    const navigation = page.goto(`${server.baseUrl}chat/main/session-a`);
+    try {
+      await expect.poll(() => heldChatPageModule).toBe(true);
+      await page.locator("openclaw-device-scope-upgrade-banner").waitFor({ state: "attached" });
+      await page.evaluate(() =>
+        customElements.whenDefined("openclaw-device-scope-upgrade-banner"),
+      );
+    } finally {
+      releaseChatPageModule();
+      await chatPageModuleRouteSettled;
+    }
+    await navigation;
 
     const header = page.locator(".chat-pane__header").first();
     const status = page.getByRole("button", { name: "Show limited access details" });

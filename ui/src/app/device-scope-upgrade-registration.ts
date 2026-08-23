@@ -325,9 +325,11 @@ class ScopeUpgradeSurface extends OpenClawLightDomContentsElement {
           </openclaw-modal-dialog>`
         : nothing}`;
     }
+    // Web Awesome resolves an external `for` target only when that value changes.
+    // Bind on open, after the route-owned chat header trigger is connected.
     return html`${trigger}<wa-popover
         class="scope-upgrade-details-popover"
-        for=${SCOPE_UPGRADE_TRIGGER_ID}
+        for=${this.detailsOpen ? SCOPE_UPGRADE_TRIGGER_ID : nothing}
         placement="bottom-start"
         without-arrow
         .open=${this.detailsOpen}
