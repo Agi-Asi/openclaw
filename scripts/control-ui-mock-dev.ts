@@ -385,7 +385,6 @@ const composerBenchHtml = `<!doctype html>
                 ["approval", "Approval"],
                 ["session-suggestion", "Session suggestion"],
                 ["pull-request", "Pull request"],
-                ["swarm", "Swarm progress"],
                 ["disk-warning", "Disk warning"],
                 ["disk-critical", "Disk critical"],
                 ["workspace-conflict", "Workspace conflict"],

@@ -22,7 +22,6 @@ import { renderChatModelControls } from "../pages/chat/components/chat-model-con
 import { renderChatPermissionPicker } from "../pages/chat/components/chat-permission-picker.ts";
 import { renderChatPullRequests } from "../pages/chat/components/chat-pull-requests.ts";
 import { renderChatSessionSuggestions } from "../pages/chat/components/chat-session-suggestions.ts";
-import { renderChatSwarmProgress } from "../pages/chat/components/chat-swarm-progress.ts";
 import { renderWelcomeState } from "../pages/chat/components/chat-welcome.ts";
 import { renderChatViewNotices } from "../pages/chat/chat-view-notices.ts";
 import { RealtimeTalkLevelSignal } from "../pages/chat/realtime-talk-level.ts";
@@ -124,8 +123,6 @@ type BenchState = {
     | "approval"
     | "session-suggestion"
     | "pull-request"
-    | "swarm"
-    | "swarm-failed"
     | "disk-warning"
     | "disk-critical"
     | "workspace-conflict"
@@ -509,16 +506,6 @@ const scenarios: BenchScenario[] = [
     name: "Pull request",
     description: "Repository status stays inside the composer-width boundary.",
     state: { content: "one", neighbor: "pull-request" },
-  },
-  {
-    name: "Swarm running",
-    description: "A swarm summarizes progress and reveals task detail on hover.",
-    state: { content: "one", neighbor: "swarm" },
-  },
-  {
-    name: "Swarm failed",
-    description: "A failed swarm uses danger only for the failed state.",
-    state: { content: "one", neighbor: "swarm-failed" },
   },
   {
     name: "Chat error",
@@ -1166,40 +1153,6 @@ function renderBenchNeighbor() {
       expanded: false,
       onExpand: () => {},
       onDismiss: clear,
-    });
-  } else if (state.neighbor === "swarm" || state.neighbor === "swarm-failed") {
-    const failed = state.neighbor === "swarm-failed";
-    surface = renderChatSwarmProgress({
-      sessionKey: "agent:main:main",
-      sessions: [
-        {
-          key: "agent:main:bench-worker-1",
-          kind: "direct",
-          updatedAt: Date.now(),
-          parentSessionKey: "agent:main:main",
-          swarmGroupId: "swarm:agent:main:main:composer-review",
-          label: "Composer reviewer",
-          status: "running",
-        },
-        {
-          key: "agent:main:bench-worker-2",
-          kind: "direct",
-          updatedAt: Date.now(),
-          parentSessionKey: "agent:main:main",
-          swarmGroupId: "swarm:agent:main:main:composer-review",
-          label: "Queue reviewer",
-          status: failed ? "failed" : "done",
-        },
-        {
-          key: "agent:main:bench-worker-3",
-          kind: "direct",
-          updatedAt: Date.now(),
-          parentSessionKey: "agent:main:main",
-          swarmGroupId: "swarm:agent:main:main:composer-review",
-          label: "Interaction reviewer",
-          status: "done",
-        },
-      ],
     });
   } else {
     const notice =
