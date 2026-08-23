@@ -99,6 +99,7 @@ export function renderChatGoal(
   return html`
     <div
       class="agent-chat__goal agent-chat__goal--${goal.status}"
+      data-expanded=${String(expanded)}
       role="group"
       aria-label=${formatGoalDetail(goal)}
     >

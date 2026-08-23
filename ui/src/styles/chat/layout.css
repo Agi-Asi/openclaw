@@ -1056,8 +1056,7 @@ openclaw-chat-page {
   max-width: none;
   box-sizing: border-box;
   margin: 0;
-  padding-top: 0;
-  padding-bottom: var(--chat-goal-underlap);
+  padding: 0 0 var(--chat-goal-underlap);
   border-bottom: 0;
   border-radius: calc(20px * var(--openclaw-corner-radius-scale))
     calc(20px * var(--openclaw-corner-radius-scale)) 0 0;
@@ -1073,6 +1072,7 @@ openclaw-chat-page {
 
 .agent-chat__goal-float .agent-chat__goal-row {
   min-height: 42px;
+  padding: 8px 18px;
 }
 
 .chat-queue + .agent-chat__goal-float .agent-chat__goal {
@@ -1098,7 +1098,7 @@ openclaw-chat-page {
 
 .agent-chat__goal-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
   align-items: center;
   min-width: 0;
   column-gap: 8px;
@@ -1108,8 +1108,8 @@ openclaw-chat-page {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 28px;
+  width: 14px;
+  height: 18px;
   flex-shrink: 0;
 }
 
@@ -1149,6 +1149,19 @@ openclaw-chat-page {
 .agent-chat__goal-objective {
   flex: 1 1 auto;
   color: var(--muted);
+}
+
+.agent-chat__goal[data-expanded="true"] .agent-chat__goal-label {
+  font-weight: 600;
+}
+
+.agent-chat__goal[data-expanded="true"]
+  :is(.agent-chat__goal-icon, .agent-chat__goal-objective, .agent-chat__goal-elapsed) {
+  display: none;
+}
+
+.agent-chat__goal[data-expanded="true"] .agent-chat__goal-row {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .agent-chat__goal-elapsed {
@@ -1215,10 +1228,8 @@ openclaw-chat-page {
 .agent-chat__goal-detail-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-  padding: 6px 2px 3px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  gap: 5px;
+  padding: 0 18px 14px;
   color: var(--text);
 }
 
@@ -1230,6 +1241,9 @@ openclaw-chat-page {
 }
 
 .agent-chat__goal-detail-objective {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1237,6 +1251,8 @@ openclaw-chat-page {
 .agent-chat__goal-detail-note,
 .agent-chat__goal-detail-meta {
   color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
