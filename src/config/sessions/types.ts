@@ -629,6 +629,8 @@ export type InternalSessionEntryCore = SessionEntryCore & {
   activeWriterRunId?: string;
   /** Private per-generation ownership for the pre-runtime checkout baseline capture. */
   sessionDiffBaselineCapture?: import("./session-diff-baseline-capture.js").SessionDiffBaselineCapture;
+  /** Transcript evidence for suspended Code Mode runs; never recovery authority. */
+  codeModeWaitingClaims?: import("./code-mode-waiting-claim.js").CodeModeWaitingClaims;
   mainRestartRecovery?: MainRestartRecoveryState;
 };
 

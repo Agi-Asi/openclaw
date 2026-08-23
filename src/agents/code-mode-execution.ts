@@ -561,7 +561,9 @@ export async function runWait(params: {
   removeExpiredRuns();
   const state = activeRuns.get(params.runId);
   if (!state) {
-    throw new ToolInputError("code mode run is unavailable or expired.");
+    throw new ToolInputError(
+      "code mode run is unavailable after restart or expired; rerun exec to start fresh.",
+    );
   }
   if (state.ctx.runId && state.ctx.runId !== params.ctx.runId) {
     throw new ToolInputError("code mode run belongs to a different agent run.");

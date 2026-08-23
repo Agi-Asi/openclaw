@@ -7,6 +7,10 @@ import {
   readStringValue,
 } from "@openclaw/normalization-core/string-coerce";
 import {
+  attachCodeModeWaitingClaimMutation,
+  readCodeModeWaitingClaimMutation,
+} from "../config/sessions/code-mode-waiting-claim.js";
+import {
   redactModelVisibleSecrets,
   redactModelVisibleSensitiveFieldValueWithConfig,
   redactModelVisibleToolPayloadText,
@@ -296,6 +300,10 @@ export function sanitizeToolResult(result: unknown): unknown {
       }
       return entry;
     });
+  }
+  const mutation = readCodeModeWaitingClaimMutation(record.details);
+  if (mutation && out.details && typeof out.details === "object") {
+    attachCodeModeWaitingClaimMutation(out.details, mutation);
   }
   return out;
 }

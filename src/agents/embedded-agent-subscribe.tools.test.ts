@@ -3,6 +3,10 @@
 
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  attachCodeModeWaitingClaimMutation,
+  readCodeModeWaitingClaimMutation,
+} from "../config/sessions/code-mode-waiting-claim.js";
 import * as loggingConfigModule from "../logging/config.js";
 import {
   buildToolLifecycleErrorResult,
@@ -214,6 +218,25 @@ function getTextContent(result: unknown, index = 0): string {
 }
 
 describe("sanitizeToolResult", () => {
+  it("preserves private Code Mode claim intent without enumerating it", () => {
+    const details = { status: "waiting", runId: "cm-test" };
+    attachCodeModeWaitingClaimMutation(details, {
+      kind: "set",
+      waitingCodeModeRunId: "cm-test",
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const sanitized = sanitizeToolResult({ content: [], details }) as {
+      details: Record<string, unknown>;
+    };
+
+    expect(readCodeModeWaitingClaimMutation(sanitized.details)).toMatchObject({
+      kind: "set",
+      waitingCodeModeRunId: "cm-test",
+    });
+    expect(Object.keys(sanitized.details)).toEqual(["status", "runId"]);
+  });
+
   it("redacts JSON-style apiKey fields in text content blocks", () => {
     const result = {
       content: [

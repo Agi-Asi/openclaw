@@ -450,7 +450,7 @@ describe("Code Mode wait, scope, and suspended runs", () => {
     expect(testing.activeRuns.size).toBe(0);
   });
 
-  it("expires suspended runs with invalid expiry timestamps", async () => {
+  it("does not rehydrate a missing run when wait follows restart-like state loss", async () => {
     const { tools: codeModeTools } = createCodeModeHarness();
     testing.activeRuns.set("invalid-expiry-run", {
       expiresAt: 8_640_000_000_000_001,
@@ -461,7 +461,9 @@ describe("Code Mode wait, scope, and suspended runs", () => {
         "code-wait-invalid-expiry",
         { runId: "invalid-expiry-run" },
       ),
-    ).rejects.toThrow("code mode run is unavailable or expired");
+    ).rejects.toThrow(
+      "code mode run is unavailable after restart or expired; rerun exec to start fresh",
+    );
     expect(testing.activeRuns.has("invalid-expiry-run")).toBe(false);
   });
 

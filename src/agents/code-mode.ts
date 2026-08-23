@@ -4,6 +4,10 @@
  */
 import { Type } from "typebox";
 import { getAgentToolExecutionContext } from "../../packages/agent-core/src/tool-execution-context.js";
+import {
+  attachCodeModeWaitingClaimMutation,
+  type CodeModeWaitingClaimMutation,
+} from "../config/sessions/code-mode-waiting-claim.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HookContext } from "./agent-tools.before-tool-call.js";
 import { CODE_MODE_NODES_TOOL_ID } from "./code-mode-bridge.js";
@@ -30,6 +34,7 @@ import {
   readRunId,
   resolveCodeModeConfig,
 } from "./code-mode-runtime.js";
+import { activeRuns } from "./code-mode-state.js";
 import {
   normalizeCodeModeTimeoutResult,
   CodeModeHeadlessAbortError,
@@ -68,6 +73,15 @@ export type { CodeModeFailureCode, CodeModeHeadlessResult } from "./code-mode-ru
 type CodeModeToolContext = ToolSearchToolContext;
 
 const MAX_CODE_MODE_CATALOG_INDEX_CHARS = 8_000;
+
+function attachWaitingClaimMutation(
+  result: { details?: unknown },
+  mutation: CodeModeWaitingClaimMutation,
+): void {
+  if (result.details && typeof result.details === "object") {
+    attachCodeModeWaitingClaimMutation(result.details, mutation);
+  }
+}
 
 const CODE_MODE_CATALOG_INDEX_HEADING = [
   "Enabled async tool globals (descriptions are intentionally deferred):",
@@ -211,7 +225,7 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
       restartSafe: Type.Optional(
         Type.Boolean({
           description:
-            "Do not set on a new exec. Set true only when OpenClaw explicitly requests replay after a gateway restart; never for write, edit, exec, or any mutation. True rejects unmarked or namespace surfaces.",
+            "Requests host-enforced restart-safe execution. The host validates every nested surface as read-only or reconstructable; true never certifies safety or guarantees recovery. Omit for ordinary runs.",
         }),
       ),
     }),
@@ -241,7 +255,18 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
           },
         }),
       );
-      return formatToolSearchControlResult(result, runtime, undefined, result.status);
+      const formatted = formatToolSearchControlResult(result, runtime, undefined, result.status);
+      if (result.status === "waiting" && result.runId) {
+        const expiresAt = activeRuns.get(result.runId)?.expiresAt;
+        if (expiresAt) {
+          attachWaitingClaimMutation(formatted, {
+            kind: "set",
+            waitingCodeModeRunId: result.runId,
+            expiresAt,
+          });
+        }
+      }
+      return formatted;
     },
   } as AnyAgentTool);
   const waitTool = markCodeModeControlTool({
@@ -258,12 +283,13 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
       signal?: AbortSignal,
       onUpdate?: AgentToolUpdateCallback,
     ) => {
+      const requestedRunId = readRunId(args);
       let runtime: ToolSearchRuntime | undefined;
       const result = normalizeCodeModeTimeoutResult(
         await runWait({
           toolCallId,
           ctx,
-          runId: readRunId(args),
+          runId: requestedRunId,
           signal,
           onUpdate,
           onRuntime: (value) => {
@@ -271,7 +297,23 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
           },
         }),
       );
-      return formatToolSearchControlResult(result, runtime, undefined, result.status);
+      const formatted = formatToolSearchControlResult(result, runtime, undefined, result.status);
+      if (result.status === "waiting" && result.runId) {
+        const expiresAt = activeRuns.get(result.runId)?.expiresAt;
+        if (expiresAt) {
+          attachWaitingClaimMutation(formatted, {
+            kind: "set",
+            waitingCodeModeRunId: result.runId,
+            expiresAt,
+          });
+        }
+      } else {
+        attachWaitingClaimMutation(formatted, {
+          kind: "clear",
+          waitingCodeModeRunId: requestedRunId,
+        });
+      }
+      return formatted;
     },
   } as AnyAgentTool);
   return [execTool, waitTool];

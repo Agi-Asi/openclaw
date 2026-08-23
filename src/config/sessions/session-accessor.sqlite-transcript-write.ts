@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { err, ok, type Result } from "@openclaw/normalization-core/result";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
@@ -6,6 +10,12 @@ import {
   type OpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import { clearAllCliSessions } from "./cli-session-binding.js";
+import {
+  MAX_CODE_MODE_WAITING_CLAIMS,
+  MAX_CODE_MODE_WAITING_CLAIM_MS,
+  readCodeModeWaitingClaimMutation,
+  type CodeModeWaitingClaimMutation,
+} from "./code-mode-waiting-claim.js";
 import type {
   SessionTranscriptAccessScope,
   SessionTranscriptTurnMessageAppend,
@@ -38,7 +48,9 @@ import {
   resolveSqliteTranscriptScope,
   runExclusiveSqliteSessionWrite,
   toDatabaseOptions,
+  type ResolvedTranscriptScope,
 } from "./session-accessor.sqlite-scope.js";
+import { readActiveTranscriptEntryAnchorInTransaction } from "./session-accessor.sqlite-transcript-anchor.js";
 import { appendTranscriptMessageInTransaction } from "./session-accessor.sqlite-transcript-message-append.js";
 import { readTranscriptMirrorFacts } from "./session-accessor.sqlite-transcript-mirror.js";
 import { resolveTranscriptMessageAppendParent } from "./session-accessor.sqlite-transcript-parent.js";
@@ -70,6 +82,8 @@ import type { InternalSessionEntry, SessionEntry } from "./types.js";
 import { mergeSessionEntry } from "./types.js";
 
 // Transcript write owner. Queue coordination surrounds synchronous SQLite commit sections.
+const codeModeClaimLog = createSubsystemLogger("sessions/code-mode-claim");
+const loggedCodeModeClaimWarnings = new Set<string>();
 
 class SqliteTranscriptMutationConflictError extends Error {
   constructor(sessionId: string) {
@@ -448,9 +462,16 @@ export async function appendExpectedSessionTranscriptTurn(
         deleteLegacySessionEntryRows(transactionDb, fresh.legacyKeys, resolved.sessionKey);
         currentIdentity = readSessionIdentitySnapshot(transactionDb, identityKeys);
       }
+      for (const appended of appendedMessages) {
+        const mutation = readClaimMutationFromMessage(appended.message);
+        if (appended.appended && mutation) {
+          applyCodeModeClaimMutationWithSavepoint(transactionDb, resolved, appended, mutation);
+        }
+      }
+      const committedEntry = readSessionEntryRow(transactionDb, resolved.sessionKey)?.entry ?? next;
       result = {
         appendedMessages,
-        sessionEntry: cloneSessionEntry(next),
+        sessionEntry: cloneSessionEntry(committedEntry),
         sessionFile: options.sessionFile,
       };
     }, toDatabaseOptions(resolved));
@@ -505,6 +526,10 @@ export async function appendTranscriptMessage<TMessage>(
     let result: TranscriptMessageAppendResult<TMessage> | undefined;
     runOpenClawAgentWriteTransaction((database) => {
       result = appendTranscriptMessageInTransaction(database, resolved, options);
+      const mutation = result ? readClaimMutationFromMessage(result.message) : undefined;
+      if (result?.appended && mutation) {
+        applyCodeModeClaimMutationWithSavepoint(database, resolved, result, mutation);
+      }
     }, toDatabaseOptions(resolved));
     return result;
   });
@@ -518,6 +543,7 @@ export function appendTranscriptMessageSync<TMessage>(
   // Every sync message append inherits and enforces the admitted writer claim.
   const fencedScope = withOwnedSessionTranscriptWriterFence(scope);
   const resolved = resolveSqliteTranscriptScope(fencedScope);
+  const mutation = readClaimMutationFromMessage(options.message);
   let result: TranscriptMessageAppendResult<TMessage> | undefined;
   runOpenClawAgentWriteTransaction((database) => {
     const fresh = readSessionEntryRow(database, resolved.sessionKey);
@@ -532,11 +558,159 @@ export function appendTranscriptMessageSync<TMessage>(
       return;
     }
     result = appendTranscriptMessageInTransaction(database, resolved, options);
+    if (result?.appended && mutation) {
+      applyCodeModeClaimMutationWithSavepoint(database, resolved, result, mutation);
+    }
   }, toDatabaseOptions(resolved));
   if (fencedScope.expectedWriterRunId !== undefined && result === undefined) {
     throw new SessionTranscriptWriterClaimReboundError(scope.sessionKey);
   }
   return result;
+}
+
+function readClaimMutationFromMessage(message: unknown): CodeModeWaitingClaimMutation | undefined {
+  return isRecord(message) ? readCodeModeWaitingClaimMutation(message.details) : undefined;
+}
+
+function readTranscriptEventJson(
+  database: OpenClawAgentDatabase,
+  resolved: ResolvedTranscriptScope,
+  seq: number,
+): string | undefined {
+  return (
+    database.db
+      .prepare("SELECT event_json FROM transcript_events WHERE session_id = ? AND seq = ?")
+      .get(resolved.sessionId, seq) as { event_json?: string } | undefined
+  )?.event_json;
+}
+
+function warnCodeModeClaimOnce(sessionId: string, mutation: CodeModeWaitingClaimMutation): void {
+  const key = `${sessionId}:${mutation.kind}`;
+  if (loggedCodeModeClaimWarnings.has(key)) {
+    return;
+  }
+  if (loggedCodeModeClaimWarnings.size >= 256) {
+    loggedCodeModeClaimWarnings.clear();
+  }
+  loggedCodeModeClaimWarnings.add(key);
+  codeModeClaimLog.warn("Code Mode waiting claim failed; transcript append was preserved", {
+    mutation: mutation.kind,
+  });
+}
+
+function applyCodeModeClaimMutationWithSavepoint<TMessage>(
+  database: OpenClawAgentDatabase,
+  resolved: ResolvedTranscriptScope,
+  result: TranscriptMessageAppendResult<TMessage>,
+  mutation: CodeModeWaitingClaimMutation,
+): void {
+  database.db.exec("SAVEPOINT code_mode_waiting_claim");
+  try {
+    applyCodeModeClaimMutationInTransaction(database, resolved, result, mutation);
+    database.db.exec("RELEASE SAVEPOINT code_mode_waiting_claim");
+  } catch {
+    database.db.exec("ROLLBACK TO SAVEPOINT code_mode_waiting_claim");
+    database.db.exec("RELEASE SAVEPOINT code_mode_waiting_claim");
+    warnCodeModeClaimOnce(resolved.sessionId, mutation);
+  }
+}
+
+function applyCodeModeClaimMutationInTransaction<TMessage>(
+  database: OpenClawAgentDatabase,
+  resolved: ResolvedTranscriptScope,
+  result: TranscriptMessageAppendResult<TMessage>,
+  mutation: CodeModeWaitingClaimMutation,
+): void {
+  const internal = readSessionEntryRow(database, resolved.sessionKey)?.entry as
+    | InternalSessionEntry
+    | undefined;
+  if (!internal?.lifecycleRevision || !internal.activeWriterRunId) {
+    return;
+  }
+  const message = isRecord(result.message) ? result.message : undefined;
+  const details = message && isRecord(message.details) ? message.details : undefined;
+  if (!message || message.role !== "toolResult" || typeof message.toolCallId !== "string") {
+    return;
+  }
+  const now = Date.now();
+  const claims = internal.codeModeWaitingClaims ?? {};
+  let nextClaims: typeof claims | undefined;
+  if (mutation.kind === "set") {
+    const anchor = result.anchor;
+    const expiresAt = Math.min(mutation.expiresAt, now + MAX_CODE_MODE_WAITING_CLAIM_MS);
+    const retained = Object.fromEntries(
+      Object.entries(claims).filter(([, claim]) => claim.expiresAt > now),
+    );
+    if (
+      !anchor ||
+      expiresAt <= now ||
+      !["exec", "wait"].includes(String(message.toolName)) ||
+      message.isError === true ||
+      details?.status !== "waiting" ||
+      details.runId !== mutation.waitingCodeModeRunId
+    ) {
+      return;
+    }
+    if (
+      !retained[mutation.waitingCodeModeRunId] &&
+      Object.keys(retained).length >= MAX_CODE_MODE_WAITING_CLAIMS
+    ) {
+      warnCodeModeClaimOnce(internal.sessionId, mutation);
+      return;
+    }
+    const raw = readTranscriptEventJson(database, resolved, anchor.rawSeq);
+    if (!raw) {
+      return;
+    }
+    nextClaims = {
+      ...retained,
+      [mutation.waitingCodeModeRunId]: {
+        sourceSessionId: internal.sessionId,
+        sourceLifecycleRevision: internal.lifecycleRevision,
+        sourceWriterRunId: internal.activeWriterRunId,
+        sourceToolCallId: message.toolCallId,
+        waitingCodeModeRunId: mutation.waitingCodeModeRunId,
+        expiresAt,
+        transcriptAnchor: anchor,
+        transcriptEventDigest: createHash("sha256").update(raw).digest("hex"),
+      },
+    };
+  } else {
+    const current = claims[mutation.waitingCodeModeRunId];
+    if (!current) {
+      return;
+    }
+    const raw = readTranscriptEventJson(database, resolved, current.transcriptAnchor.rawSeq);
+    if (
+      message.toolName !== "wait" ||
+      (message.isError !== true &&
+        details?.status !== "completed" &&
+        details?.status !== "failed") ||
+      internal.sessionId !== current.sourceSessionId ||
+      internal.lifecycleRevision !== current.sourceLifecycleRevision ||
+      internal.activeWriterRunId !== current.sourceWriterRunId ||
+      !raw ||
+      createHash("sha256").update(raw).digest("hex") !== current.transcriptEventDigest ||
+      !isDeepStrictEqual(
+        readActiveTranscriptEntryAnchorInTransaction({
+          database,
+          resolved,
+          entryId: current.transcriptAnchor.entryId,
+        }),
+        current.transcriptAnchor,
+      )
+    ) {
+      return;
+    }
+    const { [mutation.waitingCodeModeRunId]: _cleared, ...remaining } = claims;
+    nextClaims = Object.keys(remaining).length > 0 ? remaining : undefined;
+  }
+  writeSessionEntry(
+    database,
+    resolved.sessionKey,
+    { ...internal, codeModeWaitingClaims: nextClaims },
+    { previousEntry: internal },
+  );
 }
 
 /** Runs read/append transcript work under one SQLite writer-queue critical section. */
