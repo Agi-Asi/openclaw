@@ -448,6 +448,11 @@ const scenarios: BenchScenario[] = [
     state: { content: "one", run: "running", queue: "three", inset: "goal" },
   },
   {
+    name: "Active steer",
+    description: "A steered follow-up stays attached to the run it is redirecting.",
+    state: { content: "one", run: "steering", followUpMode: "steer" },
+  },
+  {
     name: "Queue with 3",
     description: "Three queued messages remain attached to the composer.",
     state: { content: "one", run: "running", queue: "three" },
