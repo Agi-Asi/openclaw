@@ -57,6 +57,7 @@ openclaw-chat-pane {
   :is(
     .chat-pane__nav-toggle,
     .chat-pane__incognito,
+    .chat-pane__session-menu-anchor,
     openclaw-session-owner-chip,
     .chat-pane__participants,
     .chat-pane__presence,
