@@ -413,7 +413,7 @@ describe("OpenClaw native shell", () => {
 });
 
 describe("OpenClaw shell update affordance", () => {
-  it("renders floating attention while keeping update actions in navigation", async () => {
+  it("keeps collapsed attention in navigation while preserving stale-client refresh", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const shared = {
@@ -439,7 +439,7 @@ describe("OpenClaw shell update affordance", () => {
     render(renderFloatingUpdateCard({ ...shared, navigationSurfaceHidden: collapsed }), container);
     expect(
       container.querySelector("openclaw-sidebar-attention.sidebar-attention--floating"),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(container.querySelector("openclaw-sidebar-update-card")).toBeNull();
 
     render(
