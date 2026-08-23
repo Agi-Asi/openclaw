@@ -548,7 +548,14 @@ export class OpenClawApp extends OpenClawLightDomElement {
         : mobileNavLayout
           ? "shell shell--mobile-nav"
           : "shell";
-      return html`<div class=${shellClass} aria-busy="true"><i class="content"></i></div>
+      return html`<div
+          class=${shellClass}
+          role="status"
+          aria-label=${t("common.loading")}
+          aria-busy="true"
+        >
+          <i class="content"></i>
+        </div>
         ${gatewayUrlConfirmation}`;
     }
     const shellOwnsRecovery =

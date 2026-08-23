@@ -289,6 +289,8 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
       await gateway.waitForRequest("connect");
       const pendingShell = page.locator(".shell[aria-busy='true']");
       await pendingShell.waitFor();
+      expect(await pendingShell.getAttribute("role")).toBe("status");
+      expect(await pendingShell.getAttribute("aria-label")).toBe("Loading…");
       expect(await pendingShell.getAttribute("class")).toContain("shell--mobile-nav");
       expect(await pendingShell.getAttribute("class")).toContain("shell--merged-chat-chrome");
       const pendingGrid = await pendingShell.evaluate((element) => {
