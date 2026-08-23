@@ -413,7 +413,7 @@ suite.define(() => {
         await page.goto(`${suite.server.baseUrl}new`);
         await page.getByRole("heading", { name: "Original agent" }).waitFor();
         const message = page.locator(".new-session-page__message");
-        const start = page.locator("button.chat-send-btn");
+        const start = page.locator("button.new-session-page__start-submit");
         await message.fill("retry this draft after reconnect");
         await gateway.deferNext("sessions.create");
         await start.click();

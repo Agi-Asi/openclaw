@@ -148,6 +148,7 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     onTypingChange?: (typing: boolean, preview?: string) => void;
     canSend: boolean;
     disabledReason: string | null;
+    disabledReasonTone?: "info" | "danger";
     disabledBanner?: ChatComposerDisabledBanner;
     modelSetupRequired?: boolean;
     onModelSetup?: () => void;
@@ -322,6 +323,7 @@ export function renderChat(props: ChatProps) {
       streamStartedAt: props.streamStartedAt,
       runId: props.runId,
       runOutputTokens: props.runOutputTokens,
+      runStatus: props.runStatus,
       queue: props.queue,
       showThinking: props.showThinking,
       showToolCalls: props.showToolCalls,
@@ -394,6 +396,7 @@ export function renderChat(props: ChatProps) {
     queuedOutboxCount: props.queuedOutboxCount,
     canSend: props.canSend,
     disabledReason: props.disabledReason,
+    disabledReasonTone: props.disabledReasonTone,
     disabledBanner: props.disabledBanner,
     runError: props.runError,
     sending: props.sending,
@@ -439,6 +442,7 @@ export function renderChat(props: ChatProps) {
     gatewayClient: props.gatewayClient,
     composerHoldToRecord: props.composerHoldToRecord,
     suggestionComposer: props.suggestionComposer,
+    typingActors: props.typingActors,
     onTypingChange: props.onTypingChange,
     composerControls: props.composerControls,
     permissionPicker: props.permissionPicker,
@@ -556,7 +560,12 @@ export function renderChat(props: ChatProps) {
           <div class="chat-split-container">
             <div class="chat-main">
               <div class="chat-main__conversation-column">
-                ${props.header ?? nothing} ${renderChatViewNotices(props)}
+                ${props.header ?? nothing}
+                ${renderChatViewNotices({
+                  ...props,
+                  error: props.error ?? props.runError?.summary ?? null,
+                  onDismissError: props.error != null ? props.onDismissError : undefined,
+                })}
                 ${renderTranscriptSearch(props.paneId, requestUpdate)}
                 <div class="chat-main__conversation">
                   ${thread} ${earlierHistoryButton} ${scrollToBottomButton}

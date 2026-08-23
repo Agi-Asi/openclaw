@@ -28,6 +28,7 @@ const DESKTOP_CONTEXT: BrowserContextOptions = {
 };
 const MOBILE_CONTEXT: BrowserContextOptions = {
   ...BASE_CONTEXT,
+  hasTouch: true,
   viewport: { height: 740, width: 364 },
 };
 const MODELS = [
@@ -101,7 +102,7 @@ async function withNewSessionPage(
 }
 
 suite.define(() => {
-  it("keeps rail privacy visible and reveals the mobile footer mode on hover or focus", async () => {
+  it("keeps rail privacy visible and shows the mobile footer mode without hover", async () => {
     await withNewSessionPage(MOBILE_CONTEXT, async (page) => {
       await installMockGateway(page, {
         models: [
@@ -118,16 +119,16 @@ suite.define(() => {
             contextWindow: 200_000,
           },
         ],
+        allowedSessionVisibilities: ["shared", "draft"],
         hasMultipleSessionSharingIdentities: true,
       });
       await page.goto(`${suite.server.baseUrl}new`);
       const footer = page.locator(".new-session-page__composer .agent-chat__composer-footer");
       const attach = page.getByRole("button", { name: "Add attachment" });
       const takePhoto = page.getByRole("menuitem", { name: "Take photo" });
-      const draft = page.getByRole("switch", { name: "Draft" });
+      const draft = page.locator('.new-session-page__visibility--draft[aria-label="Draft"]');
       const incognito = page.getByRole("switch", { name: "Incognito" });
       const model = page.locator(".new-session-page__composer .chat-composer-model-control");
-      const message = page.locator(".new-session-page__message");
       await Promise.all([
         footer.waitFor(),
         attach.waitFor(),
@@ -141,18 +142,6 @@ suite.define(() => {
       await expect
         .poll(() => incognito.evaluate((element) => getComputedStyle(element).opacity))
         .toBe("1");
-      await expect
-        .poll(() => draft.evaluate((element) => getComputedStyle(element).opacity))
-        .toBe("0");
-      await footer.hover();
-      await expect
-        .poll(() => draft.evaluate((element) => getComputedStyle(element).opacity))
-        .toBe("1");
-      await page.mouse.move(0, 0);
-      await expect
-        .poll(() => draft.evaluate((element) => getComputedStyle(element).opacity))
-        .toBe("0");
-      await message.focus();
       await expect
         .poll(() => draft.evaluate((element) => getComputedStyle(element).opacity))
         .toBe("1");
@@ -172,7 +161,29 @@ suite.define(() => {
       expect(attachBox).not.toBeNull();
       expect(draftBox).not.toBeNull();
       expect(modelBox).not.toBeNull();
-      expect((attachBox?.x ?? 0) + (attachBox?.width ?? 0)).toBeLessThanOrEqual(draftBox?.x ?? 0);
+      // The row reads as the settings for the next turn, in the order the
+      // operator decides them: attachments, then the model and its reasoning,
+      // then whether the session begins as a draft. This viewport is narrow enough that
+      // the row wraps, so the comparison is reading order — which line a control
+      // is on first, then where it sits on that line.
+      const followsInReadingOrder = (
+        previous: { x: number; y: number; height: number } | null,
+        next: { x: number; y: number; height: number } | null,
+      ) => {
+        if (!previous || !next) {
+          return false;
+        }
+        const previousCenter = previous.y + previous.height / 2;
+        const nextCenter = next.y + next.height / 2;
+        const sameLine = Math.abs(nextCenter - previousCenter) <= previous.height / 2;
+        return sameLine ? next.x > previous.x : nextCenter > previousCenter;
+      };
+      const sequence = [attachBox, modelBox, draftBox];
+      for (let index = 1; index < sequence.length; index += 1) {
+        expect(followsInReadingOrder(sequence[index - 1] ?? null, sequence[index] ?? null)).toBe(
+          true,
+        );
+      }
       for (const control of [attachBox, draftBox, modelBox]) {
         expect(control?.x ?? 0).toBeGreaterThanOrEqual(footerBox?.x ?? 0);
         expect((control?.x ?? 0) + (control?.width ?? 0)).toBeLessThanOrEqual(
@@ -188,13 +199,23 @@ suite.define(() => {
 
       await attach.click();
       await expect.poll(() => takePhoto.isVisible()).toBe(true);
+      // The plus becomes a close mark while its menu is up: one glyph rotating,
+      // so the button that opened the menu visibly is the one that dismisses it.
+      // A CSS rotation matrix is [cos, sin, -sin, cos], so the sine term carries
+      // the direction: negative is counter-clockwise, turning back against the
+      // upward travel of the menu rather than with it.
+      const attachGlyphSine = () =>
+        attach.evaluate((element) => {
+          const { transform } = getComputedStyle(element.querySelector("svg") as SVGElement);
+          return transform === "none"
+            ? 0
+            : Number(transform.slice(transform.indexOf("(") + 1).split(",")[1]);
+        });
+      await expect.poll(attachGlyphSine).toBeCloseTo(-Math.SQRT1_2, 3);
       await page.keyboard.press("Escape");
+      await expect.poll(attachGlyphSine).toBe(0);
       await incognito.click();
-      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-      await page.mouse.move(0, 0);
-      await expect
-        .poll(() => incognito.evaluate((element) => getComputedStyle(element).opacity))
-        .toBe("1");
+      await expect.poll(() => incognito.getAttribute("aria-checked")).toBe("true");
     });
   });
 
@@ -236,7 +257,7 @@ suite.define(() => {
       await expect.poll(pickerOpen).toBe(false);
       await expect
         .poll(() => modelSelect.evaluate((element) => element === document.activeElement))
-        .toBe(true);
+        .toBe(false);
       await modelSelect.click();
       await expect.poll(pickerOpen).toBe(true);
       await page.mouse.click(8, 8);
