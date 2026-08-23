@@ -6,7 +6,6 @@ import { state } from "lit/decorators.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { RouteId } from "../app-routes.ts";
 import "../components/gateway-url-confirmation.ts";
-import "../components/github-link-hovercard-registration.ts";
 import "../components/login-gate.ts";
 import "../components/openclaw-mascot.ts";
 import { renderLazyElementState } from "../components/lazy-view-error.ts";
@@ -50,19 +49,12 @@ function isRouteNotFound(result: ChatRouteData | RouteNotFound): result is Route
 
 function renderConnectingSplash(status?: string) {
   return html`
-    <main
-      class="connect-splash"
-      role="status"
-      aria-live="polite"
-      aria-label=${status ?? t("common.loading")}
-    >
-      <openclaw-mascot mood="thinking" .size=${120}></openclaw-mascot>
+    <main class="connect-splash" role="status" aria-label=${status ?? t("common.loading")}>
+      <openclaw-mascot mood="thinking"></openclaw-mascot>
       ${status ? html`<span class="connect-splash__status">${status}</span>` : nothing}
     </main>
   `;
 }
-
-const CONNECT_SPLASH_DELAY_MS = 300;
 
 export class OpenClawApp extends OpenClawLightDomElement {
   // Pinned while a connect submitted from the visible login gate is in
@@ -76,21 +68,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
   @state() private pendingGatewayUrl: string | null = null;
   @state() private onboarding = resolveOnboardingMode(globalThis.location?.search ?? "");
   @state() private focusDashboardRoute: FocusDashboardRouteState = { kind: "loading" };
-  @state() private connectSplashDue = false;
-  private connectSplashTimer?: ReturnType<typeof setTimeout>;
-
-  private restartConnectSplashTimer() {
-    this.settleConnectSplashTimer();
-    this.connectSplashDue = false;
-    this.connectSplashTimer = setTimeout(
-      () => (this.connectSplashDue = true),
-      CONNECT_SPLASH_DELAY_MS,
-    );
-  }
-
-  private settleConnectSplashTimer() {
-    clearTimeout(this.connectSplashTimer);
-  }
+  private connectSplashTimer: ReturnType<typeof setTimeout> | undefined;
 
   private runtime: ApplicationRuntime | undefined;
   private readonly contextProvider = new ContextProvider(this, {
@@ -142,6 +120,7 @@ export class OpenClawApp extends OpenClawLightDomElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    void import("../components/github-link-hovercard-registration.ts");
     void import("../components/session-progress-hovercard-registration.ts");
     this.resetLoginSensitivePresentation();
     this.runtime = bootstrapApplication();
@@ -177,15 +156,16 @@ export class OpenClawApp extends OpenClawLightDomElement {
 
   override disconnectedCallback() {
     // Stop reactive subscriptions before disposing their application sources.
-    this.settleConnectSplashTimer();
+    this.loginGatewaySource = null;
+    this.loginConnectionClient = null;
+    clearTimeout(this.connectSplashTimer);
+    this.connectSplashTimer = undefined;
     this.subscriptions.clear();
     this.focusDashboardAbort?.abort();
     this.focusDashboardAbort = null;
     this.lazyCustomElements.abandon();
     this.runtime?.stop();
     this.runtime = undefined;
-    this.loginGatewaySource = null;
-    this.loginConnectionClient = null;
     this.pendingGatewayUrl = null;
     this.resetLoginSensitivePresentation();
     super.disconnectedCallback();
@@ -210,14 +190,31 @@ export class OpenClawApp extends OpenClawLightDomElement {
       this.loginConnectionClient = snapshot.client;
       this.resetLoginSensitivePresentation();
     }
-    if (sourceChanged || clientChanged) {
-      this.syncLoginConnection(gateway);
-      this.restartConnectSplashTimer();
+    const generationChanged = sourceChanged || clientChanged;
+    const connectPending = snapshot.phase !== "connected" && !snapshot.lastError;
+    if (generationChanged || !connectPending) {
+      clearTimeout(this.connectSplashTimer);
     }
-    if (snapshot.phase === "connected" || snapshot.lastError !== null) {
-      // The pending first connect ended (or moved to the recovery gate), so
-      // the deferred splash decision no longer matters.
-      this.settleConnectSplashTimer();
+    if (generationChanged) {
+      this.syncLoginConnection(gateway);
+      if (connectPending) {
+        const client = snapshot.client;
+        this.connectSplashTimer = setTimeout(() => {
+          const current = gateway.snapshot;
+          // A cleared timer may already be queued. Revalidate the exact source
+          // and client generation so replacement or disposal cannot earn its splash.
+          if (
+            gateway !== this.loginGatewaySource ||
+            client !== this.loginConnectionClient ||
+            current.phase === "connected" ||
+            current.lastError
+          ) {
+            return;
+          }
+          this.connectSplashTimer = undefined;
+          this.requestUpdate();
+        }, 300);
+      }
     }
     if (snapshot.phase === "connected") {
       this.loginGatePinned = false;
@@ -536,37 +533,23 @@ export class OpenClawApp extends OpenClawLightDomElement {
     // before the gate returns; reconnects keep the shell mounted, and
     // loginGatePinned protects manual submissions.
     const initialConnectPending =
-      runtime.documentMode === null &&
-      gatewaySnapshot.lastError === null &&
-      (gatewaySnapshot.phase === "starting" ||
-        (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
-    if (initialConnectPending && (gatewayStartupStatus || this.connectSplashDue)) {
-      return html`
-        <openclaw-tooltip-provider>
-          ${renderConnectingSplash(gatewayStartupStatus)} ${gatewayUrlConfirmation}
-        </openclaw-tooltip-provider>
-      `;
+      !runtime.documentMode &&
+      !gatewaySnapshot.lastError &&
+      (gatewayStartupStatus || (gatewaySnapshot.phase === "connecting" && !this.loginGatePinned));
+    if (initialConnectPending && (gatewayStartupStatus || !this.connectSplashTimer)) {
+      return html`${renderConnectingSplash(gatewayStartupStatus)}${gatewayUrlConfirmation}`;
     }
     if (initialConnectPending) {
-      const routeId = runtime.router.routeIdFromPath(
-        globalThis.location?.pathname ?? "",
-        context.basePath,
-      );
+      const routeId = runtime.router.routeIdFromPath(location.pathname, context.basePath);
       const mobileNavLayout = isMobileNavLayout();
       const mobileChat = mobileNavLayout && routeId === "chat";
-      return html`<openclaw-tooltip-provider>
-        <div
-          class=${mobileChat
-            ? "shell shell--mobile-nav shell--merged-chat-chrome"
-            : mobileNavLayout
-              ? "shell shell--mobile-nav"
-              : "shell"}
-          aria-busy="true"
-        >
-          <i class="shell-nav"></i><i class="content"></i>
-        </div>
-        ${gatewayUrlConfirmation}
-      </openclaw-tooltip-provider>`;
+      const shellClass = mobileChat
+        ? "shell shell--mobile-nav shell--merged-chat-chrome"
+        : mobileNavLayout
+          ? "shell shell--mobile-nav"
+          : "shell";
+      return html`<div class=${shellClass} aria-busy="true"><i class="content"></i></div>
+        ${gatewayUrlConfirmation}`;
     }
     const shellOwnsRecovery =
       gatewaySnapshot.phase === "reconnecting" || gatewaySnapshot.phase === "reload-required";

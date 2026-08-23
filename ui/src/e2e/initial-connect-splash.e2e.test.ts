@@ -280,45 +280,47 @@ describeControlUiE2e("Control UI initial connect splash E2E", () => {
   });
 
   it("keeps canonical responsive shell geometry through authentication", async () => {
-    const page = await createPage();
-    await page.setViewportSize({ height: 900, width: 800 });
-    const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
+    for (const width of [800, 390]) {
+      const page = await createPage();
+      await page.setViewportSize({ height: 900, width });
+      const gateway = await installMockGateway(page, { deferredMethods: ["connect"] });
 
-    await page.goto(`${server.baseUrl}chat/main/telegram/12345#token=e2e-shared-token`);
-    await gateway.waitForRequest("connect");
-    const pendingShell = page.locator(".shell[aria-busy='true']");
-    await pendingShell.waitFor();
-    expect(await pendingShell.getAttribute("class")).toContain("shell--mobile-nav");
-    expect(await pendingShell.getAttribute("class")).toContain("shell--merged-chat-chrome");
-    const pendingGrid = await pendingShell.evaluate((element) => {
-      const style = getComputedStyle(element);
-      const contentBounds = element.querySelector(".content")?.getBoundingClientRect();
-      return {
-        columns: style.gridTemplateColumns,
-        areas: style.gridTemplateAreas,
-        topbarHeight: style.getPropertyValue("--shell-topbar-height"),
-        contentX: contentBounds?.x,
-        contentWidth: contentBounds?.width,
-      };
-    });
+      await page.goto(`${server.baseUrl}chat/main/telegram/12345#token=e2e-shared-token`);
+      await gateway.waitForRequest("connect");
+      const pendingShell = page.locator(".shell[aria-busy='true']");
+      await pendingShell.waitFor();
+      expect(await pendingShell.getAttribute("class")).toContain("shell--mobile-nav");
+      expect(await pendingShell.getAttribute("class")).toContain("shell--merged-chat-chrome");
+      const pendingGrid = await pendingShell.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const contentBounds = element.querySelector(".content")?.getBoundingClientRect();
+        return {
+          columns: style.gridTemplateColumns,
+          areas: style.gridTemplateAreas,
+          topbarHeight: style.getPropertyValue("--shell-topbar-height"),
+          contentX: contentBounds?.x,
+          contentWidth: contentBounds?.width,
+        };
+      });
 
-    await gateway.resolveDeferred("connect");
-    const connectedShell = page.locator("openclaw-app-shell .shell");
-    await connectedShell.waitFor();
-    expect(await connectedShell.getAttribute("class")).toContain("shell--mobile-nav");
-    expect(await connectedShell.getAttribute("class")).toContain("shell--merged-chat-chrome");
-    const connectedGrid = await connectedShell.evaluate((element) => {
-      const style = getComputedStyle(element);
-      const contentBounds = element.querySelector(".content")?.getBoundingClientRect();
-      return {
-        columns: style.gridTemplateColumns,
-        areas: style.gridTemplateAreas,
-        topbarHeight: style.getPropertyValue("--shell-topbar-height"),
-        contentX: contentBounds?.x,
-        contentWidth: contentBounds?.width,
-      };
-    });
-    expect(connectedGrid).toEqual(pendingGrid);
+      await gateway.resolveDeferred("connect");
+      const connectedShell = page.locator("openclaw-app-shell .shell");
+      await connectedShell.waitFor();
+      expect(await connectedShell.getAttribute("class")).toContain("shell--mobile-nav");
+      expect(await connectedShell.getAttribute("class")).toContain("shell--merged-chat-chrome");
+      const connectedGrid = await connectedShell.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const contentBounds = element.querySelector(".content")?.getBoundingClientRect();
+        return {
+          columns: style.gridTemplateColumns,
+          areas: style.gridTemplateAreas,
+          topbarHeight: style.getPropertyValue("--shell-topbar-height"),
+          contentX: contentBounds?.x,
+          contentWidth: contentBounds?.width,
+        };
+      });
+      expect(connectedGrid).toEqual(pendingGrid);
+    }
   });
 
   it("centers the animated mascot until the chat route finishes loading", async () => {

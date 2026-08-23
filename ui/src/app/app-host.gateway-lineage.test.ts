@@ -80,19 +80,30 @@ afterEach(() => {
 });
 
 describe("Control UI Gateway target lineage", () => {
-  it("returns to the login gate when a newly selected Gateway's first attempt fails", async () => {
+  it("restarts the splash delay per Gateway generation and fences stale timers", async () => {
     vi.useFakeTimers();
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const timerCallback = (index: number) => {
+      const callback = timeoutSpy.mock.calls.filter(([, delay]) => delay === 300)[index]?.[0];
+      if (typeof callback !== "function") {
+        throw new Error(`missing splash timer ${index}`);
+      }
+      return callback;
+    };
     const { gateway, clients } = createGatewayHarness();
     expect(renderGatewaySurface(gateway)).toContain("<openclaw-login-gate");
     gateway.start();
     const app = document.createElement("openclaw-app") as unknown as {
-      runtime: Pick<ApplicationRuntime, "context" | "documentMode" | "router">;
+      runtime: Pick<ApplicationRuntime, "context" | "documentMode" | "router" | "stop">;
       render: () => { strings: readonly string[] };
+      requestUpdate: () => void;
       synchronizeGateway: (gateway: ApplicationGateway) => void;
+      disconnectedCallback: () => void;
     };
     app.runtime = {
       documentMode: null,
       router: createApplicationRouter(),
+      stop: vi.fn(),
       context: {
         gateway,
         basePath: "",
@@ -106,6 +117,7 @@ describe("Control UI Gateway target lineage", () => {
 
     gateway.connect({ gatewayUrl: "wss://other-gateway.example.test" });
     app.synchronizeGateway(gateway);
+    timerCallback(0)();
     await vi.advanceTimersByTimeAsync(1);
     const container = document.createElement("div");
     render(app.render(), container);
@@ -123,6 +135,15 @@ describe("Control UI Gateway target lineage", () => {
 
     expect(surface).toContain("<openclaw-login-gate");
     expect(surface).not.toContain("<openclaw-app-shell");
+
+    gateway.connect({ gatewayUrl: "wss://third-gateway.example.test" });
+    app.synchronizeGateway(gateway);
+    const disposedTimer = timerCallback(2);
+    const requestUpdate = vi.spyOn(app, "requestUpdate");
+    app.disconnectedCallback();
+    requestUpdate.mockClear();
+    disposedTimer();
+    expect(requestUpdate).not.toHaveBeenCalled();
   });
 
   it("keeps retryable Gateway startup on the initial progress surface", () => {
@@ -149,7 +170,8 @@ describe("Control UI Gateway target lineage", () => {
     expect(surface).not.toContain("<openclaw-login-gate");
   });
 
-  it("shows startup progress after a manual connection attempt", () => {
+  it("rearms startup progress after a manual connection attempt", async () => {
+    vi.useFakeTimers();
     const { gateway, clients } = createGatewayHarness();
     gateway.start();
     clients[0]?.opts.onClose?.({
@@ -181,6 +203,8 @@ describe("Control UI Gateway target lineage", () => {
     };
 
     loginGate.props.onConnect();
+    app.synchronizeGateway(gateway);
+    await vi.advanceTimersByTimeAsync(299);
     clients[1]?.opts.onClose?.({
       code: 4013,
       reason: "gateway starting",
@@ -193,6 +217,7 @@ describe("Control UI Gateway target lineage", () => {
         retryAfterMs: 250,
       },
     });
+    app.synchronizeGateway(gateway);
     render(app.render(), container);
 
     expect(container.innerHTML).toContain("Gateway starting…");
