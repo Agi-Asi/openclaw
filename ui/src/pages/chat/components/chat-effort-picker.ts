@@ -7,7 +7,7 @@ import type {
   ChatFastModeSelectValue,
 } from "../../../lib/chat/model-select-state.ts";
 import type { ChatThinkingSelectState } from "../../../lib/chat/thinking.ts";
-import { syncChatPickerOverlay } from "./chat-picker-overlay.ts";
+import { handleChatComposerDetailsToggle, syncChatPickerOverlay } from "./chat-picker-overlay.ts";
 
 type ChatEffortPickerParams = {
   disabled: boolean;
@@ -121,7 +121,10 @@ export function renderChatEffortPicker(params: ChatEffortPickerParams) {
   return html`
     <details
       class="chat-controls__inline-select chat-controls__effort-picker"
-      @toggle=${(event: Event) => syncChatPickerOverlay(event.currentTarget as HTMLDetailsElement)}
+      @toggle=${(event: Event) => {
+        handleChatComposerDetailsToggle(event);
+        syncChatPickerOverlay(event.currentTarget as HTMLDetailsElement);
+      }}
     >
       <summary
         class="chat-controls__inline-select-trigger chat-controls__effort-trigger ${params.fastMode
@@ -161,35 +164,40 @@ export function renderChatEffortPicker(params: ChatEffortPickerParams) {
                     <span class="chat-controls__effort-heading">
                       ${t("chat.modelControls.effort")}
                     </span>
-                    <span class="chat-controls__reasoning-state">
-                      <span
-                        class="chat-controls__reasoning-value ${hasThinkingOverride
-                          ? ""
-                          : "chat-controls__reasoning-value--inherit"}"
-                      >
-                        ${sliderStops.length > 1
-                          ? html`
-                              <span data-chat-thinking-preview-committed>
-                                ${reasoningValueText}
-                              </span>
-                              ${sliderStops.map(
-                                (stop, index) => html`
-                                  <span data-chat-thinking-preview-index=${index} hidden>
-                                    ${formatEffortLabel(stop.label)}
-                                  </span>
-                                `,
-                              )}
-                            `
-                          : reasoningValueText}
-                      </span>
+                    <span class="sr-only">
+                      <span data-chat-thinking-preview-committed>${reasoningValueText}</span>
+                      ${sliderStops.map(
+                        (stop, index) => html`<span data-chat-thinking-preview-index=${index} hidden
+                          >${formatEffortLabel(stop.label)}</span
+                        >`,
+                      )}
                     </span>
+                    ${hasThinkingOverride
+                      ? html`
+                          <button
+                            class="chat-controls__reasoning-reset"
+                            data-chat-thinking-option=""
+                            type="button"
+                            aria-label=${t("chat.modelControls.useDefaultReasoning", {
+                              level: defaultLevelLabel,
+                            })}
+                            ?disabled=${params.thinkingDisabled}
+                            @click=${(event: MouseEvent) => {
+                              event.stopPropagation();
+                              if (params.thinkingDisabled) {
+                                event.preventDefault();
+                                return;
+                              }
+                              commitThinking("");
+                            }}
+                          >
+                            ${t("common.reset")}
+                          </button>
+                        `
+                      : nothing}
                   </div>
                   ${sliderStops.length > 1
                     ? html`
-                        <div class="chat-controls__effort-scale" aria-hidden="true">
-                          <span>${t("chat.modelControls.faster")}</span>
-                          <span>${t("chat.modelControls.smarter")}</span>
-                        </div>
                         <div class="chat-controls__reasoning-slider">
                           <div class="chat-controls__reasoning-dots" aria-hidden="true">
                             ${sliderStops.map(
@@ -227,6 +235,10 @@ export function renderChatEffortPicker(params: ChatEffortPickerParams) {
                             @blur=${(event: FocusEvent) =>
                               resetSliderPreview(event.currentTarget as HTMLInputElement, true)}
                           />
+                        </div>
+                        <div class="chat-controls__effort-scale" aria-hidden="true">
+                          <span>${t("chat.modelControls.faster")}</span>
+                          <span>${t("chat.modelControls.smarter")}</span>
                         </div>
                       `
                     : onlyStop

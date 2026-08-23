@@ -38,7 +38,7 @@ export type ChatComposerMenuSkill = {
 type ChatComposerRootToggle = {
   value: string;
   label: string;
-  icon?: unknown;
+  icon?: TemplateResult;
   checked: boolean;
   disabled: boolean;
   title?: string;
@@ -124,14 +124,16 @@ function renderCapabilityToggleRow(options: {
   checked: boolean;
   disabled: boolean;
   title: string | null | undefined;
-  icon?: unknown;
   note?: TemplateResult | typeof nothing;
   icon?: TemplateResult;
+  checkbox?: boolean;
 }) {
   return html`
     <wa-dropdown-item
       class="agent-chat__capability-menu-item agent-chat__capability-menu-toggle"
       value=${options.value}
+      type=${options.checkbox ? "checkbox" : "normal"}
+      .checked=${options.checked}
       ?disabled=${options.disabled}
       title=${options.title ?? ""}
     >
@@ -148,6 +150,7 @@ function renderCapabilityToggleRow(options: {
         .checked=${options.checked}
         ?disabled=${options.disabled}
         aria-label=${options.label}
+        aria-hidden=${options.checkbox ? "true" : nothing}
       ></wa-switch>
     </wa-dropdown-item>
   `;
@@ -212,17 +215,15 @@ function renderRootView(props: ChatComposerPlusMenuProps) {
               >
             </span>
           </wa-dropdown-item>
-          <wa-dropdown-item
-            class="agent-chat__capability-menu-item"
-            type="checkbox"
-            value="toggle-web-search"
-            .checked=${webSearchEnabled}
-            ?disabled=${props.mutationBlockedReason !== null}
-            title=${props.mutationBlockedReason ?? ""}
-          >
-            <span slot="icon" aria-hidden="true">${icons.globe}</span>
-            <span>${t("chat.composer.menu.webSearch")}</span>
-          </wa-dropdown-item>
+          ${renderCapabilityToggleRow({
+            value: "toggle-web-search",
+            label: t("chat.composer.menu.webSearch"),
+            checked: webSearchEnabled,
+            disabled: props.mutationBlockedReason !== null,
+            title: props.mutationBlockedReason,
+            icon: icons.globe,
+            checkbox: true,
+          })}
           ${menuDivider()}
           <wa-dropdown-item class="agent-chat__capability-menu-item" value="manage-plugins">
             <span slot="icon" aria-hidden="true">${icons.puzzle}</span>
