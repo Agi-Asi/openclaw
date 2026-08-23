@@ -327,13 +327,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             }}
             ${ref(state.composerInputRef ?? undefined)}
           >
-            ${dictation?.active
-              ? html`<svg class="agent-chat__dictation-edge-orbit" aria-hidden="true">
-                  <rect class="agent-chat__dictation-edge-orbit-tail" pathLength="100"></rect>
-                  <rect class="agent-chat__dictation-edge-orbit-mid" pathLength="100"></rect>
-                  <rect class="agent-chat__dictation-edge-orbit-head" pathLength="100"></rect>
-                </svg>`
-              : nothing}
             ${slashMenuVisible ? renderSlashMenu(requestUpdate, props, visibleDraft) : nothing}
             ${skillMenuVisible ? renderSkillMenu(state, skillMenuHost, requestUpdate) : nothing}
             <!-- Everything that stacks above the editor lives in one flow region so

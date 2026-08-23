@@ -3263,6 +3263,7 @@ button.chat-pr__diff {
   /* Multiline is the resting shape, so it owns the bare-selector radius; the
      scale token is the shared curvature signal, never a local redeclaration. */
   border-radius: calc(20px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
   /* Deliberately lighter than --shadow-sm: with the border and the luminance
      step already doing the separating, a heavier drop reads as a second frame. */
   box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
@@ -3301,67 +3302,49 @@ button.chat-pr__diff {
     0 2px 4px rgb(0 0 0 / 6%);
 }
 
-/* Dictation is a temporary mode of the writing surface, not another card in
-   it. The frame itself stays quiet — only a brand-accent light with a soft
-   trail orbits the edge to signal live capture. */
+@property --chat-dictation-edge-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* Dictation remains the same writing surface. A masked gradient paints inside
+   its actual radius and corner-shape, so capture never introduces a competing
+   rounded-rectangle geometry. */
 .agent-chat__input--dictating,
 .agent-chat__input--dictating:focus-within {
   isolation: isolate;
 }
 
-/* SVG overlay sized to the surface; the comet is a dashed stroke on a rounded
-   rect that mirrors the composer border, so it can never leave the perimeter
-   (an offset-path'd DOM bar previously overshot the rounded corners). */
-.agent-chat__dictation-edge-orbit {
+.agent-chat__input--dictating::after {
+  content: "";
   position: absolute;
   z-index: 5;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* Three stacked dash segments of decreasing length/opacity share one
-   dashoffset animation; their leading ends coincide (leading gap = 20 - dash
-   length), which fakes a tapered tail behind a bright head. pathLength=100
-   normalizes the perimeter, so 0 -> -100 loops seamlessly with constant
-   fractional speed at any composer size — no reset jump, no corner speedup. */
-.agent-chat__dictation-edge-orbit rect {
-  x: 1px;
-  y: 1px;
-  width: calc(100% - 2px);
-  height: calc(100% - 2px);
-  rx: calc(20px * var(--openclaw-corner-radius-scale));
-  fill: none;
-  /* Butt caps: the zero-length alignment dash at pattern start would render a
-     stray dot with round caps. */
-  stroke-linecap: butt;
+  padding: 1px;
+  border-radius: inherit;
+  corner-shape: superellipse(1.5);
+  background: conic-gradient(
+    from var(--chat-dictation-edge-angle),
+    transparent 0deg 238deg,
+    color-mix(in srgb, var(--accent) 10%, transparent) 270deg,
+    color-mix(in srgb, var(--accent) 42%, transparent) 302deg,
+    color-mix(in srgb, var(--accent) 92%, white) 326deg,
+    color-mix(in srgb, var(--accent) 30%, transparent) 340deg,
+    transparent 354deg 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
   animation: chat-dictation-edge-orbit 5s linear infinite;
-}
-
-.agent-chat__dictation-edge-orbit-tail {
-  stroke: color-mix(in srgb, var(--accent) 30%, transparent);
-  stroke-width: 1.5px;
-  stroke-dasharray: 0 6 14 80;
-}
-
-.agent-chat__dictation-edge-orbit-mid {
-  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
-  stroke-width: 2px;
-  stroke-dasharray: 0 12 8 80;
-}
-
-.agent-chat__dictation-edge-orbit-head {
-  stroke: color-mix(in srgb, var(--accent) 94%, white);
-  stroke-width: 2px;
-  stroke-dasharray: 0 17 3 80;
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 35%, transparent));
+  pointer-events: none;
 }
 
 @keyframes chat-dictation-edge-orbit {
   to {
-    stroke-dashoffset: -100;
+    --chat-dictation-edge-angle: 360deg;
   }
 }
 
@@ -3374,8 +3357,8 @@ button.chat-pr__diff {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-chat__dictation-edge-orbit rect {
-    stroke-dashoffset: -62;
+  .agent-chat__input--dictating::after {
+    --chat-dictation-edge-angle: 238deg;
     animation: none;
   }
 }
@@ -4595,11 +4578,6 @@ button.chat-pr__diff {
     transform: scaleY(0.72);
   }
 
-  .chat-send-btn--voice-live::after {
-    animation: none !important;
-    opacity: 0.45;
-  }
-
   .chat-send-btn--voice-live .agent-chat__voice-activity,
   .chat-send-btn__voice-stop-glyph,
   .chat-talk-input-picker {
@@ -4859,8 +4837,7 @@ button.chat-pr__diff {
 }
 
 /* Idle voice fill stays muted so the idle -> hover -> recording progression
-   escalates (10% -> 18% -> live meter + breathing glow); a full-strength idle
-   fill makes recording state indistinguishable at a glance. */
+   escalates without turning the microphone into a second primary action. */
 .chat-send-btn--voice {
   background: var(--chat-voice-background, color-mix(in srgb, var(--accent) 10%, transparent));
   color: var(--chat-voice-color, var(--accent));
@@ -5318,34 +5295,21 @@ button.chat-pr__diff {
   height: 100%;
 }
 
-/* Live voice input: the level meter itself is the control. Keeping it accent
-   (vs the danger stop square) is what disambiguates the two controls when a
-   run is abortable while recording; the stop glyph only crossfades in on
-   hover/focus so the resting state stays a pure waveform. */
+/* Live voice input: the level meter itself is the control. It stays unframed
+   inside the composer; the waveform is enough state, and hover reveals stop. */
 .chat-send-btn.chat-send-btn--voice-live {
   position: relative;
   width: auto;
   min-width: 64px;
   padding: 0 14px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: transparent;
   color: var(--accent);
   box-shadow: none;
 }
 
-.chat-send-btn.chat-send-btn--voice-live::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
-  opacity: 0.5;
-  animation: chat-voice-live-breathe 2.8s ease-in-out infinite;
-  pointer-events: none;
-}
-
 .chat-send-btn.chat-send-btn--voice-live:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  background: var(--chat-composer-hover);
   box-shadow: none;
 }
 
@@ -5380,25 +5344,10 @@ button.chat-pr__diff {
   opacity: 1;
 }
 
-@keyframes chat-voice-live-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
-
-/* Errored Talk session: the meter is gone, so the stop glyph stays visible
-   and the glow calms down; the alert row above owns the error message. */
+/* Errored Talk session: the meter is gone, so the stop glyph stays visible;
+   the alert row above owns the error message. */
 .chat-send-btn.chat-send-btn--voice-error .chat-send-btn__voice-stop-glyph {
   opacity: 1;
-}
-
-.chat-send-btn.chat-send-btn--voice-error::after {
-  animation: none;
-  opacity: 0.25;
 }
 
 /* Soft danger fill so Stop generating reads as the one destructive control
