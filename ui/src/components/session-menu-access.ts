@@ -81,7 +81,7 @@ export function sessionMenuReasons(params: {
   return {
     ...(patchReason
       ? {
-          "toggle-pin": patchReason,
+          "set-pin-scope": patchReason,
           rename: patchReason,
           "set-icon": patchReason,
         }

@@ -446,7 +446,7 @@ describe("AppSidebar interleaved zone", () => {
     await waitForFast(() =>
       expect(sessions.patch).toHaveBeenCalledWith(
         "agent:main:alpha",
-        { pinned: true },
+        { pinScope: "global" },
         { agentId: "main" },
       ),
     );

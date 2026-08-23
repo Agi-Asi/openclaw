@@ -77,6 +77,7 @@ export type GatewaySessionListRow = {
   archivedAt?: number;
   pinned?: boolean;
   pinnedAt?: number;
+  categoryPinnedAt?: number;
   sessionId?: string;
   stateVersion?: number;
   model?: string;

@@ -16,6 +16,7 @@ describe("groupSidebarSessionRows", () => {
     const rows = [
       row({ key: "z-1", category: "Zulu" }),
       row({ key: "p-1", pinned: true, category: "Alpha" }),
+      row({ key: "gp-1", pinned: true, pinScope: "group", category: "Alpha" }),
       row({ key: "a-1", category: "Alpha" }),
       row({ key: "u-1" }),
       row({ key: "g-1", kind: "group" }),
@@ -33,7 +34,8 @@ describe("groupSidebarSessionRows", () => {
       "groups",
       "work",
     ]);
-    expect(sections[1]?.rows.map((item) => item.key)).toEqual(["a-1", "a-2"]);
+    expect(sections[0]?.rows.map((item) => item.key)).toEqual(["p-1"]);
+    expect(sections[1]?.rows.map((item) => item.key)).toEqual(["gp-1", "a-1", "a-2"]);
     expect(sections[3]?.rows.map((item) => item.key)).toEqual(["u-1"]);
     expect(sections[4]?.groups).toBe(true);
     expect(sections[4]?.rows.map((item) => item.key)).toEqual(["g-1"]);
@@ -374,6 +376,7 @@ describe("normalizeSidebarSessionsGrouping", () => {
 });
 
 type ZoneRowExtras = {
+  pinScope?: "global" | "group" | null;
   workSession?: boolean;
   acpSession?: boolean;
   channelSession?: boolean;
@@ -400,6 +403,29 @@ describe("normalizeSessionsGroupBy", () => {
 });
 
 describe("groupSessionRows", () => {
+  it("keeps global pins first and group pins next within their category", () => {
+    const groups = groupSessionRows({
+      mode: "category",
+      rows: [
+        row({ key: "recent", category: "Research", updatedAt: 300 }),
+        row({ key: "group-pin", category: "Research", categoryPinnedAt: 200, updatedAt: 100 }),
+        row({
+          key: "global-pin",
+          category: "Research",
+          pinned: true,
+          pinnedAt: 100,
+          updatedAt: 50,
+        }),
+      ],
+    });
+
+    expect(groups[0]?.rows.map((entry) => entry.key)).toEqual([
+      "global-pin",
+      "group-pin",
+      "recent",
+    ]);
+  });
+
   it("keeps known categories in order, appends extras, and puts ungrouped last", () => {
     const rows = [
       row({ key: "a", category: "Zulu" }),

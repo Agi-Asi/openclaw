@@ -5,6 +5,7 @@ import type {
   SessionObserverDigest,
   SessionCreatedActor,
   SessionOwner,
+  SessionPinScope,
 } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { SessionAgentAttentionIconId } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
@@ -87,6 +88,9 @@ export type SidebarRecentSession = {
   modelSelectionLocked: boolean;
   kind?: string;
   pinned: boolean;
+  /** Closed scope paired with pinned: global/group when true, null when false. */
+  pinScope: SessionPinScope | null;
+  categoryPinnedAt?: number;
   archived?: boolean;
   visibility?: SessionVisibility;
   draftOwnedBySelf?: boolean;
@@ -225,6 +229,7 @@ export type SidebarSessionMutationResult = "completed" | "failed" | "stale";
 export type SidebarSessionPatch = {
   archived?: boolean;
   pinned?: boolean;
+  pinScope?: SessionPinScope | null;
   unread?: boolean;
   label?: string | null;
   icon?: string | null;

@@ -110,8 +110,10 @@ function normalizeSessionField(value: string | undefined): string | undefined {
 
 export function projectCronOwnershipFields(entry: SessionEntry): Partial<SessionEntry> {
   const projected: Partial<SessionEntry> = { ...entry };
+  delete projected.category;
   delete projected.label;
   delete projected.pinnedAt;
+  delete projected.categoryPinnedAt;
   delete projected.updatedAt;
   return projected;
 }

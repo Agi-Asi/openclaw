@@ -31,7 +31,9 @@ const FRESH_CRON_CARRIED_PREFERENCE_FIELDS = [
   "reasoningLevel",
   "ttsAuto",
   "responseUsage",
+  "category",
   "pinnedAt",
+  "categoryPinnedAt",
   "label",
   "displayName",
 ] as const satisfies readonly (keyof SessionEntry)[];

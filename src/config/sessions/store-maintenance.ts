@@ -450,6 +450,7 @@ export function archiveStaleDashboardEntries(
     if (
       !parsed?.rest.startsWith("dashboard:") ||
       entry.pinnedAt !== undefined ||
+      entry.categoryPinnedAt !== undefined ||
       entry.archivedAt !== undefined ||
       opts.preserveKeys?.has(key) === true
     ) {
@@ -555,7 +556,11 @@ export function shouldPreserveMaintenanceEntry(params: {
   preserveRecentMs?: number | null;
 }): boolean {
   // Archived and pinned sessions are user-retained; only an explicit user action may release them.
-  if (params.entry?.archivedAt !== undefined || params.entry?.pinnedAt !== undefined) {
+  if (
+    params.entry?.archivedAt !== undefined ||
+    params.entry?.pinnedAt !== undefined ||
+    params.entry?.categoryPinnedAt !== undefined
+  ) {
     return true;
   }
   // A model lock is durable harness ownership, not merely a UI restriction.

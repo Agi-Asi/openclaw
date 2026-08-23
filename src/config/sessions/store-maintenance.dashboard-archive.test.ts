@@ -52,6 +52,10 @@ describe("archiveStaleDashboardEntries", () => {
     const archivedAt = now - DAY_MS;
     const store: Record<string, SessionEntry> = {
       "agent:main:dashboard:pinned": entry(1, { pinnedAt: 2 }),
+      "agent:main:dashboard:group-pinned": entry(1, {
+        category: "Research",
+        categoryPinnedAt: 2,
+      }),
       "agent:main:dashboard:archived": entry(1, { archivedAt }),
       "agent:main:main": entry(1),
       "agent:main:slack:channel:C1": entry(1),
@@ -61,6 +65,7 @@ describe("archiveStaleDashboardEntries", () => {
 
     expect(archiveStaleDashboardEntries(store, 7 * DAY_MS, { nowMs: now })).toBe(0);
     expect(store["agent:main:dashboard:pinned"]?.archivedAt).toBeUndefined();
+    expect(store["agent:main:dashboard:group-pinned"]?.archivedAt).toBeUndefined();
     expect(store["agent:main:dashboard:archived"]?.archivedAt).toBe(archivedAt);
     for (const key of [
       "agent:main:main",

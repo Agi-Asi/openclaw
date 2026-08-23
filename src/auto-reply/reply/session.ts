@@ -892,6 +892,7 @@ async function initSessionStateAttemptLocked(
     systemSent,
     abortedLastRun: recoveredTerminalEntry ? undefined : abortedLastRun,
     pinnedAt: entry?.pinnedAt,
+    categoryPinnedAt: entry?.categoryPinnedAt,
     usageFamilyKey,
     usageFamilySessionIds,
     previousSessionId: baseEntry?.previousSessionId,

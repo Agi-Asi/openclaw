@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { keyed } from "lit/directives/keyed.js";
+import type { SessionPinScope } from "../../../packages/gateway-protocol/src/index.ts";
 import { normalizeSessionIconValue } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import { t } from "../i18n/index.ts";
 import { EDITOR_IDS, type EditorId } from "../lib/editor-links.ts";
@@ -10,6 +11,7 @@ import { icons } from "./icons.ts";
 import { activateMenuShortcut, menuShortcutHint } from "./menu-shortcuts.ts";
 import { promoteToPopoverTopLayer } from "./menu-surface.ts";
 import { renderSessionIconPicker } from "./session-icon-picker.ts";
+import { simpleSessionMenuAction } from "./session-menu-actions.ts";
 import {
   compactSessionMenuViewForValue,
   compactSessionOwnerOptions,
@@ -17,21 +19,25 @@ import {
   renderCompactSessionMenuView,
   type CompactSessionMenuView,
 } from "./session-menu-compact.ts";
-import { renderSessionEditorOptions, renderSessionGroupOptions } from "./session-menu-options.ts";
-import type { SessionOwnerOption } from "./session-owner-chip.ts";
+import { renderSessionMenuMoreActions } from "./session-menu-more-actions.ts";
 import {
-  renderSessionOwnerAssignmentMenu,
-  sessionOwnerAssignmentFromMenuValue,
-} from "./session-owner-menu.ts";
+  renderSessionEditorOptions,
+  renderSessionGroupOptions,
+  sessionPinScopeFromMenuValue,
+} from "./session-menu-options.ts";
+import { globalSessionPinAction, groupSessionPinAction } from "./session-menu-pin-actions.ts";
+import type { SessionOwnerOption } from "./session-owner-chip.ts";
+import { sessionOwnerAssignmentFromMenuValue } from "./session-owner-menu.ts";
 
 type SessionMenuData = {
   label: string;
   sessionId: string | null;
   isChild?: boolean;
-  pinned: boolean;
+  pinScope: SessionPinScope | null;
   unread: boolean;
   archived: boolean;
   category: string | null;
+  categoryPinAvailable: boolean;
   icon: string | null;
   categoryClearReturnsToGroups: boolean;
 };
@@ -53,7 +59,7 @@ export type SessionMenuAction =
   | { kind: "open-pr"; url: string }
   | { kind: "open-in"; editor: EditorId; path: string }
   | { kind: "copy-session-id" }
-  | { kind: "toggle-pin" }
+  | { kind: "set-pin-scope"; scope: SessionPinScope | null }
   | { kind: "toggle-unread" }
   | { kind: "rename" }
   | { kind: "set-icon"; icon: string | null }
@@ -72,10 +78,11 @@ const EMPTY_SESSION: SessionMenuData = {
   label: "",
   sessionId: null,
   isChild: false,
-  pinned: false,
+  pinScope: null,
   unread: false,
   archived: false,
   category: null,
+  categoryPinAvailable: false,
   icon: null,
   categoryClearReturnsToGroups: false,
 };
@@ -110,6 +117,7 @@ class SessionMenu extends OpenClawLightDomElement {
   @property({ attribute: false }) onAction: (action: SessionMenuAction) => void = () => {};
   @property({ attribute: false }) onClose: () => void = () => {};
   @state() private compactView: CompactSessionMenuView = "root";
+  private compactViewStack: Array<{ view: CompactSessionMenuView; triggerValue: string }> = [];
   @state() private iconPickerMode: "grid" | "custom" = "grid";
   @state() private customIconValue = "";
   readonly menuLifecycle = new DropdownMenuController(this, {
@@ -143,6 +151,18 @@ class SessionMenu extends OpenClawLightDomElement {
     return this.actionDisabledReasons[kind] ?? nothing;
   }
 
+  private returnToPreviousCompactView() {
+    const previous = this.compactViewStack.pop();
+    const triggerValue = previous?.triggerValue;
+    this.compactView = previous?.view ?? "root";
+    void this.updateComplete.then(() => {
+      const selector = triggerValue
+        ? `wa-dropdown-item[value="${triggerValue}"]:not([disabled])`
+        : "wa-dropdown-item:not([disabled])";
+      this.querySelector<HTMLElement>(selector)?.focus();
+    });
+  }
+
   private readonly handleSelect = (event: CustomEvent<{ item: { value?: string } }>) => {
     event.preventDefault();
     const value = event.detail.item.value;
@@ -151,6 +171,11 @@ class SessionMenu extends OpenClawLightDomElement {
     }
     const compactView = compactSessionMenuViewForValue(value);
     if (compactView) {
+      if (compactView === "root") {
+        this.returnToPreviousCompactView();
+        return;
+      }
+      this.compactViewStack.push({ view: this.compactView, triggerValue: value });
       this.compactView = compactView;
       if (compactView === "icon") {
         this.iconPickerMode = "grid";
@@ -161,19 +186,7 @@ class SessionMenu extends OpenClawLightDomElement {
       });
       return;
     }
-    const simpleActions: Partial<Record<string, SessionMenuAction>> = {
-      "copy-session-id": { kind: "copy-session-id" },
-      "toggle-pin": { kind: "toggle-pin" },
-      "toggle-unread": { kind: "toggle-unread" },
-      rename: { kind: "rename" },
-      fork: { kind: "fork" },
-      workboard: { kind: "workboard" },
-      "new-group": { kind: "new-group" },
-      "toggle-archived": { kind: "toggle-archived" },
-      "stop-cloud-worker": { kind: "stop-cloud-worker" },
-      delete: { kind: "delete" },
-    };
-    const simpleAction = simpleActions[value];
+    const simpleAction = simpleSessionMenuAction(value);
     if (simpleAction) {
       this.runAction(simpleAction);
       return;
@@ -195,6 +208,11 @@ class SessionMenu extends OpenClawLightDomElement {
         kind: "move-to-group",
         category: encodedCategory ? decodeURIComponent(encodedCategory) : null,
       });
+      return;
+    }
+    const pinScope = sessionPinScopeFromMenuValue(value);
+    if (pinScope !== undefined) {
+      this.runAction({ kind: "set-pin-scope", scope: pinScope });
       return;
     }
     if (value.startsWith("set-icon:")) {
@@ -283,6 +301,37 @@ class SessionMenu extends OpenClawLightDomElement {
     });
   }
 
+  private renderMoreActions(rootPlacementActions: boolean) {
+    const session = this.session;
+    const ownerOptions = compactSessionOwnerOptions(this.ownerOptions, this.selfOwner);
+    return renderSessionMenuMoreActions({
+      groupPinAction: rootPlacementActions
+        ? groupSessionPinAction({
+            category: session.category,
+            categoryPinAvailable: session.categoryPinAvailable,
+            scope: session.pinScope,
+          })
+        : null,
+      pinDisabled: this.actionDisabled("set-pin-scope", session.archived),
+      pinDisabledReason: this.actionDisabledReasons["set-pin-scope"],
+      ownerAvailable: ownerOptions.length > 0,
+      ownerDisabled: this.actionDisabled("assign-owner"),
+      ownerDisabledReason: this.actionDisabledReasons["assign-owner"],
+      iconDisabled: this.actionDisabled("set-icon"),
+      iconDisabledReason: this.actionDisabledReasons["set-icon"],
+      forkDisabled: this.actionDisabled("fork", this.forkDisabled),
+      forkDisabledReason: this.actionDisabledReasons.fork,
+      forkLabel: t(
+        this.forkFromLastCompleted
+          ? "sessionsView.forkFromLastCompleted"
+          : "sessionsView.forkSession",
+      ),
+      sessionIdAvailable: Boolean(session.sessionId),
+      workboard: this.workboard,
+      menuDisabled: this.disabled,
+    });
+  }
+
   private renderIconSubmenu(inline = false) {
     return renderSessionIconPicker({
       inline,
@@ -347,6 +396,12 @@ class SessionMenu extends OpenClawLightDomElement {
           target.classList.contains("session-menu__icon-custom-input"),
       );
     if (!input) {
+      if (event.key === "Escape" && this.compactView !== "root") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.returnToPreviousCompactView();
+        return;
+      }
       activateMenuShortcut(this, event);
       return;
     }
@@ -404,25 +459,6 @@ class SessionMenu extends OpenClawLightDomElement {
     choices[nextIndex]?.focus();
   };
 
-  private readonly focusIconGridOnOpen = (event: CustomEvent<{ item: HTMLElement }>) => {
-    const item = event.currentTarget;
-    if (!(item instanceof HTMLElement) || event.detail.item !== item) {
-      return;
-    }
-    // Web Awesome re-runs submenu setup when grid/custom content replaces the
-    // slot. Only a closed submenu is a user reopen that should reset state.
-    if (item.getAttribute("aria-expanded") === "true") {
-      return;
-    }
-    this.iconPickerMode = "grid";
-    this.customIconValue = "";
-    void this.updateComplete.then(() =>
-      requestAnimationFrame(() => {
-        item.querySelector<HTMLButtonElement>('.session-menu__icon-choice[tabindex="0"]')?.focus();
-      }),
-    );
-  };
-
   override render() {
     const menuWidth = 240;
     const menuMaxHeight = 460;
@@ -432,6 +468,7 @@ class SessionMenu extends OpenClawLightDomElement {
     const batch = this.selectionCount > 1;
     // Pinning and grouping place root rows; child placement is owned by lineage.
     const rootPlacementActions = session.isChild !== true;
+    const globalPinAction = globalSessionPinAction(session.pinScope);
     const count = String(this.selectionCount);
     const menuLabel = batch
       ? t("chat.sidebar.sessionMenuMany", { count })
@@ -455,7 +492,7 @@ class SessionMenu extends OpenClawLightDomElement {
           aria-label=${menuLabel}
           style="position: fixed; left: ${clampedX}px; top: ${clampedY}px; width: 1px; height: 1px; opacity: 0; pointer-events: none;"
         ></button>
-        ${this.compact && this.compactView !== "root"
+        ${this.compactView !== "root"
           ? renderCompactSessionMenuView({
               view: this.compactView,
               ownerOptions: compactSessionOwnerOptions(this.ownerOptions, this.selfOwner),
@@ -465,6 +502,7 @@ class SessionMenu extends OpenClawLightDomElement {
               renderOpenIn: () => this.renderEditorSubmenu(true),
               renderIcon: () => this.renderIconSubmenu(true),
               renderGroup: () => this.renderGroupSubmenu(true),
+              renderMore: () => this.renderMoreActions(rootPlacementActions),
             })
           : html`
               ${!batch && this.lastActive
@@ -478,20 +516,16 @@ class SessionMenu extends OpenClawLightDomElement {
                 : html`
                     <wa-dropdown-item
                       class="session-menu__item"
-                      value="toggle-pin"
+                      value=${`pin-scope:${globalPinAction.scope ?? "none"}`}
                       data-shortcut="p"
                       aria-keyshortcuts="P"
-                      ?disabled=${this.actionDisabled("toggle-pin", session.archived)}
-                      title=${this.actionTitle("toggle-pin")}
+                      ?disabled=${this.actionDisabled("set-pin-scope", session.archived)}
+                      title=${this.actionTitle("set-pin-scope")}
                     >
                       <span slot="icon" class="session-menu__icon" aria-hidden="true"
-                        >${session.pinned ? icons.pinOff : icons.pin}</span
+                        >${session.pinScope === "global" ? icons.pinOff : icons.pin}</span
                       >
-                      <span class="session-menu__text"
-                        >${session.pinned
-                          ? t("sessionsView.unpinSession")
-                          : t("sessionsView.pinSession")}</span
-                      >
+                      <span class="session-menu__text">${globalPinAction.label}</span>
                       ${menuShortcutHint("p")}
                     </wa-dropdown-item>
                   `}
@@ -534,100 +568,7 @@ class SessionMenu extends OpenClawLightDomElement {
                       <span class="session-menu__text">${t("sessionsView.renameSessionMenu")}</span>
                       ${menuShortcutHint("r")}
                     </wa-dropdown-item>
-                    ${this.compact
-                      ? compactSessionOwnerOptions(this.ownerOptions, this.selfOwner).length > 0
-                        ? renderCompactSessionMenuNavigationItem({
-                            view: "assign-owner",
-                            label: t("sessionsView.assignTo"),
-                            icon: icons.users,
-                            disabled: this.actionDisabled("assign-owner"),
-                            title: this.actionDisabledReasons["assign-owner"],
-                          })
-                        : nothing
-                      : renderSessionOwnerAssignmentMenu({
-                          ownerOptions: this.ownerOptions,
-                          selfOwner: this.selfOwner,
-                          currentOwnerId: this.currentOwnerId,
-                          disabled: this.actionDisabled("assign-owner"),
-                          disabledReason: this.actionDisabledReasons["assign-owner"],
-                        })}
-                    ${this.compact
-                      ? renderCompactSessionMenuNavigationItem({
-                          view: "icon",
-                          label: t("sessionsView.setIconMenu"),
-                          icon: icons.star,
-                          disabled: this.actionDisabled("set-icon"),
-                          title: this.actionDisabledReasons["set-icon"],
-                        })
-                      : html`<wa-dropdown-item
-                          class="session-menu__item"
-                          data-shortcut="i"
-                          aria-keyshortcuts="I"
-                          ?disabled=${this.actionDisabled("set-icon")}
-                          title=${this.actionTitle("set-icon")}
-                          @submenu-opening=${this.focusIconGridOnOpen}
-                        >
-                          <span slot="icon" class="session-menu__icon" aria-hidden="true"
-                            >${icons.star}</span
-                          >
-                          <span class="session-menu__text">${t("sessionsView.setIconMenu")}</span>
-                          ${menuShortcutHint("i")} ${this.renderIconSubmenu()}
-                        </wa-dropdown-item>`}
-                    <wa-dropdown-item
-                      class="session-menu__item"
-                      value="fork"
-                      data-shortcut="f"
-                      aria-keyshortcuts="F"
-                      ?disabled=${this.actionDisabled("fork", this.forkDisabled)}
-                      title=${this.actionTitle("fork")}
-                    >
-                      <span slot="icon" class="session-menu__icon" aria-hidden="true"
-                        >${icons.copy}</span
-                      >
-                      <span class="session-menu__text"
-                        >${t(
-                          this.forkFromLastCompleted
-                            ? "sessionsView.forkFromLastCompleted"
-                            : "sessionsView.forkSession",
-                        )}</span
-                      >
-                      ${menuShortcutHint("f")}
-                    </wa-dropdown-item>
-                    <wa-dropdown-item
-                      class="session-menu__item"
-                      value="copy-session-id"
-                      data-shortcut="c"
-                      aria-keyshortcuts="C"
-                      ?disabled=${!session.sessionId}
-                    >
-                      <span slot="icon" class="session-menu__icon" aria-hidden="true"
-                        >${icons.copy}</span
-                      >
-                      <span class="session-menu__text">${t("sessionsView.copySessionId")}</span>
-                      ${menuShortcutHint("c")}
-                    </wa-dropdown-item>
                   `}
-              ${!batch && this.workboard
-                ? html`
-                    <wa-dropdown-item
-                      class="session-menu__item"
-                      value="workboard"
-                      data-shortcut="w"
-                      aria-keyshortcuts="W"
-                      ?disabled=${this.disabled || this.workboard.busy}
-                    >
-                      <span slot="icon" class="session-menu__icon" aria-hidden="true"
-                        >${this.workboard.captured ? icons.check : icons.plus}</span
-                      >
-                      <span class="session-menu__text"
-                        >${this.workboard.captured
-                          ? t("sessionsView.openWorkboardCard")
-                          : t("sessionsView.addToWorkboard")}</span
-                      >
-                      ${menuShortcutHint("w")}
-                    </wa-dropdown-item>
-                  `
-                : nothing}
               ${rootPlacementActions
                 ? this.compact
                   ? renderCompactSessionMenuNavigationItem({
@@ -655,6 +596,13 @@ class SessionMenu extends OpenClawLightDomElement {
                       ${this.renderGroupSubmenu()}
                     </wa-dropdown-item>`
                 : nothing}
+              ${batch
+                ? nothing
+                : renderCompactSessionMenuNavigationItem({
+                    view: "more",
+                    label: t("sessionsView.moreActions"),
+                    icon: icons.moreHorizontal,
+                  })}
               <div class="session-menu__separator" role="separator"></div>
               ${!batch && this.cloudWorkerStopAllowed
                 ? html`

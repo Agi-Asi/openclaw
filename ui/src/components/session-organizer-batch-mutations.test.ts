@@ -39,6 +39,7 @@ function sessionRow(index: number): SidebarRecentSession {
     label: `Batch ${index}`,
     sessionId: `session-${index}`,
     pinned: index === 0 || index === 100,
+    pinScope: index === 0 || index === 100 ? "global" : null,
   } as SidebarRecentSession;
 }
 

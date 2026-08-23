@@ -20,6 +20,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "archivedAt",
   "archivedBy",
   "pinnedAt",
+  "categoryPinnedAt",
   "lastReadAt",
   "agentStatus",
   "observerDigest",

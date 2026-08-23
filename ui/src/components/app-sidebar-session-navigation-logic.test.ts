@@ -106,6 +106,26 @@ describe("sidebar session sort modes", () => {
     ]);
   });
 
+  it.each(["created", "updated", "people"] as const)(
+    "does not elevate group pins across categories in %s sorting",
+    (sortMode) => {
+      const rows = [
+        row("newer", 300, 300),
+        {
+          ...row("group-pin", 100, 100),
+          category: "Research",
+          categoryPinnedAt: 400,
+        },
+      ];
+      const observed = new Map(rows.map((entry, index) => [entry.key, index]));
+
+      expect(sortSidebarRows(rows, sortMode, observed).map((entry) => entry.key)).toEqual([
+        "newer",
+        "group-pin",
+      ]);
+    },
+  );
+
   it("falls back to stable observation order for equal or missing timestamps", () => {
     const rows = [
       row("missing-later"),

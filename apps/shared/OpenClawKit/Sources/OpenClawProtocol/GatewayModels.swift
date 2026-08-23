@@ -6196,6 +6196,7 @@ public struct SessionRow: Codable, Sendable {
     public let archivedby: SessionCreatedActor?
     public let pinned: Bool?
     public let pinnedat: Double?
+    public let categorypinnedat: Double?
     public let unread: Bool?
     public let lastreadat: Double?
     public let lastactivityat: Double?
@@ -6267,6 +6268,7 @@ public struct SessionRow: Codable, Sendable {
         archivedby: SessionCreatedActor? = nil,
         pinned: Bool? = nil,
         pinnedat: Double? = nil,
+        categorypinnedat: Double? = nil,
         unread: Bool? = nil,
         lastreadat: Double? = nil,
         lastactivityat: Double? = nil,
@@ -6337,6 +6339,7 @@ public struct SessionRow: Codable, Sendable {
         self.archivedby = archivedby
         self.pinned = pinned
         self.pinnedat = pinnedat
+        self.categorypinnedat = categorypinnedat
         self.unread = unread
         self.lastreadat = lastreadat
         self.lastactivityat = lastactivityat
@@ -6409,6 +6412,7 @@ public struct SessionRow: Codable, Sendable {
         case archivedby = "archivedBy"
         case pinned
         case pinnedat = "pinnedAt"
+        case categorypinnedat = "categoryPinnedAt"
         case unread
         case lastreadat = "lastReadAt"
         case lastactivityat = "lastActivityAt"
@@ -9357,6 +9361,7 @@ public struct SessionsPatchParams: Codable, Sendable {
     public let ttlminutes: Int?
     public let archived: Bool?
     public let pinned: Bool?
+    public let pinscope: AnyCodable?
     public let unread: Bool?
     public let contextwindow: AnyCodable?
     public let thinkinglevel: AnyCodable?
@@ -9394,6 +9399,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         ttlminutes: Int? = nil,
         archived: Bool? = nil,
         pinned: Bool? = nil,
+        pinscope: AnyCodable? = nil,
         unread: Bool? = nil,
         contextwindow: AnyCodable? = nil,
         thinkinglevel: AnyCodable? = nil,
@@ -9430,6 +9436,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         self.ttlminutes = ttlminutes
         self.archived = archived
         self.pinned = pinned
+        self.pinscope = pinscope
         self.unread = unread
         self.contextwindow = contextwindow
         self.thinkinglevel = thinkinglevel
@@ -9468,6 +9475,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         case ttlminutes = "ttlMinutes"
         case archived
         case pinned
+        case pinscope = "pinScope"
         case unread
         case contextwindow = "contextWindow"
         case thinkinglevel = "thinkingLevel"
@@ -9503,6 +9511,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
     public let ttlminutes: Int?
     public let archived: Bool?
     public let pinned: Bool?
+    public let pinscope: AnyCodable?
     public let unread: Bool?
     public let contextwindow: AnyCodable?
     public let thinkinglevel: AnyCodable?
@@ -9536,6 +9545,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
         ttlminutes: Int? = nil,
         archived: Bool? = nil,
         pinned: Bool? = nil,
+        pinscope: AnyCodable? = nil,
         unread: Bool? = nil,
         contextwindow: AnyCodable? = nil,
         thinkinglevel: AnyCodable? = nil,
@@ -9568,6 +9578,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
         self.ttlminutes = ttlminutes
         self.archived = archived
         self.pinned = pinned
+        self.pinscope = pinscope
         self.unread = unread
         self.contextwindow = contextwindow
         self.thinkinglevel = thinkinglevel
@@ -9602,6 +9613,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
         case ttlminutes = "ttlMinutes"
         case archived
         case pinned
+        case pinscope = "pinScope"
         case unread
         case contextwindow = "contextWindow"
         case thinkinglevel = "thinkingLevel"

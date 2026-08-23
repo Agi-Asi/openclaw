@@ -63,6 +63,7 @@ import {
   resolveLobsterRunOutcome,
 } from "./lobster-pet-contract.ts";
 import { renderPanelRefreshStatus } from "./panel-refresh-status.ts";
+import { globalSessionPinAction } from "./session-menu-pin-actions.ts";
 import { SessionOrganizerController } from "./session-organizer-controller.ts";
 import { SidebarMenusController } from "./sidebar-menus-controller.ts";
 // The shared loader retries transient chunk failures online; a deploy-pruned
@@ -340,7 +341,9 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
   }
 
   toggleSessionPin(session: SidebarRecentSession): void {
-    void this.sessionOrganizer.patchSession(session, { pinned: !session.pinned });
+    void this.sessionOrganizer.patchSession(session, {
+      pinScope: globalSessionPinAction(session.pinScope).scope,
+    });
   }
 
   toggleSessionMenu(session: SidebarRecentSession, trigger: HTMLElement): void {

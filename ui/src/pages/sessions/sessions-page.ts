@@ -50,6 +50,7 @@ import {
   type SessionListSnapshot,
 } from "../../lib/sessions/index.ts";
 import { fetchPagedSessionRows } from "../../lib/sessions/paged-session-rows.ts";
+import { resolveGatewaySessionPinScope } from "../../lib/sessions/pin-scope.ts";
 import {
   resolveSessionPreferredFaceForKey,
   resolveSessionNavigationAgentId,
@@ -1121,6 +1122,7 @@ class SessionsPage extends OpenClawLightDomElement {
     if (!scope) {
       return;
     }
+    const pinScope = resolveGatewaySessionPinScope(row);
     const result = await this.patchSession(row.key, { archived: true }, scope, row.sessionId);
     if (result !== "completed" || !this.isRequestScopeCurrent(scope)) {
       return;
@@ -1136,7 +1138,7 @@ class SessionsPage extends OpenClawLightDomElement {
       onAction: () => {
         void scope.sessions.patch(
           row.key,
-          { archived: false, ...(row.pinned === true ? { pinned: true } : {}) },
+          { archived: false, ...(pinScope ? { pinScope } : {}) },
           { agentId, expectedSessionId: row.sessionId },
         );
       },
@@ -1412,15 +1414,17 @@ class SessionsPage extends OpenClawLightDomElement {
       (cloudWorkerStopAction.method !== "sessions.reclaim" || row.hasActiveRun !== true) &&
       isGatewayMethodAdvertised(gateway, cloudWorkerStopAction.method) === true,
     );
+    const pinScope = resolveGatewaySessionPinScope(row);
     return html`
       <openclaw-session-menu
         .session=${{
           label: normalizeOptionalString(row.label) ?? row.key,
           sessionId: normalizeOptionalString(row.sessionId) ?? null,
-          pinned: row.pinned === true,
+          pinScope,
           unread: row.unread === true,
           archived: row.archived === true,
           category: normalizeOptionalString(row.category) ?? null,
+          categoryPinAvailable: this.groupBy === "category",
           icon: normalizeOptionalString(row.icon) ?? null,
           categoryClearReturnsToGroups: false,
         }}
@@ -1459,8 +1463,10 @@ class SessionsPage extends OpenClawLightDomElement {
                 showToast({ message: t(copied ? "common.copied" : "common.copyFailed") });
               });
               break;
-            case "toggle-pin":
-              void this.patchSession(row.key, { pinned: row.pinned !== true });
+            case "set-pin-scope":
+              if (action.scope !== pinScope) {
+                void this.patchSession(row.key, { pinScope: action.scope });
+              }
               break;
             case "toggle-unread":
               void this.patchSession(row.key, { unread: row.unread !== true });

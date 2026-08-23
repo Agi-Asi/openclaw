@@ -39,6 +39,7 @@ import {
   describeSessionTrailingState,
   renderSessionLeadingState,
 } from "./session-leading-indicator.ts";
+import { globalSessionPinAction } from "./session-menu-pin-actions.ts";
 import type { SessionPullRequestIndicatorState } from "./session-menu-work.ts";
 import type { SessionOrganizerController } from "./session-organizer-controller.ts";
 import { renderSessionRowBadges } from "./session-row-badges.ts";
@@ -168,9 +169,10 @@ export function renderRecentSession(params: {
   listItem?: boolean;
 }) {
   const { host, session, display, listItem = true } = params;
+  const pinAction = globalSessionPinAction(session.pinScope);
   const pinAccess = host.readSessionMutationAccess({
     method: "sessions.patch",
-    params: { key: session.key, pinned: !session.pinned },
+    params: { key: session.key, pinScope: pinAction.scope },
   });
   const label = display?.label ?? session.label;
   const { subtitle, narration } = resolveSidebarSessionSubtitle({
@@ -265,7 +267,7 @@ export function renderRecentSession(params: {
       (event.currentTarget as HTMLElement).querySelector("[data-session-menu]"),
       (trigger, x, y) => host.sidebarMenus.openSessionMenu(session, x, y, trigger),
     );
-  const pinLabel = `${t(session.pinned ? "sessionsView.unpinSession" : "sessionsView.pinSession")}: ${label}`;
+  const pinLabel = `${pinAction.label}: ${label}`;
   const menuTooltip = t("chat.sidebar.openSessionMenu");
   const menuLabel = `${menuTooltip}: ${label}`;
   const menuOpen =
@@ -502,7 +504,7 @@ export function renderRecentSession(params: {
                 ?disabled=${!pinAccess.allowed}
                 @click=${() => host.toggleSessionPin(session)}
               >
-                ${icons.pin}
+                ${session.pinScope === "global" ? icons.pinOff : icons.pin}
               </button>`}
           <openclaw-tooltip .content=${menuTooltip} .describe=${false} .disabled=${menuOpen}>
             <button

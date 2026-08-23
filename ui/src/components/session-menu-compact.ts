@@ -4,13 +4,20 @@ import { icons } from "./icons.ts";
 import type { SessionOwnerOption } from "./session-owner-chip.ts";
 import { renderSessionOwnerAssignmentOptions } from "./session-owner-menu.ts";
 
-export type CompactSessionMenuView = "root" | "open-in" | "assign-owner" | "icon" | "group";
+export type CompactSessionMenuView =
+  | "root"
+  | "open-in"
+  | "assign-owner"
+  | "icon"
+  | "group"
+  | "more";
 
 const COMPACT_SESSION_MENU_VIEW_BY_VALUE: Record<string, CompactSessionMenuView> = {
   "compact:back": "root",
   "compact:open-assign-owner": "assign-owner",
   "compact:open-group": "group",
   "compact:open-icon": "icon",
+  "compact:open-more": "more",
   "compact:open-open-in": "open-in",
 };
 
@@ -34,11 +41,14 @@ export function renderCompactSessionMenuNavigationItem(params: {
   icon: TemplateResult;
   disabled?: boolean;
   title?: string;
+  shortcut?: string;
 }) {
   return html`
     <wa-dropdown-item
       class="session-menu__item"
       value=${`compact:open-${params.view}`}
+      data-shortcut=${params.shortcut ?? nothing}
+      aria-keyshortcuts=${params.shortcut?.toUpperCase() ?? nothing}
       ?disabled=${params.disabled ?? false}
       title=${params.title ?? nothing}
     >
@@ -60,26 +70,29 @@ export function renderCompactSessionMenuView(params: {
   renderOpenIn: () => TemplateResult;
   renderIcon: () => TemplateResult;
   renderGroup: () => TemplateResult;
+  renderMore: () => TemplateResult;
 }) {
   if (params.view === "root") {
     return nothing;
   }
   const body =
-    params.view === "open-in"
-      ? params.renderOpenIn()
-      : params.view === "assign-owner"
-        ? renderSessionOwnerAssignmentOptions(
-            {
-              ownerOptions: params.ownerOptions,
-              currentOwnerId: params.currentOwnerId,
-              disabled: params.assignOwnerDisabled,
-              disabledReason: params.assignOwnerDisabledReason,
-            },
-            true,
-          )
-        : params.view === "icon"
-          ? params.renderIcon()
-          : params.renderGroup();
+    params.view === "more"
+      ? params.renderMore()
+      : params.view === "open-in"
+        ? params.renderOpenIn()
+        : params.view === "assign-owner"
+          ? renderSessionOwnerAssignmentOptions(
+              {
+                ownerOptions: params.ownerOptions,
+                currentOwnerId: params.currentOwnerId,
+                disabled: params.assignOwnerDisabled,
+                disabledReason: params.assignOwnerDisabledReason,
+              },
+              true,
+            )
+          : params.view === "icon"
+            ? params.renderIcon()
+            : params.renderGroup();
   return html`
     <wa-dropdown-item class="session-menu__item session-menu__back" value="compact:back">
       <span slot="icon" class="session-menu__icon" aria-hidden="true">${icons.arrowLeft}</span>

@@ -710,8 +710,20 @@ describe("createPersistCronSessionEntry", () => {
   it.each([
     {
       name: "pin and rename",
-      current: { label: "Renamed", pinnedAt: 2000, updatedAt: 2000 },
-      expected: { label: "Renamed", pinnedAt: 2000, updatedAt: 2000 },
+      current: {
+        category: "Research",
+        categoryPinnedAt: 2000,
+        label: "Renamed",
+        pinnedAt: undefined,
+        updatedAt: 2000,
+      },
+      expected: {
+        category: "Research",
+        categoryPinnedAt: 2000,
+        label: "Renamed",
+        pinnedAt: undefined,
+        updatedAt: 2000,
+      },
     },
     {
       name: "unpin and clear the label",
@@ -753,8 +765,12 @@ describe("createPersistCronSessionEntry", () => {
     });
     expect(persistedStore[sessionKey]?.label).toBe(expected.label);
     expect(persistedStore[sessionKey]?.pinnedAt).toBe(expected.pinnedAt);
+    expect(persistedStore[sessionKey]?.category).toBe(expected.category);
+    expect(persistedStore[sessionKey]?.categoryPinnedAt).toBe(expected.categoryPinnedAt);
     expect(cronSession.sessionEntry.label).toBe(expected.label);
     expect(cronSession.sessionEntry.pinnedAt).toBe(expected.pinnedAt);
+    expect(cronSession.sessionEntry.category).toBe(expected.category);
+    expect(cronSession.sessionEntry.categoryPinnedAt).toBe(expected.categoryPinnedAt);
     expect(cronSession.sessionEntry.updatedAt).toBe(expected.updatedAt);
   });
 

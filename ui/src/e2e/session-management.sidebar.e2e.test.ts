@@ -219,11 +219,10 @@ suite.define(() => {
       await childMenu.waitFor({ state: "visible" });
       await page.getByRole("menuitem", { name: "Mark as unread" }).waitFor();
       await page.getByRole("menuitem", { name: "Rename…" }).waitFor();
-      await page.getByRole("menuitem", { name: "Set icon" }).waitFor();
-      await page.getByRole("menuitem", { name: "Fork" }).waitFor();
+      await page.getByRole("menuitem", { name: "More actions" }).waitFor();
       await page.getByRole("menuitem", { name: "Archive session" }).waitFor();
       await page.getByRole("menuitem", { name: "Delete…" }).waitFor();
-      expect(await page.getByRole("menuitem", { name: "Pin session" }).count()).toBe(0);
+      expect(await page.getByRole("menuitem", { name: "Pin globally" }).count()).toBe(0);
       expect(await page.getByRole("menuitem", { name: "Move to group" }).count()).toBe(0);
       await captureUiProof(page, "child-session-menu.png");
       await page.keyboard.press("Escape");
@@ -431,7 +430,7 @@ suite.define(() => {
         exact: true,
       });
       await researchRow
-        .getByRole("button", { name: "Pin session: Research notes", exact: true })
+        .getByRole("button", { name: "Pin globally: Research notes", exact: true })
         .waitFor();
       await followUpRow
         .getByRole("button", { name: "Open session menu: Follow-up work", exact: true })
@@ -446,7 +445,7 @@ suite.define(() => {
         .poll(() =>
           page
             .locator("openclaw-session-menu")
-            .getByRole("menuitem", { name: "Pin session" })
+            .getByRole("menuitem", { name: "Pin globally" })
             .evaluate((element) => element === document.activeElement),
         )
         .toBe(true);
@@ -468,7 +467,7 @@ suite.define(() => {
         .poll(() =>
           page
             .locator("openclaw-session-menu")
-            .getByRole("menuitem", { name: "Pin session" })
+            .getByRole("menuitem", { name: "Pin globally" })
             .evaluate((element) => element === document.activeElement),
         )
         .toBe(true);
@@ -704,11 +703,11 @@ suite.define(() => {
       await page.mouse.up();
       const unpinPatch = await waitForPatch(
         gateway,
-        (params) => params.key === "agent:main:pinned" && params.pinned === false,
+        (params) => params.key === "agent:main:pinned" && params.pinScope === null,
       );
       expect(requireRecord(unpinPatch.params)).toMatchObject({
         key: "agent:main:pinned",
-        pinned: false,
+        pinScope: null,
       });
       await expect.poll(() => pinnedEntry.count()).toBe(0);
       await expect.poll(() => chatsGroup.locator(".sidebar-recent-session").count()).toBe(1);
@@ -779,11 +778,11 @@ suite.define(() => {
 
       const pinPatch = await waitForPatch(
         gateway,
-        (params) => params.key === "agent:main:candidate" && params.pinned === true,
+        (params) => params.key === "agent:main:candidate" && params.pinScope === "global",
       );
       expect(requireRecord(pinPatch.params)).toMatchObject({
         key: "agent:main:candidate",
-        pinned: true,
+        pinScope: "global",
       });
       expect(requireRecord(pinPatch.params)).not.toHaveProperty("category");
       await expect
@@ -799,7 +798,7 @@ suite.define(() => {
         '[data-sidebar-entry="session:agent:main:candidate"] .sidebar-recent-session',
       );
       await pinnedCandidate.click({ button: "right" });
-      await page.getByRole("menuitem", { name: "Unpin session" }).waitFor();
+      await page.getByRole("menuitem", { name: "Unpin globally" }).waitFor();
       expect(await page.getByRole("menuitem", { name: "Reset pinned items" }).count()).toBe(0);
       await captureUiProof(page, "sidebar-session-dropped-into-pinned.png");
     } finally {
@@ -1032,7 +1031,7 @@ suite.define(() => {
         .locator(".sidebar-recent-sessions__list .sidebar-recent-session")
         .filter({ hasText: "Research notes" });
       await row.waitFor({ state: "visible", timeout: 10_000 });
-      const pin = row.getByRole("button", { name: "Pin session" });
+      const pin = row.getByRole("button", { name: "Pin globally" });
       const menu = row.getByRole("button", { name: "Open session menu" });
       await expect.poll(() => actionOpacity(pin)).toBe("1");
       await expect.poll(() => actionPointerEvents(pin)).toBe("auto");

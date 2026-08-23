@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGatewayMaintenanceStateForTest } from "./test-helpers.maintenance-state.js";
 
-const { checkTelemetryUpdateMock } = vi.hoisted(() => ({
+const { checkTelemetryUpdateMock, randomIntMock } = vi.hoisted(() => ({
   checkTelemetryUpdateMock: vi.fn<typeof import("../infra/telemetry.js").checkTelemetryUpdate>(),
+  randomIntMock: vi.fn<(max: number) => number>(),
+}));
+
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:crypto")>()),
+  randomInt: randomIntMock,
 }));
 
 vi.mock("../infra/device-bootstrap.js", () => ({
@@ -29,11 +35,12 @@ describe("gateway telemetry maintenance", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     checkTelemetryUpdateMock.mockReset();
+    randomIntMock.mockReset();
   });
 
   it("uses one jittered maintenance schedule and silently retries failed checks", async () => {
     vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    randomIntMock.mockReturnValue(150_000);
     checkTelemetryUpdateMock.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(null);
     const logHealth = { info: vi.fn(), error: vi.fn() };
     const { startGatewayMaintenanceTimers } = await import("./server-maintenance.js");
@@ -63,7 +70,7 @@ describe("gateway telemetry maintenance", () => {
 
   it("never checks telemetry for Nix-managed gateways", async () => {
     vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0);
+    randomIntMock.mockReturnValue(0);
     const broadcast = vi.fn();
     const { startGatewayMaintenanceTimers } = await import("./server-maintenance.js");
     const timers = startGatewayMaintenanceTimers({

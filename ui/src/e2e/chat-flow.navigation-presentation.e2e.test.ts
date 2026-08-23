@@ -908,12 +908,12 @@ suite.define(() => {
 
       const listCountBeforePatch = (await gateway.getRequests("sessions.list")).length;
       await row.hover();
-      await row.getByRole("button", { name: "Pin session" }).click();
+      await row.getByRole("button", { name: "Pin globally" }).click();
 
       const patchRequest = await gateway.waitForRequest("sessions.patch");
       expect(requireRecord(patchRequest.params)).toMatchObject({
         key,
-        pinned: true,
+        pinScope: "global",
       });
       await expect
         .poll(async () => {

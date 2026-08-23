@@ -1,5 +1,6 @@
 import type {
   SessionOwner,
+  SessionPinScope,
   SessionsAssignOwnerParams,
   SessionsAssignOwnerResult,
 } from "../../../../packages/gateway-protocol/src/index.js";
@@ -16,6 +17,11 @@ import {
   type SessionCreateParams,
 } from "./create.ts";
 import type { SessionPatch, SessionPatchOptions } from "./patch.ts";
+import {
+  optimisticSessionPinFields,
+  resolveGatewaySessionPinScope,
+  type OptimisticSessionPinFields,
+} from "./pin-scope.ts";
 import { requestSessionRecovery } from "./recover.ts";
 import type {
   SessionConnectionOwner,
@@ -35,9 +41,6 @@ import {
   requestSessionPatch,
   requestSessionReset,
 } from "./session-requests.ts";
-
-/** The Gateway's single pin fact: `pinned` is a projection of `pinnedAt`. */
-type SessionPinFields = { pinned: boolean; pinnedAt: number | undefined };
 
 type ConfirmedArchiveState = Pick<GatewaySessionRow, "archivedAt" | "archivedBy" | "sessionId">;
 
@@ -59,7 +62,11 @@ export function createSessionMutations(host: SessionMutationsHost) {
   >();
   const pendingPinPatches = new Map<
     string,
-    { token: symbol; previous: SessionPinFields; next: SessionPinFields }
+    {
+      token: symbol;
+      previous: OptimisticSessionPinFields;
+      next: OptimisticSessionPinFields;
+    }
   >();
   const confirmedArchives = new Map<string, ConfirmedArchiveState>();
   const preparedWorkSessionKeys = new Set<string>();
@@ -112,14 +119,6 @@ export function createSessionMutations(host: SessionMutationsHost) {
       host.publish({ ...state, result: { ...state.result, sessions } });
     }
   };
-
-  // The Gateway derives `pinned` from `pinnedAt` and both row comparators order
-  // by `pinnedAt` inside each pin group, so an optimistic write has to move the
-  // pair or the row lands in a slot the Gateway would never produce.
-  const pinRowFields = (pinned: boolean, pinnedAt: number | undefined): SessionPinFields =>
-    pinned
-      ? { pinned: true, pinnedAt: pinnedAt ?? Date.now() }
-      : { pinned: false, pinnedAt: undefined };
 
   const retireModelOverride = (key: string) => {
     const normalizedKey = key.trim();
@@ -274,14 +273,20 @@ export function createSessionMutations(host: SessionMutationsHost) {
       setModelOverride(key, patchParams.model);
       modelPatchRevision = pendingModelPatches.get(normalizedKey)?.revision ?? 0;
     };
-    const nextPinned = patchParams.pinned === true;
+    const nextPinScope: SessionPinScope | null | undefined = Object.hasOwn(patchParams, "pinScope")
+      ? (patchParams.pinScope ?? null)
+      : patchParams.pinned === undefined
+        ? undefined
+        : patchParams.pinned
+          ? "global"
+          : null;
     const pinPatchToken = Symbol("session-pin-patch");
     let pinPatchStarted = false;
     // Sidebar rows read `pinned` straight off the snapshot, so a pin/unpin has
     // no visible outcome until this flip; the Gateway patch and its list
     // refresh confirm it afterwards.
     const startPinPatch = () => {
-      if (patchParams.pinned === undefined || pinPatchStarted) {
+      if (nextPinScope === undefined || pinPatchStarted) {
         return;
       }
       const pendingPinPatch = pendingPinPatches.get(normalizedKey);
@@ -290,12 +295,14 @@ export function createSessionMutations(host: SessionMutationsHost) {
       // from the primary state alone would roll such a row back to a guess.
       const row = host.publishedRow(normalizedKey);
       pinPatchStarted = true;
-      const next = pinRowFields(nextPinned, row?.pinnedAt);
+      const next = optimisticSessionPinFields(nextPinScope, row);
       // `previous` chains through an in-flight pin so a rollback lands on the
       // last Gateway-confirmed value instead of an older operation's guess.
       pendingPinPatches.set(normalizedKey, {
         token: pinPatchToken,
-        previous: pendingPinPatch?.previous ?? pinRowFields(row?.pinned === true, row?.pinnedAt),
+        previous:
+          pendingPinPatch?.previous ??
+          optimisticSessionPinFields(row ? resolveGatewaySessionPinScope(row) : null, row),
         next,
       });
       host.redecorateLists();
@@ -338,9 +345,12 @@ export function createSessionMutations(host: SessionMutationsHost) {
     // The Gateway stamps `pinnedAt` with its own clock, so the baseline is a
     // round trip off — accurate enough to order a row it just pinned.
     const confirmPinPatch = () => {
+      if (nextPinScope === undefined) {
+        return;
+      }
       const pendingPinPatch = pendingPinPatches.get(normalizedKey);
       if (pinPatchStarted && pendingPinPatch && pendingPinPatch.token !== pinPatchToken) {
-        pendingPinPatch.previous = pinRowFields(nextPinned, undefined);
+        pendingPinPatch.previous = optimisticSessionPinFields(nextPinScope);
       }
     };
     const settlePinPatch = (completed: boolean) => {
@@ -398,6 +408,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
             updatedAt: result.entry?.updatedAt ?? archivedPresentationRow.updatedAt,
             pinned: false,
             pinnedAt: undefined,
+            categoryPinnedAt: undefined,
           };
           const existingIndex = state.result.sessions.findIndex((row) => row.key === normalizedKey);
           const sessions = [...state.result.sessions];
@@ -640,7 +651,10 @@ export function createSessionMutations(host: SessionMutationsHost) {
         // Once the Gateway agrees on `pinned`, its own `pinnedAt` wins again.
         // A row predating a rapid unpin/repin can keep the older stamp for the
         // patch window; that beats overwriting confirmed stamps with our clock.
-        if (!pendingPinPatch || (row.pinned === true) === pendingPinPatch.next.pinned) {
+        const pendingScope = pendingPinPatch
+          ? resolveGatewaySessionPinScope({ ...row, ...pendingPinPatch.next })
+          : null;
+        if (!pendingPinPatch || resolveGatewaySessionPinScope(row) === pendingScope) {
           return row;
         }
         changed = true;

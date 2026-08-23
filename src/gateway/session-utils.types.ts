@@ -122,6 +122,7 @@ export type GatewaySessionRow = {
   archivedBy?: SessionEntry["archivedBy"];
   pinned?: boolean;
   pinnedAt?: number;
+  categoryPinnedAt?: number;
   unread?: boolean;
   lastReadAt?: number;
   agentStatus?: SessionEntry["agentStatus"];

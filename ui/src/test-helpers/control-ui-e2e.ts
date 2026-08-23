@@ -1389,6 +1389,15 @@ function installControlUiMockGateway(
         patch[key] = params[key];
       }
     }
+    if (hasOwn(params, "pinScope")) {
+      const pinScope = params.pinScope;
+      patch.pinned = pinScope === "global";
+      patch.pinnedAt = pinScope === "global" ? Date.now() : null;
+      patch.categoryPinnedAt = pinScope === "group" ? Date.now() : null;
+    } else if (hasOwn(params, "pinned")) {
+      patch.pinnedAt = params.pinned === true ? Date.now() : null;
+      patch.categoryPinnedAt = null;
+    }
     if (scenario.sessionArchiveFiltering && hasOwn(params, "archived")) {
       patch.archived = params.archived;
     }

@@ -41,7 +41,7 @@ suite.define(() => {
       const row = page.locator('[data-session-key="agent:main:two-line"]');
       await row.waitFor({ state: "visible", timeout: 10_000 });
       await row.hover();
-      const pin = row.getByRole("button", { name: "Unpin session" });
+      const pin = row.getByRole("button", { name: "Unpin globally" });
       const menu = row.getByRole("button", { name: "Open session menu" });
       await expect.poll(() => actionOpacity(pin)).toBe("1");
       await pin.hover();
@@ -164,7 +164,7 @@ suite.define(() => {
       await actionOnlyRow.waitFor({ state: "visible", timeout: 10_000 });
       const actionOnlyText = actionOnlyRow.locator(".sidebar-recent-session__text");
       const actionOnlyLink = actionOnlyRow.locator(".sidebar-recent-session__link");
-      const actionOnlyPin = actionOnlyRow.getByRole("button", { name: "Pin session" });
+      const actionOnlyPin = actionOnlyRow.getByRole("button", { name: "Pin globally" });
       await expect
         .poll(() => actionOnlyRow.getAttribute("class"))
         .toContain("sidebar-recent-session--single-line");
@@ -214,7 +214,7 @@ suite.define(() => {
       const row = page.locator('[data-session-key="agent:main:hover-active"]');
       await row.waitFor({ state: "visible", timeout: 10_000 });
       const state = row.locator(".session-row-state");
-      const pin = row.getByRole("button", { name: "Pin session" });
+      const pin = row.getByRole("button", { name: "Pin globally" });
       const menu = row.getByRole("button", { name: "Open session menu" });
       await expect.poll(() => state.locator(".session-run-spinner").isVisible()).toBe(true);
       await expect.poll(() => actionOpacity(state)).toBe("1");
@@ -301,7 +301,7 @@ suite.define(() => {
       const row = page.locator('[data-session-key="agent:main:touch-forked"]');
       await row.waitFor({ state: "visible", timeout: 10_000 });
       const fork = row.locator(".sidebar-recent-session__name .sidebar-session-fork-indicator");
-      const pin = row.getByRole("button", { name: "Pin session" });
+      const pin = row.getByRole("button", { name: "Pin globally" });
       const menu = row.getByRole("button", { name: "Open session menu" });
       await expect.poll(() => fork.isVisible()).toBe(true);
       await expect.poll(() => row.locator(".session-row-state").count()).toBe(0);
@@ -520,7 +520,7 @@ suite.define(() => {
       await row.waitFor({ state: "visible", timeout: 10_000 });
       await singleLineRow.waitFor({ state: "visible", timeout: 10_000 });
       const state = row.locator(".session-row-state");
-      const pin = row.getByRole("button", { name: "Pin session" });
+      const pin = row.getByRole("button", { name: "Pin globally" });
       const menu = row.getByRole("button", { name: "Open session menu" });
       await expect.poll(() => state.locator(".session-run-spinner").isVisible()).toBe(true);
       await expect.poll(() => actionOpacity(state)).toBe("1");
@@ -773,7 +773,7 @@ suite.define(() => {
         expect(atom.right).toBeLessThanOrEqual(stateLayout.endcapRight);
       }
       const link = row.locator(".sidebar-recent-session__link");
-      const pin = row.getByRole("button", { name: "Pin session" });
+      const pin = row.getByRole("button", { name: "Pin globally" });
       const menu = row.getByRole("button", { name: "Open session menu" });
       await expect
         .poll(() => link.evaluate((element) => getComputedStyle(element).paddingRight))

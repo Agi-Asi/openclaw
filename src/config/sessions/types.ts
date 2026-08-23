@@ -351,6 +351,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     archivedBy?: SessionCreatedActor;
     /** Timestamp (ms) when the session was pinned for quick access. */
     pinnedAt?: number;
+    /** Timestamp (ms) when the session was pinned within its current category. */
+    categoryPinnedAt?: number;
     /** Timestamp (ms) when an operator client last marked the session read. */
     lastReadAt?: number;
     /** Agent-declared sidebar presence; projection drops it after expiresAt. */

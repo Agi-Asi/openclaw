@@ -1054,6 +1054,7 @@ test("sessions.changed mutation events include session management metadata", asy
   await writeSessionStore({
     entries: {
       "discord:group:dev": sessionStoreEntry("sess-dev", {
+        category: "Research",
         pinnedAt: 10,
         lastReadAt: 20,
         lastActivityAt: 5,
@@ -1073,6 +1074,7 @@ test("sessions.changed mutation events include session management metadata", asy
     archivedAt: expect.any(Number),
     pinned: false,
     pinnedAt: null,
+    categoryPinnedAt: null,
     unread: false,
     lastReadAt: 20,
     lastActivityAt: 5,
@@ -1099,6 +1101,19 @@ test("sessions.changed mutation events include session management metadata", asy
     reason: "patch",
     pinned: true,
     pinnedAt: expect.any(Number),
+    categoryPinnedAt: null,
+  });
+
+  const groupPinned = await invokeSessionsPatch({
+    key: "discord:group:dev",
+    pinScope: "group",
+  });
+  expectChangedBroadcast(groupPinned.broadcastToConnIds, {
+    sessionKey: "agent:main:discord:group:dev",
+    reason: "patch",
+    pinned: false,
+    pinnedAt: null,
+    categoryPinnedAt: expect.any(Number),
   });
 
   const unpinned = await invokeSessionsPatch({
@@ -1110,6 +1125,7 @@ test("sessions.changed mutation events include session management metadata", asy
     reason: "patch",
     pinned: false,
     pinnedAt: null,
+    categoryPinnedAt: null,
   });
 
   const unread = await invokeSessionsPatch({

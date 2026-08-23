@@ -148,6 +148,22 @@ export function projectCanonicalSessionEntryShape(value: Record<string, unknown>
   } else {
     delete canonicalValue.memoryFlush;
   }
+  const categoryPinnedAt =
+    typeof canonicalValue.categoryPinnedAt === "number" &&
+    Number.isFinite(canonicalValue.categoryPinnedAt) &&
+    canonicalValue.categoryPinnedAt >= 0
+      ? canonicalValue.categoryPinnedAt
+      : undefined;
+  if (
+    canonicalValue.archivedAt === undefined &&
+    canonicalValue.pinnedAt === undefined &&
+    normalizeOptionalString(canonicalValue.category) &&
+    categoryPinnedAt !== undefined
+  ) {
+    canonicalValue.categoryPinnedAt = categoryPinnedAt;
+  } else {
+    delete canonicalValue.categoryPinnedAt;
+  }
   return canonicalValue as unknown as SessionEntry;
 }
 

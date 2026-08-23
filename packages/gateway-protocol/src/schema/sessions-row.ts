@@ -73,6 +73,8 @@ export const SessionRowSchema = Type.Object(
     archivedBy: Type.Optional(SessionCreatedActorSchema),
     pinned: Type.Optional(Type.Boolean()),
     pinnedAt: Type.Optional(Type.Number()),
+    /** Group-local pin timestamp; global pin compatibility remains on pinned/pinnedAt. */
+    categoryPinnedAt: Type.Optional(Type.Number()),
     unread: Type.Optional(Type.Boolean()),
     lastReadAt: Type.Optional(Type.Number()),
     lastActivityAt: Type.Optional(Type.Number()),

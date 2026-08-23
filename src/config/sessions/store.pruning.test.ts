@@ -156,6 +156,27 @@ describe("pruneStaleEntries", () => {
     expect(pruneStaleEntries(store, 30 * DAY_MS)).toBe(1);
     expect(store.pinned).toBeUndefined();
   });
+
+  it("preserves group-pinned entries until they are unpinned", () => {
+    const now = Date.now();
+    const store = makeStore([
+      [
+        "group-pinned",
+        {
+          ...makeEntry(now - 31 * DAY_MS),
+          category: "Research",
+          categoryPinnedAt: now - DAY_MS,
+        },
+      ],
+    ]);
+
+    expect(pruneStaleEntries(store, 30 * DAY_MS)).toBe(0);
+    expect(store).toHaveProperty("group-pinned");
+
+    delete store["group-pinned"]?.categoryPinnedAt;
+    expect(pruneStaleEntries(store, 30 * DAY_MS)).toBe(1);
+    expect(store["group-pinned"]).toBeUndefined();
+  });
 });
 
 describe("resolveQuotaSuspensionEntryMaintenance", () => {

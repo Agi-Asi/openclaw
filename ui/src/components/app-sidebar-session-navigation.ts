@@ -382,7 +382,9 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
     const navigationState = this.getSessionNavigationState();
     const rows = this.selectedAgentSessionRows(navigationState);
     const { visibleRows } = this.zonedVisibleSections(rows);
-    const pinnedByKey = new Map(rows.filter((row) => row.pinned).map((row) => [row.key, row]));
+    const pinnedByKey = new Map(
+      rows.filter((row) => row.pinScope === "global").map((row) => [row.key, row]),
+    );
     const pinnedRows = this.reconciledSidebarZone().entries.flatMap((entry) => {
       const row = entry.type === "session" ? pinnedByKey.get(entry.key) : undefined;
       return row ? [row] : [];

@@ -34,6 +34,7 @@ import {
   type InternalSessionEntry,
   type SessionEntry,
 } from "../config/sessions.js";
+import { resolveSessionPinState } from "../config/sessions/pin-scope.js";
 import { sessionEntryForkedFromParent } from "../config/sessions/session-entry-lineage.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { projectPluginSessionExtensionsSync } from "../plugins/host-hook-state.js";
@@ -535,6 +536,7 @@ export function buildGatewaySessionRow(params: {
   });
   const pluginExtensions =
     !lightweight && entry ? projectPluginSessionExtensionsSync({ sessionKey: key, entry }) : [];
+  const pinState = resolveSessionPinState(entry);
 
   return {
     key,
@@ -594,8 +596,9 @@ export function buildGatewaySessionRow(params: {
     archived: entry?.archivedAt !== undefined,
     archivedAt: entry?.archivedAt,
     archivedBy: projectSessionActor(entry?.archivedBy, rowContext?.userProfileIdentityById, cfg),
-    pinned: entry?.pinnedAt !== undefined,
-    pinnedAt: entry?.pinnedAt,
+    pinned: pinState.scope === "global",
+    pinnedAt: pinState.scope === "global" ? pinState.pinnedAt : undefined,
+    categoryPinnedAt: pinState.scope === "group" ? pinState.pinnedAt : undefined,
     unread: deriveSessionUnread(entry),
     lastReadAt: entry?.lastReadAt,
     agentStatus,

@@ -439,6 +439,52 @@ describe("gateway sessions patch", () => {
     );
     expect(pinned.pinnedAt).toEqual(expect.any(Number));
 
+    const groupPinned = expectPatchOk(
+      await runPatch({
+        store: mainStoreEntry({ category: "Research", pinnedAt: pinned.pinnedAt }),
+        patch: { key: MAIN_SESSION_KEY, pinScope: "group" },
+      }),
+    );
+    expect(groupPinned.pinnedAt).toBeUndefined();
+    expect(groupPinned.categoryPinnedAt).toEqual(expect.any(Number));
+
+    const globalAgain = expectPatchOk(
+      await runPatch({
+        store: mainStoreEntry({
+          category: "Research",
+          categoryPinnedAt: groupPinned.categoryPinnedAt,
+        }),
+        patch: { key: MAIN_SESSION_KEY, pinScope: "global" },
+      }),
+    );
+    expect(globalAgain.pinnedAt).toEqual(expect.any(Number));
+    expect(globalAgain.categoryPinnedAt).toBeUndefined();
+
+    for (const patch of [{ pinScope: null }, { pinned: false }] as const) {
+      const cleared = expectPatchOk(
+        await runPatch({
+          store: mainStoreEntry({
+            category: "Research",
+            categoryPinnedAt: groupPinned.categoryPinnedAt,
+          }),
+          patch: { key: MAIN_SESSION_KEY, ...patch },
+        }),
+      );
+      expect(cleared.pinnedAt).toBeUndefined();
+      expect(cleared.categoryPinnedAt).toBeUndefined();
+    }
+
+    expectPatchError(
+      await runPatch({ patch: { key: MAIN_SESSION_KEY, pinScope: "group" } }),
+      "before assigning the session to a group",
+    );
+    expectPatchError(
+      await runPatch({
+        patch: { key: MAIN_SESSION_KEY, pinned: true, pinScope: "global" },
+      }),
+      "cannot be set together",
+    );
+
     expectPatchError(
       await runPatch({
         store: mainStoreEntry({ archivedAt: 10 }),

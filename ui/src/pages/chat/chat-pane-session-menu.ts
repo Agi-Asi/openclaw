@@ -17,6 +17,7 @@ import { openEditor } from "../../lib/editor-links.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
+import { resolveGatewaySessionPinScope } from "../../lib/sessions/pin-scope.ts";
 import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { ChatPaneContext } from "./chat-pane-context.ts";
 import { headerPlatformByClient } from "./chat-pane-shared.ts";
@@ -73,12 +74,14 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       return;
     }
     const owner = this.headerOutcomeOwner;
+    const pinScope = resolveGatewaySessionPinScope(row);
     const session = {
       key: row.key,
       sessionId: row.sessionId,
       label:
         normalizeOptionalString(row.label) ?? normalizeOptionalString(this.paneTitle) ?? row.key,
-      pinned: row.pinned === true,
+      pinned: pinScope !== null,
+      pinScope,
       archived: row.archived === true,
       active: true,
       hasActiveRun: row.hasActiveRun ?? row.status === "running",

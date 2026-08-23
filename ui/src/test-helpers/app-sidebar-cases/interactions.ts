@@ -69,7 +69,7 @@ describe("AppSidebar multi-select", () => {
         | null;
       expect(label).toBeTruthy();
       expect(row?.querySelector("[data-sidebar-session-pin]")?.getAttribute("aria-label")).toBe(
-        `Pin session: ${label}`,
+        `Pin globally: ${label}`,
       );
       expect(menu?.getAttribute("aria-label")).toBe(`Open session menu: ${label}`);
       expect(menu?.hasAttribute("title")).toBe(false);

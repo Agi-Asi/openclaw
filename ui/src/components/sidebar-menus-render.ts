@@ -237,10 +237,11 @@ export function renderSidebarSessionMenuForController(controller: SidebarMenusCo
           label: session.label,
           sessionId: session.sessionId ?? null,
           isChild: session.isChild,
-          pinned: session.pinned,
+          pinScope: session.pinScope,
           unread: batchRows ? allUnread : session.unread,
           archived: allArchived,
           category: batchRows ? sharedCategory : (session.category ?? null),
+          categoryPinAvailable: host.sessionsGrouping === "category",
           icon: batchRows ? null : (session.icon ?? null),
           categoryClearReturnsToGroups:
             sharedCategory !== null &&
@@ -286,8 +287,10 @@ export function renderSidebarSessionMenuForController(controller: SidebarMenusCo
                 showToast({ message: t(copied ? "common.copied" : "common.copyFailed") });
               });
               break;
-            case "toggle-pin":
-              void host.sessionOrganizer.patchSession(session, { pinned: !session.pinned });
+            case "set-pin-scope":
+              if (action.scope !== session.pinScope) {
+                void host.sessionOrganizer.patchSession(session, { pinScope: action.scope });
+              }
               break;
             case "toggle-unread":
               void host.sessionOrganizer.patchSession(session, { unread: !session.unread });

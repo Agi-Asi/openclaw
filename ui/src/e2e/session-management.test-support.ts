@@ -45,6 +45,7 @@ export function sessionRow(
     category?: string;
     pinned?: boolean;
     pinnedAt?: number;
+    categoryPinnedAt?: number;
     hasActiveRun?: boolean;
     hasAutomation?: GatewaySessionRow["hasAutomation"];
     incognito?: GatewaySessionRow["incognito"];

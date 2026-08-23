@@ -4,6 +4,7 @@ import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { SessionsListResult } from "../../api/types.ts";
 import { createSessionCapability } from "./index.ts";
+import { resolveGatewaySessionPinScope } from "./pin-scope.ts";
 import { createGatewayHarness, sessionsResult } from "./session-capability.test-support.ts";
 import type { SessionListSnapshot } from "./session-capability.ts";
 
@@ -56,6 +57,47 @@ function pinHarness(options: {
 }
 
 describe("session pin mutations", () => {
+  it("keeps a pending group pin inside its category through a stale event", async () => {
+    const committed = createDeferred<unknown>();
+    const key = "agent:main:research";
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.patch") {
+        return await committed.promise;
+      }
+      if (method === "sessions.list") {
+        return sessionsResult(
+          [{ key, kind: "direct", category: "Research", updatedAt: 1, pinned: false }],
+          1,
+        );
+      }
+      if (method === "sessions.subscribe") {
+        return { subscribed: true };
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const { gateway } = createGatewayHarness({ request } as unknown as GatewayBrowserClient);
+    const sessions = createSessionCapability(gateway);
+    await sessions.refresh({ force: true });
+
+    const operation = sessions.patch(key, { pinScope: "group" });
+    const optimisticRow = sessions.state.result?.sessions[0];
+    expect(optimisticRow && resolveGatewaySessionPinScope(optimisticRow)).toBe("group");
+    expect(optimisticRow?.pinned).toBe(false);
+    expect(optimisticRow?.categoryPinnedAt).toEqual(expect.any(Number));
+
+    sessions.reconcileChanged({
+      ...sessionChangedPayload(key, false),
+      category: "Research",
+      categoryPinnedAt: null,
+    });
+    const reconciledRow = sessions.state.result?.sessions[0];
+    expect(reconciledRow && resolveGatewaySessionPinScope(reconciledRow)).toBe("group");
+
+    committed.resolve({ ok: true, key, path: "", entry: { categoryPinnedAt: 4 } });
+    await expect(operation).resolves.toBeTruthy();
+    sessions.dispose();
+  });
+
   it("keeps a pending pin through a stale Gateway event and its canonical refresh", async () => {
     vi.useFakeTimers();
     try {

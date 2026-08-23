@@ -1,6 +1,7 @@
 // Bounded session-list ordering shared by synchronous and asynchronous projections.
 
 import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
+import { resolveSessionPinState } from "../config/sessions/pin-scope.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 
 const SESSIONS_LIST_TOP_N_LIMIT = 200;
@@ -29,6 +30,27 @@ function compareSessionEntryPairs(
   return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 }
 
+function compareSessionEntrySelectionPairs(
+  a: SessionEntryPair,
+  b: SessionEntryPair,
+  sortBy: SessionsListParams["sortBy"] = "updatedAt",
+): number {
+  if (sortBy !== "lastInteractionAt") {
+    const aPin = resolveSessionPinState(a[1]);
+    const bPin = resolveSessionPinState(b[1]);
+    const scopeRank = (scope: typeof aPin.scope) =>
+      scope === "global" ? 2 : scope === "group" ? 1 : 0;
+    const byScope = scopeRank(bPin.scope) - scopeRank(aPin.scope);
+    if (byScope !== 0) {
+      return byScope;
+    }
+    if (aPin.pinnedAt !== bPin.pinnedAt) {
+      return (bPin.pinnedAt ?? 0) - (aPin.pinnedAt ?? 0);
+    }
+  }
+  return compareSessionEntryPairs(a, b, sortBy);
+}
+
 function selectNewestLimitedEntries(
   entries: SessionEntryPair[],
   limit: number,
@@ -37,7 +59,7 @@ function selectNewestLimitedEntries(
   const selected: SessionEntryPair[] = [];
   for (const entry of entries) {
     const insertAt = selected.findIndex(
-      (candidate) => compareSessionEntryPairs(entry, candidate, sortBy) < 0,
+      (candidate) => compareSessionEntrySelectionPairs(entry, candidate, sortBy) < 0,
     );
     if (insertAt >= 0) {
       selected.splice(insertAt, 0, entry);
@@ -51,6 +73,13 @@ function selectNewestLimitedEntries(
   return selected;
 }
 
+export function orderSelectedSessionEntries(
+  entries: SessionEntryPair[],
+  sortBy: SessionsListParams["sortBy"],
+): SessionEntryPair[] {
+  return entries.toSorted((a, b) => compareSessionEntryPairs(a, b, sortBy));
+}
+
 export function sortAndLimitSessionEntries(
   entries: SessionEntryPair[],
   limit: number | undefined,
@@ -59,6 +88,10 @@ export function sortAndLimitSessionEntries(
   if (limit !== undefined && limit <= SESSIONS_LIST_TOP_N_LIMIT) {
     return selectNewestLimitedEntries(entries, limit, sortBy);
   }
-  const sorted = entries.toSorted((a, b) => compareSessionEntryPairs(a, b, sortBy));
-  return limit === undefined ? sorted : sorted.slice(0, limit);
+  if (limit !== undefined) {
+    return entries
+      .toSorted((a, b) => compareSessionEntrySelectionPairs(a, b, sortBy))
+      .slice(0, limit);
+  }
+  return orderSelectedSessionEntries(entries, sortBy);
 }

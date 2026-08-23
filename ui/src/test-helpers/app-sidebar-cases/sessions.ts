@@ -201,6 +201,13 @@ describe("AppSidebar session source lifecycle", () => {
     }
     await menu.updateComplete;
     expect(menu.forkDisabled).toBe(true);
+    menu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-more" } },
+      }),
+    );
+    await menu.updateComplete;
     expect(menu.querySelector<HTMLButtonElement>('[data-shortcut="f"]')?.disabled).toBe(true);
   });
 

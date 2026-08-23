@@ -297,19 +297,21 @@ describe("resolveCronSession", () => {
     });
 
     it("preserves pin state when rolling to a fresh session", () => {
-      const pinnedAt = NOW_MS - 500;
+      const categoryPinnedAt = NOW_MS - 400;
       const result = resolveWithStoredEntry({
         entry: {
           sessionId: "existing-session-id-pinned",
           updatedAt: NOW_MS - 1000,
-          pinnedAt,
+          category: "Research",
+          categoryPinnedAt,
         },
         fresh: true,
         forceNew: true,
       });
 
       expect(result.isNewSession).toBe(true);
-      expect(result.sessionEntry.pinnedAt).toBe(pinnedAt);
+      expect(result.sessionEntry.category).toBe("Research");
+      expect(result.sessionEntry.categoryPinnedAt).toBe(categoryPinnedAt);
     });
 
     it("drops a standalone runtime override without a retained model selection", () => {

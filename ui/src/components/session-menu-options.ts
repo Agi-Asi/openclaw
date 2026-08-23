@@ -1,10 +1,19 @@
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
+import type { SessionPinScope } from "../../../packages/gateway-protocol/src/index.ts";
 import { t } from "../i18n/index.ts";
 import { EDITOR_IDS, EDITOR_LABELS } from "../lib/editor-links.ts";
 import { icons } from "./icons.ts";
 import { menuShortcutHint } from "./menu-shortcuts.ts";
 import { syncDropdownItemRadio } from "./web-awesome.ts";
+
+export function sessionPinScopeFromMenuValue(value: string): SessionPinScope | null | undefined {
+  if (!value.startsWith("pin-scope:")) {
+    return undefined;
+  }
+  const scope = value.slice("pin-scope:".length);
+  return scope === "global" || scope === "group" ? scope : scope === "none" ? null : undefined;
+}
 
 export function renderSessionEditorOptions(params: { inline: boolean; disabled: boolean }) {
   return html`

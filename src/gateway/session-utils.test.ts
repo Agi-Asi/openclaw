@@ -560,15 +560,30 @@ describe("gateway session utils", () => {
     const store: Record<string, SessionEntry> = {
       recent: { sessionId: "recent", updatedAt: 30 },
       pinned: { sessionId: "pinned", updatedAt: 10, pinnedAt: 40 },
+      "category-pinned": {
+        sessionId: "category-pinned",
+        updatedAt: 5,
+        category: "Research",
+        categoryPinnedAt: 35,
+      },
       archived: { sessionId: "archived", updatedAt: 20, archivedAt: 50 },
     } satisfies Record<string, SessionEntry>;
 
     const active = listSessionsFromStore({ cfg, storePath: "", store, opts: {} });
-    expect(active.sessions.map((session) => session.key)).toEqual(["pinned", "recent"]);
+    expect(active.sessions.map((session) => session.key)).toEqual([
+      "pinned",
+      "recent",
+      "category-pinned",
+    ]);
     expect(active.sessions[0]).toMatchObject({
       pinned: true,
       pinnedAt: 40,
       archived: false,
+    });
+    expect(active.sessions[2]).toMatchObject({
+      pinned: false,
+      categoryPinnedAt: 35,
+      category: "Research",
     });
 
     const archived = listSessionsFromStore({
@@ -587,7 +602,55 @@ describe("gateway session utils", () => {
       store,
       opts: { archived: "all" },
     });
-    expect(all.sessions.map((session) => session.key)).toEqual(["pinned", "recent", "archived"]);
+    expect(all.sessions.map((session) => session.key)).toEqual([
+      "pinned",
+      "recent",
+      "archived",
+      "category-pinned",
+    ]);
+  });
+
+  test("bounded session lists retain older group pins without globally promoting them", () => {
+    const cfg = createModelDefaultsConfig({ primary: "openai/gpt-5.4" });
+    const store = Object.fromEntries([
+      ...Array.from(
+        { length: 51 },
+        (_value, index) =>
+          [
+            `recent-${index}`,
+            { sessionId: `recent-${index}`, updatedAt: 1_000 - index } satisfies SessionEntry,
+          ] as const,
+      ),
+      [
+        "group-pin",
+        {
+          sessionId: "group-pin",
+          updatedAt: 1,
+          category: "Research",
+          categoryPinnedAt: 2_000,
+        } satisfies SessionEntry,
+      ] as const,
+    ]);
+
+    const listed = listSessionsFromStore({ cfg, storePath: "", store, opts: { limit: 50 } });
+
+    expect(listed.sessions).toHaveLength(50);
+    expect(listed.sessions.at(-1)).toMatchObject({
+      key: "group-pin",
+      pinned: false,
+      category: "Research",
+      categoryPinnedAt: 2_000,
+    });
+    expect(listed.sessions.map((session) => session.key)).not.toContain("recent-49");
+    expect(listed.sessions.map((session) => session.key)).not.toContain("recent-50");
+
+    const nextPage = listSessionsFromStore({
+      cfg,
+      storePath: "",
+      store,
+      opts: { limit: 50, offset: 50 },
+    });
+    expect(nextPage.sessions.map((session) => session.key)).toEqual(["recent-49", "recent-50"]);
   });
 
   test("session lists page from an offset after filtering and sorting", () => {

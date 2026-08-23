@@ -142,7 +142,7 @@ describe("AppSidebar session mutation feedback", () => {
     expect(harness.patch).toHaveBeenNthCalledWith(
       3,
       archivedRow.key,
-      { pinned: true },
+      { pinScope: "global" },
       { agentId: "main", deferListRefresh: true },
     );
     expect(harness.patchMany).not.toHaveBeenCalled();
@@ -189,8 +189,21 @@ describe("AppSidebar session mutation feedback", () => {
     await sidebar.updateComplete;
 
     const menu = await openSessionMenu(sidebar, row.key);
-    expect(menu.textContent).toContain("Assign to me");
+    menu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-more" } },
+      }),
+    );
+    await menu.updateComplete;
     expect(menu.textContent).toContain("Assign to…");
+    menu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-assign-owner" } },
+      }),
+    );
+    await menu.updateComplete;
     menu.querySelector("wa-dropdown")?.dispatchEvent(
       new CustomEvent("wa-select", {
         bubbles: true,
@@ -213,6 +226,20 @@ describe("AppSidebar session mutation feedback", () => {
     });
 
     const selfMenu = await openSessionMenu(sidebar, row.key);
+    selfMenu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-more" } },
+      }),
+    );
+    await selfMenu.updateComplete;
+    selfMenu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-assign-owner" } },
+      }),
+    );
+    await selfMenu.updateComplete;
     const selfItem = selfMenu.querySelector<HTMLElement>(
       ':scope > wa-dropdown > wa-dropdown-item[value="assign-owner:human:profile-ada"]',
     );

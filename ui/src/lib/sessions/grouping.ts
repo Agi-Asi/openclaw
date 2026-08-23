@@ -1,6 +1,7 @@
 // Pure grouping helpers for the sessions table "Group by" modes.
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { moveSessionOrderEntry, normalizeSessionSectionOrderTokens } from "./custom-groups.ts";
+import { compareGatewaySessionCategoryPins, compareGatewaySessionPins } from "./pin-scope.ts";
 import { parseAgentSessionKey, parseSessionKeyParts } from "./session-key.ts";
 
 export const SESSION_GROUP_MODES = [
@@ -177,7 +178,18 @@ export function groupSessionRows(params: {
     }
   }
   const ids = orderedGroupIds(params.mode, byId, params.knownCategories ?? []);
-  return ids.map((id) => ({ id, rows: byId.get(id) ?? [] }));
+  return ids.map((id) => {
+    const rows = byId.get(id) ?? [];
+    return {
+      id,
+      rows:
+        params.mode === "category"
+          ? rows.toSorted(
+              (a, b) => compareGatewaySessionPins(a, b) || compareGatewaySessionCategoryPins(a, b),
+            )
+          : rows,
+    };
+  });
 }
 
 /** How the sidebar buckets non-pinned rows before its built-in smart zones. */
@@ -189,6 +201,8 @@ export function normalizeSidebarSessionsGrouping(raw: unknown): SidebarSessionsG
 
 type SidebarGroupableRow = {
   pinned?: boolean;
+  pinScope?: "global" | "group" | null;
+  categoryPinnedAt?: number;
   category?: string | null;
   owner?: { actor: { type: string; id?: string; label?: string; avatarUrl?: string } };
   /** Session kind from the gateway row; "group" rows form the Groups zone. */
@@ -199,6 +213,10 @@ type SidebarGroupableRow = {
   acpSession?: boolean;
 };
 
+function isGlobalSidebarPin(row: SidebarGroupableRow): boolean {
+  return row.pinScope === "global" || (row.pinScope === undefined && row.pinned === true);
+}
+
 /** Clearing the manual category reveals the built-in Groups destination. */
 export function categoryClearReturnsToGroups(
   row: SidebarGroupableRow,
@@ -206,7 +224,7 @@ export function categoryClearReturnsToGroups(
 ): boolean {
   return (
     grouping === "category" &&
-    row.pinned !== true &&
+    !isGlobalSidebarPin(row) &&
     Boolean(row.category?.trim()) &&
     row.kind === "group"
   );
@@ -249,7 +267,7 @@ export function groupSidebarSessionRows<Row extends SidebarGroupableRow>(
     }
   }
   for (const row of rows) {
-    if (row.pinned === true) {
+    if (isGlobalSidebarPin(row)) {
       pinned.push(row);
       continue;
     }
@@ -325,7 +343,7 @@ export function groupSidebarSessionRows<Row extends SidebarGroupableRow>(
   const orderedSections: SidebarSessionSection<Row>[] = orderedCategories.map((category) => ({
     id: `category:${category}`,
     category,
-    rows: categories.get(category) ?? [],
+    rows: [...(categories.get(category) ?? [])].toSorted(compareGatewaySessionCategoryPins),
   }));
   orderedSections.push({ id: "ungrouped", rows: threads });
   const hasGroupsReturnTarget = rows.some((row) => categoryClearReturnsToGroups(row, grouping));

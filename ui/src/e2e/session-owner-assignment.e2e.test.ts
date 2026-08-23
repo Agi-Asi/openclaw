@@ -137,6 +137,9 @@ suite.define(() => {
         await row
           .getByRole("button", { name: "Open session menu: Owner outcome", exact: true })
           .click();
+        const menu = page.locator("openclaw-session-menu");
+        await menu.getByRole("menuitem", { name: "More actions" }).click();
+        await menu.getByRole("menuitem", { name: "Assign to…" }).click();
         await chooseAssignToMe(page);
         await expectAssignmentRequest(gateway);
 

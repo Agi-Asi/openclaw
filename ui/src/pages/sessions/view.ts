@@ -5,7 +5,10 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 // Control UI view renders sessions screen content.
 import { html, nothing } from "lit";
-import type { SessionsSearchHit } from "../../../../packages/gateway-protocol/src/index.js";
+import type {
+  SessionPinScope,
+  SessionsSearchHit,
+} from "../../../../packages/gateway-protocol/src/index.js";
 import "../../styles/sessions.css";
 import type {
   AgentIdentityResult,
@@ -55,6 +58,10 @@ import {
   UNGROUPED_ID,
 } from "../../lib/sessions/grouping.ts";
 import type { SessionArchivedFilter } from "../../lib/sessions/index.ts";
+import {
+  compareGatewaySessionPins,
+  resolveGatewaySessionPinScope,
+} from "../../lib/sessions/pin-scope.ts";
 import {
   resolveSessionPreferredFace,
   sessionNavigationTarget,
@@ -140,6 +147,7 @@ export type SessionsProps = {
       category?: string | null;
       archived?: boolean;
       pinned?: boolean;
+      pinScope?: SessionPinScope | null;
       unread?: boolean;
       thinkingLevel?: string | null;
       fastMode?: FastMode | null;
@@ -600,7 +608,7 @@ function sortRows(
 ): GatewaySessionRow[] {
   const cmp = dir === "asc" ? 1 : -1;
   return [...rows].toSorted((a, b) => {
-    const pinnedDiff = (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0);
+    const pinnedDiff = compareGatewaySessionPins(a, b);
     if (pinnedDiff !== 0) {
       return pinnedDiff;
     }
@@ -737,7 +745,7 @@ function sessionDetailItems(params: {
   for (const [label, value] of [
     [t("sessionsView.activeRun"), row.hasActiveRun],
     [t("sessionsView.archived"), row.archived],
-    [t("sessionsView.pinned"), row.pinned],
+    [t("sessionsView.pinned"), resolveGatewaySessionPinScope(row) !== null],
   ] as const) {
     if (typeof value === "boolean") {
       details.push({ label, value: value ? t("common.yes") : t("common.no") });

@@ -216,7 +216,7 @@ export class SessionOrganizerController {
   startSessionDrag(session: SidebarRecentSession): void {
     this.draggingSessionKey = session.key;
     this.host.requestUpdate();
-    this.draggingSidebarEntry = session.pinned ? `session:${session.key}` : null;
+    this.draggingSidebarEntry = session.pinScope === "global" ? `session:${session.key}` : null;
     this.host.requestUpdate();
   }
 
@@ -315,12 +315,12 @@ export class SessionOrganizerController {
     const position = this.sidebarZoneDropTarget?.position;
     const sessionKey = readSessionDragData(event.dataTransfer);
     const session = sessionKey ? this.host.findSidebarSessionByKey(sessionKey) : undefined;
-    if (session && !session.pinned) {
+    if (session && session.pinScope !== "global") {
       // Persist the dropped slot only once the pin lands, and recompute
       // against the then-current order: a failed patch must not leave an
       // unpinned slot behind, and a stale snapshot must not undo zone edits
       // that raced the request.
-      void this.patchSession(session, { pinned: true }).then((result) => {
+      void this.patchSession(session, { pinScope: "global" }).then((result) => {
         if (result === "completed") {
           this.writeSidebarEntryAt(entry, targetEntry, position);
         }
@@ -342,7 +342,7 @@ export class SessionOrganizerController {
     const routeDrag = sidebarRouteDragActive(event.dataTransfer);
     const sessionKey = readSessionDragData(event.dataTransfer);
     const session = sessionKey ? this.host.findSidebarSessionByKey(sessionKey) : undefined;
-    if (!routeDrag && !session?.pinned) {
+    if (!routeDrag && session?.pinScope !== "global") {
       return;
     }
     event.preventDefault();
@@ -379,7 +379,7 @@ export class SessionOrganizerController {
     }
     const sessionKey = readSessionDragData(event.dataTransfer);
     const session = sessionKey ? this.host.findSidebarSessionByKey(sessionKey) : undefined;
-    if (session?.pinned) {
+    if (session?.pinScope === "global") {
       event.preventDefault();
       // patchSession prunes the persisted zone entry once the unpin lands.
       void this.patchSession(session, { pinned: false });
@@ -596,7 +596,7 @@ export class SessionOrganizerController {
   async assignSessionCategory(
     session: SidebarRecentSession,
     category: string | null,
-    patch: { pinned?: boolean } = {},
+    patch: Pick<SidebarSessionPatch, "pinned" | "pinScope"> = {},
   ): Promise<void> {
     const scope = this.host.sessionData.beginSessionMutation();
     if (!scope) {
@@ -701,18 +701,16 @@ export class SessionOrganizerController {
           : "before";
       void this.reorderSidebarSection(sourceSectionId, sectionId, position);
     } else if (session && sectionId === "pinned") {
-      if (!session.pinned) {
-        void this.patchSession(session, { pinned: true });
+      if (session.pinScope !== "global") {
+        void this.patchSession(session, { pinScope: "global" });
       }
     } else if (session) {
       const nextCategory = category ?? null;
-      if (session.category !== nextCategory || session.pinned) {
-        // The pinned:false leg prunes the persisted zone entry via patchSession.
-        void this.assignSessionCategory(
-          session,
-          nextCategory,
-          session.pinned ? { pinned: false } : {},
-        );
+      if (session.category !== nextCategory || session.pinScope === "global") {
+        // Dragging out of the global shelf is an explicit removal from that
+        // shelf. Keep this spatial action distinct from category-only menus.
+        const pinPatch = session.pinScope === "global" ? { pinScope: null } : {};
+        void this.assignSessionCategory(session, nextCategory, pinPatch);
       }
     }
     this.finishSidebarEntryDrag();

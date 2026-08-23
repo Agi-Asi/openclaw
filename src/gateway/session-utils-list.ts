@@ -24,7 +24,11 @@ import {
 } from "../routing/session-key.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import type { SessionOwnerFacetIdentity } from "../shared/session-types.js";
-import { type SessionEntryPair, sortAndLimitSessionEntries } from "./session-list-order.js";
+import {
+  orderSelectedSessionEntries,
+  type SessionEntryPair,
+  sortAndLimitSessionEntries,
+} from "./session-list-order.js";
 import {
   resolveSessionStoreAgentId,
   resolveStoredSessionKeyForAgentStore,
@@ -377,9 +381,12 @@ function selectSessionEntries(params: {
   const limit = resolveSessionsListLimit(params.opts, params.defaultLimit);
   const offset = resolveSessionsListOffset(params.opts);
   const windowLimit = resolveSessionsListWindowLimit(limit, offset);
-  const sortedWindow = sortAndLimitSessionEntries(filtered, windowLimit, params.opts.sortBy);
-  const entries =
-    limit === undefined ? sortedWindow.slice(offset) : sortedWindow.slice(offset, offset + limit);
+  const selectedWindow = sortAndLimitSessionEntries(filtered, windowLimit, params.opts.sortBy);
+  const page =
+    limit === undefined
+      ? selectedWindow.slice(offset)
+      : selectedWindow.slice(offset, offset + limit);
+  const entries = orderSelectedSessionEntries(page, params.opts.sortBy);
   const nextOffset = offset + entries.length;
   const hasMore = nextOffset < filtered.length;
   return {

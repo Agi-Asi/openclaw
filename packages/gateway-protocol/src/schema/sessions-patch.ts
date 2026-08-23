@@ -8,6 +8,8 @@ import { SessionPermissionModeSchema, SessionToolOverridesSchema } from "./sessi
 
 export const SESSIONS_PATCH_MANY_MAX_TARGETS = 100;
 
+export const SessionPinScopeSchema = Type.Union([Type.Literal("global"), Type.Literal("group")]);
+
 const SessionsPatchMutationProperties = {
   label: Type.Optional(Type.Union([SessionLabelString, Type.Null()])),
   icon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -25,6 +27,8 @@ const SessionsPatchMutationProperties = {
   ttlMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })),
   archived: Type.Optional(Type.Boolean()),
   pinned: Type.Optional(Type.Boolean()),
+  /** Select one pin destination; null clears either pin. Mutually exclusive with `pinned`. */
+  pinScope: Type.Optional(Type.Union([SessionPinScopeSchema, Type.Null()])),
   unread: Type.Optional(
     Type.Boolean({ description: "Set true to mark unread; false records the session as read." }),
   ),
@@ -115,6 +119,7 @@ export const SessionsPatchManyResultSchema = closedObject({
 
 export type SessionsPatchParams = Static<typeof SessionsPatchParamsSchema>;
 export type SessionsPatchMutation = Static<typeof SessionsPatchMutationSchema>;
+export type SessionPinScope = Static<typeof SessionPinScopeSchema>;
 export type SessionsPatchManyTarget = Static<typeof SessionsPatchManyTargetSchema>;
 export type SessionsPatchManyParams = Static<typeof SessionsPatchManyParamsSchema>;
 export type SessionsPatchManyResult = Static<typeof SessionsPatchManyResultSchema>;

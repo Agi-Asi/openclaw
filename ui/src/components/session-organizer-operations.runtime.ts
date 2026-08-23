@@ -93,7 +93,12 @@ export async function patchSession(
     // persisted zone slot; leaving it would resurrect stale synced entries.
     // Archiving implicitly unpins server-side (sessions-patch clears
     // pinnedAt), so it retires the slot too.
-    if (patch.pinned === false || (patch.archived === true && session.pinned)) {
+    if (
+      patch.pinned === false ||
+      patch.pinScope === "group" ||
+      patch.pinScope === null ||
+      (patch.archived === true && session.pinScope === "global")
+    ) {
       host.pruneSidebarSessionEntry(session.key);
     }
     if (!refresh.deferListRefresh && host.sidebarSessionStatusFilter() !== "active") {
@@ -131,6 +136,18 @@ export async function patchSessions(
     return host.sessionData.isSessionMutationScopeCurrent(scope) ? "failed" : "stale";
   }
   return successful.length === rows.length ? "completed" : "failed";
+}
+
+async function moveSessionsToCategory(
+  host: SessionOrganizerControllerHost,
+  rows: readonly SidebarRecentSession[],
+  category: string | null,
+  scope: SidebarSessionMutationScope,
+): Promise<SidebarSessionMutationResult> {
+  if (rows.length === 1) {
+    return patchSession(host, rows[0]!, { category }, scope);
+  }
+  return patchSessions(host, rows, { category }, scope);
 }
 
 async function patchSessionRowsSerial(
@@ -172,7 +189,7 @@ export async function archiveSessionWithUndo(
     message: t("sessionsView.sessionArchived"),
     actionLabel: t("common.undo"),
     onAction: () =>
-      void restoreArchivedSessions(host, [{ session, pinned: session.pinned }], scope),
+      void restoreArchivedSessions(host, [{ session, pinScope: session.pinScope }], scope),
   });
 }
 
@@ -190,7 +207,7 @@ async function archiveSessionsWithUndo(
   if (!archivedRows || archivedRows.length === 0) {
     return;
   }
-  const archived = archivedRows.map((session) => ({ session, pinned: session.pinned }));
+  const archived = archivedRows.map((session) => ({ session, pinScope: session.pinScope }));
   showToast({
     message:
       archived.length === 1
@@ -203,7 +220,7 @@ async function archiveSessionsWithUndo(
 
 async function restoreArchivedSessions(
   host: SessionActionHost,
-  archived: readonly { session: SessionActionRow; pinned: boolean }[],
+  archived: readonly { session: SessionActionRow; pinScope: SessionActionRow["pinScope"] }[],
   scope: SidebarSessionMutationScope,
 ) {
   const rows = archived.map((entry) => entry.session);
@@ -222,18 +239,21 @@ async function restoreArchivedSessions(
   if (!restored) {
     return;
   }
-  const repinRows = archived.flatMap(({ session, pinned }) =>
-    pinned && restored.includes(session) ? [session] : [],
-  );
-  if (repinRows.length > 0) {
+  for (const pinScope of ["global", "group"] as const) {
+    const repinRows = archived.flatMap(({ session, pinScope: archivedScope }) =>
+      archivedScope === pinScope && restored.includes(session) ? [session] : [],
+    );
+    if (repinRows.length === 0) {
+      continue;
+    }
     const repinned = singleRowUndo
-      ? await patchSessionRowsSerial(host, repinRows, { pinned: true }, scope, {
+      ? await patchSessionRowsSerial(host, repinRows, { pinScope }, scope, {
           deferListRefresh: true,
         })
-      : await patchSessionRows(host, repinRows, { pinned: true }, scope, {
+      : await patchSessionRows(host, repinRows, { pinScope }, scope, {
           deferListRefresh: true,
           fallback: () =>
-            patchSessionRowsSerial(host, repinRows, { pinned: true }, scope, {
+            patchSessionRowsSerial(host, repinRows, { pinScope }, scope, {
               deferListRefresh: true,
             }),
         });
@@ -357,10 +377,10 @@ export async function runBatchSessionAction(
       await patchSessions(host, rows, { unread: !allUnread }, scope);
       break;
     case "move-to-group":
-      await patchSessions(
+      await moveSessionsToCategory(
         host,
         rows.filter((row) => (row.category ?? null) !== action.category),
-        { category: action.category },
+        action.category,
         scope,
       );
       break;
@@ -439,10 +459,7 @@ export async function createSessionGroup(
     return current ? [current] : [];
   });
   if (targets.length > 0) {
-    const moved =
-      targets.length === 1
-        ? await patchSession(host, targets[0]!, { category: name }, scope)
-        : await patchSessions(host, targets, { category: name }, scope);
+    const moved = await moveSessionsToCategory(host, targets, name, scope);
     // Rows that left the list are absent from `targets`, so patching the
     // remainder reports success for a selection that was only partly applied.
     // Closing on that would leave the skipped rows unaccounted for, so the
@@ -473,7 +490,7 @@ export async function assignSessionCategory(
   session: SidebarRecentSession,
   category: string | null,
   scope: SidebarSessionMutationScope,
-  patch: { pinned?: boolean } = {},
+  patch: Pick<SidebarSessionPatch, "pinned" | "pinScope"> = {},
 ): Promise<void> {
   if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
     return;

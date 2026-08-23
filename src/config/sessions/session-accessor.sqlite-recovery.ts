@@ -190,6 +190,7 @@ export async function recoverSessionEntryFromRestartTombstone(params: {
         updatedAt: Math.max(now, (source.updatedAt ?? 0) + 1),
       };
       delete nextSource.pinnedAt;
+      delete nextSource.categoryPinnedAt;
 
       params.commitGuard?.();
 

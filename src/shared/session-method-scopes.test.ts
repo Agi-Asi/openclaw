@@ -54,6 +54,7 @@ describe("resolveDynamicSessionMutationRequiredScope", () => {
     { name: "model reset", patch: { model: null } },
     { name: "icon set", patch: { icon: "🦞" } },
     { name: "icon reset", patch: { icon: null } },
+    { name: "group pin", patch: { pinScope: "group" } },
     {
       name: "safe mixed patch",
       patch: { label: "Renamed", archived: true, model: "openai/gpt-5.6-luna" },

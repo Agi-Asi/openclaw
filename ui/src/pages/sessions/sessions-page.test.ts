@@ -130,7 +130,7 @@ describe("sessions page lifecycle", () => {
     expect(patch).toHaveBeenNthCalledWith(
       2,
       key,
-      { archived: false, pinned: true },
+      { archived: false, pinScope: "global" },
       { agentId: undefined, expectedSessionId: "session-pinned" },
     );
   });
@@ -415,6 +415,13 @@ describe("sessions page lifecycle", () => {
     }
     await menu.updateComplete;
     expect(menu.forkDisabled).toBe(true);
+    menu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-more" } },
+      }),
+    );
+    await menu.updateComplete;
     expect(menu.querySelector<HTMLButtonElement>('[data-shortcut="f"]')?.disabled).toBe(true);
   });
 
@@ -488,6 +495,13 @@ describe("sessions page lifecycle", () => {
     await menu.updateComplete;
 
     expect(menu.workboard).toEqual({ captured, busy: false });
+    menu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-more" } },
+      }),
+    );
+    await menu.updateComplete;
     expect(menu.querySelector('[value="workboard"]')?.textContent).toContain(
       captured ? "Open Workboard card" : "Add to Workboard",
     );
@@ -515,6 +529,13 @@ describe("sessions page lifecycle", () => {
     await menu.updateComplete;
 
     expect(menu.workboard).toEqual({ captured: false, busy: true });
+    menu.querySelector("wa-dropdown")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        bubbles: true,
+        detail: { item: { value: "compact:open-more" } },
+      }),
+    );
+    await menu.updateComplete;
     expect(menu.querySelector('[value="workboard"]')?.hasAttribute("disabled")).toBe(true);
   });
 

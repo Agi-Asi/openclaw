@@ -162,6 +162,35 @@ it("drops a non-array assistant transcript repair value", () => {
   ).not.toHaveProperty("pendingTranscriptRepair");
 });
 
+it("keeps only canonical active group pins", () => {
+  expect(
+    normalizePersistedSessionEntryShape({
+      sessionId: "session-1",
+      category: "Research",
+      categoryPinnedAt: 42,
+    }),
+  ).toMatchObject({ category: "Research", categoryPinnedAt: 42 });
+
+  for (const categoryPinnedAt of [null, "42", Number.NaN, -1]) {
+    expect(
+      normalizePersistedSessionEntryShape({
+        sessionId: "session-1",
+        category: "Research",
+        categoryPinnedAt,
+      }),
+    ).not.toHaveProperty("categoryPinnedAt");
+  }
+
+  expect(
+    normalizePersistedSessionEntryShape({
+      sessionId: "session-1",
+      category: "Research",
+      categoryPinnedAt: 42,
+      archivedAt: 43,
+    }),
+  ).not.toHaveProperty("categoryPinnedAt");
+});
+
 it("drops malformed assistant transcript repair records", () => {
   expect(
     normalizePersistedSessionEntryShape({

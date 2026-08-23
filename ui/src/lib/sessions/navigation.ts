@@ -7,6 +7,7 @@ import type { GatewayHelloOk } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { isCronSessionKey } from "../session-display.ts";
 import { parseCatalogSessionKey } from "./catalog-key.ts";
+import { compareGatewaySessionPins } from "./pin-scope.ts";
 import {
   areUiSessionKeysEquivalent,
   isUiGlobalSessionKey,
@@ -316,11 +317,7 @@ export function getVisibleSessionRows(
 }
 
 export function compareSessionRowsByUpdatedAt(a: GatewaySessionRow, b: GatewaySessionRow): number {
-  const pinnedStateDiff = Number(b.pinned === true) - Number(a.pinned === true);
-  if (pinnedStateDiff !== 0) {
-    return pinnedStateDiff;
-  }
-  const pinnedDiff = (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0);
+  const pinnedDiff = compareGatewaySessionPins(a, b);
   if (pinnedDiff !== 0) {
     return pinnedDiff;
   }

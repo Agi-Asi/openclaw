@@ -434,6 +434,7 @@ async function updateMemberCategories(
           const next = { ...entry };
           if (to === undefined) {
             delete next.category;
+            delete next.categoryPinnedAt;
           } else {
             next.category = to;
           }

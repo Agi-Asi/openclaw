@@ -266,7 +266,12 @@ describe("session groups catalog", () => {
     const updatedAtA = Date.now() - 1_000;
     const updatedAtB = Date.now() - 2_000;
     const storePath = await seedSessionStore({
-      "agent:main:dashboard:a": { sessionId: "a1", updatedAt: updatedAtA, category: "Old" },
+      "agent:main:dashboard:a": {
+        sessionId: "a1",
+        updatedAt: updatedAtA,
+        category: "Old",
+        categoryPinnedAt: updatedAtA - 100,
+      },
       "agent:main:dashboard:b": { sessionId: "b1", updatedAt: updatedAtB, category: "Other" },
     });
 
@@ -286,6 +291,7 @@ describe("session groups catalog", () => {
       sessionKey: "agent:main:dashboard:b",
     });
     expect(sessionA?.category).toBe("New");
+    expect(sessionA?.categoryPinnedAt).toBe(updatedAtA - 100);
     expect(sessionA?.updatedAt).toBe(updatedAtA);
     expect(sessionB?.category).toBe("Other");
   });
@@ -293,7 +299,12 @@ describe("session groups catalog", () => {
   it("deletes a group and clears member categories", async () => {
     putSessionGroups(["Gone"], ["category:Gone", "ungrouped", "work"], env);
     const storePath = await seedSessionStore({
-      "agent:main:dashboard:a": { sessionId: "a1", updatedAt: Date.now(), category: "Gone" },
+      "agent:main:dashboard:a": {
+        sessionId: "a1",
+        updatedAt: Date.now(),
+        category: "Gone",
+        categoryPinnedAt: Date.now() - 100,
+      },
     });
 
     const result = await deleteSessionGroup({ cfg, name: "Gone", env });
@@ -301,13 +312,13 @@ describe("session groups catalog", () => {
     expect(result.groups).toEqual([]);
     expect(result.sectionOrder).toEqual(["ungrouped", "work"]);
 
-    expect(
-      loadSessionEntry({
-        agentId: "main",
-        storePath,
-        sessionKey: "agent:main:dashboard:a",
-      })?.category,
-    ).toBeUndefined();
+    const deletedGroupSession = loadSessionEntry({
+      agentId: "main",
+      storePath,
+      sessionKey: "agent:main:dashboard:a",
+    });
+    expect(deletedGroupSession?.category).toBeUndefined();
+    expect(deletedGroupSession?.categoryPinnedAt).toBeUndefined();
   });
 
   it("merges a rename into an existing target group", async () => {

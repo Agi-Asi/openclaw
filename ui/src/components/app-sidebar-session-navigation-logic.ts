@@ -27,6 +27,10 @@ import {
   sessionMatchesVisibleSessionScope,
 } from "../lib/sessions/index.ts";
 import {
+  compareGatewaySessionPins,
+  resolveGatewaySessionPinScope,
+} from "../lib/sessions/pin-scope.ts";
+import {
   resolveSessionPreferredFace,
   sessionNavigationTarget,
 } from "../lib/sessions/route-navigation.ts";
@@ -79,6 +83,10 @@ export function compareSidebarSessionRowsByMode(input: {
   createdOrder: ReadonlyMap<string, number>;
 }): number {
   const { a, b } = input;
+  const pinOrder = compareGatewaySessionPins(a, b);
+  if (pinOrder !== 0) {
+    return pinOrder;
+  }
   if (input.sortMode !== "people") {
     return input.sortMode === "updated"
       ? compareSessionRowsByUpdatedAt(a, b)
@@ -191,6 +199,7 @@ export function buildSidebarSessionNavigationState(input: {
   });
   const toSidebarSession = (row: SessionRow, isChild = false): SidebarRecentSession => {
     const channelInfo = resolveChannelSessionInfo(row.key, row.channel);
+    const pinScope = resolveGatewaySessionPinScope(row);
     let runtimeSampledAt = row.runtimeSampledAt;
     if (row.runtimeMs != null && runtimeSampledAt == null) {
       runtimeSampledAt = input.runtimeSampledAtByRow.get(row);
@@ -232,7 +241,9 @@ export function buildSidebarSessionNavigationState(input: {
       activeRunIds: row.archived === true ? undefined : row.activeRunIds,
       modelSelectionLocked: row.modelSelectionLocked === true,
       kind: row.kind,
-      pinned: row.pinned === true,
+      pinned: pinScope !== null,
+      pinScope,
+      categoryPinnedAt: row.categoryPinnedAt,
       archived: row.archived === true,
       visibility: row.visibility,
       draftOwnedBySelf: isSidebarDraftOwnedBySelf(row, context?.gateway.snapshot.selfUser?.id),
@@ -377,10 +388,12 @@ export function buildReconciledSidebarZone(input: {
   workboardBoardsReady: boolean;
   controlUiTabs: readonly GatewayControlUiPluginTab[] | undefined;
 }) {
-  const pinnedRows = input.rows.filter((row) => row.pinned);
+  const pinnedRows = input.rows.filter((row) => row.pinScope === "global");
   // Only loaded rows count as authoritative unpinned state; entries for
   // other agents' sessions must survive canonical writes untouched.
-  const knownUnpinnedKeys = new Set(input.rows.filter((row) => !row.pinned).map((row) => row.key));
+  const knownUnpinnedKeys = new Set(
+    input.rows.filter((row) => row.pinScope !== "global").map((row) => row.key),
+  );
   const reconciled = reconcileSidebarZone(
     input.sidebarEntries,
     pinnedRows,

@@ -262,12 +262,12 @@ suite.define(() => {
 
       // Hover-revealed management actions on sidebar rows.
       const sidebarResearch = sidebarRows.filter({ hasText: "Research notes" });
-      const sidebarResearchPin = sidebarResearch.getByRole("button", { name: "Pin session" });
+      const sidebarResearchPin = sidebarResearch.getByRole("button", { name: "Pin globally" });
       await page.mouse.move(900, 500);
       await expect.poll(() => actionOpacity(sidebarResearchPin)).toBe("0");
       const sidebarReleasePin = sidebarRows
         .filter({ hasText: "Release planning" })
-        .getByRole("button", { name: "Unpin session" });
+        .getByRole("button", { name: "Unpin globally" });
       await expect.poll(() => actionOpacity(sidebarReleasePin)).toBe("0");
       await sidebarResearch.hover();
       await expect.poll(() => actionOpacity(sidebarResearchPin)).toBe("1");
@@ -278,11 +278,11 @@ suite.define(() => {
       await sidebarReleasePin.click();
       const pinPatch = await waitForPatch(
         gateway,
-        (params) => params.key === "agent:main:release" && params.pinned === false,
+        (params) => params.key === "agent:main:release" && params.pinScope === null,
       );
       expect(requireRecord(pinPatch.params)).toMatchObject({
         key: "agent:main:release",
-        pinned: false,
+        pinScope: null,
       });
 
       // Active rows can archive through the Gateway's stop-and-drain lifecycle,

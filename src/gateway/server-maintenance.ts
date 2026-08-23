@@ -1,5 +1,6 @@
 // Gateway maintenance timers.
 // Starts periodic health, dedupe, abort, and media cleanup loops.
+import { randomInt } from "node:crypto";
 import { isFutureDateTimestampMs } from "@openclaw/normalization-core/number-coercion";
 import { AGENT_RUN_TERMINAL_RETRY_GRACE_MS } from "../agents/agent-run-terminal-outcome.js";
 import { createManagedWorktreeOwnerProtection } from "../agents/worktrees/owner-protection.js";
@@ -130,17 +131,14 @@ export function startGatewayMaintenanceTimers(params: {
     logger: params.logHealth,
   });
 
-  let nextTelemetryCheckAtMs =
-    Date.now() + Math.floor(Math.random() * TELEMETRY_MAINTENANCE_INTERVAL_MS);
+  let nextTelemetryCheckAtMs = Date.now() + randomInt(TELEMETRY_MAINTENANCE_INTERVAL_MS);
   // periodic keepalive
   const tickInterval = setInterval(() => {
     void hostThawRecovery.tick();
     const now = Date.now();
     if (!params.isNixMode && now >= nextTelemetryCheckAtMs) {
       nextTelemetryCheckAtMs =
-        now +
-        TELEMETRY_MAINTENANCE_INTERVAL_MS +
-        Math.floor(Math.random() * TELEMETRY_MAINTENANCE_INTERVAL_MS);
+        now + TELEMETRY_MAINTENANCE_INTERVAL_MS + randomInt(TELEMETRY_MAINTENANCE_INTERVAL_MS);
       void checkTelemetryUpdate(params.getRuntimeConfig(), { surface: "gateway" }).catch(() => {});
     }
     const payload = { ts: now };
