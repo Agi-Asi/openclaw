@@ -215,7 +215,7 @@ suite.define(() => {
         await expect
           .poll(() =>
             sidebarHeader.locator(".sidebar-agent-card").evaluate((element) => {
-              const label = element.querySelector(".sidebar-agent-card__name");
+              const label = element.querySelector(".sidebar-agent-card__name-text");
               if (!label) {
                 return false;
               }
