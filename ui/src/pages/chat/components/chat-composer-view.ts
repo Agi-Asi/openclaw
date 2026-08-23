@@ -1,8 +1,9 @@
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import { html, nothing, type TemplateResult } from "lit";
+import { html, nothing, svg, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
 import type { GatewaySessionRow } from "../../../api/types.ts";
+import { strokeIcon } from "../../../components/icons-tools.ts";
 import { icons } from "../../../components/icons.ts";
 import { renderSessionProgressCard } from "../../../components/session-progress-card.ts";
 import { t } from "../../../i18n/index.ts";
@@ -18,7 +19,6 @@ import {
   renderAttachmentPreview,
   renderChatAttachmentInputs,
 } from "./chat-attachments.ts";
-import { renderChatAuthorAvatar } from "./chat-author-avatar.ts";
 import type { ChatRunControlsProps } from "./chat-composer-controls.ts";
 import { renderChatPrimaryActions } from "./chat-composer-controls.ts";
 import { focusComposerFromChrome, paneDomId } from "./chat-composer-dom.ts";
@@ -72,6 +72,16 @@ type ChatComposerViewContext = {
   slashMenuListboxId: string;
   slashMenuAnnouncementId: string;
 };
+
+const globeOffIcon = strokeIcon(svg` <path
+    d="M10.114 4.462A14.5 14.5 0 0 1 12 2a10 10 0 0 1 9.313 13.643"
+  />
+  <path d="M15.557 15.556A14.5 14.5 0 0 1 12 22 10 10 0 0 1 4.929 4.929" />
+  <path d="M15.892 10.234A14.5 14.5 0 0 0 12 2a10 10 0 0 0-3.643.687" />
+  <path d="M17.656 12H22" />
+  <path d="M19.071 19.071A10 10 0 0 1 12 22 14.5 14.5 0 0 1 8.44 8.45" />
+  <path d="M2 12h10" />
+  <path d="m2 2 20 20" />`);
 
 export function renderChatComposerView(context: ChatComposerViewContext) {
   const {
@@ -195,7 +205,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             : icons.shieldQuestion,
       }
     : offlineText
-      ? { text: offlineText, tone: "warn" as const, icon: icons.globeOff }
+      ? { text: offlineText, tone: "warn" as const, icon: globeOffIcon }
       : null;
   const composerUnderlaps =
     showComposerInput && primaryComposerStatus
@@ -243,7 +253,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
         })}
       </div>`
     : nothing;
-
   return html`
     ${renderChatQueue({
       queue: props.queue,
@@ -261,29 +270,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
       editingText: props.queuedEdit?.editingText,
       onQueueRemove: props.onQueueRemove,
     })}
-    ${showComposerInput && props.typingActors?.length
-      ? html`<div
-          class="agent-chat__typing-indicator agent-chat__typing-indicator--outside"
-          role="status"
-        >
-          <!-- Avatars stay aria-hidden: the status text already names every
-               typer, and role="img" avatars would announce each name twice. -->
-          <span class="agent-chat__typing-avatars" aria-hidden="true">
-            ${props.typingActors
-              .slice(0, 3)
-              .map((actor) => renderChatAuthorAvatar({ id: actor.id, name: actor.label }))}
-          </span>
-          <span class="agent-chat__typing-text"
-            >${props.typingActors.length === 1
-              ? t("chat.sessionSuggestions.typing", {
-                  name: props.typingActors[0]?.label ?? "",
-                })
-              : t("chat.sessionSuggestions.typingMany", {
-                  names: props.typingActors.map((actor) => actor.label).join(", "),
-                })}</span
-          >
-        </div>`
-      : nothing}
     <div class="agent-chat__composer-shell">
       ${questionPanelProps
         ? html`
@@ -300,7 +286,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
               class="agent-chat__input agent-chat__input--chat ${props.offline
                 ? "agent-chat__input--offline"
                 : ""}${dictation?.active ? " agent-chat__input--dictating" : ""}"
-              data-composer-layout="multiline"
               @wa-show=${handleChatComposerDropdownShow}
               @wa-after-show=${restorePointerOpenedChatComposerTrigger}
               @click=${(event: MouseEvent) => focusComposerFromChrome(event, canCompose)}
@@ -312,11 +297,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             >
               ${slashMenuVisible ? renderSlashMenu(requestUpdate, props, visibleDraft) : nothing}
               ${skillMenuVisible ? renderSkillMenu(state, skillMenuHost, requestUpdate) : nothing}
-              <!-- Everything that stacks above the editor lives in one flow region so
-                 attachments, replies and status all inset and wrap the same way
-                 instead of each optional block carrying its own placement. The
-                 absolutely positioned menus above stay outside it: they float over
-                 the surface rather than adding a row to it. -->
               <div class="agent-chat__composer-lede">
                 ${renderAttachmentPreview(props)}
                 ${props.replyTarget

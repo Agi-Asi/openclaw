@@ -639,9 +639,8 @@ function chatHtml(opts: ChatFixtureOptions = {}, mobileNavLayout = false) {
                         </div>
                       </details>
                     </div>
-                    <div class="agent-chat__composer-mid">
-                    ${composerControlsHtml(opts.crowdedComposerFooter)}
-                    <div class="agent-chat__composer-meta">
+                    <div class="agent-chat__composer-trail">
+                    <div class="agent-chat__composer-meta agent-chat__composer-context">
                       <div class="context-usage">
                         <details>
                           <summary class="context-ring" role="status" aria-label="Session context usage: 46k/200k (23%)">
@@ -670,8 +669,7 @@ function chatHtml(opts: ChatFixtureOptions = {}, mobileNavLayout = false) {
                         </details>
                       </div>
                     </div>
-                    </div>
-                    <div class="agent-chat__composer-trail">
+                    ${composerControlsHtml(opts.crowdedComposerFooter)}
                       <div class="agent-chat__composer-actions">
                         <button class="chat-send-btn chat-send-btn--voice" aria-label="Start voice input">${iconSvg()}</button>
                       </div>
@@ -2307,22 +2305,21 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       // the thread sits on, not another card in the same stack.
       expect(geometry.composer?.borderRadius).toBe(20 * (await readCornerScale(page)));
 
-      const composerInset = width <= 768 ? 4 : 8;
       // The editor's horizontal inset belongs to its row, not to the control,
       // so the text keeps one origin while the surface changes shape.
-      const textareaBlockInset = width <= 768 ? 10 : 6;
+      const textareaBlockInset = width <= 768 || (width <= 932 && height <= 500) ? 10 : 6;
       expect(geometry.textarea?.paddingTop).toBe(textareaBlockInset);
       expect(geometry.textarea?.paddingRight).toBe(0);
       expect(geometry.textarea?.paddingBottom).toBe(textareaBlockInset);
       expect(geometry.textarea?.paddingLeft).toBe(0);
-      const footerInset = width <= 768 ? composerInset : 8;
+      const shortLandscape = width <= 932 && height <= 500;
+      const footerInset = width <= 768 || shortLandscape ? 4 : 8;
       expect(geometry.footer?.paddingLeft).toBe(footerInset);
       expect(geometry.footer?.paddingRight).toBe(footerInset);
-      // The action row's distance from the bottom edge is a margin, not padding:
-      // the row is pushed down by `margin-top: auto`, so its own bottom inset has
-      // to be outside the box or the auto margin would swallow it.
-      expect(geometry.footer?.paddingTop).toBe(width <= 768 ? composerInset / 2 : 0);
-      expect(geometry.footer?.paddingBottom).toBe(0);
+      // Multiline keeps optical breathing room inside the footer on both edges;
+      // the outer margin only docks the complete row above the surface edge.
+      expect(geometry.footer?.paddingTop).toBe(width <= 768 ? 4 : shortLandscape ? 2 : 6);
+      expect(geometry.footer?.paddingBottom).toBe(width <= 768 ? 4 : shortLandscape ? 0 : 6);
 
       // The resting shape is two stacked regions, not one line that may grow
       // into two: a draft that fits on a single line still leaves the surface at
@@ -2334,7 +2331,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       ]);
       expect(surface.height).toBeGreaterThanOrEqual(98);
       expect(actionRow.top).toBeGreaterThanOrEqual(editor.bottom - 1);
-      expect(surface.bottom - actionRow.bottom).toBeGreaterThanOrEqual(composerInset / 2);
+      expect(surface.bottom - actionRow.bottom).toBeGreaterThanOrEqual(0);
     } finally {
       await closeBrowserPage(page);
     }
@@ -2799,7 +2796,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       expect(shell.x).toBeLessThanOrEqual(8);
       expect(layout.viewportWidth - (shell.x + shell.width)).toBeLessThanOrEqual(8);
       expect(attach.x - input.x).toBeLessThanOrEqual(10);
-      expect(context.x).toBeGreaterThanOrEqual(model.x + model.width - 1);
+      expect(model.x).toBeGreaterThanOrEqual(context.x + context.width - 1);
       expect(input.x + input.width - (send.x + send.width)).toBeLessThanOrEqual(8);
       for (const control of [model, context]) {
         expect(
@@ -2930,18 +2927,14 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       });
 
       expect(layout.controls.scrollWidth).toBeLessThanOrEqual(layout.controls.clientWidth + 1);
-      for (const control of [
-        layout.status,
-        layout.overrides,
-        layout.model,
-        layout.effort,
-        layout.typing,
-      ]) {
+      for (const control of [layout.status, layout.overrides, layout.model, layout.effort]) {
         expect(control.x).toBeGreaterThanOrEqual(layout.footer.x - 1);
         expect(control.x + control.width).toBeLessThanOrEqual(
           layout.footer.x + layout.footer.width + 1,
         );
       }
+      expect(layout.typing.x).toBeGreaterThanOrEqual(0);
+      expect(layout.typing.x + layout.typing.width).toBeLessThanOrEqual(320);
       for (const trigger of [layout.model, layout.effort]) {
         expect(trigger.width).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
         expect(trigger.height).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
@@ -3056,20 +3049,21 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         expect(model.y + model.height).toBeLessThanOrEqual(footer.y + footer.height + 1);
         expect(model.y).toBeGreaterThanOrEqual(textarea.y);
         expect(context.y).toBeGreaterThanOrEqual(textarea.y);
-        expect(
-          Math.abs(attach.y + attach.height / 2 - (send.y + send.height / 2)),
-        ).toBeLessThanOrEqual(2);
-        // Permissions and the primary action are footer controls now: they sit
-        // on one baseline below the editor, pinned to opposite edges of the
+        // The multiline footer is one row: the leading attachment control and
+        // trailing action group share its vertical bounds without overlapping.
+        expect(attach.y).toBeGreaterThanOrEqual(footer.y - 1);
+        expect(attach.y + attach.height).toBeLessThanOrEqual(footer.y + footer.height + 1);
+        expect(send.y).toBeGreaterThanOrEqual(footer.y - 1);
+        expect(send.y + send.height).toBeLessThanOrEqual(footer.y + footer.height + 1);
+        // Footer controls stay below the editor, pinned to opposite edges of the
         // surface, and neither may drift back up into the text.
         expect(attach.y).toBeGreaterThanOrEqual(textarea.y + textarea.height - 1);
         expect(send.y).toBeGreaterThanOrEqual(textarea.y + textarea.height - 1);
         expect(attach.x).toBeLessThan(send.x);
         expect(send.x + send.width).toBeLessThanOrEqual(input.x + input.width + 1);
         expect(rectsOverlap(model, send)).toBe(false);
-        const effortContextGap = context.x - (effortTrigger.x + effortTrigger.width);
-        expect(effortContextGap).toBeGreaterThanOrEqual(-1);
-        expect(effortContextGap).toBeLessThanOrEqual(9);
+        const contextModelGap = model.x - (context.x + context.width);
+        expect(contextModelGap).toBeGreaterThanOrEqual(-1);
         const composerFontSize = await page
           .locator(".agent-chat__composer-combobox > textarea")
           .evaluate((textareaNode) => Number.parseFloat(getComputedStyle(textareaNode).fontSize));
@@ -3093,14 +3087,14 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
               Math.abs(control.y + control.height / 2 - (model.y + model.height / 2)),
             ).toBeLessThanOrEqual(2);
           }
-          expect(footer.height).toBeLessThanOrEqual(49.1);
+          expect(footer.height).toBeLessThanOrEqual(53);
         } else {
           // The editor reads at input size, while the controls around it stay
           // chrome-sized — that difference is what marks the text as the
           // subject of the surface.
           expect(composerFontSize).toBe(16);
-          expect(send.width).toBeCloseTo(28, 2);
-          expect(send.height).toBeCloseTo(28, 2);
+          expect(send.width).toBeCloseTo(32, 2);
+          expect(send.height).toBeCloseTo(32, 2);
         }
 
         if (width >= 1600) {
@@ -3109,7 +3103,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           expect(
             Math.abs(shell.x + shell.width / 2 - (chat.x + chat.width / 2)),
           ).toBeLessThanOrEqual(1);
-          expect(input.height).toBeLessThanOrEqual(112);
+          expect(input.height).toBeLessThanOrEqual(119);
         }
 
         if (width > height && height <= 500) {

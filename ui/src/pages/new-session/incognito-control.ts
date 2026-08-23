@@ -1,8 +1,18 @@
-import { html } from "lit";
-import { icons } from "../../components/icons.ts";
+import { html, svg } from "lit";
+import { strokeIcon } from "../../components/icons-tools.ts";
 import "../../components/tooltip.ts";
 import { t } from "../../i18n/index.ts";
 import type { NewSessionVisibility } from "./create-params.ts";
+
+const shredderIcon = strokeIcon(svg` <path
+    d="M4 13V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v5"
+  />
+  <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+  <path d="M10 22v-5" />
+  <path d="M14 19v-2" />
+  <path d="M18 20v-3" />
+  <path d="M2 13h20" />
+  <path d="M6 20v-3" />`);
 
 /** Page-level session privacy control for the fixed new-session rail. */
 export function renderNewSessionIncognitoControl(submission: {
@@ -38,7 +48,7 @@ export function renderNewSessionIncognitoControl(submission: {
             }
           }}
         >
-          ${icons.shredder}
+          ${shredderIcon}
         </button>
       </openclaw-tooltip>
     </div>
@@ -57,7 +67,7 @@ export function renderNewSessionIncognitoNotice(active: boolean) {
       aria-hidden=${String(!active)}
     >
       <span class="new-session-page__incognito-notice-icon" aria-hidden="true">
-        ${icons.shredder}
+        ${shredderIcon}
       </span>
       <span>${description}</span>
     </div>
