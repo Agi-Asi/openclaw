@@ -114,6 +114,10 @@ export declare function assertAuthorizedEligibilityPlanDigest(
   plan: unknown,
   expectedDigest: string,
 ): Promise<string>;
+export declare function assertAuthorizedHistoricalExecutionPlanChildren(
+  children: unknown[],
+  expectedSelectedRuns: ReadonlyMap<string, string>,
+): void;
 export declare function digestAuthorizedPackageNames(names: string[]): string;
 export declare function assertAuthorizedBetaFocusedCandidate(
   policy: AuthorizedBetaFocusedPolicy,

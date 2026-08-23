@@ -308,6 +308,66 @@ function requireJobLogTarget(jobId: string, targetSha: string) {
   }
 }
 
+export function assertAuthorizedHistoricalExecutionPlanChildren(
+  children: unknown[],
+  expectedSelectedRuns: ReadonlyMap<string, string>,
+): void {
+  const skippedChildKey = "npmTelegram";
+  const seenKeys = new Set<string>();
+  for (const entry of children) {
+    if (!isRecord(entry)) {
+      fail("historical execution plan child must be an object");
+    }
+    const key = exactString(entry.key, "historical execution plan child key");
+    if (seenKeys.has(key)) {
+      fail(`historical execution plan child key ${key} must be unique`);
+    }
+    seenKeys.add(key);
+
+    const expectedRunId = expectedSelectedRuns.get(key);
+    if (expectedRunId !== undefined) {
+      if (entry.selected !== true) {
+        fail(`historical execution plan child ${key} must be selected`);
+      }
+      if (entry.required !== true) {
+        fail(`historical execution plan child ${key} must be required`);
+      }
+      if (entry.result !== "success") {
+        fail(`historical execution plan child ${key} must have result success`);
+      }
+      if (entry.runAttempt !== 1) {
+        fail(`historical execution plan child ${key} must use run attempt 1`);
+      }
+      const actualRunId = exactJsonId(entry.runId, `historical execution plan child ${key} run id`);
+      if (actualRunId !== expectedRunId) {
+        fail(`historical execution plan child ${key} must be run ${expectedRunId}`);
+      }
+      continue;
+    }
+
+    if (key !== skippedChildKey) {
+      fail(`historical execution plan child key ${key} is not authorized`);
+    }
+    if (
+      entry.selected !== false ||
+      entry.required !== false ||
+      entry.result !== "skipped" ||
+      entry.runAttempt !== null ||
+      entry.runId !== ""
+    ) {
+      fail(
+        `historical execution plan child ${key} must be unselected, non-required, skipped, and have an empty run id with a null attempt`,
+      );
+    }
+  }
+
+  for (const key of [...expectedSelectedRuns.keys(), skippedChildKey]) {
+    if (!seenKeys.has(key)) {
+      fail(`historical execution plan child ${key} is missing`);
+    }
+  }
+}
+
 function requireHistoricalExecutionPlan(policy: AuthorizedBetaFocusedPolicy) {
   const historical = policy.historicalFrv;
   const directory = mkdtempSync(join(tmpdir(), "authorized-beta-focused-plan-"));
@@ -349,28 +409,13 @@ function requireHistoricalExecutionPlan(policy: AuthorizedBetaFocusedPolicy) {
     if (!Array.isArray(plan.children)) {
       fail("historical execution plan children must be an array");
     }
-    const childRuns = new Map(
-      plan.children.map((entry: unknown) => {
-        if (!isRecord(entry)) {
-          fail("historical execution plan child must be an object");
-        }
-        return [
-          exactString(entry.key, "historical execution plan child key"),
-          exactJsonId(entry.runId, "historical execution plan child run id"),
-        ];
-      }),
-    );
     const expectedChildren = new Map([
       ["normalCi", historical.ciRunId],
       ["pluginPrerelease", historical.pluginRunId],
       ["releaseChecks", historical.releaseChecksRunId],
       ["productPerformance", historical.performanceRunId],
     ]);
-    for (const [key, expectedRunId] of expectedChildren) {
-      if (childRuns.get(key) !== expectedRunId) {
-        fail(`historical execution plan child ${key} must be run ${expectedRunId}`);
-      }
-    }
+    assertAuthorizedHistoricalExecutionPlanChildren(plan.children, expectedChildren);
   } finally {
     rmSync(directory, { force: true, recursive: true });
   }
