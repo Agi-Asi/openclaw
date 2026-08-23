@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { describe, expect, it } from "vitest";
+import { restoreChatApiAttachments } from "./attachment-api.ts";
 import { buildUserChatMessageContentBlocks } from "./user-message-content.ts";
 
 describe("buildUserChatMessageContentBlocks", () => {
@@ -45,5 +46,28 @@ describe("buildUserChatMessageContentBlocks", () => {
     ]);
 
     expect(block?.attachment?.kind).toBe("video");
+  });
+
+  it("renders persisted startup attachment metadata without payload bytes", () => {
+    const attachments = restoreChatApiAttachments([
+      { mimeType: "image/png", fileName: "diagram.png", sizeBytes: 42 },
+    ]);
+
+    expect(attachments).toEqual([
+      expect.objectContaining({ mimeType: "image/png", fileName: "diagram.png", sizeBytes: 42 }),
+    ]);
+    expect(attachments[0]).not.toHaveProperty("dataUrl");
+    expect(buildUserChatMessageContentBlocks("", attachments)).toEqual([
+      {
+        type: "attachment",
+        attachment: {
+          url: "",
+          kind: "image",
+          label: "diagram.png",
+          mimeType: "image/png",
+          sizeBytes: 42,
+        },
+      },
+    ]);
   });
 });

@@ -83,6 +83,7 @@ export type ChatThreadProps = {
   runWorking?: boolean;
   worktreeStartup?: SessionStartupState | null;
   onCancelWorktreeStartup?: () => void;
+  onRecoverWorktreeStartup?: () => void;
   onWorktreeStartupLocal?: () => void;
   startupStatus?: ChatRunStartupStatus | null;
   waitingApproval?: boolean;

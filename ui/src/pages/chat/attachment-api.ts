@@ -44,19 +44,23 @@ export function restoreChatApiAttachments(attachments?: readonly unknown[]): Cha
     }
     const attachment = value as Record<string, unknown>;
     const mimeType = typeof attachment.mimeType === "string" ? attachment.mimeType.trim() : "";
-    const content = typeof attachment.content === "string" ? attachment.content : "";
-    if (
-      !/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(mimeType) ||
-      !/^[A-Za-z0-9+/]+={0,2}$/.test(content)
-    ) {
+    if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(mimeType)) {
       return [];
     }
+    const content = typeof attachment.content === "string" ? attachment.content : "";
+    const dataUrl = /^[A-Za-z0-9+/]+={0,2}$/.test(content)
+      ? `data:${mimeType};base64,${content}`
+      : undefined;
     return [
       {
         id: generateUUID(),
-        dataUrl: `data:${mimeType};base64,${content}`,
+        ...(dataUrl ? { dataUrl } : {}),
         mimeType,
         fileName: typeof attachment.fileName === "string" ? attachment.fileName : undefined,
+        sizeBytes:
+          typeof attachment.sizeBytes === "number" && Number.isFinite(attachment.sizeBytes)
+            ? attachment.sizeBytes
+            : undefined,
       },
     ];
   });

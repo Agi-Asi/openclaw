@@ -37,7 +37,7 @@ export type ManagedWorktreeRecord = {
   runEndCleanup?: ManagedWorktreeRunEndCleanup;
 };
 
-export type ManagedWorktreeCreationStage =
+type ManagedWorktreeCreationStage =
   | "preparing"
   | "fetching-base"
   | "checking-out"

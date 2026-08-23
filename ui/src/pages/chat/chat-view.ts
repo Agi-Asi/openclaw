@@ -100,6 +100,7 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     startupStatus?: ChatRunStartupStatus | null;
     worktreeStartup?: SessionStartupState | null;
     onCancelWorktreeStartup?: () => void;
+    onRecoverWorktreeStartup?: () => void;
     onWorktreeStartupLocal?: () => void;
     waitingApproval?: boolean;
     compactionStatus?: CompactionStatus | null;
@@ -334,6 +335,7 @@ export function renderChat(props: ChatProps) {
       runWorking: isChatRunWorking(props),
       worktreeStartup: props.worktreeStartup,
       onCancelWorktreeStartup: props.onCancelWorktreeStartup,
+      onRecoverWorktreeStartup: props.onRecoverWorktreeStartup,
       onWorktreeStartupLocal: props.onWorktreeStartupLocal,
       startupStatus: props.startupStatus,
       waitingApproval: props.waitingApproval,

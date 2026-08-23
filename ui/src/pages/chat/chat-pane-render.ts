@@ -168,7 +168,8 @@ export class ChatPane extends ChatPaneLayoutRender {
     const placementStartupPending =
       placementStartup !== null && placementStartup.phase !== "failed";
     const worktreeStartup = selectedSession?.startupState ?? null;
-    const worktreeStartupPending = worktreeStartup?.status === "initializing";
+    const worktreeStartupResolvable = worktreeStartup?.status === "initializing";
+    const worktreePending = worktreeStartupResolvable || worktreeStartup?.status === "completed";
     const startupInitialMessage = worktreeStartup?.initialTurn?.message;
     const startupAttachments = restoreChatApiAttachments(worktreeStartup?.initialTurn?.attachments);
     const chatMessages =
@@ -302,6 +303,22 @@ export class ChatPane extends ChatPaneLayoutRender {
           canSelectFull: hasOperatorAdminAccess(gatewaySnapshot.hello?.auth ?? null),
           onModelSetup: () => this.context.navigate("model-setup"),
         });
+    const resolveWorktreeStartup = (action: "cancel" | "work-local") => {
+      void state.client
+        ?.request("sessions.startup.resolve", {
+          key: selectedSession?.key ?? state.sessionKey,
+          operationId: worktreeStartup?.operationId,
+          action,
+        })
+        .catch((error: unknown) => {
+          state.lastError = formatUiError(error);
+          state.requestUpdate?.();
+        });
+    };
+    const canResolveWorktreeStartup =
+      Boolean(state.client) &&
+      hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
+      isGatewayMethodAdvertised(gatewaySnapshot, "sessions.startup.resolve") === true;
     const props: ChatProps = {
       transcript: this.transcript,
       paneId: this.presentationId,
@@ -318,47 +335,23 @@ export class ChatPane extends ChatPaneLayoutRender {
       loading: catalogKey ? this.catalogLoading : state.chatLoading,
       sending:
         placementStartupPending ||
-        worktreeStartupPending ||
+        worktreePending ||
         state.chatSending ||
         this.recoveringSession ||
         this.sessionSuggestionAddOperation !== undefined,
       placementStartup,
       worktreeStartup,
       onCancelWorktreeStartup:
-        worktreeStartupPending &&
-        state.client &&
-        hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
-        isGatewayMethodAdvertised(gatewaySnapshot, "sessions.startup.resolve") === true
-          ? () => {
-              void state.client
-                ?.request("sessions.startup.resolve", {
-                  key: selectedSession?.key ?? state.sessionKey,
-                  operationId: worktreeStartup.operationId,
-                  action: "cancel",
-                })
-                .catch((error: unknown) => {
-                  state.lastError = formatUiError(error);
-                  state.requestUpdate?.();
-                });
-            }
+        worktreeStartupResolvable && canResolveWorktreeStartup
+          ? () => resolveWorktreeStartup("cancel")
+          : undefined,
+      onRecoverWorktreeStartup:
+        worktreeStartup?.status === "completed" && canResolveWorktreeStartup
+          ? () => resolveWorktreeStartup("work-local")
           : undefined,
       onWorktreeStartupLocal:
-        worktreeStartupPending &&
-        state.client &&
-        hasOperatorWriteAccess(gatewaySnapshot.hello?.auth ?? null) &&
-        isGatewayMethodAdvertised(gatewaySnapshot, "sessions.startup.resolve") === true
-          ? () => {
-              void state.client
-                ?.request("sessions.startup.resolve", {
-                  key: selectedSession?.key ?? state.sessionKey,
-                  operationId: worktreeStartup.operationId,
-                  action: "work-local",
-                })
-                .catch((error: unknown) => {
-                  state.lastError = formatUiError(error);
-                  state.requestUpdate?.();
-                });
-            }
+        worktreeStartupResolvable && canResolveWorktreeStartup
+          ? () => resolveWorktreeStartup("work-local")
           : undefined,
       onRetrySessionPlacementStartup: placementStartup?.retryable
         ? () => this.context.placementStartup.retry(state.sessionKey)
@@ -430,7 +423,7 @@ export class ChatPane extends ChatPaneLayoutRender {
           !restartRecoveryTombstoned &&
           (!sessionParticipationBlocked || suggestionViewer) &&
           !placementStartupPending &&
-          !worktreeStartupPending,
+          !worktreePending,
       disabledReason: catalogDisabledReason ?? disabledReason,
       disabledBanner: this.sessionDisabledBanner({
         catalogDisabledReason,

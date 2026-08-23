@@ -508,14 +508,6 @@ export const SessionsCreateResultSchema = Type.Object(
   { additionalProperties: true },
 );
 
-export const SessionsStartupResolveParamsSchema = closedObject({
-  key: NonEmptyString,
-  operationId: NonEmptyString,
-  action: Type.Union([Type.Literal("cancel"), Type.Literal("work-local")]),
-});
-
-export const SessionsStartupResolveResultSchema = closedObject({ ok: Type.Literal(true) });
-
 /** Sends one message into an existing session. */
 export const SessionsSendParamsSchema = closedObject({
   key: NonEmptyString,
@@ -876,8 +868,6 @@ export type SessionsBranchesSwitchResult = Static<typeof SessionsBranchesSwitchR
 export type SessionWorktreeInfo = Static<typeof SessionWorktreeInfoSchema>;
 export type SessionsCreateParams = Static<typeof SessionsCreateParamsSchema>;
 export type SessionsCreateResult = Static<typeof SessionsCreateResultSchema>;
-export type SessionsStartupResolveParams = Static<typeof SessionsStartupResolveParamsSchema>;
-export type SessionsStartupResolveResult = Static<typeof SessionsStartupResolveResultSchema>;
 export type SessionsRecoverParams = Static<typeof SessionsRecoverParamsSchema>;
 export type SessionsRecoverResult = Static<typeof SessionsRecoverResultSchema>;
 export type SessionsSendParams = Static<typeof SessionsSendParamsSchema>;

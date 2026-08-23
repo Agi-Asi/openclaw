@@ -3,6 +3,7 @@ import {
   runWithCronCreatorAuthorityCapability,
 } from "../../agents/cron-creator-authority-context.js";
 import { isIncognitoSessionKey } from "../../routing/session-key.js";
+import type { ChatSendDispatchSettlementHandler } from "./chat-send-agent-dispatch.js";
 import type { ChatSendExternalAuthorityAdmission } from "./chat-send-external-authority-contract.js";
 import { handleChatSend } from "./chat-send-handler.js";
 import { resolveGatewayChatCronCreatorAuthorityAdmission } from "./cron-creator-authority-admission.js";
@@ -35,9 +36,7 @@ const externalAuthorityAdmission: ChatSendExternalAuthorityAdmission = {
 export function handleDirectExternalChatSend(
   options: GatewayRequestHandlerOptions,
   onAdmissionOwned?: () => Promise<boolean>,
-  onDispatchSettled?: (
-    outcome: { ok: true } | { ok: false; error: unknown },
-  ) => Promise<void> | void,
+  onDispatchSettled?: ChatSendDispatchSettlementHandler,
 ): Promise<void> {
   return handleChatSend(
     options,

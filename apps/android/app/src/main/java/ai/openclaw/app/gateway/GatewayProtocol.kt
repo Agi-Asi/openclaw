@@ -554,6 +554,7 @@ enum class GatewayMethod(
   SessionsRewind("sessions.rewind"),
   SessionsFork("sessions.fork"),
   SessionsCreate("sessions.create"),
+  SessionsStartupResolve("sessions.startup.resolve"),
   SessionsRecover("sessions.recover"),
   SessionsSend("sessions.send"),
   SessionsAbort("sessions.abort"),

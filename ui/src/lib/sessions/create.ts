@@ -3,6 +3,7 @@ import type {
   SessionsCreateResult,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 
 export type SessionCreateOutcome = {
   key: string;
@@ -44,6 +45,38 @@ export type SessionCreateParams = {
   attachments?: unknown[];
   task?: string;
 };
+
+function createOptimisticStartupRow(
+  result: SessionCreateOutcome & { startupState: SessionStartupState },
+  label?: string,
+): GatewaySessionRow {
+  return {
+    key: result.key,
+    kind: "direct",
+    label,
+    displayName: label,
+    hasActiveRun: false,
+    status: "done",
+    updatedAt: result.startupState.updatedAt,
+    startupState: result.startupState,
+  };
+}
+
+export function prependOptimisticStartupRow(
+  result: SessionCreateOutcome & { startupState: SessionStartupState },
+  label: string | undefined,
+  current: SessionsListResult | null | undefined,
+): SessionsListResult {
+  const sessions = current?.sessions.filter((session) => session.key !== result.key) ?? [];
+  return {
+    ...current,
+    count: sessions.length + 1,
+    defaults: current?.defaults ?? { modelProvider: null, model: null, contextTokens: null },
+    path: current?.path ?? "",
+    sessions: [createOptimisticStartupRow(result, label), ...sessions],
+    ts: result.startupState.updatedAt,
+  };
+}
 
 export function resolveSessionCreateParams(sessionKey = "", agentId?: string) {
   const normalizedSessionKey = sessionKey.trim();

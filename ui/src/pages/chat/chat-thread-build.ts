@@ -1,6 +1,6 @@
 import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { SessionStartupState } from "../../../../../packages/gateway-protocol/src/index.js";
+import type { SessionStartupState } from "../../../../packages/gateway-protocol/src/index.js";
 import type { QuestionPrompt } from "../../app/question-prompt.ts";
 import { t } from "../../i18n/index.ts";
 import {

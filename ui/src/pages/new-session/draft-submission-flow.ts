@@ -1,10 +1,7 @@
 import type { ProjectsAddResult } from "../../../../packages/gateway-protocol/src/index.js";
 import { t } from "../../i18n/index.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
-import {
-  readSessionMethodAccess,
-  type SessionMethodAccess,
-} from "../../lib/session-method-access.ts";
+import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import { openTerminalSessionInTerminal } from "../../lib/sessions/catalog-terminal.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
 import type { SessionPlacementRecovery } from "../../lib/sessions/session-placement-recovery.ts";
@@ -235,7 +232,7 @@ export class DraftSubmissionFlow {
   submissionAccess(
     createParams: Record<string, unknown> = this.pendingPlacement.createParams ??
       this.buildDraftSessionCreateParams(),
-  ): SessionMethodAccess {
+  ) {
     const gateway = this.read().context?.gateway.snapshot;
     const pendingPlacement = Boolean(this.pendingPlacement.sessionKey);
     const remoteProject = this.place.browser.remoteProject;

@@ -7,7 +7,10 @@ import type { SkillWorkshopProposalRevisionConstraint } from "../../skills/works
 import { discardPreparedInboundMedia } from "../chat-attachments.js";
 import type { ChatRunTiming } from "../server-chat-state.js";
 import { terminalizeRestartSafeChatAdmission } from "./chat-restart-recovery.js";
-import { startChatDispatch } from "./chat-send-agent-dispatch.js";
+import {
+  startChatDispatch,
+  type ChatSendDispatchSettlementHandler,
+} from "./chat-send-agent-dispatch.js";
 import { prepareChatSendAttachments } from "./chat-send-attachments.js";
 import { handleChatSendSetupError } from "./chat-send-dispatch-errors.js";
 import type { ChatSendExternalAuthorityAdmission } from "./chat-send-external-authority-contract.js";
@@ -30,9 +33,7 @@ type ChatSendInternalOptions = {
   trustedSystemInput?: boolean;
   toolsAllow?: string[];
   skillWorkshopProposalRevision?: SkillWorkshopProposalRevisionConstraint;
-  onDispatchSettled?: (
-    outcome: { ok: true } | { ok: false; error: unknown },
-  ) => Promise<void> | void;
+  onDispatchSettled?: ChatSendDispatchSettlementHandler;
 };
 
 async function handleChatSendWithOptions(

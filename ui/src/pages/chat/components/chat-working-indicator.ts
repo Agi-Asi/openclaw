@@ -103,16 +103,16 @@ export function renderWorktreeStartupStatus(
   options: {
     defaultOpen?: boolean;
     onCancel?: () => void;
+    onRecover?: () => void;
     onWorkLocal?: () => void;
   } = {},
 ) {
   if (!status) {
     return nothing;
   }
-  const actionable = status.status === "initializing";
+  const actionable = status.status === "initializing" || status.status === "completed";
   const hasBody = Boolean(status.output) || actionable;
-  const open =
-    options.defaultOpen ?? (status.status === "initializing" || status.status === "failed");
+  const open = options.defaultOpen ?? (actionable || status.status === "failed");
   return html`
     <details class="chat-tool-msg-collapse chat-worktree-startup" ?open=${hasBody && open}>
       <summary
@@ -137,7 +137,7 @@ export function renderWorktreeStartupStatus(
               : nothing}
             ${actionable
               ? html`<div class="chat-worktree-startup__actions">
-                  ${options.onCancel
+                  ${status.status === "initializing" && options.onCancel
                     ? html`<button
                         class="btn btn--sm btn--ghost"
                         type="button"
@@ -146,13 +146,22 @@ export function renderWorktreeStartupStatus(
                         ${t("common.cancel")}
                       </button>`
                     : nothing}
-                  ${options.onWorkLocal
+                  ${status.status === "initializing" && options.onWorkLocal
                     ? html`<button
                         class="btn btn--sm btn--primary"
                         type="button"
                         @click=${options.onWorkLocal}
                       >
                         ${t("chat.worktreeStartup.workLocal")}
+                      </button>`
+                    : nothing}
+                  ${status.status === "completed" && options.onRecover
+                    ? html`<button
+                        class="btn btn--sm btn--primary"
+                        type="button"
+                        @click=${options.onRecover}
+                      >
+                        ${t("common.continue")}
                       </button>`
                     : nothing}
                 </div>`

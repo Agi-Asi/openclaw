@@ -11,6 +11,7 @@ import type {
 import { t } from "../../i18n/index.ts";
 import { formatUiError } from "../format-error.ts";
 import {
+  prependOptimisticStartupRow,
   requestSessionCreate,
   resolveSessionCreateParams,
   type SessionCreateParams,
@@ -184,33 +185,13 @@ export function createSessionMutations(host: SessionMutationsHost) {
       host.notifyCreated(result.key);
       if (result.startupState) {
         const state = host.readState();
-        const row: GatewaySessionRow = {
-          key: result.key,
-          kind: "direct",
-          label: requestParams.label,
-          displayName: requestParams.label,
-          hasActiveRun: false,
-          status: "done",
-          updatedAt: result.startupState.updatedAt,
-          startupState: result.startupState,
-        };
-        const currentResult = state.result;
-        const sessions =
-          currentResult?.sessions.filter((session) => session.key !== result.key) ?? [];
         host.publish({
           ...state,
-          result: {
-            ...currentResult,
-            count: sessions.length + 1,
-            defaults: currentResult?.defaults ?? {
-              modelProvider: null,
-              model: null,
-              contextTokens: null,
-            },
-            path: currentResult?.path ?? "",
-            sessions: [row, ...sessions],
-            ts: result.startupState.updatedAt,
-          },
+          result: prependOptimisticStartupRow(
+            { ...result, startupState: result.startupState },
+            requestParams.label,
+            state.result,
+          ),
         });
       }
       if (requestParams.worktree === true || Boolean(requestParams.execNode?.trim())) {

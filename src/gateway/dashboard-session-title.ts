@@ -246,6 +246,7 @@ export function prepareWorktreeSessionTitle(params: {
       entry: SessionEntry,
       sessionKey: string,
       storePath: string,
+      commitGuard?: () => void,
     ) => {
       try {
         const attempt = await maybeGenerateSessionTitle({
@@ -257,9 +258,11 @@ export function prepareWorktreeSessionTitle(params: {
           storePath,
           userMessage: source,
           titleGeneration: generated,
+          commitGuard,
         });
         return attempt.kind === "persisted";
       } catch (error) {
+        commitGuard?.();
         params.onError(error);
         return false;
       }
@@ -302,6 +305,7 @@ export async function maybeGenerateSessionTitle(params: {
   currentUserMessage?: string;
   userMessage: string;
   titleGeneration?: Promise<string | null>;
+  commitGuard?: () => void;
 }): Promise<SessionTitleAttempt> {
   if (hasExplicitSessionName(params.entry) || params.entry?.sessionId !== params.sessionId) {
     return { kind: "skipped" };
@@ -357,6 +361,7 @@ export async function maybeGenerateSessionTitle(params: {
           storePath: params.storePath,
         },
         (current) => {
+          params.commitGuard?.();
           if (current.sessionId !== params.sessionId || hasExplicitSessionName(current)) {
             return null;
           }

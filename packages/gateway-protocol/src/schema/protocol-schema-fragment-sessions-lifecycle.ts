@@ -1,3 +1,4 @@
+import * as startup from "./sessions-startup.js";
 import * as viewerPresence from "./sessions-viewer-presence.js";
 import * as sessions from "./sessions.js";
 
@@ -40,8 +41,8 @@ export const SessionLifecycleProtocolSchemas = {
   SessionWorktreeInfo: sessions.SessionWorktreeInfoSchema,
   SessionsCreateParams: sessions.SessionsCreateParamsSchema,
   SessionsCreateResult: sessions.SessionsCreateResultSchema,
-  SessionsStartupResolveParams: sessions.SessionsStartupResolveParamsSchema,
-  SessionsStartupResolveResult: sessions.SessionsStartupResolveResultSchema,
+  SessionsStartupResolveParams: startup.SessionsStartupResolveParamsSchema,
+  SessionsStartupResolveResult: startup.SessionsStartupResolveResultSchema,
   SessionsRecoverParams: sessions.SessionsRecoverParamsSchema,
   SessionsRecoverResult: sessions.SessionsRecoverResultSchema,
   SessionsSendParams: sessions.SessionsSendParamsSchema,

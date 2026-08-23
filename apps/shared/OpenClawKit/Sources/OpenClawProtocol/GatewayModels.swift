@@ -6432,6 +6432,7 @@ public struct SessionRow: Codable, Sendable {
     public let subagentcontrolscope: AnyCodable?
     public let swarmgroupid: String?
     public let worktree: [String: AnyCodable]?
+    public let startupstate: AnyCodable?
     public let execnode: String?
     public let execcwd: String?
     public let spawnedworkspacedir: String?
@@ -6502,6 +6503,7 @@ public struct SessionRow: Codable, Sendable {
         subagentcontrolscope: AnyCodable? = nil,
         swarmgroupid: String? = nil,
         worktree: [String: AnyCodable]? = nil,
+        startupstate: AnyCodable? = nil,
         execnode: String? = nil,
         execcwd: String? = nil,
         spawnedworkspacedir: String? = nil,
@@ -6571,6 +6573,7 @@ public struct SessionRow: Codable, Sendable {
         self.subagentcontrolscope = subagentcontrolscope
         self.swarmgroupid = swarmgroupid
         self.worktree = worktree
+        self.startupstate = startupstate
         self.execnode = execnode
         self.execcwd = execcwd
         self.spawnedworkspacedir = spawnedworkspacedir
@@ -6642,6 +6645,7 @@ public struct SessionRow: Codable, Sendable {
         case subagentcontrolscope = "subagentControlScope"
         case swarmgroupid = "swarmGroupId"
         case worktree
+        case startupstate = "startupState"
         case execnode = "execNode"
         case execcwd = "execCwd"
         case spawnedworkspacedir = "spawnedWorkspaceDir"
@@ -9401,6 +9405,7 @@ public struct SessionsCreateResult: Codable, Sendable {
     public let messageseq: Int?
     public let runerror: ErrorShape?
     public let worktree: SessionWorktreeInfo?
+    public let startupstate: AnyCodable?
 
     public init(
         ok: Bool,
@@ -9411,7 +9416,8 @@ public struct SessionsCreateResult: Codable, Sendable {
         runid: String? = nil,
         messageseq: Int? = nil,
         runerror: ErrorShape? = nil,
-        worktree: SessionWorktreeInfo? = nil)
+        worktree: SessionWorktreeInfo? = nil,
+        startupstate: AnyCodable? = nil)
     {
         self.ok = ok
         self.key = key
@@ -9422,6 +9428,7 @@ public struct SessionsCreateResult: Codable, Sendable {
         self.messageseq = messageseq
         self.runerror = runerror
         self.worktree = worktree
+        self.startupstate = startupstate
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -9434,6 +9441,43 @@ public struct SessionsCreateResult: Codable, Sendable {
         case messageseq = "messageSeq"
         case runerror = "runError"
         case worktree
+        case startupstate = "startupState"
+    }
+}
+
+public struct SessionsStartupResolveParams: Codable, Sendable {
+    public let key: String
+    public let operationid: String
+    public let action: AnyCodable
+
+    public init(
+        key: String,
+        operationid: String,
+        action: AnyCodable)
+    {
+        self.key = key
+        self.operationid = operationid
+        self.action = action
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case operationid = "operationId"
+        case action
+    }
+}
+
+public struct SessionsStartupResolveResult: Codable, Sendable {
+    public let ok: Bool
+
+    public init(
+        ok: Bool)
+    {
+        self.ok = ok
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
     }
 }
 

@@ -1,5 +1,3 @@
-import { mkdir } from "node:fs/promises";
-import path from "node:path";
 import { expect, it } from "vitest";
 import {
   WORKSPACE,
@@ -79,37 +77,47 @@ suite.define(() => {
         .poll(() => page.locator(".agent-chat__composer-combobox textarea").isDisabled())
         .toBe(true);
 
-      if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
-        const proofDir = path.join(
-          process.cwd(),
-          ".artifacts",
-          "control-ui-e2e",
-          "worktree-startup",
-        );
-        await mkdir(proofDir, { recursive: true });
-        await page.screenshot({
-          animations: "disabled",
-          fullPage: true,
-          path: path.join(proofDir, "worktree-startup-light.png"),
-        });
-        await page.evaluate(() => {
-          document.documentElement.dataset.theme = "dark";
-          document.documentElement.dataset.themeMode = "dark";
-          document.documentElement.classList.remove("wa-light");
-          document.documentElement.classList.add("wa-dark");
-          document.documentElement.style.colorScheme = "dark";
-        });
-        await page.screenshot({
-          animations: "disabled",
-          fullPage: true,
-          path: path.join(proofDir, "worktree-startup-dark.png"),
-        });
-      }
-
       await page.getByRole("button", { name: "Work locally" }).click();
       await expect(gateway.waitForRequest("sessions.startup.resolve")).resolves.toMatchObject({
         params: { action: "work-local", key: sessionKey, operationId },
       });
+
+      await gateway.setMethodResponse("sessions.list", {
+        count: 1,
+        defaults: { contextTokens: 200_000, model: "gpt-5.6-luna", modelProvider: "openai" },
+        path: "",
+        sessions: [
+          {
+            key: sessionKey,
+            kind: "direct",
+            hasActiveRun: false,
+            status: "done",
+            updatedAt: startedAt + 2,
+            startupState: {
+              ...startupState,
+              status: "completed",
+              stage: "running-setup",
+              updatedAt: startedAt + 2,
+              worktreePath: "/tmp/openclaw-worktree",
+            },
+          },
+        ],
+        ts: startedAt + 2,
+      });
+      await gateway.emitGatewayEvent("sessions.changed", {
+        sessionKey,
+        agentId: "main",
+        reason: "create",
+      });
+      await pollLocatorText(startup).toContain("Workspace ready");
+      await page.getByRole("button", { name: "Continue" }).click();
+      await expect(gateway.waitForRequest("sessions.startup.resolve")).resolves.toMatchObject({
+        params: { action: "work-local", key: sessionKey, operationId },
+      });
+      await expect
+        .poll(() => page.locator(".agent-chat__composer-combobox textarea").isDisabled())
+        .toBe(true);
+
       expect(await gateway.getRequests("sessions.create")).toHaveLength(1);
     } finally {
       await context.close();

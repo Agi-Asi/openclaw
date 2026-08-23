@@ -740,14 +740,14 @@
 
 .chat-worktree-startup__actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: flex-end;
-  margin-top: 10px;
+  margin-top: var(--space-2);
   padding-inline: var(--space-3);
 }
 
 .chat-worktree-startup[open] > .chat-tool-msg-body {
-  padding: 0 0 10px;
+  padding-block-end: var(--space-2);
 }
 
 .chat-worktree-startup .chat-inline-disclosure__chevron {

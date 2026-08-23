@@ -1,7 +1,7 @@
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
-export type SessionStartupResolution = "cancel" | "work-local";
-export type SessionStartupResolveResult = "resolved" | "missing" | "mismatch" | "settling";
+type SessionStartupResolution = "cancel" | "work-local";
+type SessionStartupResolveResult = "resolved" | "missing" | "mismatch" | "settling";
 
 type SessionStartupOperation = {
   abort: AbortController;
@@ -31,6 +31,7 @@ export function registerSessionStartupOperation(params: {
   operations.set(params.operationId, operation);
   return {
     signal: operation.abort.signal,
+    interrupt: (reason: Error) => operation.abort.abort(reason),
     resolution: () => operation.resolution,
     release: () => {
       if (operations.get(params.operationId) === operation) {
@@ -40,13 +41,14 @@ export function registerSessionStartupOperation(params: {
   };
 }
 
-export function resolveSessionStartupOperation(params: {
-  action: SessionStartupResolution;
+export type RegisteredSessionStartupOperation = ReturnType<typeof registerSessionStartupOperation>;
+
+export function inspectSessionStartupOperation(params: {
   key: string;
   lifecycleRevision?: string;
   operationId: string;
   sessionId: string;
-}): SessionStartupResolveResult {
+}): "active" | "missing" | "mismatch" | "settling" {
   const operation = operations.get(params.operationId);
   if (!operation) {
     return "missing";
@@ -58,8 +60,23 @@ export function resolveSessionStartupOperation(params: {
   ) {
     return "mismatch";
   }
-  if (operation.abort.signal.aborted) {
-    return "settling";
+  return operation.abort.signal.aborted ? "settling" : "active";
+}
+
+export function resolveSessionStartupOperation(params: {
+  action: SessionStartupResolution;
+  key: string;
+  lifecycleRevision?: string;
+  operationId: string;
+  sessionId: string;
+}): SessionStartupResolveResult {
+  const status = inspectSessionStartupOperation(params);
+  if (status !== "active") {
+    return status;
+  }
+  const operation = operations.get(params.operationId);
+  if (!operation) {
+    return "missing";
   }
   operation.resolution = params.action;
   operation.abort.abort(

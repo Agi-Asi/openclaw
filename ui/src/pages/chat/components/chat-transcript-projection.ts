@@ -586,6 +586,7 @@ export function projectChatTranscript(
         <div class="chat-group-messages">
           ${renderWorktreeStartupStatus(props.worktreeStartup, {
             onCancel: props.onCancelWorktreeStartup,
+            onRecover: props.onRecoverWorktreeStartup,
             onWorkLocal: props.onWorktreeStartupLocal,
           })}
         </div>

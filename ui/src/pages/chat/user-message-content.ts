@@ -11,9 +11,10 @@ type UserChatMessageContentBlock = {
   source?: unknown;
   attachment?: {
     url: string;
-    kind: Extract<MediaKind, "audio" | "video" | "document">;
+    kind: Extract<MediaKind, "image" | "audio" | "video" | "document">;
     label: string;
     mimeType?: string;
+    sizeBytes?: number;
   };
 };
 
@@ -28,10 +29,8 @@ export function buildUserChatMessageContentBlocks(
   }
   for (const attachment of attachments ?? []) {
     const previewUrl = getChatAttachmentPreviewUrl(attachment);
-    if (!previewUrl) {
-      continue;
-    }
-    if (attachment.mimeType.startsWith("image/")) {
+    const isImage = attachment.mimeType.startsWith("image/");
+    if (previewUrl && isImage) {
       blocks.push({
         type: "image",
         url: previewUrl,
@@ -47,10 +46,17 @@ export function buildUserChatMessageContentBlocks(
     blocks.push({
       type: "attachment",
       attachment: {
-        url: previewUrl,
-        kind: attachment.mimeType.startsWith("audio/") ? "audio" : isVideo ? "video" : "document",
+        url: previewUrl ?? "",
+        kind: isImage
+          ? "image"
+          : attachment.mimeType.startsWith("audio/")
+            ? "audio"
+            : isVideo
+              ? "video"
+              : "document",
         label: attachment.fileName?.trim() || "Attached file",
         mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
       },
     });
   }

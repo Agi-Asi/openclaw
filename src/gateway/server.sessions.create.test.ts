@@ -902,7 +902,7 @@ test("chat.send fences dashboard title persistence from concurrent session delet
     });
     await waitForFast(
       () => expect(isSessionLifecycleMutationActive(storePath, [sessionKey])).toBe(true),
-      { timeout: 5_000 },
+      { timeout: 15_000 },
     );
     expect(deletionSettled).toBe(false);
 
@@ -1716,6 +1716,7 @@ test("sessions.create records a rejected deferred initial turn without losing it
   testState.agentConfig = { workspace };
   const { storePath } = await createSessionStoreDir();
   const key = "agent:main:dashboard:post-commit-worktree";
+  const initialMessage = `start the committed session ${"x".repeat(100_000)}`;
   let worktreeId: string | undefined;
   try {
     const created = await directSessionReq<{
@@ -1732,7 +1733,7 @@ test("sessions.create records a rejected deferred initial turn without losing it
       {
         agentId: "main",
         key,
-        message: "start the committed session",
+        message: initialMessage,
         attachments: [
           {
             type: "image",
@@ -1756,14 +1757,15 @@ test("sessions.create records a rejected deferred initial turn without losing it
           operationId: expect.any(String),
           status: "initializing",
           initialTurn: {
-            message: "start the committed session",
-            attachments: [
-              expect.objectContaining({ fileName: "broken.png", content: "not-base64" }),
-            ],
+            message: initialMessage.slice(0, 100_000),
+            attachments: [expect.objectContaining({ fileName: "broken.png" })],
           },
         },
       },
     });
+    expect(created.payload?.startupState.initialTurn?.attachments?.[0]).not.toHaveProperty(
+      "content",
+    );
 
     await waitForFast(
       () =>
@@ -1773,13 +1775,13 @@ test("sessions.create records a rejected deferred initial turn without losing it
             status: "failed",
             error: expect.stringContaining("invalid base64 content"),
             initialTurn: {
-              message: "start the committed session",
+              message: initialMessage.slice(0, 100_000),
               attachments: [expect.objectContaining({ fileName: "broken.png" })],
             },
           },
           worktree: { id: expect.any(String), branch: "openclaw/post-commit-worktree" },
         }),
-      { timeout: 5_000 },
+      { timeout: 15_000 },
     );
     expect(loadSessionEntry({ sessionKey: key, storePath })).toMatchObject({
       worktree: { id: expect.any(String), branch: "openclaw/post-commit-worktree" },
@@ -1817,17 +1819,21 @@ test.each([
   testState.agentConfig = { workspace };
   const { storePath } = await createSessionStoreDir();
   const key = `agent:main:dashboard:worktree-${testCase.action}`;
-  const createStarted = createDeferredCore();
+  const worktreeCreated = createDeferredCore();
+  const releaseWriter = createDeferredCore();
+  let heldWriter: Promise<void> | undefined;
+  const createManagedWorktree = managedWorktrees.create.bind(managedWorktrees);
   const createSpy = vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
-    createStarted.resolve();
-    await new Promise<never>((_resolve, reject) => {
-      const rejectAborted = () => reject(params.signal?.reason ?? new Error("startup aborted"));
-      if (params.signal?.aborted) {
-        rejectAborted();
-        return;
-      }
-      params.signal?.addEventListener("abort", rejectAborted, { once: true });
+    const created = await createManagedWorktree(params);
+    const writerEntered = createDeferredCore();
+    const resolvedStore = resolveSqliteStoreScope(storePath, { agentId: "main" });
+    heldWriter = runExclusiveSqliteSessionWrite(resolvedStore, async () => {
+      writerEntered.resolve();
+      await releaseWriter.promise;
     });
+    await writerEntered.promise;
+    worktreeCreated.resolve();
+    return created;
   });
   if (testCase.action === "work-local") {
     mockGetReplyFromConfigOnce(async () => ({ text: "continued locally" }));
@@ -1850,7 +1856,7 @@ test.each([
       ok: true,
       payload: { startupState: { operationId: expect.any(String), status: "initializing" } },
     });
-    await createStarted.promise;
+    await worktreeCreated.promise;
 
     const resolved = await directSessionReq(
       "sessions.startup.resolve",
@@ -1862,6 +1868,7 @@ test.each([
       { client: { connect: { scopes: ["operator.admin"] } } as never },
     );
     expect(resolved.ok).toBe(true);
+    releaseWriter.resolve();
 
     await waitForFast(
       () => {
@@ -1872,9 +1879,363 @@ test.each([
           expect(entry?.spawnedCwd).toBe(workspace);
         }
       },
+      { timeout: 15_000 },
+    );
+    expect(findLiveRegistryWorktreeByOwner(process.env, "session", key)).toBeUndefined();
+  } finally {
+    releaseWriter.resolve();
+    await heldWriter;
+    createSpy.mockRestore();
+    closeOpenClawStateDatabaseForTest();
+    testState.agentConfig = undefined;
+    await openClawState.cleanup();
+  }
+});
+
+test("sessions.create decodes startup output across process chunks", async () => {
+  const openClawState = await createOpenClawTestState({
+    layout: "state-only",
+    prefix: "openclaw-session-worktree-output-decoder-",
+  });
+  const workspace = await initializeGitWorkspace(openClawState.root);
+  closeOpenClawStateDatabaseForTest();
+  testState.agentConfig = { workspace };
+  const { storePath } = await createSessionStoreDir();
+  const key = "agent:main:dashboard:worktree-output-decoder";
+  const createSpy = vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
+    params.onOutput?.(Buffer.from(`${"x".repeat(17_000)}\n`, "utf8"), "stdout");
+    const output = Buffer.from("Final café diagnostic\n", "utf8");
+    const split = output.indexOf(0xc3) + 1;
+    params.onOutput?.(output.subarray(0, split), "stdout");
+    params.onOutput?.(output.subarray(split), "stdout");
+    throw new Error("stop after output");
+  });
+  try {
+    const created = await directSessionReq<{ startupState: { status: string } }>(
+      "sessions.create",
+      { agentId: "main", key, message: "inspect output", worktree: true },
+      { client: { connect: { scopes: ["operator.admin"] } } as never },
+    );
+    expect(created.payload?.startupState.status).toBe("initializing");
+    await waitForFast(
+      () =>
+        expect(loadSessionEntry({ sessionKey: key, storePath })).toMatchObject({
+          startupState: {
+            status: "failed",
+            output: expect.stringMatching(/x+\nFinal café diagnostic\n$/),
+          },
+        }),
       { timeout: 5_000 },
     );
+    const output = loadSessionEntry({ sessionKey: key, storePath })?.startupState?.output ?? "";
+    expect(output.length).toBeLessThanOrEqual(16_384);
+    expect(output).not.toContain("�");
   } finally {
+    createSpy.mockRestore();
+    closeOpenClawStateDatabaseForTest();
+    testState.agentConfig = undefined;
+    await openClawState.cleanup();
+  }
+});
+
+test.each([
+  { action: "cancel" as const, expectedOk: true, expectedStatus: "cancelled" as const },
+  { action: "work-local" as const, expectedOk: false, expectedStatus: "failed" as const },
+])("sessions.startup.resolve recovers $action after a Gateway restart", async (testCase) => {
+  const openClawState = await createOpenClawTestState({
+    layout: "state-only",
+    prefix: `openclaw-session-worktree-restart-${testCase.action}-`,
+  });
+  const workspace = await initializeGitWorkspace(openClawState.root);
+  closeOpenClawStateDatabaseForTest();
+  testState.agentConfig = { workspace };
+  const { storePath } = await createSessionStoreDir();
+  const key = `agent:main:dashboard:worktree-restart-${testCase.action}`;
+  const operationId = `restart-${testCase.action}`;
+  const worktree = await managedWorktrees.create({
+    repoRoot: workspace,
+    ownerKind: "session",
+    ownerId: key,
+    name: `restart-${testCase.action}`,
+    runSetupScript: false,
+  });
+  const removeWorktree = managedWorktrees.remove.bind(managedWorktrees);
+  const removeSpy = vi.spyOn(managedWorktrees, "remove").mockImplementation(async (params) => {
+    expect(isSessionLifecycleMutationActive(storePath, [key])).toBe(true);
+    return await removeWorktree(params);
+  });
+  try {
+    await writeSessionStore({
+      entries: {
+        [key]: sessionStoreEntry(`session-restart-${testCase.action}`, {
+          initializationPending: true,
+          startupState: {
+            kind: "managed-worktree",
+            status: "initializing",
+            operationId,
+            stage: "checking-out",
+            startedAt: 1,
+            updatedAt: 1,
+            initialTurn: { message: "continue after restart" },
+          },
+        }),
+      },
+      storePath,
+    });
+
+    const resolved = await directSessionReq(
+      "sessions.startup.resolve",
+      { key, operationId, action: testCase.action },
+      { client: { connect: { scopes: ["operator.admin"] } } as never },
+    );
+
+    expect(resolved.ok).toBe(testCase.expectedOk);
+    if (testCase.action === "work-local") {
+      expect(resolved.error?.message).toContain("Send the initial message again");
+    }
+    expect(loadSessionEntry({ sessionKey: key, storePath })).toMatchObject({
+      startupState: { status: testCase.expectedStatus },
+    });
+    expect(findLiveRegistryWorktreeByOwner(process.env, "session", key)).toBeUndefined();
+    await expect(fs.access(worktree.path)).rejects.toThrow();
+  } finally {
+    removeSpy.mockRestore();
+    if (getRegistryWorktree(process.env, worktree.id)?.removedAt === undefined) {
+      await managedWorktrees.remove({
+        id: worktree.id,
+        reason: "test-cleanup",
+        allowSnapshotLoss: true,
+      });
+    }
+    closeOpenClawStateDatabaseForTest();
+    testState.agentConfig = undefined;
+    await openClawState.cleanup();
+  }
+});
+
+test("sessions.startup.resolve recovers a completed worktree after restart", async () => {
+  const openClawState = await createOpenClawTestState({
+    layout: "state-only",
+    prefix: "openclaw-session-worktree-restart-completed-",
+  });
+  const workspace = await initializeGitWorkspace(openClawState.root);
+  closeOpenClawStateDatabaseForTest();
+  testState.agentConfig = { workspace };
+  const { storePath } = await createSessionStoreDir();
+  const key = "agent:main:dashboard:worktree-restart-completed";
+  const operationId = "restart-completed";
+  const worktree = await managedWorktrees.create({
+    repoRoot: workspace,
+    ownerKind: "session",
+    ownerId: key,
+    name: "restart-completed",
+    runSetupScript: false,
+  });
+  try {
+    await writeSessionStore({
+      entries: {
+        [key]: sessionStoreEntry("session-restart-completed", {
+          initializationPending: true,
+          spawnedCwd: worktree.path,
+          sessionRoot: worktree.path,
+          worktree: {
+            id: worktree.id,
+            branch: worktree.branch,
+            repoRoot: workspace,
+            canonicalWorkspaceDir: workspace,
+          },
+          startupState: {
+            kind: "managed-worktree",
+            status: "completed",
+            operationId,
+            stage: "running-setup",
+            startedAt: 1,
+            updatedAt: 2,
+            worktreePath: worktree.path,
+            initialTurn: { message: "continue after restart" },
+          },
+        }),
+      },
+      storePath,
+    });
+
+    const resolved = await directSessionReq(
+      "sessions.startup.resolve",
+      { key, operationId, action: "cancel" },
+      { client: { connect: { scopes: ["operator.admin"] } } as never },
+    );
+
+    expect(resolved).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("Send it again") },
+    });
+    const recovered = loadSessionEntry({ sessionKey: key, storePath });
+    expect(recovered?.initializationPending).toBeUndefined();
+    expect(recovered).toMatchObject({
+      startupState: { status: "failed" },
+      worktree: { id: worktree.id },
+    });
+    expect(findLiveRegistryWorktreeByOwner(process.env, "session", key)).toMatchObject({
+      id: worktree.id,
+    });
+    await expect(fs.access(worktree.path)).resolves.toBeUndefined();
+  } finally {
+    if (getRegistryWorktree(process.env, worktree.id)?.removedAt === undefined) {
+      await managedWorktrees.remove({
+        id: worktree.id,
+        reason: "test-cleanup",
+        allowSnapshotLoss: true,
+      });
+    }
+    closeOpenClawStateDatabaseForTest();
+    testState.agentConfig = undefined;
+    await openClawState.cleanup();
+  }
+});
+
+test("sessions.create keeps delegated authority attached to deferred worktree setup", async () => {
+  const openClawState = await createOpenClawTestState({
+    layout: "state-only",
+    prefix: "openclaw-session-worktree-delegated-authority-",
+  });
+  const workspace = await initializeGitWorkspace(openClawState.root);
+  closeOpenClawStateDatabaseForTest();
+  testState.agentConfig = { workspace };
+  const { storePath } = await createSessionStoreDir();
+  const key = "agent:main:dashboard:worktree-delegated-authority";
+  const worktreeCreated = createDeferredCore();
+  const releaseWriter = createDeferredCore();
+  let heldWriter: Promise<void> | undefined;
+  let authorityActive = true;
+  const createManagedWorktree = managedWorktrees.create.bind(managedWorktrees);
+  const createSpy = vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
+    const created = await createManagedWorktree(params);
+    const writerEntered = createDeferredCore();
+    const resolvedStore = resolveSqliteStoreScope(storePath, { agentId: "main" });
+    heldWriter = runExclusiveSqliteSessionWrite(resolvedStore, async () => {
+      writerEntered.resolve();
+      await releaseWriter.promise;
+    });
+    await writerEntered.promise;
+    worktreeCreated.resolve();
+    return created;
+  });
+  try {
+    const created = await directSessionReq<{ startupState: { status: string } }>(
+      "sessions.create",
+      { agentId: "main", key, message: "retain the delegated fence", worktree: true },
+      {
+        context: { validateAgentRuntimeApprovalAuthority: () => authorityActive },
+        client: {
+          connect: { scopes: ["operator.admin"] },
+          internal: {
+            agentRuntimeIdentity: {
+              kind: "agentRuntime",
+              agentId: "main",
+              sessionKey: "agent:main:main",
+            },
+          },
+        } as never,
+      },
+    );
+    expect(created).toMatchObject({
+      ok: true,
+      payload: { startupState: { status: "initializing" } },
+    });
+    await worktreeCreated.promise;
+
+    authorityActive = false;
+    releaseWriter.resolve();
+
+    await waitForFast(
+      () =>
+        expect(loadSessionEntry({ sessionKey: key, storePath })).toMatchObject({
+          startupState: {
+            status: "failed",
+            error: expect.stringContaining("agent runtime authority is no longer active"),
+          },
+        }),
+      { timeout: 15_000 },
+    );
+    expect(findLiveRegistryWorktreeByOwner(process.env, "session", key)).toBeUndefined();
+  } finally {
+    releaseWriter.resolve();
+    await heldWriter;
+    createSpy.mockRestore();
+    closeOpenClawStateDatabaseForTest();
+    testState.agentConfig = undefined;
+    await openClawState.cleanup();
+  }
+});
+
+test("sessions.delete interrupts and drains deferred worktree setup before deletion", async () => {
+  const openClawState = await createOpenClawTestState({
+    layout: "state-only",
+    prefix: "openclaw-session-worktree-sessions-delete-",
+  });
+  const workspace = await initializeGitWorkspace(openClawState.root);
+  closeOpenClawStateDatabaseForTest();
+  testState.agentConfig = { workspace };
+  const { storePath } = await createSessionStoreDir();
+  const key = "agent:main:dashboard:worktree-sessions-delete";
+  const createStarted = createDeferredCore();
+  const createAborted = createDeferredCore();
+  const releaseCreate = createDeferredCore();
+  let setupSignal: AbortSignal | undefined;
+  const createSpy = vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
+    setupSignal = params.signal;
+    createStarted.resolve();
+    await new Promise<void>((resolve) => {
+      const observeAbort = () => {
+        createAborted.resolve();
+        resolve();
+      };
+      if (params.signal?.aborted) {
+        observeAbort();
+        return;
+      }
+      params.signal?.addEventListener("abort", observeAbort, { once: true });
+    });
+    await releaseCreate.promise;
+    throw params.signal?.reason instanceof Error
+      ? params.signal.reason
+      : new Error("startup aborted");
+  });
+  try {
+    const created = await directSessionReq<{
+      sessionId: string;
+      startupState: { status: string };
+    }>(
+      "sessions.create",
+      { agentId: "main", key, message: "replace this startup", worktree: true },
+      { client: { connect: { scopes: ["operator.admin"] } } as never },
+    );
+    expect(created).toMatchObject({
+      ok: true,
+      payload: { sessionId: expect.any(String), startupState: { status: "initializing" } },
+    });
+    await createStarted.promise;
+
+    let deleteSettled = false;
+    const deleting = directSessionReq(
+      "sessions.delete",
+      { key, agentId: "main" },
+      {
+        client: { connect: { scopes: ["operator.admin"] } } as never,
+      },
+    ).finally(() => {
+      deleteSettled = true;
+    });
+    await createAborted.promise;
+    await Promise.resolve();
+    expect(deleteSettled).toBe(false);
+    releaseCreate.resolve();
+    const deleted = await deleting;
+    expect(deleted.ok, JSON.stringify(deleted.error)).toBe(true);
+    expect(setupSignal?.aborted).toBe(true);
+    expect(loadSessionEntry({ sessionKey: key, storePath })).toBeUndefined();
+  } finally {
+    releaseCreate.resolve();
     createSpy.mockRestore();
     closeOpenClawStateDatabaseForTest();
     testState.agentConfig = undefined;

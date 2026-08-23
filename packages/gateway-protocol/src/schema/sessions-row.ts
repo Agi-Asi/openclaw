@@ -1,7 +1,6 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import { ChatAttachmentsSchema } from "./logs-chat.js";
 import { NonEmptyString } from "./primitives.js";
 import { SessionClassificationSchema, SessionPeerKindSchema } from "./session-classification.js";
 import { SessionSharingRoleSchema, SessionVisibilitySchema } from "./sessions-sharing-values.js";
@@ -47,9 +46,19 @@ export const SessionStartupStageSchema = Type.Union([
   Type.Literal("running-setup"),
 ]);
 
+const SessionStartupAttachmentSchema = closedObject({
+  type: Type.Optional(Type.String({ maxLength: 64 })),
+  mimeType: Type.Optional(Type.String({ maxLength: 128 })),
+  fileName: Type.Optional(Type.String({ maxLength: 512 })),
+  sizeBytes: Type.Optional(Type.Number({ minimum: 0 })),
+  durationMs: Type.Optional(Type.Number({ minimum: 0 })),
+  width: Type.Optional(Type.Number({ minimum: 0 })),
+  height: Type.Optional(Type.Number({ minimum: 0 })),
+});
+
 const SessionStartupInitialTurnSchema = closedObject({
   message: Type.Optional(Type.String({ maxLength: 100_000 })),
-  attachments: Type.Optional(ChatAttachmentsSchema),
+  attachments: Type.Optional(Type.Array(SessionStartupAttachmentSchema, { maxItems: 32 })),
 });
 
 const SessionStartupOutputSchema = Type.String({ maxLength: 16_384 });

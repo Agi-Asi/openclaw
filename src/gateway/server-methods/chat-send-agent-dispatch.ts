@@ -52,6 +52,10 @@ type PreparedChatSendAttachments = Extract<
   { ok: true }
 >["value"];
 
+export type ChatSendDispatchSettlementHandler = (
+  outcome: { ok: true } | { ok: false; error: unknown },
+) => Promise<void> | void;
+
 type StartChatDispatchParams = {
   admissionStartedAt: number;
   admission: AdmittedChatSend;
@@ -80,9 +84,7 @@ type StartChatDispatchParams = {
   };
   turn: ReturnType<typeof prepareChatSendUserTurn>;
   userTurn: ReturnType<typeof createGatewayChatUserTurnController>;
-  onDispatchSettled?: (
-    outcome: { ok: true } | { ok: false; error: unknown },
-  ) => Promise<void> | void;
+  onDispatchSettled?: ChatSendDispatchSettlementHandler;
 };
 
 export function startChatDispatch(params: StartChatDispatchParams): void {
@@ -540,7 +542,9 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
         dispatchError === undefined ? { ok: true } : { ok: false, error: dispatchError },
       );
     }
-  })();
+  })().catch((error: unknown) => {
+    context.logGateway.warn(`chat dispatch settlement failed for ${clientRunId}: ${String(error)}`);
+  });
   // Title work starts at turn admission, concurrently with the launched run. It must never run
   // serially before dispatch (a cold utility runtime can starve the turn) or wait for completion
   // (long or interrupted first turns would silently remain untitled, and restart loses the chain).
