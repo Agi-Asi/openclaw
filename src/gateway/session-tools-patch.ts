@@ -53,6 +53,9 @@ export function applySessionToolsPatch(
     }
   }
   if (!("toolMode" in patch)) {
+    if ("model" in patch && entry.toolMode && runtimeId.trim().toLowerCase() !== "openclaw") {
+      delete entry.toolMode;
+    }
     return undefined;
   }
   if (patch.toolMode === null) {

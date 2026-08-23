@@ -796,6 +796,30 @@ describe("gateway sessions patch", () => {
       }),
       "session Tool mode requires the openclaw runtime (resolved codex)",
     );
+
+    const switched = expectPatchOk(
+      await runPatch({
+        cfg: {
+          agents: {
+            defaults: {
+              model: { primary: "openai/gpt-5.6-sol" },
+              models: {
+                "openai/gpt-5.6-sol": { agentRuntime: { id: "openclaw" } },
+                "openai/gpt-5.6-luna": { agentRuntime: { id: "codex" } },
+              },
+            },
+          },
+        } as OpenClawConfig,
+        store: mainStoreEntry({
+          providerOverride: "openai",
+          modelOverride: "gpt-5.6-sol",
+          toolMode: { pluginId: "developer-mode", modeId: "code" },
+        }),
+        patch: { key: MAIN_SESSION_KEY, model: "openai/gpt-5.6-luna" },
+        loadGatewayModelCatalog: loadCatalog("openai/gpt-5.6-sol", "openai/gpt-5.6-luna"),
+      }),
+    );
+    expect(switched.toolMode).toBeUndefined();
   });
 
   test("persists verboseLevel=full", async () => {

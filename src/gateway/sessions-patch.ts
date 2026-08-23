@@ -608,14 +608,15 @@ export async function projectSessionsPatchEntry(params: {
     }
   }
 
-  const toolModeRuntime =
-    patch.toolMode && patch.toolMode !== null
-      ? resolveThinkingRuntime(
-          next.providerOverride ?? resolvedDefault.provider,
-          next.modelOverride ?? resolvedDefault.model,
-          next,
-        )
-      : "openclaw";
+  const shouldResolveToolModeRuntime =
+    (patch.toolMode && patch.toolMode !== null) || ("model" in patch && next.toolMode);
+  const toolModeRuntime = shouldResolveToolModeRuntime
+    ? resolveThinkingRuntime(
+        next.providerOverride ?? resolvedDefault.provider,
+        next.modelOverride ?? resolvedDefault.model,
+        next,
+      )
+    : "openclaw";
   const toolModeError = applySessionToolsPatch(next, patch, toolModeRuntime);
   if (toolModeError) {
     return invalid(toolModeError);

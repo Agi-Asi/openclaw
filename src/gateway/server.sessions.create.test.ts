@@ -772,7 +772,7 @@ test("createGatewaySession rejects explicit and key-derived unconfigured creatio
   expect(prepareLifecycle).not.toHaveBeenCalled();
 });
 
-test("createGatewaySession rejects Tool mode for a non-OpenClaw runtime", async () => {
+function installDeveloperToolModeRegistry() {
   const registry = createEmptyPluginRegistry();
   registry.sessionToolModes.push({
     pluginId: "developer-mode",
@@ -786,6 +786,10 @@ test("createGatewaySession rejects Tool mode for a non-OpenClaw runtime", async 
     source: "test",
   });
   setActivePluginRegistry(registry);
+}
+
+test("createGatewaySession rejects Tool mode for a non-OpenClaw runtime", async () => {
+  installDeveloperToolModeRegistry();
   try {
     const { createGatewaySession } = await import("./session-create-service.js");
     await expect(
@@ -799,6 +803,38 @@ test("createGatewaySession rejects Tool mode for a non-OpenClaw runtime", async 
           agentRuntime: "codex",
           pluginOwnerId: "codex",
         },
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_REQUEST",
+        message: "session Tool mode requires the openclaw runtime (resolved codex)",
+      },
+    });
+  } finally {
+    setActivePluginRegistry(createEmptyPluginRegistry());
+  }
+});
+
+test("createGatewaySession resolves a model-less default before accepting Tool mode", async () => {
+  installDeveloperToolModeRegistry();
+  try {
+    const { createGatewaySession } = await import("./session-create-service.js");
+    await expect(
+      createGatewaySession({
+        cfg: {
+          agents: {
+            defaults: {
+              model: { primary: "openai/gpt-5.6-luna" },
+              models: {
+                "openai/gpt-5.6-luna": { agentRuntime: { id: "codex" } },
+              },
+            },
+          },
+        },
+        agentId: "main",
+        commandSource: "test",
+        toolMode: { pluginId: "developer-mode", modeId: "code" },
       }),
     ).resolves.toMatchObject({
       ok: false,
