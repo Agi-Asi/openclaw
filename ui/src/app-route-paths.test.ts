@@ -3,10 +3,12 @@ import { notFound, type RouteLocation, type RouterHistory } from "@openclaw/uiro
 import { describe, expect, it, vi } from "vitest";
 import {
   agentRouteFromPath,
+  automationRouteFromPath,
   inferBasePathFromPathname,
   memoryTabFromPath,
   pathForMemoryTab,
   pathForAgentPanel,
+  pathForAutomation,
   pathForRoute,
   pathForPluginsHubTab,
   pathForWorkboardBoard,
@@ -31,6 +33,15 @@ const AGENT_PANEL_CASES = [
 ] as const satisfies readonly AgentsPanel[];
 
 const DYNAMIC_STARTUP_CASES = [
+  {
+    label: "automation",
+    routeId: "cron",
+    location: {
+      pathname: pathForAutomation("nightly.digest", "runs"),
+      search: "?probe=1",
+      hash: "#history",
+    },
+  },
   {
     label: "agent panel",
     routeId: "agents",
@@ -425,6 +436,38 @@ describe("Agent panel route paths", () => {
     expect(push).not.toHaveBeenCalled();
     expect(location.pathname).toBe("/settings/agents/main");
     router.stop();
+  });
+});
+
+describe("Automation route paths", () => {
+  it.each([
+    ["settings", "/automations/nightly%2Edigest", "settings"],
+    ["runs", "/automations/nightly%2Edigest/runs", "runs"],
+    ["legacy alias", "/cron/nightly%2Edigest/runs", "runs"],
+  ] as const)("round-trips the %s path", (_label, pathname, tab) => {
+    expect(automationRouteFromPath(pathname)).toEqual({ jobId: "nightly.digest", tab });
+    expect(routeIdFromPath(pathname)).toBe("cron");
+  });
+
+  it("builds canonical paths under a configured base path", () => {
+    const pathname = pathForAutomation("nightly.digest", "runs", "/ui");
+    expect(pathname).toBe("/ui/automations/nightly%2Edigest/runs");
+    expect(automationRouteFromPath(pathname, "/ui")).toEqual({
+      jobId: "nightly.digest",
+      tab: "runs",
+    });
+    expect(inferBasePathFromPathname(pathname)).toBe("/ui");
+  });
+
+  it("rejects malformed, empty, and nested automation paths", () => {
+    expect(() => pathForAutomation(" ")).toThrow("Invalid automation job id");
+    expect(automationRouteFromPath("/automations/%")).toBeNull();
+    expect(automationRouteFromPath("/automations/job/runs/extra")).toBeNull();
+    expect(automationRouteFromPath("/automations/job/unknown")).toBeNull();
+    expect(automationRouteFromPath("/automations/job%2Fchild")).toEqual({
+      jobId: "job/child",
+      tab: "settings",
+    });
   });
 });
 

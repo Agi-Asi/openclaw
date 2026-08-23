@@ -6,12 +6,12 @@ struct DashboardRouteMapTests {
     @Test func `route constants match Control UI paths`() {
         #expect(DashboardRouteMap.channelsSettingsPath == "/settings/channels")
         #expect(DashboardRouteMap.skillsPagePath == "/skills")
-        #expect(DashboardRouteMap.cronJobsPagePath == "/cron")
+        #expect(DashboardRouteMap.cronJobsPagePath == "/automations")
         #expect(DashboardRouteMap.sessionsPagePath == "/sessions")
         #expect(DashboardRouteMap.devicesSettingsPath == "/settings/devices")
     }
 
-    @Test(arguments: ["/settings/channels", "/skills", "/cron"])
+    @Test(arguments: ["/settings/channels", "/skills", "/automations"])
     func `same-app path validation accepts rooted paths`(_ path: String) {
         #expect(DashboardRouteMap.isValidSameAppPath(path))
     }

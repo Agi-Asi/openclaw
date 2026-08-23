@@ -82,4 +82,78 @@ describe("sendGatewayCronFailureAlert presentation", () => {
       }),
     );
   });
+
+  it("adds a portable automation link when the Control UI has a public origin", async () => {
+    const job = makeCronJob({
+      id: "nightly.digest",
+      delivery: { mode: "announce", channel: "telegram", to: "channel:ops" },
+    });
+
+    await sendGatewayCronFailureAlert({
+      deps: {} as CliDeps,
+      logger: { warn: vi.fn() },
+      resolveCronAgent: () => ({
+        agentId: "main",
+        cfg: {
+          gateway: {
+            publicOrigin: "https://openclaw.example",
+            controlUi: { basePath: "/control" },
+          },
+        },
+      }),
+      job,
+      payload: {
+        text: "cron failed",
+        presentation: {
+          blocks: [
+            {
+              type: "buttons",
+              buttons: [
+                {
+                  label: "Log in to Codex",
+                  action: { type: "command", command: "/login codex" },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      channel: "telegram",
+      to: "channel:ops",
+      mode: "announce",
+    });
+
+    expect(mocks.sendCronAnnouncePayloadStrict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: {
+          text: "cron failed",
+          presentation: {
+            blocks: [
+              {
+                type: "buttons",
+                buttons: [
+                  {
+                    label: "Log in to Codex",
+                    action: { type: "command", command: "/login codex" },
+                  },
+                ],
+              },
+              {
+                type: "buttons",
+                buttons: [
+                  {
+                    label: "Open automation",
+                    action: {
+                      type: "url",
+                      url: "https://openclaw.example/control/automations/nightly%2Edigest",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    );
+  });
 });

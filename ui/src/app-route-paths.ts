@@ -1,10 +1,17 @@
-import { inferControlUiFocusBasePath } from "@openclaw/session-url-contract";
+import {
+  buildControlUiAutomationPath,
+  inferControlUiFocusBasePath,
+  parseControlUiAutomationPath,
+  type ControlUiAutomationRoute,
+  type ControlUiAutomationTab,
+} from "@openclaw/session-url-contract";
 import { normalizeRouteBasePath, normalizeRoutePath } from "@openclaw/uirouter";
 import type { RouteLocation } from "@openclaw/uirouter";
 import { isValidWorkboardBoardId } from "@openclaw/workboard-contract";
 import { DEFAULT_AGENT_PANEL, isAgentsPanel, type AgentsPanel } from "./lib/agents/panels.ts";
 import type { BoardFace } from "./lib/board/settings.ts";
 export const INTERNAL_AGENT_PATH_PARAM = "__openclawAgentPath";
+export const INTERNAL_AUTOMATION_PATH_PARAM = "__openclawAutomationPath";
 export const INTERNAL_SESSION_PATH_PARAM = "__openclawSessionPath";
 export const INTERNAL_MEMORY_PATH_PARAM = "__openclawMemoryPath";
 export const INTERNAL_PLUGINS_PATH_PARAM = "__openclawPluginsPath";
@@ -105,6 +112,25 @@ export function pathForRoute(routeId: RouteId, basePath = ""): string {
   const normalizedBasePath = normalizeBasePath(basePath);
   const path = APP_ROUTE_DEFINITIONS[routeId].path;
   return normalizedBasePath ? `${normalizedBasePath}${path}` : path;
+}
+
+export function pathForAutomation(
+  jobId: string,
+  tab: ControlUiAutomationTab = "settings",
+  basePath = "",
+): string {
+  const path = buildControlUiAutomationPath(jobId, { tab, basePath });
+  if (!path) {
+    throw new Error("Invalid automation job id for a route path.");
+  }
+  return path;
+}
+
+export function automationRouteFromPath(
+  pathname: string,
+  basePath = "",
+): ControlUiAutomationRoute | null {
+  return parseControlUiAutomationPath(normalizePath(pathname), normalizeBasePath(basePath));
 }
 
 export function pathForWorkboardBoard(boardId: string, basePath = ""): string {
@@ -248,6 +274,9 @@ export function routeIdFromPath(pathname: string, basePath = ""): RouteId | null
   if (agentRouteFromPath(normalizedPath, normalizedBasePath)) {
     return "agents";
   }
+  if (automationRouteFromPath(normalizedPath, normalizedBasePath)) {
+    return "cron";
+  }
   if (workboardBoardIdFromPath(normalizedPath, normalizedBasePath)) {
     return "workboard";
   }
@@ -329,6 +358,7 @@ export function inferBasePathFromPathname(pathname: string): string {
     const candidate = `/${segments.slice(index).join("/")}`;
     const routePath = routePaths.find((path) => normalizePath(path) === candidate);
     const dynamicAgentRoute = agentRouteFromPath(candidate) !== null;
+    const dynamicAutomationRoute = automationRouteFromPath(candidate) !== null;
     const dynamicWorkboardRoute = workboardBoardIdFromPath(candidate) !== null;
     const dynamicMemoryRoute = memoryTabFromPath(candidate) !== null;
     const dynamicPluginsRoute = pluginsHubTabFromPath(candidate) !== null;
@@ -337,6 +367,7 @@ export function inferBasePathFromPathname(pathname: string): string {
     if (
       !routePath &&
       !dynamicAgentRoute &&
+      !dynamicAutomationRoute &&
       !dynamicWorkboardRoute &&
       !dynamicMemoryRoute &&
       !dynamicPluginsRoute &&
@@ -347,21 +378,24 @@ export function inferBasePathFromPathname(pathname: string): string {
     const previousSegment = segments[index - 1];
     const dynamicRoutePath = dynamicAgentRoute
       ? APP_ROUTE_DEFINITIONS.agents.path
-      : dynamicWorkboardRoute
-        ? APP_ROUTE_DEFINITIONS.workboard.path
-        : dynamicMemoryRoute
-          ? APP_ROUTE_DEFINITIONS.memory.path
-          : dynamicPluginsRoute
-            ? APP_ROUTE_DEFINITIONS.plugins.path
-            : sessionNamespace
-              ? APP_ROUTE_DEFINITIONS[sessionNamespace].path
-              : null;
+      : dynamicAutomationRoute
+        ? APP_ROUTE_DEFINITIONS.cron.path
+        : dynamicWorkboardRoute
+          ? APP_ROUTE_DEFINITIONS.workboard.path
+          : dynamicMemoryRoute
+            ? APP_ROUTE_DEFINITIONS.memory.path
+            : dynamicPluginsRoute
+              ? APP_ROUTE_DEFINITIONS.plugins.path
+              : sessionNamespace
+                ? APP_ROUTE_DEFINITIONS[sessionNamespace].path
+                : null;
     const firstRouteSegment = (routePath ?? dynamicRoutePath ?? "").split("/").find(Boolean);
     if (
       index > 0 &&
       previousSegment === firstRouteSegment &&
       (candidate === routePath ||
         dynamicAgentRoute ||
+        dynamicAutomationRoute ||
         dynamicWorkboardRoute ||
         dynamicMemoryRoute ||
         dynamicPluginsRoute ||

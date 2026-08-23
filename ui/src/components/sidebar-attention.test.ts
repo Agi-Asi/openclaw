@@ -206,8 +206,27 @@ describe("cron attention details", () => {
       expect(action.alert.facts.length).toBeGreaterThan(0);
       expect(action.alert.question).toContain(kind === "cronFailed" ? "failed" : "not run");
       expect(action.alert.question).toContain(action.alert.facts[0]);
-      expect(action.alert.action?.target).toEqual({ kind: "navigate", routeId: "cron" });
+      expect(action.alert.action?.target).toEqual({
+        kind: "navigate",
+        routeId: "cron",
+        options: {
+          pathname: `/automations/${kind === "cronFailed" ? "failed" : "overdue"}`,
+        },
+      });
     }
+  });
+
+  it("keeps aggregate automation incidents linked to the list", () => {
+    const jobs = [cronJob("failed-a"), cronJob("failed-b")];
+    for (const job of jobs) {
+      job.state = { lastRunStatus: "error", lastError: "disk full" };
+    }
+
+    const action = cronItems(jobs).find((item) => item.kind === "cronFailed")?.action;
+    if (action?.kind !== "askCustodian") {
+      throw new Error("expected failed cron custodian action");
+    }
+    expect(action.alert.action?.target).toEqual({ kind: "navigate", routeId: "cron" });
   });
 
   it("hard-caps the model question for a large incident set", () => {

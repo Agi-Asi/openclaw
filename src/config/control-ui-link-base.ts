@@ -1,7 +1,9 @@
 import {
+  buildControlUiAutomationPath,
   buildControlUiSessionPath,
   normalizeControlUiBasePath,
 } from "@openclaw/session-url-contract";
+import type { ControlUiAutomationTab } from "@openclaw/session-url-contract";
 import { resolveGatewayPublicOrigin } from "./gateway-public-origin.js";
 import type { OpenClawConfig } from "./types.js";
 
@@ -61,4 +63,23 @@ export function resolveControlUiSessionUrl(
   const url = new URL(location.origin);
   url.pathname = path;
   return url.toString();
+}
+
+export function resolveControlUiAutomationUrl(
+  cfg: ControlUiLinkConfig,
+  jobId: string,
+  tab: ControlUiAutomationTab = "settings",
+): string | undefined {
+  const location = resolveControlUiLinkLocation(cfg);
+  if (!location) {
+    return undefined;
+  }
+  const path = buildControlUiAutomationPath(jobId, { basePath: location.basePath, tab });
+  if (!path) {
+    return undefined;
+  }
+  const url = new URL(location.origin);
+  url.pathname = path;
+  const serialized = url.toString();
+  return serialized.length <= 500 ? serialized : undefined;
 }
