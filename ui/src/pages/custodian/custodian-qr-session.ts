@@ -17,9 +17,13 @@ type CustodianQrSessionOwner = {
 };
 
 export class CustodianQrSession {
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly owner: CustodianQrSessionOwner) {}
+  constructor(
+    private readonly owner: CustodianQrSessionOwner,
+    private readonly onChange: () => void,
+  ) {}
 
   hasActive(messages = this.owner.messages): boolean {
     return messages.some((message) => message.step?.type === "qr");
@@ -39,9 +43,19 @@ export class CustodianQrSession {
   }
 
   clear(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
+    if (this.pollTimer !== null) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+    if (this.expiryTimer !== null) {
+      clearTimeout(this.expiryTimer);
+      this.expiryTimer = null;
+    }
+  }
+
+  clearForRequest(pollStepId: string | undefined): void {
+    if (pollStepId === undefined) {
+      this.clear();
     }
   }
 
@@ -71,8 +85,15 @@ export class CustodianQrSession {
 
   schedule(client: GatewayBrowserClient, step: QrStep): void {
     this.clear();
-    this.timer = setTimeout(() => {
-      this.timer = null;
+    if (step.expiresInMs !== undefined) {
+      this.expiryTimer = setTimeout(() => this.expire(client, step), Math.max(0, step.expiresInMs));
+    }
+    this.schedulePoll(client, step);
+  }
+
+  private schedulePoll(client: GatewayBrowserClient, step: QrStep): void {
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
       const active = this.owner.messages.findLast((message) => message.step?.id === step.id)?.step;
       if (
         active?.type !== "qr" ||
@@ -82,10 +103,28 @@ export class CustodianQrSession {
         return;
       }
       if (this.owner.sending) {
-        this.schedule(client, active);
+        this.schedulePoll(client, active);
         return;
       }
       this.owner.pollQrStep(client, active.id);
     }, QR_POLL_INTERVAL_MS);
+  }
+
+  private expire(client: GatewayBrowserClient, step: QrStep): void {
+    this.expiryTimer = null;
+    if (this.pollTimer !== null) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+    const message = this.owner.messages.findLast((candidate) => candidate.step?.id === step.id);
+    if (message?.step?.type !== "qr") {
+      return;
+    }
+    message.step.qrDataUrl = "";
+    message.step = null;
+    this.onChange();
+    if (client === this.owner.activeClient && this.owner.chatAvailable && !this.owner.sending) {
+      this.owner.pollQrStep(client, step.id);
+    }
   }
 }

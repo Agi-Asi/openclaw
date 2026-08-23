@@ -85,7 +85,7 @@ export class CustodianSessionStore {
   private sessionClient: GatewayBrowserClient | null = null;
   private sessionOwnershipKey: string | null = null;
   private readonly sessionOwner = new CustodianSessionOwner();
-  private readonly qrSession = new CustodianQrSession(this);
+  private readonly qrSession = new CustodianQrSession(this, () => this.emit());
   private sessionStarted = false;
   private configuredInferenceState: CustodianConfiguredInferenceState = "unresolved";
   private eventNudgeClosed = false;
@@ -650,7 +650,7 @@ export class CustodianSessionStore {
     ) {
       return "rejected";
     }
-    this.qrSession.clear();
+    this.qrSession.clearForRequest(qrPollStepId);
     this.requestAbort?.abort();
     const requestAbort = new AbortController();
     this.requestAbort = requestAbort;

@@ -2,6 +2,7 @@
 
 import { buildSystemAgentSessionInvalidatedErrorDetails } from "@openclaw/gateway-protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../../../test/helpers/promise.js";
 import { GatewayRequestError, type GatewayBrowserClient } from "../../api/gateway.ts";
 import { installSafeLocalStorageForTesting } from "../../test-helpers/storage.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
@@ -138,6 +139,55 @@ describe("CustodianSessionStore", () => {
       expect(store.messages.at(-1)?.text).toContain("Signal is configured");
       expect(JSON.stringify(store.messages)).not.toContain("Zmlyc3Q");
       expect(JSON.stringify(store.messages)).not.toContain("c2Vjb25k");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("scrubs a short-lived QR while its terminal poll remains in flight", async () => {
+    vi.useFakeTimers();
+    try {
+      const terminal = createDeferred<{
+        sessionId: string;
+        reply: string;
+        action: "none";
+      }>();
+      const request = vi
+        .fn()
+        .mockResolvedValueOnce({
+          sessionId: "short-qr-session",
+          reply: "Scan this code.",
+          action: "none",
+          step: {
+            id: "short-qr",
+            type: "qr",
+            title: "Link Signal",
+            qrDataUrl: "data:image/png;base64,c2hvcnQ=",
+            expiresInMs: 100,
+            canCancel: true,
+            executor: "gateway",
+          },
+        })
+        .mockReturnValueOnce(terminal.promise);
+      const { context } = createContext(request);
+      const store = new CustodianSessionStore();
+
+      store.connect(context, "caretaker");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.messages[0]?.step?.qrDataUrl).toContain("c2hvcnQ");
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(store.messages[0]?.step).toBeNull();
+      expect(JSON.stringify(store.messages)).not.toContain("c2hvcnQ");
+
+      terminal.resolve({
+        sessionId: "short-qr-session",
+        reply: "QR presentation expired; restart setup to retry.",
+        action: "none",
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.messages.at(-1)?.text).toContain("restart setup to retry");
     } finally {
       vi.useRealTimers();
     }
