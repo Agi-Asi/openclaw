@@ -1,21 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { buildSessionCreationStamp } from "../../../config/sessions/session-entry-provenance.js";
 import type { SessionEntry } from "../../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { resolveIncognitoOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.js";
 import {
   inheritedToolAllowPatch,
   inheritedToolDenyPatch,
   normalizeInheritedToolAllowlist,
   normalizeInheritedToolDenylist,
 } from "../../inherited-tool-deny.js";
+import type { FullAccessDelegationAdmission } from "../../tools/sessions-spawn-full-access.js";
+import type { SpawnSubagentResult } from "./subagent-spawn-contract.js";
 import { getSubagentSpawnDeps } from "./subagent-spawn-deps.js";
 import { splitModelRef } from "./subagent-spawn-plan.js";
-import {
-  resolveGatewaySessionStoreTarget,
-  upsertSessionEntryCore,
-} from "./subagent-spawn.runtime.js";
 
 function buildDirectChildSessionPatch(patch: Record<string, unknown>): Partial<SessionEntry> {
   const entry: Partial<SessionEntry> = {};
@@ -74,7 +71,7 @@ function buildDirectChildSessionPatch(patch: Record<string, unknown>): Partial<S
     entry.swarmCollector = true;
   }
   if (patch.swarmOutputSchema && typeof patch.swarmOutputSchema === "object") {
-    entry.swarmOutputSchema = patch.swarmOutputSchema as Record<string, unknown>;
+    entry.swarmOutputSchema = asNullableRecord(patch.swarmOutputSchema) ?? undefined;
   }
   if (typeof patch.model === "string" && patch.model.trim()) {
     const { provider, model } = splitModelRef(patch.model.trim());
@@ -100,6 +97,17 @@ function buildDirectChildSessionPatch(patch: Record<string, unknown>): Partial<S
   return entry;
 }
 
+function projectCreatedSessionEntry(
+  value: Record<string, unknown> | null,
+): SessionEntry | undefined {
+  return typeof value?.sessionId === "string" &&
+    value.sessionId.length > 0 &&
+    typeof value.updatedAt === "number"
+    ? // SAFETY: sessions.create schema-validates the row; this boundary verifies required identity fields before projection.
+      (value as unknown as SessionEntry)
+    : undefined;
+}
+
 export function loadSubagentConfig() {
   return getSubagentSpawnDeps().getRuntimeConfig();
 }
@@ -121,6 +129,9 @@ export async function createInitialSubagentSession(params: {
   swarmGroupId?: string;
   collect: boolean;
   outputSchema?: Record<string, unknown>;
+  childDepth: number;
+  permissionMode?: "full";
+  fullAccessAdmission?: FullAccessDelegationAdmission;
 }): Promise<{ status: "ok"; entry?: SessionEntry } | { status: "error"; error: string }> {
   const initialChildSessionPatch: Record<string, unknown> = {
     spawnedBy: params.requesterInternalKey,
@@ -140,71 +151,63 @@ export async function createInitialSubagentSession(params: {
     ...(params.outputSchema ? { swarmOutputSchema: params.outputSchema } : {}),
     ...(params.incognito ? { incognito: true } : {}),
   };
-  // Spawn owns a fresh child lifecycle. Cleanup freezes both fields before
-  // launch so it cannot delete a reset successor that reuses the session id.
-  const childSessionIdentity = {
-    sessionId: randomUUID(),
-    lifecycleRevision: randomUUID(),
-  };
   try {
-    const target = params.incognito
-      ? {
-          agentId: params.targetAgentId,
-          canonicalKey: params.childSessionKey,
-          storeKeys: [params.childSessionKey],
-          storePath: resolveIncognitoOpenClawAgentSqlitePath({ agentId: params.targetAgentId }),
-        }
-      : resolveGatewaySessionStoreTarget({
-          cfg: params.cfg,
-          key: params.childSessionKey,
-        });
-    const entry = await upsertSessionEntryCore(
+    const initialSpawnEntry = buildDirectChildSessionPatch(initialChildSessionPatch);
+    params.fullAccessAdmission?.assertActive();
+    const response = await getSubagentSpawnDeps().createGatewaySession(
+      "sessions.create",
       {
-        storePath: target.storePath,
-        sessionKey: target.canonicalKey,
+        key: params.childSessionKey,
+        agentId: params.targetAgentId,
+        parentSessionKey: params.requesterInternalKey,
+        spawnDepth: params.childDepth,
+        ...(params.incognito ? { incognito: true } : {}),
+        ...(params.permissionMode ? { permissionMode: params.permissionMode } : {}),
       },
       {
-        ...buildDirectChildSessionPatch(initialChildSessionPatch),
-        ...childSessionIdentity,
-        ...buildSessionCreationStamp({
-          via: "spawn",
-          actor: { type: "agent", id: params.requesterAgentId },
-        }),
+        via: "spawn",
+        actor: { type: "agent", id: params.requesterAgentId },
+        requesterSessionKey: params.requesterInternalKey,
+        completionOwnerSessionKey: params.completionOwnerSessionKey,
+        inheritedToolPolicy: {
+          version: 1,
+          allow: params.inheritedToolAllowlist ?? [],
+          deny: params.inheritedToolDenylist ?? [],
+        },
+        initialSpawnEntry,
+        ...(params.fullAccessAdmission ? { fullAccessAdmission: params.fullAccessAdmission } : {}),
       },
     );
-    return { status: "ok", entry: entry ?? undefined };
+    const entry = asNullableRecord(asNullableRecord(response)?.entry);
+    const expected = Object.entries(initialSpawnEntry);
+    if (!entry || expected.some(([key, value]) => !isDeepStrictEqual(entry[key], value))) {
+      return { status: "error", error: "child session creation did not commit spawn state" };
+    }
+    const createdEntry = projectCreatedSessionEntry(entry);
+    return createdEntry
+      ? { status: "ok", entry: createdEntry }
+      : { status: "error", error: "child session creation returned no session identity" };
   } catch (err) {
     const message = err instanceof Error ? err.message : typeof err === "string" ? err : "error";
-    return { status: "error", error: `child session patch failed: ${message}` };
+    return { status: "error", error: `child session creation failed: ${message}` };
   }
 }
 
-export async function persistInitialChildSessionRuntimeModel(params: {
-  cfg: OpenClawConfig;
+export async function rejectClosedFullAccessSpawn(params: {
+  admission?: FullAccessDelegationAdmission;
   childSessionKey: string;
-  resolvedModel?: string;
-}): Promise<string | undefined> {
-  const { provider, model } = splitModelRef(params.resolvedModel);
-  if (!model) {
-    return undefined;
-  }
+  cleanup: (emitLifecycleHooks?: boolean) => Promise<unknown>;
+  emitLifecycleHooks?: boolean;
+}): Promise<SpawnSubagentResult | undefined> {
   try {
-    const target = resolveGatewaySessionStoreTarget({
-      cfg: params.cfg,
-      key: params.childSessionKey,
-    });
-    await upsertSessionEntryCore(
-      {
-        storePath: target.storePath,
-        sessionKey: target.canonicalKey,
-      },
-      {
-        model,
-        ...(provider ? { modelProvider: provider } : {}),
-      },
-    );
+    params.admission?.assertActive();
     return undefined;
-  } catch (err) {
-    return err instanceof Error ? err.message : typeof err === "string" ? err : "error";
+  } catch (error) {
+    await params.cleanup(params.emitLifecycleHooks);
+    return {
+      status: "forbidden",
+      error: error instanceof Error ? error.message : "full-access delegation authority changed",
+      childSessionKey: params.childSessionKey,
+    };
   }
 }

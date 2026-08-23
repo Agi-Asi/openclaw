@@ -42,6 +42,7 @@ export const SessionRowSchema = Type.Object(
   {
     key: Type.String(),
     sessionId: Type.Optional(Type.String()),
+    lifecycleRevision: Type.Optional(Type.String()),
     incognito: Type.Optional(Type.Literal(true)),
     kind: Type.Union([
       Type.Literal("direct"),

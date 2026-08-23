@@ -48,7 +48,10 @@ import {
   shouldAttachPendingMessageSeq,
 } from "./session-create-initial-turn.js";
 import { prepareSessionCreateFilesystemRoot } from "./session-create-root.js";
-import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
+import {
+  appendFullAccessDelegationAudit,
+  resolveOperatorSessionCreation,
+} from "./session-creation-provenance.js";
 import { sessionLog } from "./sessions-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
@@ -498,6 +501,18 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    if (
+      p.permissionMode === "full" &&
+      sessionCreation.via === "spawn" &&
+      !sessionCreation.fullAccessAdmission
+    ) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "full-access delegation admission is required"),
+      );
+      return;
+    }
     const allowExistingModelSelection = authorizeOperatorScopesForRequiredScope(
       ADMIN_SCOPE,
       clientScopes,
@@ -534,6 +549,7 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       spawnedCwd: p.worktree === true ? undefined : sessionCwd,
       sessionRoot: p.worktree === true ? undefined : sessionRoot,
       permissionMode: p.permissionMode ?? (p.worktree === true ? "workspace" : undefined),
+      initialSpawnEntry: sessionCreation.initialSpawnEntry,
       prepareLifecycle,
       onLifecycleCleanupError: (error) => {
         sessionLog.warn(
@@ -556,15 +572,28 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       armSessionDiffBaselineCapture: true,
       loadGatewayModelCatalog: () =>
         context.loadGatewayModelCatalog({ agentId: modelCatalogAgentId }),
-      ...(commitGuard ? { commitGuard } : {}),
+      ...(commitGuard || sessionCreation.fullAccessAdmission
+        ? {
+            commitGuard: () => {
+              commitGuard?.();
+              sessionCreation.fullAccessAdmission?.assertActive();
+            },
+          }
+        : {}),
       afterCreate: async ({ key, agentId, entry, storePath }) => {
         if (!authority.hasActive()) {
           return;
         }
+        await appendFullAccessDelegationAudit({
+          cfg,
+          creation: sessionCreation,
+          target: { agentId, entry, sessionKey: key, storePath },
+        });
         if (await worktreeTitle?.persist(agentId, entry, key, storePath)) {
           emitSessionsChanged(context, { sessionKey: key, agentId, reason: "chat.title" });
         }
         if (hasInitialTurn) {
+          sessionCreation.fullAccessAdmission?.assertActive();
           if (!authority.hasActive()) {
             return;
           }

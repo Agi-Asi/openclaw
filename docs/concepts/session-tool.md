@@ -123,6 +123,8 @@ See [Session state awareness](/concepts/session-state) for the full model: event
 
 `sessions_spawn` creates an isolated session for a background task by default. It is always non-blocking; it returns immediately with a `runId` and `childSessionKey`. Native sub-agent runs receive the delegated task in the child session's first visible `[Subagent Task]` message, while the system prompt carries only sub-agent runtime rules and routing context.
 
+A direct user turn in a `full` parent session may explicitly pass `permissionMode: "full"` to a native sub-agent spawn. The exact parent lifecycle and live run authority stay bound through child creation and launch. Omission never inherits full access, and ACP spawns keep their independent permission contract.
+
 Key options:
 
 - `runtime: "subagent"` (default) or `"acp"` for external harness agents.

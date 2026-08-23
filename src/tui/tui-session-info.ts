@@ -17,6 +17,7 @@ export type SessionInfoEntry = SessionInfo & {
 /** Compare only session facts that change visible TUI behavior. */
 export function sessionInfoUiEquals(left: SessionInfo, right: SessionInfo): boolean {
   return (
+    left.lifecycleRevision === right.lifecycleRevision &&
     left.thinkingLevel === right.thinkingLevel &&
     (left.thinkingLevels === right.thinkingLevels ||
       JSON.stringify(left.thinkingLevels ?? null) ===

@@ -1,4 +1,5 @@
 import type { SubagentLifecycleHookRunner } from "../../../plugins/hooks.js";
+import { callInProcessGatewayToolWithCreation } from "../../tools/in-process-gateway.js";
 import {
   callGateway,
   dispatchGatewayMethodInProcess,
@@ -23,6 +24,7 @@ type SubagentSpawnDeps = {
   loadPreparedModelCatalog: typeof loadPreparedModelCatalog;
   resolveProviderRefOwnership: typeof resolveProviderRefOwnership;
   resolveContextEngine: typeof resolveContextEngine;
+  createGatewaySession: typeof callInProcessGatewayToolWithCreation;
 };
 
 const defaultSubagentSpawnDeps: SubagentSpawnDeps = {
@@ -36,6 +38,7 @@ const defaultSubagentSpawnDeps: SubagentSpawnDeps = {
   loadPreparedModelCatalog,
   resolveProviderRefOwnership,
   resolveContextEngine,
+  createGatewaySession: callInProcessGatewayToolWithCreation,
 };
 
 let subagentSpawnDeps = defaultSubagentSpawnDeps;
@@ -44,11 +47,17 @@ export function getSubagentSpawnDeps(): SubagentSpawnDeps {
   return subagentSpawnDeps;
 }
 
-export function setSubagentSpawnDepsForTest(overrides?: Partial<SubagentSpawnDeps>): void {
+function setSubagentSpawnDepsForTest(overrides?: Partial<SubagentSpawnDeps>): void {
   subagentSpawnDeps = overrides
     ? {
         ...defaultSubagentSpawnDeps,
         ...overrides,
       }
     : defaultSubagentSpawnDeps;
+}
+
+if (process.env.VITEST || process.env.NODE_ENV === "test") {
+  // SAFETY: this test-only symbol is written and consumed with the same setter contract.
+  (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.subagentSpawnTestDeps")] =
+    setSubagentSpawnDepsForTest;
 }

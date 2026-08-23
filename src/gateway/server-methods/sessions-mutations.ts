@@ -27,7 +27,7 @@ import { projectAssignableSessionOwner, projectSessionActor } from "../session-u
 import { gatewayClientSessionCreator } from "./gateway-client-identity.js";
 import { emitSessionsChanged } from "./session-change-event.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
-import { executeSessionPatch, executeSessionPatchMany } from "./sessions-patch-engine.js";
+import { executeSessionPatch, executeSessionPatchMany } from "./sessions-patch-execute.js";
 import { loadSessionsRuntimeModule, requireSessionKey } from "./sessions-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
@@ -71,7 +71,14 @@ export const sessionMutationHandlers: GatewayRequestHandlers = {
     }
     respond(true, { outcomes: executed.outcomes }, undefined);
   },
-  "sessions.patch": async ({ params, respond, context, client, sessionMutationAuthorization }) => {
+  "sessions.patch": async ({
+    req,
+    params,
+    respond,
+    context,
+    client,
+    sessionMutationAuthorization,
+  }) => {
     if (!assertValidParams(params, validateSessionsPatchParams, "sessions.patch", respond)) {
       return;
     }
@@ -92,6 +99,7 @@ export const sessionMutationHandlers: GatewayRequestHandlers = {
       client,
       context,
       patch: { ...params, key },
+      req,
       sessionMutationAuthorization,
     });
     if (!executed.ok) {

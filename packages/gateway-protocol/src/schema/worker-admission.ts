@@ -215,6 +215,7 @@ export const WorkerSessionsSpawnParamsSchema = closedObject({
   agentId: Type.Optional(WorkerIdentifierSchema),
   model: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   runTimeoutSeconds: Type.Optional(Type.Integer({ minimum: 0, maximum: 86_400 })),
+  permissionMode: Type.Optional(Type.Literal("full")),
 });
 
 export const WorkerSessionsSendParamsSchema = closedObject({

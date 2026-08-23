@@ -55,7 +55,6 @@ import type {
   SpawnSubagentParams,
   SpawnSubagentResult,
 } from "./subagent-spawn-contract.js";
-import { setSubagentSpawnDepsForTest } from "./subagent-spawn-deps.js";
 import {
   buildSubagentExecutionSessionSpawnContext,
   withSubagentGatewayExecutionIdentity,
@@ -66,7 +65,7 @@ import { createSubagentSpawnLifecycleEmitter } from "./subagent-spawn-lifecycle.
 import { resolveSubagentSpawnRequest } from "./subagent-spawn-request.js";
 import {
   createInitialSubagentSession,
-  persistInitialChildSessionRuntimeModel,
+  rejectClosedFullAccessSpawn,
 } from "./subagent-spawn-session-patch.js";
 import {
   bindThreadForSubagentSpawn,
@@ -104,6 +103,7 @@ export async function spawnSubagentDirect(
   const sandboxMode = params.sandbox === "require" ? "require" : "inherit";
   const requesterSessionKey = ctx.agentSessionKey;
   const gatewayContextResolver = getGatewayToolCallerIdentity()?.gatewayContextResolver;
+  const assertFullAccessDelegation = () => params.fullAccessAdmission?.assertActive();
   let requestedAgentId = params.agentId?.trim();
   const requestResolution = resolveSubagentSpawnRequest(params, ctx, {
     initial: requestedAgentId,
@@ -143,7 +143,6 @@ export async function spawnSubagentDirect(
     },
     childIdem,
   } = requestResolution.resolved;
-  let modelApplied = false;
   let threadBindingReady = false;
   let hasBoundThreadDeliveryOrigin = false;
   let childRunId: string = childIdem;
@@ -159,6 +158,7 @@ export async function spawnSubagentDirect(
       sandboxMode,
       swarmEnabled: swarmConfig.enabled,
     });
+    assertFullAccessDelegation();
     if (!childPlan.ok) {
       return childPlan.result;
     }
@@ -195,6 +195,9 @@ export async function spawnSubagentDirect(
       swarmGroupId,
       collect: params.collect === true,
       outputSchema: params.outputSchema,
+      childDepth,
+      permissionMode: params.permissionMode,
+      fullAccessAdmission: params.fullAccessAdmission,
     });
     if (initialSession.status === "error") {
       return {
@@ -213,6 +216,17 @@ export async function spawnSubagentDirect(
         deleteTranscript: true,
         ...provisionalSessionIdentity,
       });
+    const checkFullAccessDelegation = (emitLifecycleHooks = false) =>
+      rejectClosedFullAccessSpawn({
+        admission: params.fullAccessAdmission,
+        childSessionKey,
+        cleanup: cleanupCreatedSession,
+        emitLifecycleHooks,
+      });
+    const initialDelegationFailure = await checkFullAccessDelegation();
+    if (initialDelegationFailure) {
+      return initialDelegationFailure;
+    }
     const preparedSpawnContext = await prepareSubagentSessionContext({
       cfg,
       contextMode,
@@ -221,6 +235,10 @@ export async function spawnSubagentDirect(
       requesterInternalKey,
       childSessionKey,
     });
+    const contextDelegationFailure = await checkFullAccessDelegation();
+    if (contextDelegationFailure) {
+      return contextDelegationFailure;
+    }
     if (preparedSpawnContext.status === "error") {
       await cleanupCreatedSession();
       return {
@@ -228,22 +246,6 @@ export async function spawnSubagentDirect(
         error: preparedSpawnContext.error,
         childSessionKey,
       };
-    }
-    if (resolvedModel) {
-      const runtimeModelPersistError = await persistInitialChildSessionRuntimeModel({
-        cfg,
-        childSessionKey,
-        resolvedModel,
-      });
-      if (runtimeModelPersistError) {
-        await cleanupCreatedSession();
-        return {
-          status: "error",
-          error: runtimeModelPersistError,
-          childSessionKey,
-        };
-      }
-      modelApplied = true;
     }
     if (requestThreadBinding) {
       const bindResult = await bindThreadForSubagentSpawn({
@@ -260,6 +262,10 @@ export async function spawnSubagentDirect(
           threadId: childSessionOrigin?.threadId,
         },
       });
+      const threadDelegationFailure = await checkFullAccessDelegation(true);
+      if (threadDelegationFailure) {
+        return threadDelegationFailure;
+      }
       if (bindResult.status === "error") {
         await cleanupCreatedSession();
         return {
@@ -314,6 +320,10 @@ export async function spawnSubagentDirect(
       attachments: params.attachments,
       mountPathHint,
     });
+    const attachmentDelegationFailure = await checkFullAccessDelegation(threadBindingReady);
+    if (attachmentDelegationFailure) {
+      return attachmentDelegationFailure;
+    }
     if (materializedAttachments && materializedAttachments.status !== "ok") {
       await cleanupCreatedSession(threadBindingReady);
       return {
@@ -374,32 +384,37 @@ export async function spawnSubagentDirect(
       agentId: targetAgentId,
     });
     const launchChildRun = async () =>
-      await callNativeSubagentGateway(
-        withSubagentGatewayExecutionIdentity(
-          {
-            method: "agent",
-            params: childLaunch.request,
-            timeoutMs: childLaunch.timeoutMs,
-          },
-          {
-            sessionSpawnContext: buildSubagentExecutionSessionSpawnContext({
-              enabled: isExecutionIdentityCollectionEnabled(cfg),
-              backend: "subagent",
-              parentAgentId: requesterAgentId,
-              requesterRef: requesterInternalKey,
-              controllerRef: ownership.controllerSessionKey,
-              depth: childDepth,
-              maxDepth: maxSpawnDepth,
-              targetAgentId,
-              sandbox: sandboxMode,
-              inheritedToolAllowlist: ctx.inheritedToolAllowlist,
-              inheritedToolDenylist: ctx.inheritedToolDenylist,
-            }),
-            parentExecutionIdentityToken: readParentExecutionIdentity(ctx),
-          },
-        ),
-        childLaunch.authorization,
-      );
+      await (async () => {
+        assertFullAccessDelegation();
+        const launched = await callNativeSubagentGateway(
+          withSubagentGatewayExecutionIdentity(
+            {
+              method: "agent",
+              params: childLaunch.request,
+              timeoutMs: childLaunch.timeoutMs,
+            },
+            {
+              sessionSpawnContext: buildSubagentExecutionSessionSpawnContext({
+                enabled: isExecutionIdentityCollectionEnabled(cfg),
+                backend: "subagent",
+                parentAgentId: requesterAgentId,
+                requesterRef: requesterInternalKey,
+                controllerRef: ownership.controllerSessionKey,
+                depth: childDepth,
+                maxDepth: maxSpawnDepth,
+                targetAgentId,
+                sandbox: sandboxMode,
+                inheritedToolAllowlist: ctx.inheritedToolAllowlist,
+                inheritedToolDenylist: ctx.inheritedToolDenylist,
+              }),
+              parentExecutionIdentityToken: readParentExecutionIdentity(ctx),
+            },
+          ),
+          childLaunch.authorization,
+        );
+        assertFullAccessDelegation();
+        return launched;
+      })();
 
     const emitSpawnLifecycleHooks = createSubagentSpawnLifecycleEmitter({
       hookRunner,
@@ -442,6 +457,7 @@ export async function spawnSubagentDirect(
         if (result.status === "error") {
           throw new Error(result.error);
         }
+        assertFullAccessDelegation();
         return { contextEnginePreparation: result.preparation };
       },
       async dispatchTurn() {
@@ -522,6 +538,7 @@ export async function spawnSubagentDirect(
       progressOrigin,
       progressSessionKey: requesterInternalKey,
       buildRegistration: (_state, runId) => {
+        assertFullAccessDelegation();
         if (params.collect) {
           const latestAdmission = resolveAdmission();
           if (!latestAdmission.ok) {
@@ -697,7 +714,7 @@ export async function spawnSubagentDirect(
         ? `${acceptedNote} ${preparedSpawnContext.forkFallbackNote}`
         : acceptedNote,
       ...resolvedModelMetadata,
-      modelApplied: resolvedModel ? modelApplied : undefined,
+      modelApplied: resolvedModel ? true : undefined,
       attachments: attachmentsReceipt,
     };
   } finally {
@@ -706,14 +723,4 @@ export async function spawnSubagentDirect(
       removeQueuedSwarmRun(childRunId);
     }
   }
-}
-
-const testing = {
-  setDepsForTest(overrides?: Parameters<typeof setSubagentSpawnDepsForTest>[0]) {
-    setSubagentSpawnDepsForTest(overrides);
-  },
-};
-if (process.env.VITEST || process.env.NODE_ENV === "test") {
-  (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.subagentSpawnTestApi")] =
-    testing;
 }

@@ -10,10 +10,12 @@ import {
 } from "../../agents/session-placement-admission.js";
 import { convertToLlm } from "../../agents/sessions/messages.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
+import { isFullAccessDelegationTurn } from "../../agents/tools/sessions-spawn-full-access.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { emitAgentRunStatusEvent } from "../../infra/agent-run-status-events.js";
 import { redactSensitiveText } from "../../logging/redact.js";
 import { parseWorkerLaunchPlan } from "../../worker/launch-descriptor.js";
+import { WORKER_FULL_ACCESS_DELEGATION_CAPABILITY } from "../../worker/tool-authority.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "../../worker/transcript-message.js";
 import { prepareGitHubPublicationAvailability } from "../github-publication-availability.js";
 import {
@@ -112,6 +114,19 @@ async function executeWorkerTurn(params: {
   publishAcceptedWorkspace?: (claim: WorkerSessionTurnClaim) => Promise<void>;
 }) {
   const { placement, turn } = params;
+  const directUserTurnAuthority = turn.cronCreatorAuthorityCapability
+    ? {
+        assertActive: () => {
+          turn.cronCreatorAuthorityCapability?.signal.throwIfAborted();
+          if (
+            turn.cronCreatorAuthorityCapability?.active !== true ||
+            turn.cronCreatorAuthorityCapability.runId !== turn.runId
+          ) {
+            throw new Error("direct user turn authority is no longer active");
+          }
+        },
+      }
+    : undefined;
   const modelRef = assertSupportedTurn(turn);
   const environment = params.environments.get(placement.environmentId);
   const bootstrapReceipt = environment?.bootstrapReceipt;
@@ -214,7 +229,15 @@ async function executeWorkerTurn(params: {
     turn,
     githubPublicationAvailable,
   });
-  params.placements.authorizeWorkerTurnTools(params.turnClaim, toolAuthority.allowedToolNames);
+  const fullAccessDelegationAllowed =
+    isFullAccessDelegationTurn({
+      permissionMode: turn.permissionMode,
+      directUserTurnAuthority,
+    }) && toolAuthority.allowedToolNames.includes("sessions_spawn");
+  params.placements.authorizeWorkerTurnTools(params.turnClaim, [
+    ...toolAuthority.allowedToolNames,
+    ...(fullAccessDelegationAllowed ? [WORKER_FULL_ACCESS_DELEGATION_CAPABILITY] : []),
+  ]);
   const { operationalRunInstance, runtimeIdentity } = await prepareWorkerAgentRuntimeIdentity({
     agentId: placement.agentId,
     runtimeInstanceId: placement.environmentId,
@@ -254,6 +277,7 @@ async function executeWorkerTurn(params: {
                 workerContainmentRoot: placement.remoteWorkspaceDir,
               }
             : {}),
+          ...(fullAccessDelegationAllowed ? { fullAccessDelegationAllowed: true as const } : {}),
           modelRef,
           inferenceOptions: reasoning ? { reasoning } : {},
           ...(turn.extraSystemPrompt === undefined ? {} : { systemPrompt: turn.extraSystemPrompt }),

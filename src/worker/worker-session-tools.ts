@@ -50,7 +50,10 @@ function parseToolResult(
   return parsed as AgentToolResult<unknown>;
 }
 
-export function createWorkerSessionTools(client: WorkerSessionRpcClient): AnyAgentTool[] {
+export function createWorkerSessionTools(
+  client: WorkerSessionRpcClient,
+  options: { fullAccessDelegation?: boolean } = {},
+): AnyAgentTool[] {
   return [
     {
       label: "GitHub Publish",
@@ -81,6 +84,9 @@ export function createWorkerSessionTools(client: WorkerSessionRpcClient): AnyAge
         agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
         model: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
         runTimeoutSeconds: Type.Optional(Type.Integer({ minimum: 0, maximum: 86_400 })),
+        ...(options.fullAccessDelegation
+          ? { permissionMode: Type.Optional(Type.Literal("full")) }
+          : {}),
       }),
       execute: async (toolCallId, raw) => {
         const params = raw as Omit<WorkerSessionsSpawnParams, "toolCallId">;

@@ -21,6 +21,9 @@ export const WORKER_SESSION_TOOL_NAMES = [
   "github_publish",
 ] as const;
 
+/** Private turn capability; never projected as a model-facing or inherited tool name. */
+export const WORKER_FULL_ACCESS_DELEGATION_CAPABILITY = "sessions_spawn_full_access";
+
 export const WORKER_TOOL_NAMES = [
   ...WORKER_LOCAL_TOOL_NAMES,
   ...WORKER_SESSION_TOOL_NAMES,

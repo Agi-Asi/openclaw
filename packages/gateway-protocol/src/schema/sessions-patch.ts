@@ -69,6 +69,9 @@ export const SessionsPatchParamsSchema = closedObject({
   /** Reject the mutation if the session was reset or replaced before it commits. */
   expectedSessionId: Type.Optional(NonEmptyString),
   expectedLifecycleRevision: Type.Optional(NonEmptyString),
+  activeRunPolicy: Type.Optional(
+    Type.Union([Type.Literal("reject"), Type.Literal("stop"), Type.Literal("stop-and-continue")]),
+  ),
   ...SessionsPatchMutationProperties,
 });
 

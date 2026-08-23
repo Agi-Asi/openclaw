@@ -222,6 +222,7 @@ export type RunEmbeddedAgentParams = {
   cwd?: string;
   permissionMode?: SessionEntry["permissionMode"];
   sessionRoot?: string;
+  sessionLifecycleRevision?: string;
   agentDir?: string;
   /**
    * Run config consumed by core paths (model selection, tools, plugin

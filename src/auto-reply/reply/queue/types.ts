@@ -184,6 +184,7 @@ export type FollowupRun = {
     cwd?: string;
     permissionMode?: SessionEntry["permissionMode"];
     sessionRoot?: string;
+    sessionLifecycleRevision?: string;
     config: OpenClawConfig;
     toolOverrides?: SessionToolOverrides;
     skillsSnapshot?: SkillSnapshot;

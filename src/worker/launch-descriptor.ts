@@ -72,6 +72,7 @@ type WorkerLaunchAssignment = WorkerLaunchPermissionContext & {
   };
   toolAuthority: WorkerToolAuthority;
   browser?: WorkerBrowserLaunchDescriptor;
+  fullAccessDelegationAllowed?: true;
 };
 
 type WorkerLaunchAdmission = Omit<WorkerConnectParams["admission"], "runId"> & {
@@ -188,7 +189,13 @@ function parseAssignment(value: unknown): WorkerLaunchAssignment | undefined {
         "liveEvents",
         "toolAuthority",
       ],
-      ["systemPrompt", "browser", "permissionMode", "workerContainmentRoot"],
+      [
+        "systemPrompt",
+        "browser",
+        "permissionMode",
+        "workerContainmentRoot",
+        "fullAccessDelegationAllowed",
+      ],
     )
   ) {
     return undefined;
@@ -202,6 +209,12 @@ function parseAssignment(value: unknown): WorkerLaunchAssignment | undefined {
         typeof value.workerContainmentRoot !== "string" ||
         !isIdentifier(value.workerContainmentRoot) ||
         !isAbsoluteHostPath(value.workerContainmentRoot)))
+  ) {
+    return undefined;
+  }
+  if (
+    value.fullAccessDelegationAllowed !== undefined &&
+    (value.fullAccessDelegationAllowed !== true || value.permissionMode !== "full")
   ) {
     return undefined;
   }

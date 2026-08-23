@@ -68,12 +68,13 @@ vi.mock("../../agents/tools/sessions-spawn-tool.js", async () => {
       agentSessionKey: string;
       callGateway: (method: string, params: Record<string, unknown>) => Promise<unknown>;
     }) => ({
-      execute: async (_toolCallId: string, args: { task: string }) => {
+      execute: async (_toolCallId: string, args: { task: string; permissionMode?: "full" }) => {
         spawnCallerIdentity(getGatewayToolCallerIdentity());
         spawnArgs(args);
         const details = await options.callGateway("sessions.create", {
           parentSessionKey: options.agentSessionKey,
           task: args.task,
+          ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
         });
         return {
           content: [{ type: "text", text: "spawned" }],
@@ -171,6 +172,7 @@ describe("worker session tool topology", () => {
     placements.authorizeWorkerTurnTools(sourceClaim, [
       "sessions_send",
       "sessions_spawn",
+      "sessions_spawn_full_access",
       "github_publish",
     ]);
     delegatedAuthorities = [];
@@ -527,6 +529,34 @@ describe("worker session tool topology", () => {
       PARENT_EXECUTION_IDENTITY_TOKEN.executionId,
     );
     expect(JSON.stringify(runtimeIdentity?.sessionSpawnContext)).not.toContain(SOURCE.sessionKey);
+  });
+
+  it("forwards full access only while the exact worker parent remains full", async () => {
+    setEntry(SOURCE.sessionKey, SOURCE.sessionId);
+    sessionEntries.set(SOURCE.sessionKey, {
+      ...sessionEntries.get(SOURCE.sessionKey)!,
+      permissionMode: "full",
+    });
+
+    await execute({
+      identity,
+      toolName: "sessions_spawn",
+      request: {
+        toolCallId: "spawn-full-child",
+        task: "start the full child",
+        permissionMode: "full",
+      },
+    });
+
+    expect(spawnArgs).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: "full" }));
+    expect(gatewayCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({ permissionMode: "full" }),
+        creation: expect.objectContaining({
+          fullAccessAdmission: expect.objectContaining({ assertActive: expect.any(Function) }),
+        }),
+      }),
+    );
   });
 
   it("coalesces concurrent spawn retries into one cloud child", async () => {

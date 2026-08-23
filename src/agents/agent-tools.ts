@@ -59,7 +59,10 @@ import {
 } from "./conversation-tool-policy-pipeline.js";
 import { createCoreCodingTools } from "./core-coding-tools.js";
 import type { OpenClawCodingToolConstructionPlan } from "./core-tool-factory-descriptors.js";
-import { bindActiveCronCreatorAuthorityResolver } from "./cron-creator-authority-context.js";
+import {
+  bindActiveCronCreatorAuthorityResolver,
+  bindActiveOperatorTurnAuthority,
+} from "./cron-creator-authority-context.js";
 import { applyDelegationCapability, type DelegationCapability } from "./delegation-capability.js";
 import { prepareGitHubToolEnvironment } from "./github-tool-identity.js";
 import { resolveImageSanitizationLimits } from "./image-sanitization.js";
@@ -115,6 +118,7 @@ import {
 } from "./tools/cron-tool.js";
 import type { CronToolOptions } from "./tools/cron-tool.types.js";
 import { wrapToolWithGatewayCallerIdentity } from "./tools/gateway-caller-context.js";
+import { isFullAccessDelegationTurn } from "./tools/sessions-spawn-full-access.js";
 
 const MEMORY_FLUSH_ALLOWED_TOOL_NAMES = new Set(["read", "write"]);
 
@@ -196,6 +200,8 @@ type OpenClawCodingToolsOptions = {
   runSessionKey?: string;
   /** Ephemeral session UUID — regenerated on /new and /reset. */
   sessionId?: string;
+  /** Exact lifecycle revision prepared with sessionId for privileged spawn admission. */
+  sessionLifecycleRevision?: string;
   /**
    * Explicit one-shot local CLI runs should not keep plugin-owned process
    * resources alive after emitting their result.
@@ -646,6 +652,7 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
     recordToolPrepStage: options?.recordToolPrepStage,
   });
   const cronCreatorAuthorityResolver = bindActiveCronCreatorAuthorityResolver(options?.runId);
+  const directUserTurnAuthority = bindActiveOperatorTurnAuthority(options?.runId);
   // A fresh exact-run capability authorizes only automation creation. Keep every
   // other owner-only control-plane tool denied for senderless operator turns.
   const ownerOnlyCoreToolDenylist =
@@ -848,6 +855,12 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
             senderIsOwner: options?.senderIsOwner,
             authProfileStore: options?.authProfileStore,
             sessionId: options?.sessionId,
+            sessionLifecycleRevision: options?.sessionLifecycleRevision,
+            fullAccessDelegationAvailable:
+              isFullAccessDelegationTurn({
+                permissionMode: options?.sessionPermissionPolicy?.mode,
+                directUserTurnAuthority,
+              }) && Boolean(options?.sessionId && options.sessionLifecycleRevision),
             conversationRecall: options?.conversationRecall,
             oneShotCliRun: options?.oneShotCliRun,
             inheritedToolAllowlist,

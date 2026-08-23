@@ -55,6 +55,7 @@ import {
   resolveEffectiveSessionToolsVisibility,
   resolveSandboxedSessionToolContext,
 } from "./sessions-helpers.js";
+import { createFullAccessDelegationAdmission } from "./sessions-spawn-full-access.js";
 import {
   maybeSpawnVisibleSession,
   type VisibleSessionsSpawnDeps,
@@ -133,6 +134,7 @@ function createSessionsSpawnToolSchema(params: {
   acpAvailable: boolean;
   threadAvailable: boolean;
   swarmEnabled: boolean;
+  fullAccessDelegationAvailable: boolean;
 }) {
   const spawnModes = params.threadAvailable ? SUBAGENT_SPAWN_MODES : (["run"] as const);
   const schema = {
@@ -191,6 +193,14 @@ function createSessionsSpawnToolSchema(params: {
     sandbox: optionalStringEnum(SESSIONS_SPAWN_SANDBOX_MODES, {
       description: '"inherit" parent sandbox policy; "require" fails unless child is sandboxed.',
     }),
+    ...(params.fullAccessDelegationAvailable
+      ? {
+          permissionMode: optionalStringEnum(["full"] as const, {
+            description:
+              "Explicitly delegate the current full-access session to this native child. Omission never inherits full access.",
+          }),
+        }
+      : {}),
     context: optionalStringEnum(SUBAGENT_SPAWN_CONTEXT_MODES, {
       description:
         "Native: omit/isolated clean; fork only needing requester transcript; visible fork requires same agent.",
@@ -292,6 +302,8 @@ export function createSessionsSpawnTool(
     swarmCollector?: boolean;
     /** Backend-derived parent incarnation; never sourced from model arguments. */
     expectedParentSessionId?: string;
+    expectedParentLifecycleRevision?: string;
+    fullAccessDelegationAvailable?: boolean;
     signal?: AbortSignal;
   } & VisibleSessionsSpawnDeps &
     SpawnedToolContext,
@@ -333,6 +345,7 @@ export function createSessionsSpawnTool(
       acpAvailable,
       threadAvailable,
       swarmEnabled: swarmConfig.enabled,
+      fullAccessDelegationAvailable: opts?.fullAccessDelegationAvailable === true,
     }),
     execute: async (_toolCallId, args) => {
       const params = args as Record<PropertyKey, unknown>;
@@ -391,6 +404,20 @@ export function createSessionsSpawnTool(
       const taskName = taskNameResult.taskName;
       const label = readToolStringParam(params, "label") ?? "";
       const runtime = params.runtime === "acp" ? "acp" : "subagent";
+      const requestsFullAccess = params.permissionMode === "full";
+      if (Object.hasOwn(params, "permissionMode") && !requestsFullAccess) {
+        throw new ToolInputError('sessions_spawn permissionMode supports only "full".');
+      }
+      if (requestsFullAccess && runtime !== "subagent") {
+        throw new ToolInputError(
+          'sessions_spawn permissionMode="full" supports runtime="subagent" only.',
+        );
+      }
+      if (requestsFullAccess && opts?.fullAccessDelegationAvailable !== true) {
+        throw new ToolInputError(
+          'sessions_spawn permissionMode="full" is unavailable for this turn.',
+        );
+      }
       if (collect && runtime === "acp") {
         throw new ToolInputError('sessions_spawn collect=true supports runtime="subagent" only.');
       }
@@ -421,6 +448,22 @@ export function createSessionsSpawnTool(
       if (opts?.expectedParentSessionId && !expectedParentSessionKey) {
         throw new Error("Exact parent session access requires a session key");
       }
+      const fullAccessAdmission = requestsFullAccess
+        ? expectedParentSessionKey && opts?.expectedParentSessionId
+          ? createFullAccessDelegationAdmission({
+              cfg: visibilityCfg,
+              parentSessionKey: expectedParentSessionKey,
+              parentSessionId: opts.expectedParentSessionId,
+              parentLifecycleRevision: opts.expectedParentLifecycleRevision,
+              signal: opts.signal,
+            })
+          : undefined
+        : undefined;
+      if (requestsFullAccess && !fullAccessAdmission) {
+        throw new ToolInputError(
+          'sessions_spawn permissionMode="full" requires the exact active full-access parent turn.',
+        );
+      }
       const spawnVisible = async () =>
         await maybeSpawnVisibleSession({
           raw: params,
@@ -431,6 +474,8 @@ export function createSessionsSpawnTool(
           requestedAgentId,
           runTimeoutSeconds,
           sandbox,
+          permissionMode: requestsFullAccess ? "full" : undefined,
+          fullAccessAdmission,
           options: opts,
         });
       const visibleResult = opts?.expectedParentSessionId
@@ -586,6 +631,8 @@ export function createSessionsSpawnTool(
           context,
           lightContext,
           expectsCompletionMessage,
+          permissionMode: requestsFullAccess ? "full" : undefined,
+          fullAccessAdmission,
           attachments,
           attachMountPath:
             params.attachAs && typeof params.attachAs === "object"

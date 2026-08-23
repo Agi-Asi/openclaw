@@ -248,6 +248,9 @@ export function createSessionActions(context: SessionActionContext) {
     }
 
     const next = { ...state.sessionInfo };
+    if (entry?.lifecycleRevision !== undefined) {
+      next.lifecycleRevision = entry.lifecycleRevision;
+    }
     if (entry?.thinkingLevel !== undefined) {
       next.thinkingLevel = entry.thinkingLevel;
     }

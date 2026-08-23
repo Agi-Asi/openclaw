@@ -32,16 +32,7 @@ describe("spawnSubagentDirect runtime model persistence", () => {
     updateSessionStoreMock.mockReset();
     setupAcceptedSubagentGatewayMock(callGatewayMock);
 
-    updateSessionStoreMock.mockImplementation(
-      async (
-        _storePath: string,
-        mutator: (store: Record<string, Record<string, unknown>>) => unknown,
-      ) => {
-        const store: Record<string, Record<string, unknown>> = {};
-        await mutator(store);
-        return store;
-      },
-    );
+    installSessionStoreCaptureMock(updateSessionStoreMock);
   });
 
   it("persists runtime model fields on the child session before starting the run", async () => {
@@ -84,7 +75,7 @@ describe("spawnSubagentDirect runtime model persistence", () => {
     expect(result.modelApplied).toBe(true);
     expect(result.resolvedModel).toBe("openai/gpt-5.4");
     expect(result.resolvedProvider).toBe("openai");
-    expect(updateSessionStoreMock).toHaveBeenCalledTimes(2);
+    expect(updateSessionStoreMock).toHaveBeenCalledTimes(1);
     expectPersistedRuntimeModel({
       persistedStore,
       sessionKey: /^agent:main:subagent:/,

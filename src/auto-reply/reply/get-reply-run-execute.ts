@@ -429,6 +429,7 @@ export async function executePreparedReplyRun(state: PreparedReplyRunAdmission) 
       cwd: normalizeOptionalString(state.sessionEntry?.spawnedCwd),
       permissionMode: preparedSessionState.sessionEntry?.permissionMode,
       sessionRoot: normalizeOptionalString(preparedSessionState.sessionEntry?.sessionRoot),
+      sessionLifecycleRevision: preparedSessionState.sessionEntry?.lifecycleRevision,
       config: cfg,
       toolOverrides: preparedSessionState.sessionEntry?.toolOverrides,
       skillsSnapshot,

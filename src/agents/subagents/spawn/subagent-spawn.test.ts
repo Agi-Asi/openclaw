@@ -221,16 +221,7 @@ describe("spawnSubagentDirect seam flow", () => {
     installAcceptedSubagentGatewayMock(hoisted.callGatewayMock);
     hoisted.loadSessionStoreMock.mockReturnValue({});
 
-    hoisted.updateSessionStoreMock.mockImplementation(
-      async (
-        _storePath: string,
-        mutator: (store: Record<string, Record<string, unknown>>) => unknown,
-      ) => {
-        const store: Record<string, Record<string, unknown>> = {};
-        await mutator(store);
-        return store;
-      },
-    );
+    installSessionStoreCaptureMock(hoisted.updateSessionStoreMock);
   });
 
   afterEach(() => {
@@ -1403,7 +1394,7 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(result.childSessionKey).toMatch(/^agent:main:subagent:/);
 
     const childSessionKey = result.childSessionKey as string;
-    expect(hoisted.updateSessionStoreMock).toHaveBeenCalledTimes(2);
+    expect(hoisted.updateSessionStoreMock).toHaveBeenCalledTimes(1);
     expect(persistedStore?.[childSessionKey]).toMatchObject({
       sessionId: expect.any(String),
       lifecycleRevision: expect.any(String),
@@ -1458,6 +1449,48 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(agentParams.provider).toBe("openai");
     expect(agentParams.model).toBe("gpt-5.4");
     expect(agentParams.cleanupBundleMcpOnRunEnd).toBe(true);
+  });
+
+  it("routes hidden child creation through the Gateway owner with atomic spawn state", async () => {
+    const createGatewaySessionMock = vi.fn(async (_method, request, creation) => ({
+      ok: true,
+      key: request.key,
+      entry: {
+        ...creation.initialSpawnEntry,
+        sessionId: "gateway-child-session",
+        lifecycleRevision: "gateway-child-revision",
+        updatedAt: Date.now(),
+      },
+    }));
+    const { spawnSubagentDirect: spawnWithGatewayOwner } = await loadSubagentSpawnModuleForTest({
+      callGatewayMock: hoisted.callGatewayMock,
+      createGatewaySessionMock,
+      getRuntimeConfig: () => createSubagentSpawnTestConfig(),
+    });
+    installAcceptedSubagentGatewayMock(hoisted.callGatewayMock);
+
+    const result = await spawnWithGatewayOwner(
+      { task: "create through owner" },
+      { agentSessionKey: "agent:main:main" },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(createGatewaySessionMock).toHaveBeenCalledWith(
+      "sessions.create",
+      expect.objectContaining({
+        key: result.childSessionKey,
+        parentSessionKey: "agent:main:main",
+        spawnDepth: 1,
+      }),
+      expect.objectContaining({
+        via: "spawn",
+        requesterSessionKey: "agent:main:main",
+        initialSpawnEntry: expect.objectContaining({
+          spawnedBy: "agent:main:main",
+          subagentControlScope: "none",
+        }),
+      }),
+    );
   });
 
   it("dispatches spawned agent runs in process when a gateway context is available", async () => {

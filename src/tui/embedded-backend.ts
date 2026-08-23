@@ -63,6 +63,7 @@ import {
   CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES,
   replaceOversizedChatHistoryMessages,
 } from "../gateway/server-methods/chat.js";
+import { appendSessionAudit } from "../gateway/server-methods/session-audit.js";
 import { loadGatewayModelCatalog } from "../gateway/server-model-catalog.js";
 import { createGatewaySession } from "../gateway/session-create-service.js";
 import { performGatewaySessionReset } from "../gateway/session-reset-service.js";
@@ -79,6 +80,10 @@ import {
   resolveGatewaySessionStoreTargetWithStore,
   resolveSessionModelRef,
 } from "../gateway/session-utils.js";
+import {
+  isExecutionAuthorityPatch,
+  rotateExecutionAuthorityRevision,
+} from "../gateway/sessions-patch-authority.js";
 import { projectSessionsPatchEntry } from "../gateway/sessions-patch.js";
 import { waitForAbortSignal } from "../infra/abort-signal.js";
 import { type AgentEventPayload, onAgentEvent } from "../infra/agent-events.js";
@@ -757,6 +762,43 @@ export class EmbeddedTuiBackend implements TuiBackend {
       agentId: opts.agentId,
       exactRead: true,
     });
+    const executionAuthorityPatch = isExecutionAuthorityPatch(opts);
+    let stoppedActiveRun = false;
+    if (executionAuthorityPatch) {
+      const current = loadGatewaySessionEntryReadOnly(target.canonicalKey ?? opts.key, {
+        agentId: target.agentId,
+      }).entry;
+      const hasActiveRun = this.hasAbortableSessionRun({
+        sessionKey: target.canonicalKey ?? opts.key,
+        agentId: opts.agentId,
+      });
+      if (hasActiveRun && opts.activeRunPolicy === "stop-and-continue") {
+        throw new Error("stop-and-continue requires the Gateway backend; use stop in local mode");
+      }
+      if (hasActiveRun && (opts.activeRunPolicy ?? "reject") === "reject") {
+        throw new Error(
+          "session has active work; abort it before changing execution policy in local mode",
+        );
+      }
+      if (hasActiveRun) {
+        if (
+          opts.expectedSessionId === undefined ||
+          opts.expectedLifecycleRevision === undefined ||
+          current?.sessionId !== opts.expectedSessionId ||
+          current.lifecycleRevision !== opts.expectedLifecycleRevision
+        ) {
+          throw new Error("stopping an active session requires the current session identity");
+        }
+        const runScope = {
+          sessionKey: target.canonicalKey ?? opts.key,
+          agentId: opts.agentId,
+        };
+        this.clearSessionRunQueues(runScope);
+        this.abortSessionRuns(runScope);
+        await this.waitForSessionRuns(runScope);
+        stoppedActiveRun = true;
+      }
+    }
     const applied = await applySessionPatchProjection<{ ok: false; error: ErrorShape }>({
       ...(opts.label === undefined ? { sessionKeys: target.storeKeys } : {}),
       storePath: target.storePath,
@@ -769,8 +811,8 @@ export class EmbeddedTuiBackend implements TuiBackend {
         });
         return { primaryKey, candidateKeys: migratedTarget.storeKeys };
       },
-      project: async ({ primaryKey, existingEntry, isLabelInUse }) =>
-        await projectSessionsPatchEntry({
+      project: async ({ primaryKey, existingEntry, isLabelInUse }) => {
+        const projected = await projectSessionsPatchEntry({
           cfg,
           existingEntry,
           isLabelInUse,
@@ -779,7 +821,14 @@ export class EmbeddedTuiBackend implements TuiBackend {
           patch: opts,
           loadGatewayModelCatalog: () =>
             this.withRuntimePluginRegistry(() => loadEmbeddedTuiModelCatalog(cfg)),
-        }),
+        });
+        return projected.ok && executionAuthorityPatch
+          ? {
+              ok: true as const,
+              entry: rotateExecutionAuthorityRevision(projected.entry, existingEntry, opts),
+            }
+          : projected;
+      },
     });
     if (!applied.ok) {
       throw new Error(applied.error.message);
@@ -791,11 +840,47 @@ export class EmbeddedTuiBackend implements TuiBackend {
       agentId: opts.agentId,
     });
     const resolved = resolveSessionModelRef(cfg, applied.entry, agentId);
+    let activeRun: SessionsPatchResult["activeRun"];
+    if (executionAuthorityPatch) {
+      try {
+        await appendSessionAudit({
+          cfg,
+          target: {
+            agentId,
+            entry: applied.entry,
+            sessionKey: target.canonicalKey ?? opts.key,
+            storePath: target.storePath,
+          },
+          text: stoppedActiveRun
+            ? "execution policy updated after active local work was stopped"
+            : "execution policy updated while the local session was idle",
+          now: Date.now(),
+        });
+        activeRun = {
+          policy:
+            opts.activeRunPolicy === "stop-and-continue" && !stoppedActiveRun
+              ? "reject"
+              : (opts.activeRunPolicy ?? "reject"),
+          stopped: stoppedActiveRun,
+          auditNote: "appended",
+        };
+      } catch {
+        activeRun = {
+          policy:
+            opts.activeRunPolicy === "stop-and-continue" && !stoppedActiveRun
+              ? "reject"
+              : (opts.activeRunPolicy ?? "reject"),
+          stopped: stoppedActiveRun,
+          auditNote: "failed",
+        };
+      }
+    }
     return {
       ok: true as const,
       path: target.storePath,
       key: target.canonicalKey ?? opts.key,
       entry: { ...applied.entry },
+      ...(activeRun ? { activeRun } : {}),
       resolved: {
         modelProvider: resolved.provider,
         model: resolved.model,
@@ -1102,6 +1187,24 @@ export class EmbeddedTuiBackend implements TuiBackend {
       if (this.isSameRunScope(run, params) && !run.isBtw && this.isAbortableRun(runId, run)) {
         run.controller.abort();
       }
+    }
+  }
+
+  private clearSessionRunQueues(params: { sessionKey: string; agentId?: string }) {
+    for (const run of this.runs.values()) {
+      if (this.isSameRunScope(run, params) && !run.isBtw) {
+        delete run.pendingQueue;
+      }
+    }
+  }
+
+  private async waitForSessionRuns(params: { sessionKey: string; agentId?: string }) {
+    const pending = [...this.runs]
+      .filter(([, run]) => this.isSameRunScope(run, params) && !run.isBtw)
+      .flatMap(([runId]) => this.runPromises.get(runId) ?? []);
+    await Promise.allSettled(pending);
+    if (this.hasAbortableSessionRun(params)) {
+      throw new Error("local session work did not finish stopping");
     }
   }
 

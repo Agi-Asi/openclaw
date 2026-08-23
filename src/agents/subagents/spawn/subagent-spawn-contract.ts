@@ -1,4 +1,5 @@
 import type { FastMode } from "../../../shared/fast-mode.js";
+import type { FullAccessDelegationAdmission } from "../../tools/sessions-spawn-full-access.js";
 import type {
   SpawnSubagentContextMode,
   SpawnSubagentMode,
@@ -29,6 +30,8 @@ export type SpawnSubagentParams = {
   context?: SpawnSubagentContextMode;
   lightContext?: boolean;
   expectsCompletionMessage?: boolean;
+  permissionMode?: "full";
+  fullAccessAdmission?: FullAccessDelegationAdmission;
   attachments?: Array<{
     name: string;
     content: string;

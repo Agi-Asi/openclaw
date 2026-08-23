@@ -12,6 +12,7 @@ import type {
   SessionRunStatus,
   SessionSharingRole,
   SessionVisibility,
+  SessionsPatchActiveRunOutcome,
 } from "../../packages/gateway-protocol/src/index.js";
 import type { QueueMode } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
 import type { SessionObserverDigest } from "../../packages/gateway-protocol/src/schema/sessions.js";
@@ -133,6 +134,7 @@ export type GatewaySessionRow = {
   lastInteractionAt?: number;
   lastActivityAt?: number;
   sessionId?: string;
+  lifecycleRevision?: string;
   placement?: SessionPlacement;
   placementMove?: SessionPlacementMove;
   systemSent?: boolean;
@@ -242,6 +244,7 @@ export type SessionListModelCatalog = ReadonlyMap<string, ModelCatalogEntry[] | 
 
 export type SessionsPatchResult = SessionsPatchResultBase<SessionEntry> & {
   entry: SessionEntry;
+  activeRun?: SessionsPatchActiveRunOutcome;
   resolved?: {
     modelProvider?: string;
     model?: string;

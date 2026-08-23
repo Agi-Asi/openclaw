@@ -188,6 +188,7 @@ export async function runWorkerDescriptor(
           },
         },
         sessions: connection,
+        allowFullAccessDelegation: descriptor.assignment.fullAccessDelegationAllowed === true,
         signal: abortController.signal,
       });
       if (options.signal?.aborted) {

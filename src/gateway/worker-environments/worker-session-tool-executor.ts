@@ -22,7 +22,6 @@ import { createSessionsSpawnTool } from "../../agents/tools/sessions-spawn-tool.
 import { jsonResult } from "../../agents/tools/tool-results.js";
 import { DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH } from "../../config/agent-limits.js";
 import { getRuntimeConfig } from "../../config/config.js";
-import { sha256Base64Url, sha256HexPrefixCore } from "../../infra/crypto-digest.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { WORKER_TOOL_NAMES } from "../../worker/tool-authority.js";
 import type { GitHubPublicationCoordinator } from "../github-publication.js";
@@ -35,6 +34,12 @@ import {
 } from "./placement-turn-claim-events.js";
 import type { WorkerPlacementDispatchContract } from "./service-contract.js";
 import type { WorkerEnvironmentService } from "./service.js";
+import { resolveWorkerFullAccessDelegation } from "./worker-session-full-access.js";
+import {
+  computeWorkerSessionToolRequestDigest,
+  workerChildSessionKey,
+  workerSessionToolOperationKey,
+} from "./worker-session-tool-operation-key.js";
 import {
   serializeWorkerSessionToolResult as serializeResult,
   workerSessionToolErrorResult as errorResult,
@@ -75,24 +80,8 @@ class WorkerSessionToolOutcomeUnknownError extends Error {
   }
 }
 
-function computeRequestDigest(value: unknown): string {
-  return sha256Base64Url(`openclaw.worker-session-tool-request.v1\0${JSON.stringify(value)}`);
-}
-
-function operationKey(operationSeed: string, purpose: string): string {
-  return sha256Base64Url(`openclaw.worker-session-tool-operation.v1\0${operationSeed}\0${purpose}`);
-}
-
 function throwIfAborted(signal: AbortSignal | undefined): void {
   signal?.throwIfAborted();
-}
-
-function childSessionKey(params: { operationSeed: string; targetAgentId: string }): string {
-  const suffix = sha256HexPrefixCore(
-    `openclaw.worker-session-tool-operation.v1\0${params.operationSeed}\0child-session`,
-    32,
-  );
-  return `agent:${params.targetAgentId}:dashboard:cloud-${suffix}`;
 }
 
 export function createWorkerSessionToolExecutor(params: {
@@ -123,6 +112,12 @@ export function createWorkerSessionToolExecutor(params: {
       throw new Error("Worker source environment changed before child spawn");
     }
     const targetAgentId = normalizeAgentId(operation.request.agentId ?? operation.source.agentId);
+    const fullAccess = resolveWorkerFullAccessDelegation({
+      identity: operation.identity,
+      placements: params.placements,
+      request: operation.request,
+      source: operation.source,
+    });
     const authorizedTools = WORKER_TOOL_NAMES.filter((name) =>
       params.placements.isWorkerTurnToolAuthorized(operation.source.turnClaim, name),
     );
@@ -142,6 +137,9 @@ export function createWorkerSessionToolExecutor(params: {
           ...(operation.signal ? { signal: operation.signal } : {}),
           timeoutMs: null,
         });
+      }
+      if (fullAccess.requested) {
+        fullAccess.assertActive();
       }
       throwIfAborted(operation.signal);
       exactSource({ identity: operation.identity, placements: params.placements });
@@ -171,6 +169,7 @@ export function createWorkerSessionToolExecutor(params: {
         const createParams: Record<string, unknown> = {
           ...requestParams,
           key: operation.childSessionKey,
+          ...(fullAccess.requested ? { permissionMode: "full" } : {}),
         };
         delete createParams.task;
         creationAttempted = true;
@@ -183,6 +182,7 @@ export function createWorkerSessionToolExecutor(params: {
               actor: { type: "agent", id: operation.source.agentId },
               requesterSessionKey: operation.source.sessionKey,
               inheritedToolPolicy: { version: 1, allow: authorizedTools, deny: [] },
+              ...(fullAccess.requested ? { fullAccessAdmission: fullAccess.admission } : {}),
             },
             {
               ...(operation.signal ? { signal: operation.signal } : {}),
@@ -279,7 +279,7 @@ export function createWorkerSessionToolExecutor(params: {
           sourceSessionId: operation.source.sessionId,
           targetAgentId,
         });
-        const childRunId = operationKey(operation.operationSeed, "initial-task");
+        const childRunId = workerSessionToolOperationKey(operation.operationSeed, "initial-task");
         const config = getRuntimeConfig();
         const gatewayCaller = getGatewayToolCallerIdentity();
         const sessionSpawnContext = lineageCapability
@@ -403,6 +403,8 @@ export function createWorkerSessionToolExecutor(params: {
       inheritedToolDenylist: [],
       callGateway: gatewayCall,
       expectedParentSessionId: operation.source.sessionId,
+      expectedParentLifecycleRevision: operation.source.entry.lifecycleRevision,
+      fullAccessDelegationAvailable: fullAccess.allowed,
       ...(operation.signal ? { signal: operation.signal } : {}),
     });
     const executeSpawn = () =>
@@ -414,6 +416,7 @@ export function createWorkerSessionToolExecutor(params: {
         ...(operation.request.runTimeoutSeconds === undefined
           ? {}
           : { runTimeoutSeconds: operation.request.runTimeoutSeconds }),
+        ...(fullAccess.requested ? { permissionMode: "full" } : {}),
         expectsCompletionMessage: false,
         visible: true,
         worktree: true,
@@ -540,7 +543,7 @@ export function createWorkerSessionToolExecutor(params: {
       assertPublicationAuthority();
       return { resultJson: serializeResult(jsonResult(publication)) };
     }
-    const requestDigest = computeRequestDigest(
+    const requestDigest = computeWorkerSessionToolRequestDigest(
       request.toolName === "sessions_spawn"
         ? {
             toolName: request.toolName,
@@ -617,7 +620,7 @@ export function createWorkerSessionToolExecutor(params: {
         let childKey = started.childSessionKey;
         if (request.toolName === "sessions_spawn" && !childKey) {
           const targetAgentId = normalizeAgentId(request.request.agentId ?? source.agentId);
-          childKey = childSessionKey({
+          childKey = workerChildSessionKey({
             operationSeed: started.operationSeed,
             targetAgentId,
           });
@@ -648,7 +651,7 @@ export function createWorkerSessionToolExecutor(params: {
                 identity: request.identity,
                 target: target!,
                 request: request.request,
-                idempotencyKey: `worker-session-send:${operationKey(
+                idempotencyKey: `worker-session-send:${workerSessionToolOperationKey(
                   started.operationSeed,
                   "target-send",
                 )}`,

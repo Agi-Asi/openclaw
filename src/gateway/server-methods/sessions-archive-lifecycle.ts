@@ -1,5 +1,5 @@
 import { resolveEmbeddedSessionLane } from "../../agents/embedded-agent-runner/lanes.js";
-// Archive-owned cancellation and authoritative lifecycle drains.
+// Session-owned cancellation and authoritative lifecycle drains.
 import {
   abortEmbeddedAgentRun,
   isEmbeddedAgentRunInProgress,
@@ -13,6 +13,7 @@ import {
   replyRunRegistry,
   waitForReplyRunEndBySessionId,
 } from "../../auto-reply/reply/reply-run-registry.js";
+import { hasProjectedAgentRunForSession } from "../../infra/agent-run-registry.js";
 import { withTimeout } from "../../infra/fs-safe.js";
 import { getCommandLaneSnapshot } from "../../process/command-queue.js";
 import {
@@ -53,7 +54,7 @@ function asArchiveInferenceDrainService(value: unknown): ArchiveInferenceDrainSe
     : undefined;
 }
 
-type SessionArchiveLifecycleParams = {
+type SessionLifecycleDrainParams = {
   context: GatewayRequestContext;
   storePath: string;
   sessionKeys: string[];
@@ -64,13 +65,13 @@ type SessionArchiveLifecycleParams = {
   lifecycleIdentities: string[];
 };
 
-export type SessionArchiveLifecycleDrain = {
+export type SessionLifecycleDrain = {
   release(): void;
   hasAuthoritativeWork(): boolean;
 };
 
 function hasAuthoritativeSessionWork(
-  params: SessionArchiveLifecycleParams,
+  params: SessionLifecycleDrainParams,
   workerDrain: WorkerInferenceSessionDrain | undefined,
   terminalDrain: AgentTerminalSessionDrain | undefined,
   workIdentities: string[],
@@ -92,6 +93,12 @@ function hasAuthoritativeSessionWork(
       agentId: params.agentId,
       defaultAgentId: params.defaultAgentId,
     }) ||
+    hasProjectedAgentRunForSession({
+      sessionKeys: params.sessionKeys,
+      ...(sessionId ? { sessionId } : {}),
+      agentId: params.agentId,
+      defaultAgentId: params.defaultAgentId,
+    }) ||
     Boolean(
       sessionId &&
       params.context.workerSessionPlacementService?.getMany([sessionId]).get(sessionId)?.turnClaim,
@@ -102,11 +109,13 @@ function hasAuthoritativeSessionWork(
 }
 
 /** Fence is already active when this starts; retain the returned runtime fence through commit. */
-export async function prepareSessionArchiveLifecycle(
-  params: SessionArchiveLifecycleParams,
-): Promise<SessionArchiveLifecycleDrain> {
-  // Reject transient/live-failed placement before archive cancellation has side effects.
-  await prepareSessionWorkerPlacementForArchive({ ...params, reclaimActive: false });
+export async function prepareSessionLifecycleDrain(
+  params: SessionLifecycleDrainParams & { reclaimPlacement: boolean; stopReason: string },
+): Promise<SessionLifecycleDrain> {
+  if (params.reclaimPlacement) {
+    // Reject transient/live-failed placement before archive cancellation has side effects.
+    await prepareSessionWorkerPlacementForArchive({ ...params, reclaimActive: false });
+  }
   const timeoutMs = SESSION_WORK_ADMISSION_DRAIN_TIMEOUT_MS;
   const workIdentities = Array.from(
     new Set([...params.sessionKeys, ...(params.sessionId ? [params.sessionId] : [])]),
@@ -142,7 +151,7 @@ export async function prepareSessionArchiveLifecycle(
       agentId: params.agentId,
       defaultAgentId: params.defaultAgentId,
       abortOrigin: "rpc",
-      stopReason: "archive",
+      stopReason: params.stopReason,
       requester: { isAdmin: true },
       includeProtectedRuns: true,
       onControllerTargets: (targets) => {
@@ -195,12 +204,12 @@ export async function prepareSessionArchiveLifecycle(
         : Promise.resolve(false)
       : Promise.resolve(true);
     const workerWork = workerDrain
-      ? withTimeout(workerDrain.drained, timeoutMs, "worker inference archive drain").then(
+      ? withTimeout(workerDrain.drained, timeoutMs, "worker inference session drain").then(
           () => true,
         )
       : Promise.resolve(true);
     const terminalWork = terminalDrain
-      ? withTimeout(terminalDrain.drained, timeoutMs, "agent terminal archive drain").then(
+      ? withTimeout(terminalDrain.drained, timeoutMs, "agent terminal session drain").then(
           () => true,
         )
       : Promise.resolve(true);
@@ -214,10 +223,32 @@ export async function prepareSessionArchiveLifecycle(
       terminalWork,
     ]);
     if (!drains.every(Boolean)) {
-      throw new Error("Session work did not fully drain before archive");
+      throw new Error("Session work did not fully drain before lifecycle mutation");
     }
-    // Fresh exact placement must be reclaimed before archivedAt can commit.
-    await prepareSessionWorkerPlacementForArchive({ ...params, reclaimActive: true });
+    if (
+      hasProjectedAgentRunForSession({
+        sessionKeys: params.sessionKeys,
+        ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+        agentId: params.agentId,
+        defaultAgentId: params.defaultAgentId,
+      }) &&
+      !hasGatewaySessionAbortOwner({
+        context: params.context,
+        sessionKeys: params.sessionKeys,
+        sessionId: params.sessionId,
+        agentId: params.agentId,
+        defaultAgentId: params.defaultAgentId,
+      }) &&
+      !params.sessionKeys.some((key) => replyRunRegistry.isActive(key)) &&
+      !(params.sessionId && isReplyRunActiveForSessionId(params.sessionId)) &&
+      !(params.sessionId && isEmbeddedAgentRunInProgress(params.sessionId))
+    ) {
+      throw new Error("Session has a live run without a cancellable owner");
+    }
+    if (params.reclaimPlacement) {
+      // Fresh exact placement must be reclaimed before archivedAt can commit.
+      await prepareSessionWorkerPlacementForArchive({ ...params, reclaimActive: true });
+    }
     return {
       release: () => {
         terminalDrain?.release();
@@ -231,4 +262,14 @@ export async function prepareSessionArchiveLifecycle(
     workerDrain?.release();
     throw error;
   }
+}
+
+export async function prepareSessionArchiveLifecycle(
+  params: SessionLifecycleDrainParams,
+): Promise<SessionLifecycleDrain> {
+  return await prepareSessionLifecycleDrain({
+    ...params,
+    reclaimPlacement: true,
+    stopReason: "archive",
+  });
 }

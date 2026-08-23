@@ -21,7 +21,7 @@ import {
 import { projectSessionsPatchEntry } from "../sessions-patch.js";
 import {
   prepareSessionArchiveLifecycle,
-  type SessionArchiveLifecycleDrain,
+  type SessionLifecycleDrain,
 } from "./sessions-archive-lifecycle.js";
 import {
   isAgentMainSessionKey,
@@ -32,7 +32,7 @@ import type { GatewayRequestContext } from "./types.js";
 
 export type SessionPatchArchivePreparation = {
   canonicalKey: string;
-  drain: SessionArchiveLifecycleDrain;
+  drain: SessionLifecycleDrain;
   entry?: SessionEntry;
 };
 

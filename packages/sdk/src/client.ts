@@ -1,5 +1,6 @@
 // OpenClaw SDK module implements client behavior.
 import { randomUUID } from "node:crypto";
+import type { SessionsPatchParams, SessionsPatchResult } from "@openclaw/gateway-protocol";
 import { asRecord } from "@openclaw/normalization-core/record-coerce";
 import { readNonEmptyStringPreservingWhitespace as readNonEmptyString } from "@openclaw/normalization-core/string-coerce";
 import { EventHub } from "./event-hub.js";
@@ -713,7 +714,7 @@ export class Session {
     });
   }
 
-  async patch(params: Record<string, unknown>): Promise<unknown> {
+  async patch(params: Omit<SessionsPatchParams, "key">): Promise<SessionsPatchResult> {
     return await this.client.request("sessions.patch", { ...params, key: this.key });
   }
 

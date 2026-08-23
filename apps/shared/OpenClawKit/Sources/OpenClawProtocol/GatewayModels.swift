@@ -6405,6 +6405,7 @@ public struct SessionCompanionExchange: Codable, Sendable {
 public struct SessionRow: Codable, Sendable {
     public let key: String
     public let sessionid: String?
+    public let lifecyclerevision: String?
     public let incognito: Bool?
     public let kind: AnyCodable
     public let label: String?
@@ -6476,6 +6477,7 @@ public struct SessionRow: Codable, Sendable {
     public init(
         key: String,
         sessionid: String? = nil,
+        lifecyclerevision: String? = nil,
         incognito: Bool? = nil,
         kind: AnyCodable,
         label: String? = nil,
@@ -6546,6 +6548,7 @@ public struct SessionRow: Codable, Sendable {
     {
         self.key = key
         self.sessionid = sessionid
+        self.lifecyclerevision = lifecyclerevision
         self.incognito = incognito
         self.kind = kind
         self.label = label
@@ -6618,6 +6621,7 @@ public struct SessionRow: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case key
         case sessionid = "sessionId"
+        case lifecyclerevision = "lifecycleRevision"
         case incognito
         case kind
         case label
@@ -9640,6 +9644,7 @@ public struct SessionsPatchParams: Codable, Sendable {
     public let agentid: String?
     public let expectedsessionid: String?
     public let expectedlifecyclerevision: String?
+    public let activerunpolicy: AnyCodable?
     public let label: AnyCodable?
     public let icon: AnyCodable?
     public let category: AnyCodable?
@@ -9677,6 +9682,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         agentid: String? = nil,
         expectedsessionid: String? = nil,
         expectedlifecyclerevision: String? = nil,
+        activerunpolicy: AnyCodable? = nil,
         label: AnyCodable? = nil,
         icon: AnyCodable? = nil,
         category: AnyCodable? = nil,
@@ -9713,6 +9719,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         self.agentid = agentid
         self.expectedsessionid = expectedsessionid
         self.expectedlifecyclerevision = expectedlifecyclerevision
+        self.activerunpolicy = activerunpolicy
         self.label = label
         self.icon = icon
         self.category = category
@@ -9751,6 +9758,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         case agentid = "agentId"
         case expectedsessionid = "expectedSessionId"
         case expectedlifecyclerevision = "expectedLifecycleRevision"
+        case activerunpolicy = "activeRunPolicy"
         case label
         case icon
         case category

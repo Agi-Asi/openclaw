@@ -538,6 +538,7 @@ export function buildGatewaySessionRow(params: {
 
   return {
     key,
+    lifecycleRevision: entry?.lifecycleRevision,
     visibility: entry ? (entry.visibility ?? "shared") : undefined,
     incognito: entry?.incognito,
     spawnedBy: subagentOwner || entry?.spawnedBy,

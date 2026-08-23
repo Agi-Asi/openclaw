@@ -154,6 +154,31 @@ const sessionSpawnContextSchema = z
       allow: stringListSchema,
       deny: stringListSchema,
     }),
+    initialSpawnEntry: z
+      .object({
+        completionOwnerSessionKey: ignoredOptionalStringSchema,
+        fastMode: z.union([z.boolean(), z.literal("auto")]).optional(),
+        inheritedToolAllow: stringListSchema.optional(),
+        inheritedToolDeny: stringListSchema.optional(),
+        inheritedToolPolicyVersion: z.literal(1).optional(),
+        model: ignoredOptionalStringSchema,
+        modelOverride: ignoredOptionalStringSchema,
+        modelOverrideFallbackOriginModel: ignoredOptionalStringSchema,
+        modelOverrideFallbackOriginProvider: ignoredOptionalStringSchema,
+        modelOverrideRouteResolution: z.literal("resolved").optional(),
+        modelOverrideSource: z.enum(["user", "auto"]).optional(),
+        modelProvider: ignoredOptionalStringSchema,
+        providerOverride: ignoredOptionalStringSchema,
+        subagentControlScope: z.enum(["children", "none"]).optional(),
+        subagentRole: z.enum(["orchestrator", "leaf"]).optional(),
+        swarmCollector: z.literal(true).optional(),
+        swarmGroupId: ignoredOptionalStringSchema,
+        swarmOutputSchema: z.record(z.string(), z.unknown()).optional(),
+        thinkingLevel: ignoredOptionalStringSchema,
+        spawnedWorkspaceDir: ignoredOptionalStringSchema,
+        spawnedCwd: ignoredOptionalStringSchema,
+      })
+      .optional(),
   })
   .transform(
     (context): AgentRuntimeSessionSpawnContext => ({
@@ -161,6 +186,7 @@ const sessionSpawnContextSchema = z
         ? { completionOwnerSessionKey: context.completionOwnerSessionKey }
         : {}),
       inheritedToolPolicy: context.inheritedToolPolicy,
+      ...(context.initialSpawnEntry ? { initialSpawnEntry: context.initialSpawnEntry } : {}),
     }),
   );
 const cronCreatorAuthorityGrantSchema = z

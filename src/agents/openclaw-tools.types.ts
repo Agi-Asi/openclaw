@@ -125,6 +125,10 @@ export type OpenClawToolsOptions = {
   requesterSenderId?: string | null;
   /** Ephemeral session UUID — regenerated on /new and /reset. */
   sessionId?: string;
+  /** Exact lifecycle revision prepared with sessionId for privileged spawn admission. */
+  sessionLifecycleRevision?: string;
+  /** Host-prepared direct-user fact; execution still validates the live parent and run. */
+  fullAccessDelegationAvailable?: boolean;
   /** Trusted runtime-only authorization for one bounded cross-conversation recall pass. */
   conversationRecall?: ConversationRecallContext;
   /** One-shot local CLI runs release plugin-owned resources after their result. */

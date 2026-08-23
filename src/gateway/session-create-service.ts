@@ -263,6 +263,29 @@ type TrustedInitialSessionEntry = {
   pluginExtensions?: SessionEntry["pluginExtensions"];
 };
 
+type TrustedSpawnSessionEntry = Pick<
+  SessionEntry,
+  | "completionOwnerSessionKey"
+  | "fastMode"
+  | "inheritedToolAllow"
+  | "inheritedToolDeny"
+  | "inheritedToolPolicyVersion"
+  | "model"
+  | "modelOverride"
+  | "modelOverrideFallbackOriginModel"
+  | "modelOverrideFallbackOriginProvider"
+  | "modelOverrideRouteResolution"
+  | "modelOverrideSource"
+  | "modelProvider"
+  | "providerOverride"
+  | "subagentControlScope"
+  | "subagentRole"
+  | "swarmCollector"
+  | "swarmGroupId"
+  | "swarmOutputSchema"
+  | "thinkingLevel"
+> & { spawnedWorkspaceDir?: string; spawnedCwd?: string };
+
 type GatewaySessionCommitResult =
   | {
       ok: true;
@@ -335,6 +358,8 @@ export async function createGatewaySession(params: {
   loadGatewayModelCatalog?: () => Promise<ModelCatalogEntry[]>;
   /** Trusted in-process initializer; never populated from public Gateway params. */
   initialEntry?: TrustedInitialSessionEntry;
+  /** Trusted native-spawn fields committed with the fresh child row. */
+  initialSpawnEntry?: TrustedSpawnSessionEntry;
   /** Public callers need admin before reconfiguring an adopted keyed session. */
   allowExistingModelSelection?: boolean;
   /** Admitted operator scopes; omitted only by trusted in-process callers. */
@@ -529,6 +554,21 @@ export async function createGatewaySession(params: {
     return {
       ok: false,
       error: errorShape(ErrorCodes.INVALID_REQUEST, "spawn tool policy requires spawnDepth"),
+    };
+  }
+  if (
+    params.initialSpawnEntry &&
+    (!params.spawnToolPolicy || params.spawnDepth === undefined || !parentSessionKey)
+  ) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.INVALID_REQUEST, "native spawn state requires spawn ownership"),
+    };
+  }
+  if (params.initialSpawnEntry?.spawnedCwd && params.spawnedCwd) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.INVALID_REQUEST, "native spawn cwd must have one owner"),
     };
   }
   let canonicalParentSessionKey: string | undefined;
@@ -760,7 +800,8 @@ export async function createGatewaySession(params: {
       parentSessionTarget &&
       (params.emitCommandHooks === true ||
         params.fork === true ||
-        params.authorizedPluginId !== undefined)
+        params.authorizedPluginId !== undefined ||
+        params.spawnToolPolicy !== undefined)
     ) {
       const currentParent = loadGatewaySessionEntryReadOnly(
         canonicalParentSessionKey,
@@ -769,13 +810,23 @@ export async function createGatewaySession(params: {
       const currentParentEntry = currentParent.entry;
       if (
         !currentParentEntry?.sessionId ||
-        currentParentEntry.sessionId !== parentSessionEntry?.sessionId
+        currentParentEntry.sessionId !== parentSessionEntry?.sessionId ||
+        currentParentEntry.lifecycleRevision !== parentSessionEntry?.lifecycleRevision
       ) {
         return {
           ok: false,
           error: errorShape(
             ErrorCodes.INVALID_REQUEST,
             `Parent session ${parentSessionKey} changed before ${params.fork === true ? "fork" : "/new"}; retry.`,
+          ),
+        };
+      }
+      if (params.permissionMode === "full" && currentParentEntry.permissionMode !== "full") {
+        return {
+          ok: false,
+          error: errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            "full-access parent session authority changed before child creation",
           ),
         };
       }
@@ -1139,6 +1190,9 @@ export async function createGatewaySession(params: {
           // and plugin sessions) persists as a depth-0 root. Reused entries keep
           // their stored depth.
           ...(existingEntry === undefined ? { spawnDepth: params.spawnDepth ?? 0 } : {}),
+          ...(existingEntry === undefined && params.spawnToolPolicy
+            ? { lifecycleRevision: randomUUID() }
+            : {}),
           ...(existingEntry === undefined && spawnToolPolicy
             ? {
                 spawnedBy: spawnToolPolicy.parentSessionKey,
@@ -1153,6 +1207,9 @@ export async function createGatewaySession(params: {
                   ? { inheritedToolDeny: spawnToolPolicy.deny }
                   : {}),
               }
+            : {}),
+          ...(existingEntry === undefined && params.initialSpawnEntry
+            ? params.initialSpawnEntry
             : {}),
           ...(existingEntry === undefined && incognito ? { incognito: true as const } : {}),
         };
@@ -1325,7 +1382,8 @@ export async function createGatewaySession(params: {
     parentSessionTarget &&
     (params.emitCommandHooks === true ||
       params.fork === true ||
-      params.authorizedPluginId !== undefined)
+      params.authorizedPluginId !== undefined ||
+      params.spawnToolPolicy !== undefined)
   ) {
     lifecycleTargets.push({
       scope: parentSessionTarget.storePath,

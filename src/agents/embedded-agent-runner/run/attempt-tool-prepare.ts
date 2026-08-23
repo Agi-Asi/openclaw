@@ -260,6 +260,7 @@ export function prepareEmbeddedAttemptToolBase(params: {
           },
           sandbox: params.sandbox,
           sessionPermissionPolicy: params.sessionPermissionPolicy,
+          sessionLifecycleRevision: attempt.sessionLifecycleRevision,
           messageProvider: resolveAttemptToolPolicyMessageProvider(attempt),
           agentAccountId: attempt.agentAccountId,
           messageTo: attempt.messageTo,

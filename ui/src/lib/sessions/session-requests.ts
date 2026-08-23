@@ -142,12 +142,18 @@ export function requestSessionPatch(
   client: SessionRequestClient,
   key: string,
   patch: SessionPatch,
-  options: { agentId?: string | null; expectedSessionId?: string | null } = {},
+  options: {
+    agentId?: string | null;
+    expectedSessionId?: string | null;
+    expectedLifecycleRevision?: string | null;
+  } = {},
 ): Promise<SessionsPatchResult> {
   const expectedSessionId = options.expectedSessionId?.trim();
+  const expectedLifecycleRevision = options.expectedLifecycleRevision?.trim();
   const params = {
     ...buildSessionRequestParams(key, options.agentId),
     ...(expectedSessionId ? { expectedSessionId } : {}),
+    ...(expectedLifecycleRevision ? { expectedLifecycleRevision } : {}),
     ...patch,
   };
   return patch.archived === true

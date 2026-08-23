@@ -841,6 +841,62 @@ test("createGatewaySession forwards its commit guard into main-session reset", a
   }
 });
 
+test("createGatewaySession commits native spawn state and full mode under the parent guard", async () => {
+  const { storePath } = await createSessionStoreDir();
+  const { createGatewaySession } = await import("./session-create-service.js");
+  const parentSessionKey = "agent:main:main";
+  await writeSessionStore({
+    entries: {
+      [parentSessionKey]: sessionStoreEntry("full-parent", {
+        lifecycleRevision: "full-parent-revision",
+        permissionMode: "full",
+      }),
+    },
+  });
+  const commitGuard = vi.fn();
+
+  const created = await createGatewaySession({
+    cfg: getRuntimeConfig(),
+    key: "agent:main:subagent:full-child",
+    agentId: "main",
+    parentSessionKey,
+    spawnDepth: 1,
+    permissionMode: "full",
+    spawnToolPolicy: { version: 1, allow: ["read"], deny: ["exec"] },
+    initialSpawnEntry: {
+      completionOwnerSessionKey: parentSessionKey,
+      subagentRole: "leaf",
+      subagentControlScope: "none",
+    },
+    commandSource: "test",
+    commitGuard,
+  });
+
+  expect(created).toMatchObject({
+    ok: true,
+    entry: {
+      permissionMode: "full",
+      parentSessionKey,
+      parentSessionId: "full-parent",
+      lifecycleRevision: expect.any(String),
+      spawnedBy: parentSessionKey,
+      completionOwnerSessionKey: parentSessionKey,
+      subagentRole: "leaf",
+      subagentControlScope: "none",
+      inheritedToolAllow: ["read"],
+      inheritedToolDeny: ["exec"],
+    },
+  });
+  expect(commitGuard).toHaveBeenCalled();
+  expect(
+    loadSessionEntry({
+      agentId: "main",
+      sessionKey: "agent:main:subagent:full-child",
+      storePath,
+    }),
+  ).toMatchObject({ permissionMode: "full", parentSessionId: "full-parent" });
+});
+
 test("chat.send fences dashboard title persistence from concurrent session deletion", async () => {
   const { storePath } = await createSessionStoreDir();
   const { ws } = await openClient();

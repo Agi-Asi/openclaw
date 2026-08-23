@@ -153,6 +153,9 @@ export async function callInProcessGatewayToolWithCreation<T = Record<string, un
   }
   // The fallback is a real local Gateway request. Carry spawn policy only in
   // the signed agent-runtime identity token, never in model-authored params.
+  if (creation.fullAccessAdmission) {
+    throw new Error("native privileged session creation requires in-process Gateway dispatch");
+  }
   if (creation.via !== "spawn" || !creation.inheritedToolPolicy) {
     return await callGatewayTool<T>(method, {}, params, {
       scopes,
@@ -166,6 +169,7 @@ export async function callInProcessGatewayToolWithCreation<T = Record<string, un
         ? { completionOwnerSessionKey: creation.completionOwnerSessionKey }
         : {}),
       inheritedToolPolicy: creation.inheritedToolPolicy,
+      ...(creation.initialSpawnEntry ? { initialSpawnEntry: creation.initialSpawnEntry } : {}),
     },
     () =>
       callGatewayTool<T>(method, {}, params, {

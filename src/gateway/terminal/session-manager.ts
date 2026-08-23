@@ -461,12 +461,12 @@ export class TerminalSessionManager {
     return owned.length;
   }
 
-  /** Fences and closes one durable agent-session incarnation through archive commit. */
+  /** Fences and closes one durable agent-session incarnation through lifecycle commit. */
   beginAgentSessionDrain(owner: AgentTerminalOwner): AgentTerminalSessionDrain {
     const drain = this.agentSessionDrain.begin(owner, () => this.hasAgentSessionWork(owner));
     for (const [pending, pendingOwner] of this.pendingOpens) {
       if (agentTerminalOwnerMatches(pendingOwner, owner)) {
-        pending.abort("terminal closed because its session was archived");
+        pending.abort("terminal closed because its session lifecycle changed");
       }
     }
     for (const session of Array.from(this.sessions.values())) {
@@ -476,6 +476,18 @@ export class TerminalSessionManager {
     }
     this.resolveAgentSessionDrainIfIdle(owner);
     return drain;
+  }
+
+  hasAgentSessionWork(owner: AgentTerminalOwner): boolean {
+    return (
+      [...this.pendingOpens.values()].some((pendingOwner) =>
+        agentTerminalOwnerMatches(pendingOwner, owner),
+      ) ||
+      [...this.sessions.values()].some(
+        (session) => !session.closed && agentTerminalOwnerMatches(session.owner, owner),
+      ) ||
+      this.agentSessionDrain.hasExiting(owner)
+    );
   }
 
   /**
@@ -561,18 +573,6 @@ export class TerminalSessionManager {
       return;
     }
     this.connections.addPendingOpen(connId, pending);
-  }
-
-  private hasAgentSessionWork(owner: AgentTerminalOwner): boolean {
-    return (
-      [...this.pendingOpens.values()].some((pendingOwner) =>
-        agentTerminalOwnerMatches(pendingOwner, owner),
-      ) ||
-      [...this.sessions.values()].some(
-        (session) => !session.closed && agentTerminalOwnerMatches(session.owner, owner),
-      ) ||
-      this.agentSessionDrain.hasExiting(owner)
-    );
   }
 
   private resolveAgentSessionDrainIfIdle(owner: AgentTerminalOwner): void {

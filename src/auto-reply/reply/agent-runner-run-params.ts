@@ -95,6 +95,7 @@ export function buildEmbeddedRunBaseParams(params: {
     cwd: params.run.cwd,
     permissionMode: params.run.permissionMode,
     sessionRoot: params.run.sessionRoot,
+    sessionLifecycleRevision: params.run.sessionLifecycleRevision,
     agentDir: params.run.agentDir,
     config,
     toolOverrides: params.run.toolOverrides,

@@ -1,8 +1,13 @@
+import type { SessionEntry } from "../../config/sessions.js";
 import type {
   SessionCreatedActor,
   SessionCreatedVia,
 } from "../../config/sessions/session-entry-provenance.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import type { AgentRuntimeIdentity } from "../agent-runtime-identity-token.js";
+import { appendSessionAudit } from "./session-audit.js";
+import { sessionLog } from "./sessions-shared.js";
 
 export type TrustedSessionCreation = {
   via: SessionCreatedVia;
@@ -17,6 +22,35 @@ export type TrustedSessionCreation = {
     allow: string[];
     deny: string[];
   };
+  /** Closure-bound native-spawn grant; never serialized or model-authored. */
+  fullAccessAdmission?: Readonly<{
+    parentSessionId: string;
+    parentLifecycleRevision?: string;
+    assertActive: () => void;
+  }>;
+  /** Native child state committed by createGatewaySession, not public RPC input. */
+  initialSpawnEntry?: Pick<
+    SessionEntry,
+    | "completionOwnerSessionKey"
+    | "fastMode"
+    | "inheritedToolAllow"
+    | "inheritedToolDeny"
+    | "inheritedToolPolicyVersion"
+    | "model"
+    | "modelOverride"
+    | "modelOverrideFallbackOriginModel"
+    | "modelOverrideFallbackOriginProvider"
+    | "modelOverrideRouteResolution"
+    | "modelOverrideSource"
+    | "modelProvider"
+    | "providerOverride"
+    | "subagentControlScope"
+    | "subagentRole"
+    | "swarmCollector"
+    | "swarmGroupId"
+    | "swarmOutputSchema"
+    | "thinkingLevel"
+  > & { spawnedWorkspaceDir?: string; spawnedCwd?: string };
 };
 
 /**
@@ -52,6 +86,9 @@ export function resolveOperatorSessionCreation(
           }
         : {}),
       inheritedToolPolicy: agentRuntimeIdentity.sessionSpawnContext.inheritedToolPolicy,
+      ...(agentRuntimeIdentity.sessionSpawnContext.initialSpawnEntry
+        ? { initialSpawnEntry: agentRuntimeIdentity.sessionSpawnContext.initialSpawnEntry }
+        : {}),
     };
   }
   const profileId = client?.authenticatedUserProfile?.profileId;
@@ -68,4 +105,27 @@ export function resolveAgentRunSessionCreation(
 ): TrustedSessionCreation {
   const actor = resolveOperatorSessionCreation(client).actor;
   return { via: "run", ...(actor ? { actor } : {}) };
+}
+
+export async function appendFullAccessDelegationAudit(params: {
+  cfg: OpenClawConfig;
+  creation: TrustedSessionCreation;
+  target: { agentId: string; entry: SessionEntry; sessionKey: string; storePath: string };
+}): Promise<void> {
+  const admission = params.creation.fullAccessAdmission;
+  if (!admission) {
+    return;
+  }
+  admission.assertActive();
+  try {
+    await appendSessionAudit({
+      cfg: params.cfg,
+      target: params.target,
+      text: "Created with explicitly delegated full access from its parent session.",
+      now: Date.now(),
+    });
+  } catch (error) {
+    sessionLog.warn(`failed to append full-access delegation note: ${formatErrorMessage(error)}`);
+  }
+  admission.assertActive();
 }

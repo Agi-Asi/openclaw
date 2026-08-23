@@ -540,6 +540,9 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
             workspaceDir: spawnWorkspaceDir,
             inheritedToolAllowlist: options?.inheritedToolAllowlist,
             inheritedToolDenylist: options?.inheritedToolDenylist,
+            expectedParentSessionId: options?.sessionId,
+            expectedParentLifecycleRevision: options?.sessionLifecycleRevision,
+            fullAccessDelegationAvailable: options?.fullAccessDelegationAvailable,
           }),
         ]
       : []),

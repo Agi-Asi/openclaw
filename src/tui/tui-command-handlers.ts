@@ -258,9 +258,26 @@ export function createCommandHandlers(context: CommandHandlerContext) {
   ): Promise<SessionsPatchResult | null> => {
     const selection = captureSessionSelection();
     try {
+      const executionAuthorityPatch =
+        patch.elevatedLevel !== undefined ||
+        patch.execHost !== undefined ||
+        patch.execSecurity !== undefined ||
+        patch.execAsk !== undefined ||
+        patch.execNode !== undefined ||
+        patch.permissionMode !== undefined ||
+        patch.toolOverrides !== undefined ||
+        patch.inheritedToolPolicyVersion !== undefined ||
+        patch.inheritedToolAllow !== undefined ||
+        patch.inheritedToolDeny !== undefined;
       const result = await client.patchSession({
         key: selection.sessionKey,
         ...(!parseAgentSessionKey(selection.sessionKey) ? { agentId: selection.agentId } : {}),
+        ...(executionAuthorityPatch && state.currentSessionId && state.sessionInfo.lifecycleRevision
+          ? {
+              expectedSessionId: state.currentSessionId,
+              expectedLifecycleRevision: state.sessionInfo.lifecycleRevision,
+            }
+          : {}),
         ...patch,
       });
       return isCurrentSessionSelection(selection) ? result : null;

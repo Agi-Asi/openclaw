@@ -1168,6 +1168,7 @@ export function runAgentAttempt(params: {
     cwd: params.cwd,
     permissionMode: params.sessionEntry?.permissionMode,
     sessionRoot: params.sessionEntry?.sessionRoot,
+    sessionLifecycleRevision: params.sessionEntry?.lifecycleRevision,
     config: params.cfg,
     ...(params.pluginGeneration ? { pluginGeneration: params.pluginGeneration } : {}),
     agentHarnessId: embeddedAgentHarnessOverride,

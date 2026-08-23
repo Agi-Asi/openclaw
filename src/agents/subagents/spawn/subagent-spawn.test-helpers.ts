@@ -3,8 +3,10 @@
 import os from "node:os";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { expect, vi } from "vitest";
+import { buildSessionCreationStamp } from "../../../config/sessions/session-entry-provenance.js";
 import { resolveLeastPrivilegeOperatorScopesForMethod } from "../../../gateway/method-scopes.js";
 import type { SubagentLifecycleHookRunner } from "../../../plugins/hooks.js";
+import { resolveIncognitoOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.js";
 
 type MockFn = (...args: unknown[]) => unknown;
 type MockImplementationTarget = {
@@ -202,6 +204,7 @@ export async function loadSubagentSpawnModuleForTest(params: {
   }) => { to?: string; threadId?: string };
   workspaceDir?: string;
   sessionStorePath?: string;
+  createGatewaySessionMock?: MockFn;
   resetModules?: boolean;
 }): Promise<SubagentSpawnModuleForTest> {
   if (params.resetModules ?? true) {
@@ -214,6 +217,41 @@ export async function loadSubagentSpawnModuleForTest(params: {
 
   vi.doMock("../../provider-model-normalization.runtime.js", () => ({
     normalizeProviderModelIdWithRuntime: () => undefined,
+  }));
+
+  vi.doMock("../../tools/in-process-gateway.js", () => ({
+    callInProcessGatewayToolWithCreation:
+      params.createGatewaySessionMock ??
+      (async (
+        _method: string,
+        request: Record<string, unknown>,
+        creation: { initialSpawnEntry?: Record<string, unknown> },
+      ) => {
+        const key = String(request.key);
+        const entry = {
+          ...creation.initialSpawnEntry,
+          sessionId: `session-${key}`,
+          lifecycleRevision: `revision-${key}`,
+          updatedAt: Date.now(),
+          parentSessionKey: request.parentSessionKey,
+          permissionMode: request.permissionMode,
+          ...buildSessionCreationStamp({ via: "spawn", actor: { type: "agent", id: "main" } }),
+        };
+        const storePath = request.incognito
+          ? resolveIncognitoOpenClawAgentSqlitePath({ agentId: String(request.agentId) })
+          : (params.sessionStorePath ?? "/tmp/subagent-spawn-model-session.json");
+        await (
+          params.updateSessionStoreMock ??
+          (async (_path: string, mutator: SessionStoreMutator) => {
+            const store: SessionStore = {};
+            await mutator(store);
+            return store;
+          })
+        )(storePath, (store: SessionStore) => {
+          store[key] = entry;
+        });
+        return { ok: true, key, entry };
+      }),
   }));
 
   vi.doMock("./subagent-spawn.runtime.js", () => ({
@@ -321,9 +359,9 @@ export async function loadSubagentSpawnModuleForTest(params: {
     // Real scope resolver: spawn's admin-tier pinning depends on params-aware
     // sessions.patch policy, so a stub here would hide policy regressions.
     resolveLeastPrivilegeOperatorScopesForMethod,
-    upsertSessionEntryCore: async (
+    patchSessionEntryCore: async (
       scope: { storePath?: string; sessionKey: string },
-      patch: Record<string, unknown>,
+      update: (entry: Record<string, unknown>) => Record<string, unknown> | null,
     ) => {
       const updateSessionStore =
         params.updateSessionStoreMock ??
@@ -336,7 +374,15 @@ export async function loadSubagentSpawnModuleForTest(params: {
       const storePath =
         scope.storePath ?? params.sessionStorePath ?? "/tmp/subagent-spawn-model-session.json";
       await updateSessionStore(storePath, (store: SessionStore) => {
-        updated = Object.assign({}, store[scope.sessionKey], patch);
+        const current = store[scope.sessionKey];
+        if (!current) {
+          return;
+        }
+        const patch = update(current);
+        if (!patch) {
+          return;
+        }
+        updated = Object.assign({}, current, patch);
         store[scope.sessionKey] = updated;
       });
       return updated ?? null;

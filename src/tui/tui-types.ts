@@ -98,6 +98,7 @@ export type AgentEvent = {
 export type ResponseUsageMode = "on" | "off" | "tokens" | "full";
 
 export type SessionInfo = {
+  lifecycleRevision?: string;
   thinkingLevel?: string;
   thinkingLevels?: Array<{ id: string; label: string }>;
   fastMode?: FastMode;

@@ -88,6 +88,7 @@ type RunWorkerEmbeddedTurnParams = {
   transcript: WorkerEmbeddedTranscriptClient;
   live: WorkerEmbeddedLiveClient;
   sessions?: Parameters<typeof createWorkerSessionTools>[0];
+  allowFullAccessDelegation?: boolean;
   initialMessages?: WorkerTranscriptMessage[];
   suppressPromptTranscript?: boolean;
   systemPrompt?: string;
@@ -257,9 +258,9 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
         throw new Error("Worker session tool client unavailable");
       }
       const sessionTools = params.sessions
-        ? createWorkerSessionTools(params.sessions).filter((tool) =>
-            allowedToolNameSet.has(tool.name),
-          )
+        ? createWorkerSessionTools(params.sessions, {
+            fullAccessDelegation: params.allowFullAccessDelegation === true,
+          }).filter((tool) => allowedToolNameSet.has(tool.name))
         : [];
 
       return await createAgentSession({

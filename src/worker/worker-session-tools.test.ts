@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from "vitest";
 import { createWorkerSessionTools } from "./worker-session-tools.js";
 
 describe("worker Gateway tools", () => {
+  it("exposes full delegation only on a full worker turn", () => {
+    const client = {
+      requestGitHubPublish: vi.fn(),
+      requestSessionsSend: vi.fn(),
+      requestSessionsSpawn: vi.fn(),
+    };
+    const ordinary = createWorkerSessionTools(client).find(
+      (candidate) => candidate.name === "sessions_spawn",
+    );
+    const full = createWorkerSessionTools(client, { fullAccessDelegation: true }).find(
+      (candidate) => candidate.name === "sessions_spawn",
+    );
+
+    expect(JSON.stringify(ordinary?.parameters)).not.toContain("permissionMode");
+    expect(JSON.stringify(full?.parameters)).toContain("permissionMode");
+  });
+
   it("requests publication without accepting repository or credential authority", async () => {
     const requestGitHubPublish = vi.fn(async () => ({
       type: "res" as const,

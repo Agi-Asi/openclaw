@@ -245,6 +245,9 @@ In `prefer` mode, hidden sub-agents are for internal legwork that the user does 
 <ParamField path="sandbox" type='"inherit" | "require"' default="inherit">
   `require` rejects the spawn unless the target child runtime is sandboxed.
 </ParamField>
+<ParamField path="permissionMode" type='"full"'>
+  Explicitly delegates full access to a native child. This field appears only during a direct user turn in an exact parent session that is already `full`; `runtime: "acp"` does not support it. Omission never inherits full access. Parent reset, downgrade, archive, run termination, worker-claim loss, or Gateway restart before child commit or launch rejects the delegation.
+</ParamField>
 <ParamField path="context" type='"isolated" | "fork"' default="isolated">
   `fork` branches the requester's current transcript into the child session. Native sub-agents only. Thread-bound spawns default to `fork`; non-thread spawns default to `isolated`. A visible fork must target the same agent as the requester.
 </ParamField>

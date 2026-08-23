@@ -185,6 +185,32 @@ describe("createOpenClawCodingTools", () => {
     expect(latestCreateOpenClawToolsOptions().webSearchEnabled).toBe(false);
   });
 
+  it("prepares full delegation only for a direct user turn on a full parent", () => {
+    vi.mocked(createOpenClawTools).mockClear();
+    createOpenClawCodingTools({
+      trigger: "user",
+      sessionId: "parent-session",
+      sessionLifecycleRevision: "parent-revision",
+      sessionPermissionPolicy: { mode: "full", root: "/workspace" },
+    });
+
+    expect(latestCreateOpenClawToolsOptions()).toMatchObject({
+      sessionId: "parent-session",
+      sessionLifecycleRevision: "parent-revision",
+      fullAccessDelegationAvailable: true,
+    });
+
+    vi.mocked(createOpenClawTools).mockClear();
+    createOpenClawCodingTools({
+      trigger: "user",
+      sessionId: "parent-session",
+      sessionLifecycleRevision: "parent-revision",
+      sessionPermissionPolicy: { mode: "full", root: "/workspace" },
+      inputProvenance: { kind: "inter_session" },
+    });
+    expect(latestCreateOpenClawToolsOptions().fullAccessDelegationAvailable).toBe(false);
+  });
+
   it.each([
     {
       name: "fitting node",

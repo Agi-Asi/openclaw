@@ -6,6 +6,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExecutionIdentityAdmissionToken } from "../../audit/execution-identity-admission.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { GatewayClientRequestError } from "../../gateway/client.js";
+import {
+  claimAgentRunDelegatedAuthority,
+  releaseAgentRunDelegatedAuthority,
+} from "../../infra/agent-run-registry.js";
 import { withTestDir } from "../../test-helpers/temp-dir.js";
 import { createOperationalRunInstanceRef } from "../admitted-run-context.js";
 import { readParentExecutionIdentity } from "../subagents/spawn/execution-identity-spawn-context.js";
@@ -346,6 +350,91 @@ describe("sessions_spawn tool", () => {
     expect(schema.properties?.runTimeoutSeconds).toMatchObject({ type: "integer", minimum: 0 });
     expect(schema.properties?.runTimeoutSeconds?.description).toContain("configured subagent");
     expect(schema.properties?.timeoutSeconds).toBeUndefined();
+  });
+
+  it("exposes full delegation only for a prepared eligible turn", () => {
+    const ordinary = createSessionsSpawnTool();
+    const eligible = createSessionsSpawnTool({ fullAccessDelegationAvailable: true });
+    const ordinaryProperties = (ordinary.parameters as { properties?: Record<string, unknown> })
+      .properties;
+    const eligibleProperties = (eligible.parameters as { properties?: Record<string, unknown> })
+      .properties;
+
+    expect(ordinaryProperties?.permissionMode).toBeUndefined();
+    expect(eligibleProperties?.permissionMode).toMatchObject({ enum: ["full"] });
+  });
+
+  it("delegates full only from the exact live full-access parent run", async () => {
+    await withTestDir({ prefix: "openclaw-full-spawn-" }, async (dir) => {
+      const storePath = path.join(dir, "sessions.json");
+      const parentSessionKey = "agent:main:main";
+      const parentSessionId = "full-parent";
+      const lifecycleRevision = "full-parent-revision";
+      await upsertSessionEntryCore(
+        { agentId: "main", sessionKey: parentSessionKey, storePath },
+        {
+          sessionId: parentSessionId,
+          lifecycleRevision,
+          permissionMode: "full",
+          updatedAt: 1,
+        },
+      );
+      const operationalRunInstance = createOperationalRunInstanceRef("full-parent-run");
+      const authority = claimAgentRunDelegatedAuthority(operationalRunInstance);
+      const tool = createSessionsSpawnTool({
+        agentSessionKey: parentSessionKey,
+        expectedParentSessionId: parentSessionId,
+        expectedParentLifecycleRevision: lifecycleRevision,
+        fullAccessDelegationAvailable: true,
+        config: { session: { store: storePath }, agents: { list: [{ id: "main" }] } },
+      });
+
+      try {
+        await withGatewayToolCallerIdentity(
+          {
+            agentId: "main",
+            sessionKey: parentSessionKey,
+            operationalRunInstance,
+          },
+          () => tool.execute("full-child", { task: "work", permissionMode: "full" }),
+        );
+        expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            permissionMode: "full",
+            fullAccessAdmission: expect.objectContaining({
+              parentSessionId,
+              parentLifecycleRevision: lifecycleRevision,
+              assertActive: expect.any(Function),
+            }),
+          }),
+          expect.any(Object),
+        );
+
+        releaseAgentRunDelegatedAuthority(authority);
+        const admission = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]
+          ?.fullAccessAdmission as { assertActive: () => void };
+        expect(() => admission.assertActive()).toThrow("no longer active");
+      } finally {
+        releaseAgentRunDelegatedAuthority(authority);
+      }
+    });
+  });
+
+  it("never accepts full delegation for ACP", async () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({ fullAccessDelegationAvailable: true });
+    await expect(
+      tool.execute("full-acp", { task: "work", runtime: "acp", permissionMode: "full" }),
+    ).rejects.toThrow('supports runtime="subagent" only');
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("does not pass a permission mode when the field is omitted", async () => {
+    const tool = createSessionsSpawnTool({ fullAccessDelegationAvailable: true });
+    await tool.execute("ordinary-child", { task: "work" });
+    const spawn = mockCallArg(hoisted.spawnSubagentDirectMock, 0, 0, "spawnSubagentDirect");
+    expect(spawn.permissionMode).toBeUndefined();
+    expect(spawn.fullAccessAdmission).toBeUndefined();
   });
 
   it("hides and rejects swarm parameters while tools.swarm is disabled", async () => {

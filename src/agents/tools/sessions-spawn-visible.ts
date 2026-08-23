@@ -36,6 +36,7 @@ import {
   callInProcessGatewayToolWithCreation,
   type InProcessGatewayCaller,
 } from "./in-process-gateway.js";
+import type { FullAccessDelegationAdmission } from "./sessions-spawn-full-access.js";
 
 export const VISIBLE_SESSIONS_SPAWN_SCHEMA = {
   visible: Type.Optional(
@@ -107,6 +108,8 @@ export async function maybeSpawnVisibleSession(params: {
   requestedAgentId?: string;
   runTimeoutSeconds?: number;
   sandbox: "inherit" | "require";
+  permissionMode?: "full";
+  fullAccessAdmission?: FullAccessDelegationAdmission;
   options?: VisibleSessionsSpawnOptions;
 }): Promise<Record<string, unknown> | undefined> {
   const worktree = params.raw.worktree === true;
@@ -311,6 +314,9 @@ export async function maybeSpawnVisibleSession(params: {
             allow: [...(params.options?.inheritedToolAllowlist ?? [])],
             deny: [...(params.options?.inheritedToolDenylist ?? [])],
           },
+          ...(params.fullAccessAdmission
+            ? { fullAccessAdmission: params.fullAccessAdmission }
+            : {}),
         }));
     let response: {
       key?: string;
@@ -319,6 +325,7 @@ export async function maybeSpawnVisibleSession(params: {
       runError?: unknown;
     };
     try {
+      params.fullAccessAdmission?.assertActive();
       response = await createGatewayCall("sessions.create", {
         agentId: targetAgentId,
         ...(params.label ? { label: params.label } : {}),
@@ -329,6 +336,7 @@ export async function maybeSpawnVisibleSession(params: {
         // Declared spawn lineage: without it the child persists as a depth-0 root
         // and could spawn past maxSpawnDepth.
         spawnDepth: callerDepth + 1,
+        ...(params.permissionMode ? { permissionMode: params.permissionMode } : {}),
         ...(params.raw.context === "fork" ? { fork: true } : {}),
         ...(spawnedCwd ? { cwd: spawnedCwd } : {}),
         ...(worktree ? { worktree: true } : {}),

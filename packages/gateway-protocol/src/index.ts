@@ -49,4 +49,8 @@ export {
   PROTOCOL_VERSION,
 } from "./version.js";
 export type * from "./schema-types.js";
-export type { SessionsPatchResult } from "./sessions-patch-result.js";
+export type {
+  SessionsPatchActiveRunOutcome,
+  SessionsPatchContinuationOutcome,
+  SessionsPatchResult,
+} from "./sessions-patch-result.js";
