@@ -136,7 +136,30 @@ type SubagentLaunchIdentity = {
 
 export type SubagentLaunchState =
   | (SubagentLaunchIdentity & { phase: "reserved" })
-  | (SubagentLaunchIdentity & { phase: "prepared"; preparedAt: number });
+  | (SubagentLaunchIdentity & { phase: "prepared"; preparedAt: number })
+  | (SubagentLaunchIdentity & {
+      phase: "dispatching";
+      preparedAt: number;
+      executionAttemptId: string;
+      dispatchingAt: number;
+    })
+  | (SubagentLaunchIdentity & {
+      phase: "running";
+      preparedAt: number;
+      executionAttemptId: string;
+      dispatchingAt: number;
+      runningAt: number;
+    })
+  | (SubagentLaunchIdentity & {
+      phase: "terminal";
+      preparedAt?: number;
+      executionAttemptId?: string;
+      dispatchingAt?: number;
+      runningAt?: number;
+      terminalAt: number;
+      terminalReason: "completed" | "failed" | "interrupted" | "lost";
+      error?: string;
+    });
 
 export type SubagentCompletionDeliveryState = {
   status:
@@ -303,15 +326,7 @@ export type SubagentRunRecord = {
   swarmRunId?: string;
   /** Stable scheduler slot identity across gateway-assigned run id replacements. */
   schedulerSlotId?: string;
-  /** Canonical Code Mode launch admission, cleared only after Gateway acceptance. */
   launch?: SubagentLaunchState;
-  /** Gateway execution identity; the canonical runId never changes. */
-  gatewayRunId?: string;
-  /** Legacy non-Code-Mode collector launch fields. */
-  swarmLaunchIdempotencyKey?: string;
-  swarmLaunchReplayKey?: string;
-  swarmLaunchRequestFingerprint?: string;
-  swarmLaunchPending?: boolean;
   groupId?: string;
   outputSchema?: Record<string, unknown>;
   structuredOutput?: SwarmStructuredOutputState;

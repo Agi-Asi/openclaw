@@ -15,7 +15,6 @@ import {
 } from "../../subagent-requester-owner.js";
 import { applySubagentLaunchAuthorization } from "../spawn/subagent-launch-authorization.js";
 import { retrySubagentCleanup } from "../spawn/subagent-spawn-cleanup.js";
-import { readGatewayRunId } from "../spawn/subagent-spawn-gateway.js";
 import { resolveSwarmConfig } from "../swarm/swarm-config.js";
 import { enqueueSwarmRun } from "../swarm/swarm-scheduler.js";
 import type { SubagentRegistryDeps } from "./subagent-registry-deps.js";
@@ -24,6 +23,7 @@ import {
   updateSubagentArchiveAtMs,
 } from "./subagent-registry-helpers.js";
 import type { SubagentLifecycleController } from "./subagent-registry-lifecycle.js";
+import { transitionSubagentLaunchToTerminal } from "./subagent-registry.store.sqlite.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { deleteSubagentSessionForCleanup } from "./subagent-session-cleanup.js";
 import {
@@ -68,18 +68,6 @@ export function createSubagentRegistryRestorer(config: {
     requesterSessionKey?: string,
     requesterAgentId?: string,
   ) => SubagentRunRecord[];
-  startQueuedSubagentRun: (
-    runId: string,
-    gatewayRunId?: string,
-    lifecycleGeneration?: string,
-  ) => boolean;
-  terminateAcceptedRestoredCollectorRun: (params: {
-    entry: SubagentRunRecord;
-    gatewayRunId: string;
-    timeoutMs: number;
-    expectedSessionId?: string;
-    expectedLifecycleRevision?: string;
-  }) => Promise<void>;
   cleanupCollectorLaunchResources: (
     entry: SubagentRunRecord,
     options?: { isCurrent?: () => boolean },
@@ -100,8 +88,6 @@ export function createSubagentRegistryRestorer(config: {
     startSweeper,
     resumeRun,
     listSwarmRunsForGroup,
-    startQueuedSubagentRun,
-    terminateAcceptedRestoredCollectorRun,
     cleanupCollectorLaunchResources,
     settleFailedQueuedSubagentLaunch,
     completeCollectorLaunchCleanup,
@@ -203,8 +189,23 @@ export function createSubagentRegistryRestorer(config: {
       if (entry.execution.restartRecovery || entry.killIntent || entry.killReconciliation) {
         continue;
       }
+      if (entry.launch?.phase === "dispatching" || entry.launch?.phase === "running") {
+        const dispatching = entry.launch.phase === "dispatching";
+        const error = dispatching
+          ? "Gateway restarted after provider dispatch; execution may have reached the provider and will not be retried"
+          : "Gateway restarted while the provider execution was running";
+        const terminal = transitionSubagentLaunchToTerminal({
+          runId,
+          terminalAt: Date.now(),
+          terminalReason: dispatching ? "lost" : "interrupted",
+          error,
+        });
+        if (terminal) {
+          runs.set(runId, terminal);
+        }
+        continue;
+      }
       if (entry.collect && entry.execution.status === "queued") {
-        const codeModePreparedLaunch = entry.launch?.phase === "prepared";
         const cleanupSessionEntry = loadSubagentSessionEntry({
           childSessionKey: entry.childSessionKey,
           storeCache: restoredSessionCache,
@@ -229,7 +230,6 @@ export function createSubagentRegistryRestorer(config: {
           entry.requesterAgentId,
         );
         const currentSwarmConfig = resolveSwarmConfig(cfg, entry.requesterAgentId);
-        let launchTerminationConfirmed = false;
         let launchLifecycleGeneration: string | undefined;
         enqueueSwarmRun({
           groupId: launch.schedulerGroupKey,
@@ -249,35 +249,13 @@ export function createSubagentRegistryRestorer(config: {
               if (!gatewayRuntime) {
                 throw new GatewayDrainingError();
               }
-              const response = await gatewayRuntime.dispatchAgent(
+              await gatewayRuntime.dispatchAgent(
                 request.params as Parameters<typeof gatewayRuntime.dispatchAgent>[0],
                 request.timeoutMs,
                 launch.authorization
                   ? { allowModelOverride: true, scopes: [ADMIN_SCOPE] }
                   : undefined,
               );
-              const gatewayRunId = readGatewayRunId(response) ?? runId;
-              try {
-                const acceptedPrepared = codeModePreparedLaunch
-                  ? runs.get(runId)?.execution.status === "running" &&
-                    runs.get(runId)?.gatewayRunId === gatewayRunId
-                  : startQueuedSubagentRun(runId, gatewayRunId, launchLifecycleGeneration);
-                if (!acceptedPrepared) {
-                  throw new Error(
-                    "collector registry row could not transition from queued to running",
-                  );
-                }
-              } catch (error) {
-                await terminateAcceptedRestoredCollectorRun({
-                  entry,
-                  gatewayRunId,
-                  timeoutMs: launch.timeoutMs,
-                  expectedSessionId: cleanupSessionEntry?.sessionId,
-                  expectedLifecycleRevision: cleanupSessionEntry?.lifecycleRevision,
-                });
-                launchTerminationConfirmed = true;
-                throw error;
-              }
             });
           },
           onStartFailure: (error) => {
@@ -288,7 +266,7 @@ export function createSubagentRegistryRestorer(config: {
               runId,
               entry,
               error instanceof Error ? error.message : String(error),
-              launchTerminationConfirmed,
+              false,
               launchLifecycleGeneration ?? getAgentEventLifecycleGeneration(),
               cleanupSessionEntry?.sessionId,
               cleanupSessionEntry?.lifecycleRevision,

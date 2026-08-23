@@ -17,13 +17,13 @@ import type { PendingBridgeRequest, SettledBridgeRequest } from "./code-mode-run
 import { readCodeModeSkill } from "./code-mode-skills.js";
 import { consumeMcpCodeModeGuestResult } from "./mcp-content.js";
 import type { AgentToolUpdateCallback } from "./runtime/index.js";
-import { reserveSubagentLaunchRecord } from "./subagents/registry/subagent-launch-reservation.store.js";
 import { subagentRuns } from "./subagents/registry/subagent-registry-memory.js";
 import {
   getSwarmRunByLaunchReplayKey,
   initSubagentRegistry,
   settleFailedQueuedSubagentLaunch,
 } from "./subagents/registry/subagent-registry.js";
+import { reserveSubagentLaunchRecord } from "./subagents/registry/subagent-registry.store.sqlite.js";
 import type { SubagentRunRecord } from "./subagents/registry/subagent-registry.types.js";
 import {
   SWARM_CODE_MODE_IDEMPOTENCY_KEY,
@@ -288,13 +288,10 @@ async function runAgentSpawnBridge(params: {
     params.ctx.agentId,
   );
   if (existing) {
-    if (
-      (existing.launch?.requestFingerprint ?? existing.swarmLaunchRequestFingerprint) !==
-      requestFingerprint
-    ) {
+    if (existing.launch?.requestFingerprint !== requestFingerprint) {
       throw new ToolInputError("agents.run replay request does not match the persisted collector.");
     }
-    if (existing.launch?.phase === "prepared" || existing.swarmLaunchPending === true) {
+    if (existing.launch?.phase === "prepared") {
       if (!existing.queuedLaunch) {
         throw new ToolInputError("agents.run persisted launch reservation cannot be recovered.");
       }
@@ -303,10 +300,7 @@ async function runAgentSpawnBridge(params: {
       existing =
         getSwarmRunByLaunchReplayKey(idempotencyKey, requesterSessionKey, params.ctx.agentId) ??
         existing;
-      if (
-        (existing.launch?.phase === "prepared" || existing.swarmLaunchPending === true) &&
-        !existing.queuedLaunch
-      ) {
+      if (existing.launch?.phase === "prepared" && !existing.queuedLaunch) {
         throw new ToolInputError("agents.run persisted launch reservation cannot be recovered.");
       }
     }

@@ -1,10 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
 /** Owns subagent registration and queued collector launch transitions. */
-import {
-  getAgentEventLifecycleGeneration,
-  isAgentEventLifecycleGenerationCurrent,
-} from "../../../infra/agent-events.js";
+import { getAgentEventLifecycleGeneration } from "../../../infra/agent-events.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import { bindGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
@@ -18,12 +15,17 @@ import type { DeliveryContext } from "../../../utils/delivery-context.types.js";
 import { resolveSubagentRequesterAgentId } from "../../subagent-requester-owner.js";
 import { updateSwarmCollectorCompletion } from "../swarm/swarm-collector.js";
 import { normalizeSubagentRunState } from "./subagent-delivery-state.js";
-import { acceptPreparedSubagentLaunch } from "./subagent-launch-reservation.store.js";
 import { SUBAGENT_ENDED_REASON_ERROR } from "./subagent-lifecycle-events.js";
 import { SubagentRecoveryManager } from "./subagent-registry-run-recovery.js";
 import { publishPersistedSubagentRunsSnapshot } from "./subagent-registry-state.js";
+import {
+  transitionDispatchingSubagentLaunchToRunning,
+  transitionPreparedSubagentLaunchToDispatching,
+  transitionSubagentLaunchToTerminal,
+} from "./subagent-registry.store.sqlite.js";
 import type {
   SubagentProgressOrigin,
+  SubagentLaunchState,
   SubagentRunRecord,
   SwarmQueuedLaunch,
 } from "./subagent-registry.types.js";
@@ -82,12 +84,10 @@ export type RegisterSubagentRunParams = {
   retainAttachmentsOnKeep?: boolean;
   collect?: boolean;
   swarmRequesterSessionKey?: string;
-  swarmLaunchIdempotencyKey?: string;
-  swarmLaunchReplayKey?: string;
-  swarmLaunchRequestFingerprint?: string;
   groupId?: string;
   outputSchema?: Record<string, unknown>;
   queuedLaunch?: SwarmQueuedLaunch;
+  launch?: SubagentLaunchState;
   queued?: boolean;
   /** Required when direct dispatch suppresses Gateway tracking. Out-of-process launches keep
       Gateway's existing best-effort CLI policy; other callers create a best-effort row here. */
@@ -159,13 +159,10 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
           : undefined,
       swarmRunId: registerParams.collect ? runId : undefined,
       schedulerSlotId: registerParams.collect ? runId : undefined,
-      swarmLaunchIdempotencyKey: registerParams.swarmLaunchIdempotencyKey,
-      swarmLaunchReplayKey: registerParams.swarmLaunchReplayKey,
-      swarmLaunchRequestFingerprint: registerParams.swarmLaunchRequestFingerprint,
-      swarmLaunchPending: registerParams.collect === true,
       groupId: registerParams.groupId,
       outputSchema: registerParams.outputSchema,
       queuedLaunch: registerParams.queuedLaunch,
+      launch: registerParams.launch,
       generation,
       createdAt,
       execution: {
@@ -222,37 +219,73 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
     return entry;
   };
 
-  readonly acceptPreparedSubagentLaunch = (
+  readonly transitionPreparedSubagentLaunchToDispatching = (
     runId: string,
-    gatewayRunId: string,
+    executionAttemptId: string,
     gatewayContextResolver?: GatewayContextResolver,
   ): boolean => {
     const prepared = this.options.runs.get(runId);
-    const accepted = acceptPreparedSubagentLaunch({ runId, gatewayRunId });
-    if (!accepted) {
+    const dispatching = transitionPreparedSubagentLaunchToDispatching({
+      runId,
+      executionAttemptId,
+      dispatchingAt: Date.now(),
+    });
+    if (!dispatching) {
       return false;
     }
-    this.options.runs.set(accepted.runId, accepted);
-    bindGatewayContextResolver(accepted, gatewayContextResolver);
-    publishPersistedSubagentRunsSnapshot(this.options.runs, [accepted.runId]);
+    this.options.runs.set(dispatching.runId, dispatching);
+    bindGatewayContextResolver(dispatching, gatewayContextResolver);
+    publishPersistedSubagentRunsSnapshot(this.options.runs, [dispatching.runId]);
     try {
       startTaskRunByRunId({
-        runId: accepted.runId,
-        childSessionKey: accepted.childSessionKey,
-        startedAt: accepted.execution.startedAt ?? Date.now(),
+        runId: dispatching.taskRunId ?? dispatching.runId,
+        runtime: "subagent",
+        sessionKey: dispatching.childSessionKey,
+        startedAt: dispatching.launch.dispatchingAt,
+        lastEventAt: dispatching.launch.dispatchingAt,
       });
     } catch (error) {
       if (prepared?.launch?.phase === "prepared") {
-        this.options.runs.set(prepared.runId, prepared);
-        this.failQueuedSubagentRun(
-          prepared.runId,
-          `detached task runtime start failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+        const message = `detached task runtime start failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        const endedAt = Date.now();
+        const terminal = transitionSubagentLaunchToTerminal({
+          runId: prepared.runId,
+          terminalAt: endedAt,
+          terminalReason: "failed",
+          error: message,
+        });
+        if (terminal) {
+          this.options.runs.set(terminal.runId, terminal);
+          publishPersistedSubagentRunsSnapshot(this.options.runs, [terminal.runId]);
+          finalizeTaskRunByRunId({
+            runId: terminal.taskRunId ?? terminal.runId,
+            runtime: "subagent",
+            sessionKey: terminal.childSessionKey,
+            status: "failed",
+            endedAt,
+            lastEventAt: endedAt,
+            error: message,
+            suppressDelivery: true,
+          });
+        }
       }
       throw error;
     }
+    return true;
+  };
+
+  readonly transitionDispatchingSubagentLaunchToRunning = (runId: string): boolean => {
+    const running = transitionDispatchingSubagentLaunchToRunning({
+      runId,
+      runningAt: Date.now(),
+    });
+    if (!running) {
+      return false;
+    }
+    this.options.runs.set(running.runId, running);
+    publishPersistedSubagentRunsSnapshot(this.options.runs, [running.runId]);
     return true;
   };
 
@@ -337,140 +370,6 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
     activateRegistrationLifecycle();
   };
 
-  readonly startQueuedSubagentRun = (
-    runId: string,
-    gatewayRunId?: string,
-    lifecycleGeneration?: string,
-    gatewayContextResolver?: GatewayContextResolver,
-  ): boolean => {
-    const key = runId.trim();
-    const entry = this.findRunByIdentity(key);
-    const acceptedLifecycleGeneration = lifecycleGeneration ?? getAgentEventLifecycleGeneration();
-    if (
-      lifecycleGeneration !== undefined &&
-      !isAgentEventLifecycleGenerationCurrent(lifecycleGeneration)
-    ) {
-      return false;
-    }
-    const lifecycleStarted =
-      entry?.execution.status === "running" &&
-      typeof entry.execution.startedAt === "number" &&
-      entry.swarmLaunchPending === true;
-    const provisionalTerminalBeforeAcceptance =
-      entry?.swarmLaunchPending === true &&
-      typeof entry.execution.endedAt === "number" &&
-      entry.collectorCompletion === undefined;
-    if (provisionalTerminalBeforeAcceptance) {
-      // Cancellation won before Gateway acceptance. The caller must abort the
-      // newly accepted run before freezing completion or releasing the FIFO slot.
-      return false;
-    }
-    // Completion clears swarmLaunchPending, but queuedLaunch remains until the
-    // delayed acceptance response remaps the durable terminal row.
-    const terminalBeforeAcceptance =
-      entry?.collectorCompletion !== undefined && entry.queuedLaunch !== undefined;
-    if (
-      !entry ||
-      entry.killIntent ||
-      entry.killReconciliation ||
-      (!terminalBeforeAcceptance && entry.execution.status !== "queued" && !lifecycleStarted)
-    ) {
-      return false;
-    }
-    const nextRunId = gatewayRunId?.trim() || entry.runId;
-    const conflicting = this.options.runs.get(nextRunId);
-    if (conflicting && conflicting !== entry) {
-      throw new Error(`collector gateway run id already exists: ${nextRunId}`);
-    }
-    const acceptedAt = Date.now();
-    const previousRunId = entry.runId;
-    const previous = structuredClone(entry);
-    const restoreQueuedRun = () => {
-      if (previousRunId !== nextRunId) {
-        this.options.runs.delete(nextRunId);
-      }
-      this.restoreRunRecord(entry, previous);
-      if (previousRunId !== nextRunId) {
-        this.options.runs.set(previousRunId, entry);
-      }
-    };
-    entry.swarmRunId ??= previousRunId;
-    entry.schedulerSlotId ??= entry.swarmRunId;
-    if (previousRunId !== nextRunId) {
-      this.options.runs.delete(previousRunId);
-      entry.runId = nextRunId;
-      this.options.runs.set(nextRunId, entry);
-    }
-    if (!terminalBeforeAcceptance) {
-      // Acceptance is not a lifecycle start; preserve a raced start or leave its clock unset.
-      const lifecycleStartedAt =
-        entry.execution.status === "running" ? entry.execution.startedAt : undefined;
-      if (typeof lifecycleStartedAt === "number") {
-        entry.sessionStartedAt ??= lifecycleStartedAt;
-        entry.execution = {
-          ...entry.execution,
-          status: "running",
-          acceptedAt,
-          lifecycleGeneration: acceptedLifecycleGeneration,
-          restartRecovery: undefined,
-          suppressSessionEffects: undefined,
-          startedAt: lifecycleStartedAt,
-        };
-      } else {
-        delete entry.sessionStartedAt;
-        entry.execution = {
-          ...entry.execution,
-          status: "running",
-          acceptedAt,
-          lifecycleGeneration: acceptedLifecycleGeneration,
-          restartRecovery: undefined,
-          suppressSessionEffects: undefined,
-        };
-        delete entry.execution.startedAt;
-      }
-    }
-    entry.swarmLaunchPending = false;
-    entry.queuedLaunch = undefined;
-    let persistedRunning = false;
-    try {
-      this.options.persistOrThrow(previousRunId, nextRunId);
-      if (terminalBeforeAcceptance) {
-        bindGatewayContextResolver(entry, gatewayContextResolver);
-        return true;
-      }
-      persistedRunning = true;
-      startTaskRunByRunId({
-        runId: entry.taskRunId ?? entry.runId,
-        runtime: "subagent",
-        sessionKey: entry.childSessionKey,
-        startedAt: acceptedAt,
-        lastEventAt: acceptedAt,
-      });
-    } catch (error) {
-      restoreQueuedRun();
-      if (persistedRunning) {
-        try {
-          this.options.persistOrThrow(previousRunId, nextRunId);
-        } catch (rollbackError) {
-          // The failure callback terminalizes this in-memory queued row next.
-          log.warn("failed to persist collector start rollback", {
-            runId: previousRunId,
-            error: rollbackError,
-          });
-        }
-      }
-      throw error;
-    }
-    bindGatewayContextResolver(entry, gatewayContextResolver);
-    const cfg = this.options.getRuntimeConfig();
-    void this.waitForSubagentCompletion(
-      nextRunId,
-      this.options.resolveSubagentWaitTimeoutMs(cfg, entry.runTimeoutSeconds),
-      entry,
-    );
-    return true;
-  };
-
   readonly failQueuedSubagentRun = (runId: string, error: string): boolean => {
     const key = runId.trim();
     const entry = this.findRunByIdentity(key);
@@ -486,6 +385,17 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       endedAt,
       outcome: { status: "error", error, endedAt },
     };
+    if (entry.launch && entry.launch.phase !== "terminal") {
+      const terminal = transitionSubagentLaunchToTerminal({
+        runId: entry.runId,
+        terminalAt: endedAt,
+        terminalReason: "failed",
+        error,
+      });
+      if (terminal?.launch) {
+        entry.launch = terminal.launch;
+      }
+    }
     entry.queuedLaunch = undefined;
     entry.collectorLaunchCleanupPending = true;
     entry.completion = { required: false, resultText: error, capturedAt: endedAt };
@@ -530,7 +440,6 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       return true;
     }
     const snapshot = structuredClone(entry);
-    entry.swarmLaunchPending = false;
     entry.collectorLaunchCleanupPending = true;
     entry.queuedLaunch = undefined;
     entry.execution = {
@@ -538,6 +447,20 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
       status: "terminal",
       endedAt: entry.execution.endedAt,
     };
+    if (entry.launch && entry.launch.phase !== "terminal") {
+      const terminal = transitionSubagentLaunchToTerminal({
+        runId: entry.runId,
+        terminalAt: entry.execution.endedAt,
+        terminalReason: entry.launch.phase === "dispatching" ? "lost" : "failed",
+        error:
+          entry.launch.phase === "dispatching"
+            ? `${error}; execution may have reached the provider and will not be retried`
+            : error,
+      });
+      if (terminal?.launch) {
+        entry.launch = terminal.launch;
+      }
+    }
     entry.completion = {
       required: false,
       resultText:

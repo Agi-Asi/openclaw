@@ -37,9 +37,33 @@ function runPreflight(
       createdAt: 1,
       collect: true,
       outputSchema: swarmOutputSchema,
-      ...(options?.canonicalPreparedLaunch
+      launch: options?.ended
         ? {
-            launch: {
+            phase: "terminal" as const,
+            replayKey: "code-run:request-1",
+            requestFingerprint: "sha256:request-1",
+            gatewayIdempotencyKey: "collector-run",
+            childSessionId: "collector-session",
+            childLifecycleRevision: "collector-lifecycle",
+            revision: 3,
+            terminalAt: 2,
+            terminalReason: "completed" as const,
+          }
+        : options?.launchPending === false
+          ? {
+              phase: "running" as const,
+              replayKey: "code-run:request-1",
+              requestFingerprint: "sha256:request-1",
+              gatewayIdempotencyKey: "collector-run",
+              childSessionId: "collector-session",
+              childLifecycleRevision: "collector-lifecycle",
+              revision: 3,
+              preparedAt: 2,
+              executionAttemptId: "attempt-1",
+              dispatchingAt: 3,
+              runningAt: 4,
+            }
+          : {
               phase: "prepared" as const,
               replayKey: "code-run:request-1",
               requestFingerprint: "sha256:request-1",
@@ -49,11 +73,6 @@ function runPreflight(
               revision: 1,
               preparedAt: 2,
             },
-          }
-        : {
-            swarmLaunchIdempotencyKey: "collector-run",
-            swarmLaunchPending: options?.launchPending ?? true,
-          }),
       execution: {
         status: options?.ended
           ? "terminal"

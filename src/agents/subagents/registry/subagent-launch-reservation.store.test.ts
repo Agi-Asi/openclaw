@@ -9,10 +9,11 @@ import {
 } from "../../../state/openclaw-state-db.js";
 import { withEnvAsync } from "../../../test-utils/env.js";
 import {
-  acceptPreparedSubagentLaunch,
   prepareSubagentLaunchRecord,
   reserveSubagentLaunchRecord,
-} from "./subagent-launch-reservation.store.js";
+  transitionDispatchingSubagentLaunchToRunning,
+  transitionPreparedSubagentLaunchToDispatching,
+} from "./subagent-registry.store.sqlite.js";
 import { loadSubagentRegistryFromSqlite } from "./subagent-registry.store.sqlite.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
@@ -91,7 +92,7 @@ describe("subagent launch reservation store", () => {
     });
   });
 
-  it("CASes reserved to prepared and accepts without renaming the canonical run", async () => {
+  it("CASes reserved through dispatching and running without renaming the canonical run", async () => {
     await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
       const reserved = reserveSubagentLaunchRecord(reservedRun()).entry;
       if (!reserved.launch) {
@@ -115,17 +116,30 @@ describe("subagent launch reservation store", () => {
       expect(prepareSubagentLaunchRecord({ expected: reserved, prepared }).launch?.phase).toBe(
         "prepared",
       );
-      const accepted = acceptPreparedSubagentLaunch({
+      const dispatching = transitionPreparedSubagentLaunchToDispatching({
         runId: reserved.runId,
-        gatewayRunId: "gateway-owned",
+        executionAttemptId: "gateway-attempt",
+        dispatchingAt: 300,
       });
-      expect(accepted).toMatchObject({
+      expect(dispatching).toMatchObject({
         runId: "swarm_stable",
-        gatewayRunId: "gateway-owned",
+        launch: {
+          phase: "dispatching",
+          executionAttemptId: "gateway-attempt",
+          dispatchingAt: 300,
+        },
         execution: { status: "running" },
       });
-      expect(accepted?.launch).toBeUndefined();
-      expect(accepted?.queuedLaunch).toBeUndefined();
+      expect(dispatching?.queuedLaunch).toBeUndefined();
+      expect(
+        transitionDispatchingSubagentLaunchToRunning({
+          runId: reserved.runId,
+          runningAt: 400,
+        }),
+      ).toMatchObject({
+        runId: "swarm_stable",
+        launch: { phase: "running", runningAt: 400 },
+      });
     });
   });
 });

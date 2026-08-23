@@ -2,13 +2,13 @@ import { getDetachedTaskLifecycleRuntimeRegistration } from "../../../tasks/deta
 import { createQueuedTaskRun } from "../../../tasks/detached-task-runtime.js";
 import { publishTaskRecordAfterAtomicStore } from "../../../tasks/task-registry.js";
 import type { TaskDeliveryState, TaskRecord } from "../../../tasks/task-registry.types.js";
-import { prepareSubagentLaunchRecord } from "../registry/subagent-launch-reservation.store.js";
 import type { RegisterSubagentRunParams } from "../registry/subagent-registry-run-launch.js";
 import {
   prepareSubagentRunForAtomicStore,
   publishSubagentRunAfterAtomicStore,
   settleFailedQueuedSubagentLaunch,
 } from "../registry/subagent-registry.js";
+import { prepareSubagentLaunchRecord } from "../registry/subagent-registry.store.sqlite.js";
 import { readSwarmCodeModeLaunchAuthority } from "../swarm/swarm-code-mode.js";
 
 export function createCodeModeSpawnControl(value: object) {
@@ -40,10 +40,6 @@ export function createCodeModeSpawnControl(value: object) {
               preparedAt,
             },
           };
-          delete entry.swarmLaunchIdempotencyKey;
-          delete entry.swarmLaunchReplayKey;
-          delete entry.swarmLaunchRequestFingerprint;
-          delete entry.swarmLaunchPending;
           const customRuntime = getDetachedTaskLifecycleRuntimeRegistration();
           let task: TaskRecord | undefined;
           let taskDelivery: TaskDeliveryState | undefined;

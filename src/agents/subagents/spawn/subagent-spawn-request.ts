@@ -211,9 +211,9 @@ export function resolveSubagentSpawnRequest(
     (params.collect !== true ||
       codeModeLaunchAuthority.reserved.requesterAgentId !== requesterAgentId ||
       codeModeLaunchAuthority.reserved.requesterSessionKey !== requesterInternalKey ||
-      codeModeLaunchAuthority.reserved.launch?.replayKey !== params.swarmLaunchReplayKey ||
+      codeModeLaunchAuthority.reserved.launch?.replayKey !== params.launchReplayKey ||
       codeModeLaunchAuthority.reserved.launch.requestFingerprint !==
-        params.swarmLaunchRequestFingerprint)
+        params.launchRequestFingerprint)
   ) {
     return rejectSubagentSpawnRequest(
       "error",
@@ -277,14 +277,14 @@ export function resolveSubagentSpawnRequest(
   }
   const childDepth = admission.childSessionPatch?.spawnDepth ?? 1;
   const maxSpawnDepth = admission.maxSpawnDepth ?? childDepth;
-  const swarmLaunchReplayKey = normalizeOptionalString(params.swarmLaunchReplayKey);
+  const launchReplayKey = normalizeOptionalString(params.launchReplayKey);
   // Registry and Gateway identities are global, while host replay keys are requester-scoped.
   const childIdem = codeModeLaunchAuthority
     ? codeModeLaunchAuthority.reserved.runId
-    : swarmLaunchReplayKey
+    : launchReplayKey
       ? `swarm_${crypto
           .createHash("sha256")
-          .update(JSON.stringify([requesterInternalKey, swarmLaunchReplayKey]))
+          .update(JSON.stringify([requesterInternalKey, launchReplayKey]))
           .digest("hex")
           .slice(0, 32)}`
       : crypto.randomUUID();
@@ -331,7 +331,7 @@ export function resolveSubagentSpawnRequest(
         config: swarmConfig,
         groupId: swarmGroupId,
         schedulerGroupKey: swarmSchedulerGroupKey,
-        launchReplayKey: swarmLaunchReplayKey,
+        launchReplayKey,
         reservationPending,
       },
       admission: {

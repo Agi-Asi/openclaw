@@ -114,6 +114,7 @@ export async function executeCliProcess(params: {
       backend: context.backendResolved.id,
     });
     params.claimFallbackCleanup();
+    runParams.onProviderDispatching?.();
     const liveResult = await runClaudeTurn({
       context,
       args: params.executionArgs,
@@ -153,6 +154,9 @@ export async function executeCliProcess(params: {
       onRequestPayload: params.diagnostics?.observeRequestPayload,
       onPhase: params.options?.onPhase,
     });
+    if (!runParams.provider.toLowerCase().includes("codex")) {
+      runParams.onProviderRunning?.();
+    }
     params.options?.onPhase?.("resolve");
     const rawText = liveResult.output.text;
     return {
@@ -231,6 +235,7 @@ export async function executeCliProcess(params: {
   let result: RunExit;
   params.diagnostics?.observeRequestPayload(params.stdin ?? params.argsPrompt ?? "");
   if (params.nodePlacement) {
+    runParams.onProviderDispatching?.();
     const nodeRun = await executeNodeClaudeRun({
       context,
       nodePlacement: params.nodePlacement,
@@ -247,6 +252,9 @@ export async function executeCliProcess(params: {
       deps: params.deps,
     });
     result = nodeRun.result;
+    if (!runParams.provider.toLowerCase().includes("codex")) {
+      runParams.onProviderRunning?.();
+    }
     nodeRunAbortSignal = nodeRun.nodeRunAbortSignal;
     nodeRunTruncated = nodeRun.nodeRunTruncated;
   } else {
@@ -264,6 +272,7 @@ export async function executeCliProcess(params: {
     const abortManagedRun = () => supervisor.cancel(runParams.runId, "manual-cancel");
     runParams.abortSignal?.addEventListener("abort", abortManagedRun, { once: true });
     try {
+      runParams.onProviderDispatching?.();
       const managedRun = await supervisor.spawn({
         runId: runParams.runId,
         sessionId: runParams.sessionId,
@@ -283,6 +292,9 @@ export async function executeCliProcess(params: {
         onStderr: consumeStderr,
       });
       managedRunPid = managedRun.pid;
+      if (!runParams.provider.toLowerCase().includes("codex")) {
+        runParams.onProviderRunning?.();
+      }
       const replyBackendHandle = runParams.replyOperation
         ? {
             kind: "cli" as const,

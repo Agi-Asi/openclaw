@@ -146,8 +146,7 @@ export function findAuthorizedSwarmCollectorRequest(params: {
   if (!entry) {
     return undefined;
   }
-  const registeredIdempotencyKey =
-    entry.launch?.gatewayIdempotencyKey ?? entry.swarmLaunchIdempotencyKey;
+  const registeredIdempotencyKey = entry.launch?.gatewayIdempotencyKey;
   return registeredIdempotencyKey === idempotencyKey &&
     isDeepStrictEqual(entry.outputSchema, params.outputSchema)
     ? entry
