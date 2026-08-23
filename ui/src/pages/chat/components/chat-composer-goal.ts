@@ -153,19 +153,22 @@ export function renderChatGoal(
           </button>
         </span>
       </div>
-      ${expanded
-        ? html`
-            <div class="agent-chat__goal-detail">
-              <div class="agent-chat__goal-detail-objective">${goal.objective}</div>
-              ${goal.lastStatusNote
-                ? html`<div class="agent-chat__goal-detail-note">${goal.lastStatusNote}</div>`
-                : nothing}
-              <div class="agent-chat__goal-detail-meta">
-                ${usage ? `${usage} · ${elapsed}` : elapsed}
-              </div>
-            </div>
-          `
-        : nothing}
+      <div
+        class="agent-chat__goal-detail"
+        data-expanded=${String(expanded)}
+        aria-hidden=${String(!expanded)}
+        ?inert=${!expanded}
+      >
+        <div class="agent-chat__goal-detail-content">
+          <div class="agent-chat__goal-detail-objective">${goal.objective}</div>
+          ${goal.lastStatusNote
+            ? html`<div class="agent-chat__goal-detail-note">${goal.lastStatusNote}</div>`
+            : nothing}
+          <div class="agent-chat__goal-detail-meta">
+            ${usage ? `${usage} · ${elapsed}` : elapsed}
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }

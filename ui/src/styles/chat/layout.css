@@ -430,15 +430,23 @@ openclaw-chat-page {
 }
 
 .chat-workspace-conflict-paths li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+
+.chat-workspace-conflict-paths code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-workspace-conflict-path-actions {
   display: inline-flex;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .chat-workspace-conflict-commands-disclosure > summary {
@@ -1054,7 +1062,13 @@ openclaw-chat-page {
   border-radius: calc(20px * var(--openclaw-corner-radius-scale))
     calc(20px * var(--openclaw-corner-radius-scale)) 0 0;
   corner-shape: superellipse(1.5);
-  background: var(--composer-attached-surface, var(--chat-composer-surface, var(--card)));
+  background: color-mix(
+    in srgb,
+    var(--composer-attached-surface, var(--chat-composer-surface, var(--card))) 90%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
 .agent-chat__goal-float .agent-chat__goal-row {
@@ -1069,6 +1083,17 @@ openclaw-chat-page {
 .agent-chat__goal-float + :is(.agent-chat__composer-errors, .agent-chat__input) {
   position: relative;
   z-index: 1;
+}
+
+.agent-chat__progress-float
+  + :is(.chat-queue, .agent-chat__goal-float, .agent-chat__composer-errors, .agent-chat__input) {
+  position: relative;
+  z-index: 1;
+}
+
+.agent-chat__progress-float + .agent-chat__goal-float .agent-chat__goal {
+  border-top: 1px solid var(--chat-queue-divider);
+  border-radius: 0;
 }
 
 .agent-chat__goal-row {
@@ -1169,6 +1194,25 @@ openclaw-chat-page {
 }
 
 .agent-chat__goal-detail {
+  display: block;
+  interpolate-size: allow-keywords;
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    block-size 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.agent-chat__goal-detail[data-expanded="true"] {
+  block-size: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.agent-chat__goal-detail-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1176,6 +1220,13 @@ openclaw-chat-page {
   padding: 6px 2px 3px;
   border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-chat__goal-detail {
+    transform: none;
+    transition: none;
+  }
 }
 
 .agent-chat__goal-detail-objective {
@@ -3123,11 +3174,7 @@ button.chat-pr__diff {
   );
   --chat-composer-hover: color-mix(in srgb, var(--text-strong) 8%, transparent);
   --chat-composer-group-hover: color-mix(in srgb, var(--text-strong) 6%, transparent);
-  --chat-composer-popover-background: color-mix(
-    in srgb,
-    var(--bg-elevated) 96%,
-    var(--card)
-  );
+  --chat-composer-popover-background: color-mix(in srgb, var(--bg-elevated) 96%, var(--card));
   --chat-composer-popover-border: var(--overlay-border);
   --chat-composer-popover-radius: calc(14px * var(--openclaw-corner-radius-scale));
   /* Footer control box. Smaller than the editor's own line box on purpose: the
@@ -3226,11 +3273,7 @@ button.chat-pr__diff {
    subtle luminance step of the resting hairline; a second ring or outer spread
    would make the composer look thicker as soon as the operator starts typing. */
 .agent-chat__input:focus-within {
-  border-color: color-mix(
-    in srgb,
-    var(--chat-composer-hairline) 94%,
-    var(--text-strong)
-  );
+  border-color: color-mix(in srgb, var(--chat-composer-hairline) 94%, var(--text-strong));
   box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
 }
 
@@ -3242,12 +3285,6 @@ button.chat-pr__diff {
     0 2px 4px rgb(0 0 0 / 6%);
 }
 
-@property --chat-dictation-edge-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
 /* Dictation is a temporary mode of the writing surface, not another card in
    it. The frame itself stays quiet — only a brand-accent light with a soft
    trail orbits the edge to signal live capture. */
@@ -3256,39 +3293,59 @@ button.chat-pr__diff {
   isolation: isolate;
 }
 
-.agent-chat__input--dictating::after {
-  content: "";
+/* SVG overlay sized to the surface; the comet is a dashed stroke on a rounded
+   rect that mirrors the composer border, so it can never leave the perimeter
+   (an offset-path'd DOM bar previously overshot the rounded corners). */
+.agent-chat__dictation-edge-orbit {
   position: absolute;
   z-index: 5;
-  inset: -1px;
-  padding: 1px;
-  border-radius: inherit;
-  /* corner-shape does not travel with border-radius: inherit; restate it so
-     the light hugs the composer's superellipse instead of a rounder ghost. */
-  corner-shape: superellipse(1.5);
-  /* Comet, not a ring: a long fading tail behind a bright head, dark again
-     right in front of it, so the light reads as travelling, not as a tinted
-     border. */
-  background: conic-gradient(
-    from var(--chat-dictation-edge-angle),
-    transparent 0deg 200deg,
-    color-mix(in srgb, var(--accent) 10%, transparent) 252deg,
-    color-mix(in srgb, var(--accent) 45%, transparent) 286deg,
-    color-mix(in srgb, var(--accent) 92%, white) 294deg,
-    transparent 301deg 360deg
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: chat-dictation-edge-orbit 5s linear infinite;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   pointer-events: none;
+}
+
+/* Three stacked dash segments of decreasing length/opacity share one
+   dashoffset animation; their leading ends coincide (leading gap = 20 - dash
+   length), which fakes a tapered tail behind a bright head. pathLength=100
+   normalizes the perimeter, so 0 -> -100 loops seamlessly with constant
+   fractional speed at any composer size — no reset jump, no corner speedup. */
+.agent-chat__dictation-edge-orbit rect {
+  x: 1px;
+  y: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  rx: calc(20px * var(--openclaw-corner-radius-scale));
+  fill: none;
+  /* Butt caps: the zero-length alignment dash at pattern start would render a
+     stray dot with round caps. */
+  stroke-linecap: butt;
+  animation: chat-dictation-edge-orbit 5s linear infinite;
+}
+
+.agent-chat__dictation-edge-orbit-tail {
+  stroke: color-mix(in srgb, var(--accent) 30%, transparent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 0 6 14 80;
+}
+
+.agent-chat__dictation-edge-orbit-mid {
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
+  stroke-width: 2px;
+  stroke-dasharray: 0 12 8 80;
+}
+
+.agent-chat__dictation-edge-orbit-head {
+  stroke: color-mix(in srgb, var(--accent) 94%, white);
+  stroke-width: 2px;
+  stroke-dasharray: 0 17 3 80;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 35%, transparent));
 }
 
 @keyframes chat-dictation-edge-orbit {
   to {
-    --chat-dictation-edge-angle: 360deg;
+    stroke-dashoffset: -100;
   }
 }
 
@@ -3301,8 +3358,8 @@ button.chat-pr__diff {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-chat__input--dictating::after {
-    --chat-dictation-edge-angle: 294deg;
+  .agent-chat__dictation-edge-orbit rect {
+    stroke-dashoffset: -62;
     animation: none;
   }
 }
@@ -3351,10 +3408,7 @@ button.chat-pr__diff {
   z-index: 0;
   box-sizing: border-box;
   width: 100%;
-  margin: calc(
-      0px - var(--chat-composer-shell-gap) - var(--chat-composer-bottom-underlap)
-    )
-    0 0;
+  margin: calc(0px - var(--chat-composer-shell-gap) - var(--chat-composer-bottom-underlap)) 0 0;
   /* Only the intentional underlap is hidden behind the composer. The shell
      gap must remain outside the row's visible centering box. */
   padding-top: var(--chat-composer-bottom-underlap);
@@ -3574,7 +3628,10 @@ button.chat-pr__diff {
   min-height: calc(var(--chat-composer-editor-line) + 8px);
   /* The editor grows upward against the viewport, not against a line count:
      past this the surface stops moving and the draft scrolls inside it. */
-  max-height: 25dvh;
+  max-height: min(
+    25dvh,
+    calc(var(--chat-composer-editor-line) * 6 + var(--chat-composer-editor-inset-block) * 2)
+  );
   resize: none;
   padding-block: var(--chat-composer-editor-inset-block);
   /* The horizontal inset belongs to the row, so the text keeps one origin while
@@ -3664,7 +3721,8 @@ button.chat-pr__diff {
   color: var(--accent);
 }
 
-.agent-chat__composer-combobox > :is(textarea, .agent-chat__composer-draft-overlay):is(
+.agent-chat__composer-combobox
+  > :is(textarea, .agent-chat__composer-draft-overlay):is(
     [data-scroll-fade-top],
     [data-scroll-fade-bottom]
   ) {
@@ -3723,19 +3781,13 @@ button.chat-pr__diff {
   padding: 8px 10px 0;
 }
 
-.agent-chat__composer-status-stack:not(
-  :has(.compaction-indicator, .agent-chat__goal, .agent-chat__dictation-status)
-) {
+.agent-chat__composer-status-stack:not(:has(.compaction-indicator, .agent-chat__goal)) {
   display: none;
 }
 
 .agent-chat__composer-status-stack .compaction-indicator,
 .agent-chat__composer-status-stack .agent-chat__goal {
   margin: 0;
-}
-
-.agent-chat__input--dictating .agent-chat__composer-status-stack {
-  padding: 12px 14px 0;
 }
 
 /* Capture mode pares the footer back to the two decisions that matter: stop
@@ -3833,6 +3885,30 @@ button.chat-pr__diff {
 .agent-chat__disabled-banner {
   width: 100%;
   box-sizing: border-box;
+}
+
+/* A replacement banner is the composer surface for a terminal session state,
+   not a blue information callout inside it. Match the Question surface so the
+   frame does not change shape when composition is unavailable. */
+.agent-chat__disabled-banner.agent-chat__disabled-banner--replacement.callout {
+  border: 1px solid var(--chat-composer-hairline, var(--border));
+  border-radius: calc(20px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
+  background: var(--chat-composer-surface, var(--popover));
+  box-shadow: none;
+  color: var(--text);
+}
+
+:root[data-theme-mode="dark"] .agent-chat__disabled-banner--replacement {
+  border-color: color-mix(in srgb, var(--text-strong) 9%, transparent);
+}
+
+:root[data-theme-mode="light"] .agent-chat__disabled-banner--replacement {
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 6%),
+    0 1px 2px -1px rgb(0 0 0 / 6%),
+    0 2px 4px rgb(0 0 0 / 4%);
 }
 
 .agent-chat__disabled-banner .btn {
@@ -4347,8 +4423,8 @@ button.chat-pr__diff {
 }
 
 .agent-chat__composer-errors:has(> .agent-chat__composer-notice):not(
-    :has(> .agent-chat__composer-error)
-  ) {
+  :has(> .agent-chat__composer-error)
+) {
   background: color-mix(in srgb, var(--info) 9%, var(--chat-composer-surface));
   color: color-mix(in srgb, var(--info) 72%, var(--text));
 }
@@ -5164,50 +5240,6 @@ button.chat-pr__diff {
 .chat-send-btn--dictating .agent-chat__voice-activity-bar {
   background: color-mix(in srgb, var(--accent) 88%, var(--text));
   box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.agent-chat__dictation-status {
-  display: grid;
-  min-width: 0;
-  align-items: center;
-  justify-items: center;
-  width: 100%;
-  color: var(--accent);
-  font-size: 12px;
-}
-
-/* Full-width strip: the scrolling level history is the room's main signal
-   while capturing, so it spans the editor instead of hiding in a pill. */
-.agent-chat__dictation-wave {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 28px;
-}
-
-.agent-chat__dictation-wave .agent-chat__voice-activity {
-  gap: 4px;
-  width: 100%;
-  height: 24px;
-  justify-content: space-between;
-}
-
-.agent-chat__dictation-wave .agent-chat__voice-activity-bar {
-  width: 2.5px;
-  height: 22px;
-  flex: 0 1 2.5px;
-  background: color-mix(in srgb, var(--accent) 88%, var(--text));
-  box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 24%, transparent);
-}
-
-.agent-chat__dictation-status--finalizing {
-  color: var(--muted);
-}
-
-.agent-chat__dictation-status--finalizing .agent-chat__voice-activity-bar {
-  background: var(--muted);
-  box-shadow: none;
 }
 
 .agent-chat__video-preview {
@@ -7700,6 +7732,22 @@ button.chat-pr__diff {
     order: 4;
   }
 
+  /* Dictation reduces the footer to Stop + Send. Keep that pair docked to the
+     right even though the regular mobile footer releases the trail wrapper. */
+  .agent-chat__input--chat.agent-chat__input--dictating .agent-chat__composer-footer {
+    justify-content: flex-end;
+  }
+
+  .agent-chat__input--chat.agent-chat__input--dictating .agent-chat__composer-trail {
+    display: flex;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+
+  .agent-chat__input--chat.agent-chat__input--dictating .agent-chat__composer-actions {
+    margin-left: auto;
+  }
+
   .agent-chat__input--chat .context-ring {
     justify-content: center;
     width: var(--chat-composer-control-size);
@@ -7807,9 +7855,7 @@ button.chat-pr__diff {
     display: none;
   }
 
-  .agent-chat__input--chat
-    .agent-chat__composer-controls
-    .chat-composer-model-control {
+  .agent-chat__input--chat .agent-chat__composer-controls .chat-composer-model-control {
     flex: 1 1 0;
     justify-content: flex-end;
     min-width: 0;
@@ -7839,7 +7885,6 @@ button.chat-pr__diff {
 }
 
 @media (max-width: 640px) {
-
   .agent-chat__composer-controls {
     align-items: center;
     flex-direction: row;

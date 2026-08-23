@@ -30,6 +30,7 @@ class MicrophoneActivityElement extends HTMLElement {
   // `mode="scroll"`: bars render a right-to-left history of levels (newest on
   // the right) so speech reads as a streaming waveform instead of one meter.
   private history: number[] | null = null;
+  private smoothedLevel = 0;
 
   set signal(signal: RealtimeTalkLevelSignal | undefined) {
     if (signal === this.levelSignal) {
@@ -79,14 +80,29 @@ class MicrophoneActivityElement extends HTMLElement {
   private renderLevel(level: number): void {
     this.dataset.level = String(level);
     if (this.history) {
-      this.history.push(level);
+      // Microphone samples are intentionally noisy. A faster attack preserves
+      // speech peaks while a slower release gives the full-width strip a
+      // continuous decay instead of making adjacent bars jump independently.
+      const response = level > this.smoothedLevel ? 0.52 : 0.16;
+      this.smoothedLevel += (level - this.smoothedLevel) * response;
+      this.history.push(this.smoothedLevel);
       this.history.shift();
     }
     for (const [index, bar] of [...this.children].entries()) {
+      const previous = this.history?.[Math.max(0, index - 1)] ?? 0;
+      const current = this.history?.[index] ?? 0;
+      const next = this.history?.[Math.min((this.history?.length ?? 1) - 1, index + 1)] ?? 0;
+      const historicalLevel = (previous + current * 2 + next) / 4;
       const scale = this.history
-        ? 0.12 + (this.history[index] ?? 0) * 0.88
+        ? 0.26 + historicalLevel * 0.74
         : 0.18 + level * (this.gains[index] ?? 1) * 0.82;
       (bar as HTMLElement).style.setProperty("--talk-bar-scale", String(scale));
+      if (this.history) {
+        (bar as HTMLElement).style.setProperty(
+          "--talk-bar-opacity",
+          String(0.18 + historicalLevel * 0.82),
+        );
+      }
     }
   }
 }

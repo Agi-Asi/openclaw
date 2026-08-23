@@ -2934,7 +2934,19 @@ td.data-table-key-col {
   border-radius: calc(20px * var(--openclaw-corner-radius-scale))
     calc(20px * var(--openclaw-corner-radius-scale)) 0 0;
   corner-shape: superellipse(1.5);
-  background: var(--composer-attached-surface, var(--chat-composer-surface));
+  background: color-mix(
+    in srgb,
+    var(--composer-attached-surface, var(--chat-composer-surface)) 90%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.agent-chat__progress-float + .chat-queue {
+  z-index: 1;
+  border-top-color: var(--chat-queue-divider);
+  border-radius: 0;
 }
 
 .chat-queue__scroll {
@@ -2945,7 +2957,7 @@ td.data-table-key-col {
 }
 
 .chat-queue__scroll[data-scrollable="true"] {
-  height: calc(3.4 * var(--chat-queue-row-height));
+  height: calc(3.55 * var(--chat-queue-row-height));
   overflow-y: auto;
   overscroll-behavior: contain;
 }

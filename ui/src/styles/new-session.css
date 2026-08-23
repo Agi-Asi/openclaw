@@ -79,6 +79,14 @@ html.openclaw-native-macos .new-session-page__incognito-rail {
   margin: 0 auto auto;
 }
 
+.new-session-page .agent-chat__welcome-identity {
+  gap: 12px;
+}
+
+.new-session-page .agent-chat__welcome-identity-copy {
+  gap: 6px;
+}
+
 /* Draft block inside the centered welcome column; the welcome centers text,
    so reset alignment for the controls and composer.
    The top margin is a paragraph break, not a nudge: the tagline is the last line

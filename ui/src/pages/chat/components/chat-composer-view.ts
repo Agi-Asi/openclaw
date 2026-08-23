@@ -41,7 +41,7 @@ import {
   restorePointerOpenedChatComposerTrigger,
 } from "./chat-picker-overlay.ts";
 import type { createGatewayQuestionPanelProps } from "./chat-question-card.ts";
-import { renderChatVoiceError, renderMicrophoneActivity } from "./chat-voice-activity.ts";
+import { renderChatVoiceError } from "./chat-voice-activity.ts";
 
 type ChatComposerViewContext = {
   props: ChatComposerProps;
@@ -116,7 +116,9 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
   const disabledBanner = props.disabledBanner
     ? html`
         <div
-          class="agent-chat__disabled-banner callout ${props.disabledBanner.tone === "neutral"
+          class="agent-chat__disabled-banner ${props.disabledBanner.kind === "composer-replacement"
+            ? "agent-chat__disabled-banner--replacement"
+            : ""} callout ${props.disabledBanner.tone === "neutral"
             ? "agent-chat__disabled-banner--neutral"
             : "info"} callout--action"
           role="status"
@@ -152,9 +154,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                     .busyLabel ?? props.disabledBanner.actionLabel}`
               : props.disabledBanner.actionLabel}
           </button>
-          ${props.disabledBanner.kind === "composer-replacement" && showAbortableUi
-            ? renderChatPrimaryActions(runControlsProps)
-            : nothing}
         </div>
       `
     : nothing;
@@ -174,9 +173,9 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
     : nothing;
   const composerAlerts =
     voiceError !== nothing
-      ? html`<div class="agent-chat__composer-errors agent-chat__composer-errors--standalone"
-          >${voiceError}</div
-        >`
+      ? html`<div class="agent-chat__composer-errors agent-chat__composer-errors--standalone">
+          ${voiceError}
+        </div>`
       : nothing;
   const offlineText = props.offline
     ? props.queuedOutboxCount
@@ -214,10 +213,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
     : Math.max(0, composerStatuses.length - 1);
   const composerUnderlaps =
     showComposerInput && primaryComposerStatus
-      ? html`<div
-          class="agent-chat__composer-underlaps"
-          data-tone=${primaryComposerStatus.tone}
-        >
+      ? html`<div class="agent-chat__composer-underlaps" data-tone=${primaryComposerStatus.tone}>
           <div
             id=${props.disabledReason ? disabledReasonId : nothing}
             class="agent-chat__composer-status-band"
@@ -298,7 +294,8 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           return;
         }
         const target = event.target;
-        const row = target instanceof Element ? target.closest<HTMLElement>("[data-chat-queue-item]") : null;
+        const row =
+          target instanceof Element ? target.closest<HTMLElement>("[data-chat-queue-item]") : null;
         if (row?.dataset.chatQueueItem !== editingId) {
           props.queuedEdit?.onCancel?.();
         }
@@ -315,7 +312,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
         : nothing}
       ${disabledBanner} ${progressCard} ${queue} ${goal} ${composerAlerts}
       ${showComposerInput
-          ? html`<div
+        ? html`<div
             class="agent-chat__input agent-chat__input--chat ${props.offline
               ? "agent-chat__input--offline"
               : ""}${dictation?.active ? " agent-chat__input--dictating" : ""}"
@@ -330,6 +327,13 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             }}
             ${ref(state.composerInputRef ?? undefined)}
           >
+            ${dictation?.active
+              ? html`<svg class="agent-chat__dictation-edge-orbit" aria-hidden="true">
+                  <rect class="agent-chat__dictation-edge-orbit-tail" pathLength="100"></rect>
+                  <rect class="agent-chat__dictation-edge-orbit-mid" pathLength="100"></rect>
+                  <rect class="agent-chat__dictation-edge-orbit-head" pathLength="100"></rect>
+                </svg>`
+              : nothing}
             ${slashMenuVisible ? renderSlashMenu(requestUpdate, props, visibleDraft) : nothing}
             ${skillMenuVisible ? renderSkillMenu(state, skillMenuHost, requestUpdate) : nothing}
             <!-- Everything that stacks above the editor lives in one flow region so
@@ -367,22 +371,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                   `
                 : nothing}
               <div class="agent-chat__composer-status-stack">
-                ${dictation?.active
-                  ? html`
-                      <div
-                        class=${`agent-chat__dictation-status${dictation.finalizing ? " agent-chat__dictation-status--finalizing" : ""}`}
-                      >
-                        <span class="agent-chat__dictation-wave">
-                          ${renderMicrophoneActivity({
-                            status: dictation.connecting ? "connecting" : "listening",
-                            inputLevel: dictation.inputLevel,
-                            bars: 48,
-                            mode: "scroll",
-                          })}
-                        </span>
-                      </div>
-                    `
-                  : nothing}
                 ${renderFallbackIndicator(props.fallbackStatus)}
                 ${renderCompactionIndicator(props.compactionStatus)}
               </div>
@@ -434,7 +422,9 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
               <div class="agent-chat__composer-combobox">
                 <textarea
                   ${ref(state.textareaRef ?? undefined)}
-                  class=${skillDraftOverlay === nothing ? "" : "agent-chat__composer-textarea--rich"}
+                  class=${skillDraftOverlay === nothing
+                    ? ""
+                    : "agent-chat__composer-textarea--rich"}
                   .value=${dictationPreviewDraft}
                   dir=${detectTextDirection(dictationPreviewDraft)}
                   ?disabled=${!canCompose}
@@ -544,11 +534,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
               <div class="agent-chat__composer-trail">
                 <div class="agent-chat__composer-meta">${contextNotice}</div>
                 ${composerControls !== nothing
-                  ? html`
-                      <div class="agent-chat__composer-controls">
-                        ${composerControls}
-                      </div>
-                    `
+                  ? html` <div class="agent-chat__composer-controls">${composerControls}</div> `
                   : nothing}
                 <div class="agent-chat__composer-actions">
                   ${renderChatPrimaryActions(runControlsProps)}

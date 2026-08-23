@@ -38,7 +38,7 @@ export function renderNewSessionIncognitoControl(submission: {
             }
           }}
         >
-          ${icons.eyeOff}
+          ${icons.shredder}
         </button>
       </openclaw-tooltip>
     </div>
@@ -57,7 +57,7 @@ export function renderNewSessionIncognitoNotice(active: boolean) {
       aria-hidden=${String(!active)}
     >
       <span class="new-session-page__incognito-notice-icon" aria-hidden="true">
-        ${icons.eyeOff}
+        ${icons.shredder}
       </span>
       <span>${description}</span>
     </div>

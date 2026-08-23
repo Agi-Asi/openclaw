@@ -488,41 +488,12 @@ body {
   width: 100%;
 }
 
-.composer-bench__composer-stack[data-shared-status-row] {
-  display: grid;
-}
-
-.composer-bench__composer-stack[data-shared-status-row]
-  > :is(.composer-bench__tasks-status, .agent-chat__composer-shell) {
-  grid-area: 1 / 1;
-}
-
-.composer-bench__composer-stack[data-shared-status-row] > .composer-bench__tasks-status {
-  z-index: 5;
-  align-self: start;
-  justify-self: start;
-  width: auto;
-  padding-top: 0;
-  margin: 8px 0 0 var(--composer-bench-composer-inset, 0px);
-}
-
-.composer-bench__composer-stack[data-shared-status-row] .chat-tasks-status {
-  margin: 0;
-}
-
-.composer-bench__composer-stack[data-shared-status-row] .agent-chat__progress-float {
-  width: auto;
-  justify-self: start;
-  justify-items: start;
-  margin-left: var(--composer-bench-tasks-offset, 0px);
-}
-
 .composer-bench__tasks-status {
   box-sizing: border-box;
   width: fit-content;
   max-width: 100%;
   padding-inline: 0;
-  margin: 0 0 8px;
+  margin: 0 auto 8px;
 }
 
 .composer-bench__tasks-status .chat-tasks-status {

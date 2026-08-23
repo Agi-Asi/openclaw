@@ -331,9 +331,6 @@ export class NewSessionPage extends OpenClawLightDomElement {
     this.browser.close();
     this.connectMachine.close();
     this.place.adoptAgentDefaults();
-    void this.updateComplete.then(() => {
-      this.querySelector<HTMLTextAreaElement>(".new-session-page__message")?.focus();
-    });
   }
 
   private setMessage(message: string, ownerKey = catalog.routeKey(this.data)) {

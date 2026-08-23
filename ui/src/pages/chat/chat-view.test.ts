@@ -1718,7 +1718,9 @@ describe("chat goal status", () => {
     const container = document.createElement("div");
     render(renderChat(props), container);
 
-    expect(container.querySelector(".agent-chat__goal-detail")).toBeNull();
+    expect(container.querySelector(".agent-chat__goal-detail")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
     const toggle = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Show goal details"]',
     );
@@ -1727,6 +1729,7 @@ describe("chat goal status", () => {
     render(renderChat(props), container);
 
     const detail = container.querySelector(".agent-chat__goal-detail");
+    expect(detail?.getAttribute("aria-hidden")).toBe("false");
     expect(detail?.querySelector(".agent-chat__goal-detail-objective")?.textContent).toBe(
       "Land the web goal UI",
     );

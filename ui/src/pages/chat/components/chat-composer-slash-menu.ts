@@ -307,7 +307,11 @@ function renderSlashCommandOption(params: {
       }}
     >
       <span class="slash-menu-icon"
-        >${cmd.icon ? renderSlashIcon(cmd.icon) : icons.terminal}</span
+        >${cmd.source === "skill"
+          ? icons.pencilSparkles
+          : cmd.icon
+            ? renderSlashIcon(cmd.icon)
+            : icons.terminal}</span
       >
       <span class="slash-menu-copy">
         <span class="slash-menu-name"

@@ -238,12 +238,12 @@ function renderChatQueueItem(
       ? t("chat.queue.imageCount", { count: String(item.attachments.length) })
       : "");
   const leadingIcon = reconnecting
-    ? icons.queueList
+    ? icons.listEnd
     : failed
       ? icons.alertTriangle
       : steerMode
         ? icons.arrowUp
-        : icons.queueList;
+        : icons.listEnd;
   const itemClass = `chat-queue__item${hasAuthorAvatar ? "" : " chat-queue__item--no-avatar"}${steerMode ? " chat-queue__item--steered" : ""}${
     failed ? " chat-queue__item--failed" : ""
   }${reconnecting ? " chat-queue__item--reconnect" : ""}${

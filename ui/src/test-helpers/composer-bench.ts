@@ -411,29 +411,29 @@ const scenarios: BenchScenario[] = [
     state: { content: "empty" },
   },
   {
-    name: "Typing",
-    description: "A focused one-line draft ready to send.",
-    state: { content: "one" },
+    name: "Commands open",
+    description: "The real slash-command palette opens with repository commands.",
+    state: { content: "empty", menu: "slash" },
   },
   {
-    name: "Typing multiline",
-    description: "A growing prompt with a stable footer.",
-    state: { content: "multiline" },
+    name: "Skills open",
+    description: "The real skill invocation sheet opens for normal navigation.",
+    state: { content: "one", menu: "skills" },
   },
   {
-    name: "Sending",
-    description: "A submitted draft entering the streaming state.",
-    state: { content: "one", status: "sending", run: "running" },
+    name: "New session",
+    description: "The New surface begins with an empty real composer.",
+    state: { surface: "new", content: "empty" },
+  },
+  {
+    name: "New incognito",
+    description: "A temporary New session disappears after Gateway restart.",
+    state: { surface: "new", visibility: "incognito", content: "empty" },
   },
   {
     name: "Plan 2 of 3",
     description: "The current plan sits above the composer as work progresses.",
     state: { content: "multiline", plan: "active" },
-  },
-  {
-    name: "Running tasks + Plan",
-    description: "Background tasks and the current plan share one status row.",
-    state: { content: "one", run: "running", tasks: "three", plan: "active" },
   },
   {
     name: "Plan complete",
@@ -486,16 +486,6 @@ const scenarios: BenchScenario[] = [
     state: { content: "skill-inline-mobile", width: 390 },
   },
   {
-    name: "Commands open",
-    description: "The real slash-command palette opens with repository commands.",
-    state: { content: "empty", menu: "slash" },
-  },
-  {
-    name: "Skills open",
-    description: "The real skill invocation sheet opens for normal navigation.",
-    state: { content: "one", menu: "skills" },
-  },
-  {
     name: "Plus menu open",
     description: "The real capability menu opens from the composer attachment control.",
     state: { content: "one", capabilities: "available", plusMenuOpen: true },
@@ -509,16 +499,6 @@ const scenarios: BenchScenario[] = [
     name: "Dictation active",
     description: "The focused dictation mode removes unrelated composer controls.",
     state: { content: "one", dictate: "recording" },
-  },
-  {
-    name: "New session",
-    description: "The New surface begins with an empty real composer.",
-    state: { surface: "new", content: "empty" },
-  },
-  {
-    name: "New incognito",
-    description: "A temporary New session disappears after Gateway restart.",
-    state: { surface: "new", visibility: "incognito", content: "empty" },
   },
   {
     name: "Session suggestion",
@@ -1583,11 +1563,7 @@ function renderChatSurface(sessionList: SessionsListResult) {
     onGatewayQuestionSkip: () => publishState({ inset: "none" }),
     onSlashIntent: () => {},
   });
-  const shareStatusRow = state.tasks !== "none" && state.plan !== "none";
-  return html`${renderBenchNeighbor()}<div
-      class="composer-bench__composer-stack"
-      ?data-shared-status-row=${shareStatusRow}
-    >
+  return html`${renderBenchNeighbor()}<div class="composer-bench__composer-stack">
       ${renderBenchTasksStatus()}${composer}
     </div>`;
 }
@@ -1866,25 +1842,6 @@ function renderBench(): void {
 }
 
 function applyTransientState(): void {
-  const sharedStack = document.querySelector<HTMLElement>(
-    ".composer-bench__composer-stack[data-shared-status-row]",
-  );
-  const tasksStatus = sharedStack?.querySelector<HTMLElement>(".chat-tasks-status");
-  if (sharedStack && tasksStatus) {
-    const composerShell = sharedStack.querySelector<HTMLElement>(".agent-chat__composer-shell");
-    const stackRect = sharedStack.getBoundingClientRect();
-    const composerRect = composerShell?.getBoundingClientRect();
-    if (composerRect) {
-      sharedStack.style.setProperty(
-        "--composer-bench-composer-inset",
-        `${Math.max(0, Math.round(composerRect.left - stackRect.left))}px`,
-      );
-    }
-    sharedStack.style.setProperty(
-      "--composer-bench-tasks-offset",
-      `${Math.ceil(tasksStatus.getBoundingClientRect().width + 8)}px`,
-    );
-  }
   const surface = document.querySelector<HTMLElement>(".composer-bench__surface");
   const composerShell = surface?.querySelector<HTMLElement>(".agent-chat__composer-shell");
   if (surface && composerShell) {
@@ -1906,7 +1863,7 @@ function applyTransientState(): void {
     );
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
   }
-  if (state.status === "focused") {
+  if (state.surface === "chat" && state.status === "focused") {
     textarea.focus({ preventScroll: true });
   }
 }
@@ -2105,15 +2062,20 @@ function selectScenario(index: number): void {
   const scenario = scenarios[nextIndex];
   if (!scenario) return;
   activeScenarioIndex = nextIndex;
-  commitState(
-    {
-      ...defaults,
-      ...scenario.state,
-      queueOrder: [...defaultQueueOrder],
-      queueTexts: { ...defaultQueueTexts },
-    },
-    false,
-  );
+  state = {
+    ...defaults,
+    ...scenario.state,
+    queueOrder: [...(scenario.state.queueOrder ?? defaultQueueOrder)],
+    queueTexts: { ...defaultQueueTexts, ...(scenario.state.queueTexts ?? {}) },
+  };
+  draft = seededDraft(state.content, state.menu);
+  pendingMenuActivation = state.menu !== "closed";
+  attachmentDraft.restore(attachmentFixtures(state.attachments));
+  patchSettings({ themeMode: state.theme });
+  resetChatComposerState("composer-bench");
+  writeState();
+  syncControls();
+  renderBench();
 }
 
 function moveScenario(delta: -1 | 1): void {

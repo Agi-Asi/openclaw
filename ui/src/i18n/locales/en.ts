@@ -189,7 +189,7 @@ export const en: TranslationMap = {
   },
   sessionProgressCard: {
     title: "Progress",
-    composerTitle: "Plan",
+    composerTitle: "Task progress",
     stepPosition: "Step {current} / {total}",
     shortCount: "{completed} of {total}",
     expandPlan: "Expand plan",

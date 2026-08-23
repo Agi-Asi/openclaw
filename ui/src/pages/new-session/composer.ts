@@ -152,6 +152,11 @@ function renderStartControl(options: NewSessionComposerOptions) {
 
 export class NewSessionComposerTextareaController {
   private textarea: HTMLTextAreaElement | null = null;
+  private placeholderFrame: number | null = null;
+  private placeholderStartedAt: number | null = null;
+  private placeholderText = "";
+  private placeholderTarget = "";
+  private placeholderEntered = false;
   readonly skillMenuState = createSkillMenuState();
   private capturedSelection: { start: number; end: number } | null = null;
 
@@ -159,6 +164,9 @@ export class NewSessionComposerTextareaController {
     const nextTextarea = element instanceof HTMLTextAreaElement ? element : null;
     if (this.textarea && this.textarea !== nextTextarea) {
       disconnectTextareaOverflowObserver(this.textarea);
+    }
+    if (this.textarea && !nextTextarea) {
+      this.resetPlaceholder();
     }
     this.textarea = nextTextarea;
     if (nextTextarea) {
@@ -176,6 +184,63 @@ export class NewSessionComposerTextareaController {
   }
 
   readonly getTextarea = () => this.textarea;
+
+  getPlaceholder(target: string, message: string, requestUpdate: () => void) {
+    if (message.length > 0) {
+      this.placeholderEntered = true;
+      if (this.placeholderFrame !== null) {
+        globalThis.cancelAnimationFrame?.(this.placeholderFrame);
+        this.placeholderFrame = null;
+      }
+      return target;
+    }
+    if (this.placeholderEntered) {
+      return target;
+    }
+    if (this.placeholderTarget !== target) {
+      this.resetPlaceholder();
+      this.placeholderTarget = target;
+    }
+    const requestFrame = globalThis.requestAnimationFrame?.bind(globalThis);
+    if (
+      !requestFrame ||
+      (globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
+    ) {
+      this.placeholderText = target;
+      this.placeholderEntered = true;
+      return target;
+    }
+    if (this.placeholderFrame === null) {
+      const step = (timestamp: number) => {
+        this.placeholderStartedAt ??= timestamp;
+        const elapsed = Math.max(0, timestamp - this.placeholderStartedAt - 220);
+        const length = Math.min(target.length, Math.floor(elapsed / 36));
+        if (length !== this.placeholderText.length) {
+          this.placeholderText = target.slice(0, length);
+          requestUpdate();
+        }
+        if (length < target.length) {
+          this.placeholderFrame = requestFrame(step);
+          return;
+        }
+        this.placeholderFrame = null;
+        this.placeholderEntered = true;
+      };
+      this.placeholderFrame = requestFrame(step);
+    }
+    return this.placeholderText;
+  }
+
+  private resetPlaceholder() {
+    if (this.placeholderFrame !== null) {
+      globalThis.cancelAnimationFrame?.(this.placeholderFrame);
+      this.placeholderFrame = null;
+    }
+    this.placeholderStartedAt = null;
+    this.placeholderText = "";
+    this.placeholderTarget = "";
+    this.placeholderEntered = false;
+  }
 
   /**
    * Remembers where the caret was before another control takes focus. Pressing
@@ -225,6 +290,7 @@ export class NewSessionComposerTextareaController {
 
   disconnect() {
     resetSkillMenuState(this.skillMenuState);
+    this.resetPlaceholder();
     if (this.textarea) {
       disconnectTextareaOverflowObserver(this.textarea);
       this.textarea = null;
@@ -362,6 +428,12 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
   const activeSkillOptionId = getActiveSkillMenuOptionId(skillMenuState, skillMenuHost.paneId);
   const skillMenuAnnouncementId = paneDomId(skillMenuHost.paneId, "skill-active-announcement");
   const skillDraftOverlay = renderSkillDraftOverlay(options.message);
+  const messagePlaceholder = t("newSession.messagePlaceholder");
+  const animatedPlaceholder = options.textareaController.getPlaceholder(
+    messagePlaceholder,
+    options.message,
+    options.requestUpdate,
+  );
   return html`
     <div
       class="agent-chat__composer-shell new-session-page__composer"
@@ -390,8 +462,8 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
                 : "agent-chat__composer-textarea--rich"}"
               rows="1"
               ?disabled=${options.submitting || options.messageLocked}
-              placeholder=${t("newSession.messagePlaceholder")}
-              aria-label=${t("newSession.messagePlaceholder")}
+              placeholder=${animatedPlaceholder}
+              aria-label=${messagePlaceholder}
               .value=${options.message}
               aria-autocomplete="list"
               aria-controls=${ifDefined(skillMenuVisible ? skillMenuListboxId : undefined)}

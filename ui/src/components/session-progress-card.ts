@@ -7,86 +7,6 @@ import { toSanitizedMarkdownHtml } from "./markdown.ts";
 
 type SessionProgressCardPlacement = "board" | "composer" | "hovercard" | "rail";
 
-type ComposerProgressHoverTimers = {
-  open?: ReturnType<typeof setTimeout>;
-  close?: ReturnType<typeof setTimeout>;
-};
-
-const composerProgressHoverTimers = new WeakMap<HTMLElement, ComposerProgressHoverTimers>();
-
-type ComposerProgressHoverState = "closed" | "entering" | "open" | "exiting";
-
-function setComposerProgressHoverState(root: HTMLElement, state: ComposerProgressHoverState) {
-  root.dataset.hoverState = state;
-  root.dataset.open = String(state !== "closed");
-}
-
-function prefersReducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function scheduleComposerProgressOpen(event: PointerEvent) {
-  const root = event.currentTarget as HTMLElement;
-  const timers = composerProgressHoverTimers.get(root) ?? {};
-  if (timers.close) {
-    clearTimeout(timers.close);
-    timers.close = undefined;
-  }
-  const state = root.dataset.hoverState as ComposerProgressHoverState | undefined;
-  if (state === "open" || state === "entering" || timers.open) {
-    composerProgressHoverTimers.set(root, timers);
-    return;
-  }
-  if (state === "exiting") {
-    setComposerProgressHoverState(root, "open");
-    composerProgressHoverTimers.set(root, timers);
-    return;
-  }
-  timers.open = setTimeout(() => {
-    setComposerProgressHoverState(root, prefersReducedMotion() ? "open" : "entering");
-    timers.open = undefined;
-  }, 600);
-  composerProgressHoverTimers.set(root, timers);
-}
-
-function scheduleComposerProgressClose(event: PointerEvent) {
-  const root = event.currentTarget as HTMLElement;
-  const timers = composerProgressHoverTimers.get(root) ?? {};
-  if (timers.open) {
-    clearTimeout(timers.open);
-    timers.open = undefined;
-  }
-  if (timers.close) {
-    clearTimeout(timers.close);
-  }
-  if (root.dataset.hoverState === "closed") {
-    composerProgressHoverTimers.set(root, timers);
-    return;
-  }
-  timers.close = setTimeout(() => {
-    setComposerProgressHoverState(root, prefersReducedMotion() ? "closed" : "exiting");
-    timers.close = undefined;
-  }, 300);
-  composerProgressHoverTimers.set(root, timers);
-}
-
-function finishComposerProgressAnimation(event: AnimationEvent) {
-  if (event.target !== event.currentTarget) {
-    return;
-  }
-  const root = (event.currentTarget as HTMLElement).closest<HTMLElement>(
-    ".session-progress-card--composer",
-  );
-  if (!root) {
-    return;
-  }
-  if (event.animationName === "session-progress-card-enter") {
-    setComposerProgressHoverState(root, "open");
-  } else if (event.animationName === "session-progress-card-exit") {
-    setComposerProgressHoverState(root, "closed");
-  }
-}
-
 const STATUS_LABEL_KEYS: Record<ProgressCardStep["status"], Parameters<typeof t>[0]> = {
   completed: "sessionProgressCard.status.completed",
   in_progress: "sessionProgressCard.status.inProgress",
@@ -140,7 +60,7 @@ function renderSteps(card: ProgressCard) {
           ? icons.check
           : step.status === "in_progress"
             ? html`<span class="session-run-spinner"></span>`
-            : icons.circle;
+            : icons.clock;
       return html`<li
         class="session-progress-card__step session-progress-card__step--${step.status}"
         aria-label=${t("sessionProgressCard.stepLabel", { status: statusLabel, step: step.step })}
@@ -213,58 +133,44 @@ export function renderSessionProgressCard(
       ? icons.check
       : currentStep?.status === "in_progress"
         ? html`<span class="session-run-spinner"></span>`
-        : icons.circle;
-    return html`<div
+        : icons.clock;
+    return html`<details
       class="session-progress-card session-progress-card--composer"
       data-progress-card-placement="composer"
       data-complete=${String(complete)}
-      data-open="false"
-      data-hover-state="closed"
-      @pointerenter=${scheduleComposerProgressOpen}
-      @pointerleave=${scheduleComposerProgressClose}
+      ?open=${!complete}
     >
-      <div
-        class="session-progress-card__summary"
-        aria-label=${composerCountLabel}
-      >
-        <span
-          class="session-progress-card__summary-indicator${complete
-            ? " session-progress-card__summary-indicator--complete"
-            : ""}"
-          aria-hidden="true"
-        >
-          ${summaryIndicator}
-        </span>
-        <span class="session-progress-card__current">${stepLabel}</span>
-        ${counts
-          ? html`<span class="session-progress-card__summary-count"
-              >${currentPosition}/${counts.total}</span
-            >`
-          : nothing}
-      </div>
-      <div
-        class="session-progress-card__body"
-        role="region"
-        aria-label=${composerCountLabel}
-        @animationend=${finishComposerProgressAnimation}
-      >
-        <div class="session-progress-card__heading">
-          <span>${t("sessionProgressCard.composerTitle")}</span>
-          <span class="session-progress-card__heading-actions">
-            ${shortCount} ${dismiss}
+      <summary class="session-progress-card__summary" aria-label=${composerCountLabel}>
+        <span class="session-progress-card__summary-collapsed">
+          <span
+            class="session-progress-card__summary-indicator${complete
+              ? " session-progress-card__summary-indicator--complete"
+              : ""}"
+            aria-hidden="true"
+          >
+            ${summaryIndicator}
           </span>
-        </div>
-        ${counts
-          ? html`<progress
-              class="session-progress-card__progress"
-              value=${currentPosition}
-              max=${counts.total}
-              aria-label=${composerCountLabel}
-            ></progress>`
-          : nothing}
+          <span class="session-progress-card__current">${stepLabel}</span>
+          ${counts
+            ? html`<span class="session-progress-card__summary-count"
+                >${currentPosition}/${counts.total}</span
+              >`
+            : nothing}
+        </span>
+        <span class="session-progress-card__summary-expanded">
+          <span class="session-progress-card__summary-title"
+            >${t("sessionProgressCard.composerTitle")}</span
+          >
+          <span class="session-progress-card__heading-actions">${shortCount} ${dismiss}</span>
+        </span>
+        <span class="session-progress-card__summary-chevron" aria-hidden="true"
+          >${icons.chevronDown}</span
+        >
+      </summary>
+      <div class="session-progress-card__body" role="region" aria-label=${composerCountLabel}>
         ${renderMarkdown(card.markdown)} ${renderSteps(card)}
       </div>
-    </div>`;
+    </details>`;
   }
   return html`<section
     class="session-progress-card session-progress-card--${placement}"
