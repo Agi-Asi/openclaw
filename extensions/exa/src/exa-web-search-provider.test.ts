@@ -83,7 +83,11 @@ describe("exa web search provider", () => {
       const cached = await tool.execute(args);
 
       expect(fetchMock).toHaveBeenCalledOnce();
-      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      const requestBody = fetchMock.mock.calls[0]?.[1]?.body;
+      if (typeof requestBody !== "string") {
+        throw new Error("Expected Exa request body to be a JSON string");
+      }
+      expect(JSON.parse(requestBody)).toMatchObject({
         numResults: 1,
       });
       expect(first).toMatchObject({ provider: "exa", count: 1 });
