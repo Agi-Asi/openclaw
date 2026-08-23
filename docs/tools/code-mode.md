@@ -431,11 +431,18 @@ Rules:
   string enum (`"javascript" | "typescript"`), not a `oneOf`/`anyOf` union,
   since some providers reject those shapes.
 - If `language` is `"typescript"`, OpenClaw transpiles before evaluation.
-- `restartSafe: true` requests host-enforced read-only or reconstructable
-  execution. The host validates every nested surface; the request does not
-  certify safety or guarantee recovery. Unsafe, unmarked, and mutation-capable
-  surfaces are rejected. It does not make ordinary runs replay eligible; omit
-  the field unless the host explicitly requests this validation mode.
+- Do not set `restartSafe` on a new `exec`. Set it to `true` only when OpenClaw
+  explicitly requests replay after a gateway restart, and never for `write`,
+  `edit`, `exec`, or any mutation. Every catalog call must be explicitly
+  replay-safe. OpenClaw rejects unmarked catalog tools and namespace
+  surfaces that are not proven replay-safe, and restart-safe runs do not
+  auto-drain pending calls. A generic exec surface is not replay-safe merely
+  because one command appears read-only; use audited read, grep, or find tools.
+  Suspended results are marked replay-safe so
+  [restart recovery](/gateway/restart-recovery) can reconstruct an interrupted
+  turn from its transcript instead of restoring the process-local snapshot.
+  Recovery remains limited to audited read-only core tools and explicitly
+  replay-safe plugin tools. Leave the field omitted for ordinary calls.
 - `exec` rejects `import`, `require`, dynamic import, and module-loader
   patterns.
 - `exec` never exposes the normal shell `exec` implementation recursively.

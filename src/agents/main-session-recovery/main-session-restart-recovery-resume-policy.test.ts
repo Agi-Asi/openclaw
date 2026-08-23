@@ -184,6 +184,46 @@ describe("resolveMainSessionResumePolicy former terminal states", () => {
       forceCodeModeTools: true,
     });
   });
+
+  it("ignores model-supplied restartSafe claims without a replay-safe checkpoint", () => {
+    expect(
+      resolvePolicy({
+        messages: [
+          { role: "user", content: "continue the code run" },
+          {
+            role: "assistant",
+            stopReason: "toolUse",
+            content: [
+              {
+                type: "toolCall",
+                id: "exec-call",
+                name: "exec",
+                arguments: { code: "return 1", restartSafe: true },
+              },
+            ],
+          },
+          {
+            role: "toolResult",
+            toolCallId: "exec-call",
+            toolName: "exec",
+            arguments: { restartSafe: true },
+            details: { status: "waiting", runId: "code-run", restartSafe: true },
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  status: "waiting",
+                  runId: "code-run",
+                  restartSafe: true,
+                }),
+              },
+            ],
+          },
+          codeModeWait(),
+        ],
+      }),
+    ).toEqual({ action: "resume", forceRestartSafeTools: true });
+  });
 });
 
 describe("resolveMainSessionResumePolicy progress tails", () => {

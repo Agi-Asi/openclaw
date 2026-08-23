@@ -255,7 +255,7 @@ export function createCodeModeTools(ctx: CodeModeToolContext): AnyAgentTool[] {
       restartSafe: Type.Optional(
         Type.Boolean({
           description:
-            "Requests host-enforced restart-safe execution. The host validates every nested surface as read-only or reconstructable; true never certifies safety or guarantees recovery. Omit for ordinary runs.",
+            "Do not set on a new exec. Set true only when OpenClaw explicitly requests replay after a gateway restart; never for write, edit, exec, or any mutation. True rejects unmarked or namespace surfaces.",
         }),
       ),
     }),

@@ -308,13 +308,13 @@ describe("Code Mode catalog and model-visible surface", () => {
     expect(parameters.properties?.code?.description).not.toContain("ALL_TOOLS");
     expect(parameters.properties?.code?.description).not.toContain("tools.call");
     expect(parameters.properties?.code?.description).toContain("`require`, or `import`");
+    expect(parameters.properties?.restartSafe?.description).toContain("Do not set on a new exec");
     expect(parameters.properties?.restartSafe?.description).toContain(
-      "Requests host-enforced restart-safe execution",
+      "only when OpenClaw explicitly requests replay after a gateway restart",
     );
     expect(parameters.properties?.restartSafe?.description).toContain(
-      "true never certifies safety or guarantees recovery",
+      "never for write, edit, exec, or any mutation",
     );
-    expect(parameters.properties?.restartSafe?.description).toContain("Omit for ordinary runs");
     expect(parameters.properties?.language?.description).toContain(
       'Must be "javascript" or "typescript"',
     );
