@@ -185,6 +185,185 @@ afterEach(async () => {
 });
 
 describe("maybeMigrateAuthProfileJsonStoresToSqlite", () => {
+  it.skipIf(process.platform === "win32")(
+    "removes a dangling legacy auth profile link so startup can proceed",
+    async () => {
+      const state = await makeTestState();
+      const authPath = path.join(state.agentDir(), "auth-profiles.json");
+      fs.mkdirSync(path.dirname(authPath), { recursive: true });
+      fs.symlinkSync("missing-auth-profiles.json", authPath);
+
+      expect(fs.lstatSync(authPath).isSymbolicLink()).toBe(true);
+      expect(
+        listAuthProfileStoresRequiringMigration({
+          agentDirs: [state.agentDir()],
+          env: state.env,
+        }),
+      ).toHaveLength(1);
+
+      const result = await maybeMigrateAuthProfileJsonStoresToSqlite({
+        cfg: {},
+        prompter: makePrompter(true),
+        env: state.env,
+      });
+
+      expect(result.detected).toContain(authPath);
+      expect(result.changes).toEqual([
+        expect.stringContaining("Removed dangling legacy auth source link"),
+      ]);
+      expect(result.warnings).toEqual([]);
+      expect(() => fs.lstatSync(authPath)).toThrow(expect.objectContaining({ code: "ENOENT" }));
+      expect(
+        listAuthProfileStoresRequiringMigration({
+          agentDirs: [state.agentDir()],
+          env: state.env,
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "removes a dangling shared OAuth link without reporting a stale migration failure",
+    async () => {
+      const state = await makeTestState();
+      const oauthPath = state.statePath("credentials/oauth.json");
+      fs.mkdirSync(path.dirname(oauthPath), { recursive: true });
+      fs.symlinkSync("missing-oauth.json", oauthPath);
+
+      const result = await maybeMigrateAuthProfileJsonStoresToSqlite({
+        cfg: {},
+        prompter: makePrompter(true),
+        env: state.env,
+      });
+
+      expect(result.detected).toContain(oauthPath);
+      expect(result.changes).toEqual([
+        expect.stringContaining("Removed dangling legacy auth source link"),
+      ]);
+      expect(result.warnings).toEqual([]);
+      expect(() => fs.lstatSync(oauthPath)).toThrow(expect.objectContaining({ code: "ENOENT" }));
+    },
+  );
+
+  it("leaves shared OAuth that appears after confirmation for a fresh Doctor run", async () => {
+    const state = await makeTestState();
+    const authPath = await writeLegacyAuthProfilesJson(state, {
+      version: 1,
+      profiles: {
+        "openai:confirmed": {
+          type: "api_key",
+          provider: "openai",
+          key: "sk-confirmed",
+        },
+      },
+    });
+    const oauthPath = state.statePath("credentials/oauth.json");
+    const prompter = makePrompter(true);
+    prompter.confirmAutoFix = vi.fn(async () => {
+      fs.mkdirSync(path.dirname(oauthPath), { recursive: true });
+      fs.writeFileSync(
+        oauthPath,
+        `${JSON.stringify({
+          openai: {
+            access: "appeared-after-confirmation",
+            refresh: "appeared-after-confirmation",
+            expires: 1_900_000_000_000,
+          },
+        })}\n`,
+        "utf8",
+      );
+      return true;
+    });
+
+    const result = await maybeMigrateAuthProfileJsonStoresToSqlite({
+      cfg: {},
+      prompter,
+      env: state.env,
+    });
+
+    expect(result.changes).toEqual([expect.stringContaining("Migrated auth profile JSON")]);
+    expect(result.warnings).toEqual([
+      "Legacy auth source set changed during migration; retry Doctor.",
+    ]);
+    expect(fs.existsSync(authPath)).toBe(false);
+    expect(fs.existsSync(oauthPath)).toBe(true);
+    expectNoMigratedArchive(oauthPath);
+  });
+
+  it("keeps JSON-era ownership through shared writes until Doctor imports the credential", async () => {
+    const state = await makeTestState();
+    const authPath = await writeLegacyAuthProfilesJson(state, {
+      version: 1,
+      profiles: {
+        "openai:json-era": {
+          type: "api_key",
+          provider: "openai",
+          key: "sk-json-era",
+        },
+      },
+    });
+    const legacyDatabasePath = path.join(state.agentDir(), "openclaw-agent.sqlite");
+    expect(fs.existsSync(legacyDatabasePath)).toBe(false);
+
+    const realLstatSync = fs.lstatSync.bind(fs);
+    let legacyJsonProbes = 0;
+    const lstatSpy = vi.spyOn(fs, "lstatSync").mockImplementation((pathname, options) => {
+      if (path.resolve(String(pathname)) === path.resolve(authPath)) {
+        legacyJsonProbes += 1;
+      }
+      return realLstatSync(pathname, options as never);
+    });
+    try {
+      for (const key of ["sk-first-write", "sk-second-write"]) {
+        writePersistedAuthProfileStoreRaw({
+          version: 1,
+          profiles: {
+            "anthropic:written": {
+              type: "api_key",
+              provider: "anthropic",
+              key,
+            },
+          },
+        });
+      }
+      expect(legacyJsonProbes).toBe(1);
+    } finally {
+      lstatSpy.mockRestore();
+    }
+
+    const beforeDoctor = openOpenClawStateDatabase({ env: state.env });
+    expect(
+      beforeDoctor.db
+        .prepare("SELECT value_json FROM config_machine_state WHERE state_key = ?")
+        .get("auth.sharedStore"),
+    ).toBeUndefined();
+    expect(fs.existsSync(legacyDatabasePath)).toBe(true);
+
+    const result = await maybeMigrateAuthProfileJsonStoresToSqlite({
+      cfg: {},
+      prompter: makePrompter(true),
+      env: state.env,
+      now: () => 123,
+    });
+
+    expect(result.warnings).toStrictEqual([]);
+    expect(result.changes).toEqual([expect.stringContaining("Migrated auth profile JSON")]);
+    expect(loadPersistedAuthProfileStore(state.agentDir())?.profiles).toMatchObject({
+      "openai:json-era": {
+        type: "api_key",
+        provider: "openai",
+        key: "sk-json-era",
+      },
+      "anthropic:written": {
+        type: "api_key",
+        provider: "anthropic",
+        key: "sk-second-write",
+      },
+    });
+    expect(fs.existsSync(authPath)).toBe(false);
+    expectMigratedArchive(authPath);
+  });
+
   it("migrates the inherited auth owner after it leaves the explicit roster", async () => {
     const state = await makeTestState();
     const authPath = await writeLegacyAuthProfilesJson(

@@ -3984,7 +3984,8 @@ source "$ROOT_DIR/scripts/lib/docker-e2e-logs.sh"
     const pluginBinding = readFileSync(PLUGIN_BINDING_COMMAND_ESCAPE_DOCKER_E2E_PATH, "utf8");
     expect(pluginBinding).toContain("const scanBytes = 65536");
     expect(pluginBinding).toContain("fs.statSync(logPath)");
-    expect(pluginBinding).toContain("fs.readSync(fd, buffer, 0, length, stat.size - length)");
+    expect(pluginBinding).toContain("while (offset < stat.size)");
+    expect(pluginBinding).toContain("fs.readSync(fd, buffer, 0, length, offset)");
     expect(pluginBinding).not.toContain("process.env.OPENCLAW_DOCKER_E2E_LOG_PRINT_BYTES");
     expect(pluginBinding).not.toContain('readFileSync(logPath, "utf8")');
   });
@@ -5121,11 +5122,15 @@ source "$ROOT_DIR/scripts/lib/docker-e2e-logs.sh"
 
     expectTextToIncludeAll(runner, [
       "--reporter=verbose -t",
+      "src/auto-reply/reply/dispatch-from-config.lifecycle-and-bindings.test.ts",
+      "src/auto-reply/reply/dispatch-from-config.test.ts",
       'DOCKER_RUN_TIMEOUT="${OPENCLAW_PLUGIN_BINDING_COMMAND_ESCAPE_DOCKER_RUN_TIMEOUT:-900s}"',
       'DOCKER_COMMAND_TIMEOUT="$DOCKER_RUN_TIMEOUT" docker_e2e_docker_run_cmd run --rm',
       'docker_e2e_docker_cmd rm -f "$CONTAINER_NAME"',
       "lets authorized gateway-style plugin commands escape plugin-owned bindings",
       "keeps unauthorized plugin-owned binding slash replies suppressed while routed to the bound plugin",
+      "scanText(decoder.write",
+      "passCounts.length !== 2 || totalPassed !== 3",
       "expected focused Vitest summary for exactly 3 passed tests",
     ]);
     expect(runner).not.toContain("-- --reporter=verbose");

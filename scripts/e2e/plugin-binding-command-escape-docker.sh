@@ -33,7 +33,7 @@ DOCKER_COMMAND_TIMEOUT="$DOCKER_RUN_TIMEOUT" docker_e2e_docker_run_cmd run --rm 
   -e "FOCUSED_TEST_REGEX=$FOCUSED_TEST_REGEX" \
   -e OPENCLAW_VITEST_FS_MODULE_CACHE_PATH=/tmp/openclaw-vitest-cache \
   "$IMAGE_NAME" \
-  bash -lc 'set -euo pipefail; corepack enable; node scripts/run-vitest.mjs src/auto-reply/reply/dispatch-from-config.test.ts --reporter=verbose -t "$FOCUSED_TEST_REGEX"' \
+  bash -lc 'set -euo pipefail; corepack enable; node scripts/run-vitest.mjs src/auto-reply/reply/dispatch-from-config.lifecycle-and-bindings.test.ts src/auto-reply/reply/dispatch-from-config.test.ts --reporter=verbose -t "$FOCUSED_TEST_REGEX"' \
   >"$RUN_LOG" 2>&1
 status=$?
 set -e
@@ -46,22 +46,48 @@ fi
 
 if ! node - "$RUN_LOG" <<'NODE'
 const fs = require("node:fs");
+const { StringDecoder } = require("node:string_decoder");
 const logPath = process.argv[2];
 const scanBytes = 65536;
 const stat = fs.statSync(logPath);
-const length = Math.min(stat.size, scanBytes);
-const buffer = Buffer.alloc(length);
+const buffer = Buffer.alloc(Math.min(stat.size, scanBytes));
 const fd = fs.openSync(logPath, "r");
+const decoder = new StringDecoder("utf8");
+const passCounts = [];
+let carry = "";
+let offset = 0;
+
+function scanText(text) {
+  const lines = `${carry}${text}`.split(/\r?\n/u);
+  carry = lines.pop() ?? "";
+  for (const line of lines) {
+    const normalized = line.replace(/\x1B\[[0-?]*[ -/]*[@-~]/gu, "");
+    const match = normalized.match(/^\s*Tests\s+(\d+) passed\b/u);
+    if (match) {
+      passCounts.push(Number.parseInt(match[1], 10));
+    }
+  }
+}
+
 try {
-  fs.readSync(fd, buffer, 0, length, stat.size - length);
+  while (offset < stat.size) {
+    const length = Math.min(buffer.length, stat.size - offset);
+    const bytesRead = fs.readSync(fd, buffer, 0, length, offset);
+    if (bytesRead === 0) {
+      break;
+    }
+    offset += bytesRead;
+    scanText(decoder.write(buffer.subarray(0, bytesRead)));
+  }
+  scanText(decoder.end());
+  scanText("\n");
 } finally {
   fs.closeSync(fd);
 }
-const text = buffer.toString("utf8").replace(/\x1B\[[0-?]*[ -/]*[@-~]/gu, "");
+const totalPassed = passCounts.reduce((sum, count) => sum + count, 0);
 
-if (!/(?:^|\n)\s*Tests\s+3 passed\b/u.test(text)) {
+if (passCounts.length !== 2 || totalPassed !== 3) {
   console.error("expected focused Vitest summary for exactly 3 passed tests");
-  console.error(text.slice(-4000));
   process.exit(1);
 }
 NODE
