@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -44,7 +44,10 @@ type ParsedWorkflow = {
 const REPO_ROOT = resolve(".");
 const VALIDATOR_CLOSURE = [
   "scripts/authorized-beta-focused-policy.json",
+  "scripts/full-release-validation-policy.mjs",
   "scripts/lib/record-shared.mjs",
+  "scripts/lib/plain-gh.mjs",
+  "scripts/release-ci-summary.mjs",
   "scripts/validate-authorized-beta-focused-evidence.mts",
 ] as const;
 
@@ -57,6 +60,57 @@ function stageValidatorClosure(root: string, scriptsDirectory: boolean): string 
     copyFileSync(join(REPO_ROOT, sourcePath), targetPath);
   }
   return join(targetRoot, "validate-authorized-beta-focused-evidence.mts");
+}
+
+function writeGhShim(root: string, body: string): { callsPath: string; ghPath: string } {
+  const callsPath = join(root, "gh-calls.jsonl");
+  const ghPath = join(root, "gh");
+  writeFileSync(
+    ghPath,
+    `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(process.env.GH_CALLS_PATH, JSON.stringify(args) + "\\n");
+${body}
+`,
+  );
+  chmodSync(ghPath, 0o755);
+  return { callsPath, ghPath };
+}
+
+function runStagedJobLogProbe(body: string, targetSha = "a".repeat(40)) {
+  const root = tempDirs.make("authorized-beta-focused-job-log-");
+  const validatorPath = stageValidatorClosure(root, false);
+  const { callsPath } = writeGhShim(root, body);
+  const probePath = join(root, "probe.mjs");
+  writeFileSync(
+    probePath,
+    [
+      `import { assertAuthorizedBetaFocusedJobLogTarget } from ${JSON.stringify(pathToFileURL(validatorPath).href)};`,
+      `try {`,
+      `  await assertAuthorizedBetaFocusedJobLogTarget("123", ${JSON.stringify(targetSha)});`,
+      `  process.stdout.write("verified");`,
+      `} catch (error) {`,
+      `  process.stderr.write(error instanceof Error ? error.message : String(error));`,
+      `  process.exitCode = 17;`,
+      `}`,
+    ].join("\n"),
+  );
+  const result = spawnSync(process.execPath, [probePath], {
+    cwd: root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GH_CALLS_PATH: callsPath,
+      PATH: `${root}:${process.env.PATH ?? ""}`,
+    },
+  });
+  const calls = readFileSync(callsPath, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as string[]);
+  return { calls, result };
 }
 
 function namedStep(workflow: ParsedWorkflow, jobName: string, stepName: string) {
@@ -196,26 +250,63 @@ describe("authorized beta focused evidence", () => {
   ])("executes the $name module closure", ({ scriptsDirectory }) => {
     const root = tempDirs.make("authorized-beta-focused-stage-");
     const validatorPath = stageValidatorClosure(root, scriptsDirectory);
+    const targetSha = "a".repeat(40);
+    const { callsPath } = writeGhShim(
+      root,
+      `process.stdout.write("\\u001b[36mtarget ${targetSha}\\u001b[0m");`,
+    );
     const probePath = join(root, "probe.mjs");
     writeFileSync(
       probePath,
       [
-        `import { digestAuthorizedBetaFocusedPolicy, readAuthorizedBetaFocusedPolicy, validateAuthorizedBetaFocusedArtifactShape } from ${JSON.stringify(pathToFileURL(validatorPath).href)};`,
+        `import { assertAuthorizedBetaFocusedJobLogTarget, digestAuthorizedBetaFocusedPolicy, readAuthorizedBetaFocusedPolicy, validateAuthorizedBetaFocusedArtifactShape } from ${JSON.stringify(pathToFileURL(validatorPath).href)};`,
         `const policy = readAuthorizedBetaFocusedPolicy();`,
         `const producer = { repository: "openclaw/openclaw", runId: "123", runAttempt: 1, workflowPath: ".github/workflows/authorized-beta-focused-validation.yml", workflowFullRef: "refs/tags/release-publish/aaaaaaaaaaaa-1", workflowRef: "release-publish/aaaaaaaaaaaa-1", workflowSha: "a".repeat(40) };`,
         `const inventory = { eligibilityPlanDigest: policy.eligibilityPlanDigest, ...policy.inventory };`,
         `const evidence = { schema: "openclaw.authorized-beta-focused-evidence.v1", mode: policy.mode, policySha256: digestAuthorizedBetaFocusedPolicy(policy), releaseTag: policy.releaseTag, candidate: { sha: policy.candidateSha, parentSha: policy.baseCandidateSha, treeSha: policy.candidateTreeSha, packageProjectionSha256: policy.packageProjectionSha256, changedPaths: policy.changedPaths }, producer, historical: { frvRunId: policy.historicalFrv.runId, frvRunAttempt: policy.historicalFrv.runAttempt, releaseChecksRunId: policy.historicalFrv.releaseChecksRunId, performanceRunId: policy.historicalFrv.performanceRunId }, focused: { ciRunId: policy.focusedProof.ciRunId, ciJobId: policy.focusedProof.ciSuccessJobId, pluginRunId: policy.focusedProof.pluginRunId, pluginJobId: policy.focusedProof.pluginSuccessJobId, reviewedHeadSha: policy.reviewedHeadSha }, inventory };`,
         `validateAuthorizedBetaFocusedArtifactShape(evidence, policy, producer, inventory);`,
+        `await assertAuthorizedBetaFocusedJobLogTarget("123", ${JSON.stringify(targetSha)});`,
         `process.stdout.write("verified");`,
       ].join("\n"),
     );
     const result = spawnSync(process.execPath, [probePath], {
       cwd: root,
       encoding: "utf8",
+      env: {
+        ...process.env,
+        GH_CALLS_PATH: callsPath,
+        PATH: `${root}:${process.env.PATH ?? ""}`,
+      },
     });
     expect(result.stderr).toBe("");
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("verified");
+    expect(readFileSync(callsPath, "utf8").trim()).toBe(
+      JSON.stringify([
+        "api",
+        "repos/openclaw/openclaw/actions/jobs/123/logs",
+        "--allow-escape-sequences",
+      ]),
+    );
+  });
+
+  it("rejects a focused job log that does not contain the reviewed SHA", () => {
+    const { calls, result } = runStagedJobLogProbe(
+      'process.stdout.write("\\u001b[31mother\\u001b[0m");',
+    );
+    expect(result.status).toBe(17);
+    expect(result.stderr).toContain("job 123 log does not bind target");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("propagates focused job log helper errors without masking them", () => {
+    const { calls, result } = runStagedJobLogProbe(
+      'process.stderr.write("job log unavailable\\n"); process.exit(23);',
+    );
+    expect(result.status).toBe(17);
+    expect(result.stderr).toContain("Command failed");
+    expect(result.stderr).toContain("job log unavailable");
+    expect(calls).toHaveLength(1);
   });
 
   it("accepts the exact artifact shape and rejects inventory drift", () => {
@@ -371,6 +462,9 @@ describe("authorized beta focused evidence", () => {
     expect(validatorSource).toContain("policy.historicalToolingRef");
     expect(validatorSource).toContain("assertAuthorizedEligibilityPlanDigest(");
     expect(validatorSource).toContain('await import("./release-plan-contract.mjs")');
+    expect(validatorSource).toContain('await import("./release-ci-summary.mjs")');
+    expect(validatorSource).toContain("createReleaseEvidenceClient(REPOSITORY).getJobLog(jobId)");
+    expect(validatorSource).not.toContain("`repos/${REPOSITORY}/actions/jobs/${jobId}/logs`");
     const trustBranch = validatorSource.indexOf("if (includeTrust)");
     const pluginImport = validatorSource.indexOf('await import("./lib/plugin-clawhub-release.ts")');
     expect(trustBranch).toBeGreaterThan(-1);

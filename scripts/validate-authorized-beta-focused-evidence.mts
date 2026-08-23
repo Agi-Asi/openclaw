@@ -301,8 +301,12 @@ function requireJob(params: {
   }
 }
 
-function requireJobLogTarget(jobId: string, targetSha: string) {
-  const log = gh(["api", `repos/${REPOSITORY}/actions/jobs/${jobId}/logs`]);
+export async function assertAuthorizedBetaFocusedJobLogTarget(
+  jobId: string,
+  targetSha: string,
+): Promise<void> {
+  const { createReleaseEvidenceClient } = await import("./release-ci-summary.mjs");
+  const log = createReleaseEvidenceClient(REPOSITORY).getJobLog(jobId);
   if (!log.includes(targetSha)) {
     fail(`job ${jobId} log does not bind target ${targetSha}`);
   }
@@ -508,7 +512,7 @@ export function assertAuthorizedBetaFocusedCandidate(
   }
 }
 
-function assertHistoricalAndFocusedEvidence(policy: AuthorizedBetaFocusedPolicy) {
+async function assertHistoricalAndFocusedEvidence(policy: AuthorizedBetaFocusedPolicy) {
   const historical = policy.historicalFrv;
   requireHistoricalExecutionPlan(policy);
   requireRun({
@@ -622,7 +626,7 @@ function assertHistoricalAndFocusedEvidence(policy: AuthorizedBetaFocusedPolicy)
     conclusion: "success",
     headSha: policy.historicalToolingSha,
   });
-  requireJobLogTarget(focused.ciTargetLogJobId, policy.reviewedHeadSha);
+  await assertAuthorizedBetaFocusedJobLogTarget(focused.ciTargetLogJobId, policy.reviewedHeadSha);
   requireRun({
     runId: focused.pluginRunId,
     attempt: 1,
@@ -646,7 +650,10 @@ function assertHistoricalAndFocusedEvidence(policy: AuthorizedBetaFocusedPolicy)
     conclusion: "success",
     headSha: policy.historicalToolingSha,
   });
-  requireJobLogTarget(focused.pluginTargetLogJobId, policy.reviewedHeadSha);
+  await assertAuthorizedBetaFocusedJobLogTarget(
+    focused.pluginTargetLogJobId,
+    policy.reviewedHeadSha,
+  );
 }
 
 function producerIdentity(args: ParsedArgs): AuthorizedBetaFocusedProducerIdentity {
@@ -855,7 +862,7 @@ async function main() {
   const producer = producerIdentity(args);
   assertAuthorizedBetaFocusedCandidate(policy, candidateRoot);
   assertProducer(producer, command === "create");
-  assertHistoricalAndFocusedEvidence(policy);
+  await assertHistoricalAndFocusedEvidence(policy);
 
   if (command === "create") {
     const inventory = await collectInventory(policy, candidateRoot, true);

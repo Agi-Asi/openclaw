@@ -114,6 +114,10 @@ export declare function assertAuthorizedEligibilityPlanDigest(
   plan: unknown,
   expectedDigest: string,
 ): Promise<string>;
+export declare function assertAuthorizedBetaFocusedJobLogTarget(
+  jobId: string,
+  targetSha: string,
+): Promise<void>;
 export declare function assertAuthorizedHistoricalExecutionPlanChildren(
   children: unknown[],
   expectedSelectedRuns: ReadonlyMap<string, string>,
