@@ -104,7 +104,9 @@ function textToolResult(text: string, details: unknown = {}): AgentToolResult<un
 
 function attachWaitingClaimMutation(
   details: object,
-  mutation: { kind: "set"; waitingCodeModeRunId: string; expiresAt: number },
+  mutation:
+    | { kind: "set"; waitingCodeModeRunId: string; expiresAt: number }
+    | { kind: "clear"; waitingCodeModeRunId: string; expectedClaim: unknown },
 ): void {
   Object.defineProperty(details, CODE_MODE_WAITING_CLAIM_MUTATION, {
     configurable: true,
@@ -4017,6 +4019,54 @@ describe("createCodexDynamicToolBridge", () => {
 
     expect(readWaitingClaimMutation(result.transcriptDetails)).toEqual(mutation);
     expect(JSON.stringify(result)).not.toContain("waitingCodeModeRunId");
+  });
+
+  it("retains a terminal claim clear privately after a legacy extension replacement", async () => {
+    const mutation = {
+      kind: "clear" as const,
+      waitingCodeModeRunId: "run-1",
+      expectedClaim: { sourceSessionId: "session-1" },
+    };
+    const rawDetails = { status: "failed", code: "invalid_input" };
+    attachWaitingClaimMutation(rawDetails, mutation);
+    const registry = createEmptyPluginRegistry();
+    const factory = async (codex: {
+      on: (
+        event: "tool_result",
+        handler: (event: unknown) => Promise<{ result: AgentToolResult<unknown> }>,
+      ) => void;
+    }) => {
+      codex.on("tool_result", async () => ({
+        result: textToolResult("legacy terminal failure", {
+          status: "failed",
+          code: "invalid_input",
+        }),
+      }));
+    };
+    registry.codexAppServerExtensionFactories.push({
+      pluginId: "tokenjuice",
+      pluginName: "Tokenjuice",
+      rawFactory: factory,
+      factory,
+      source: "test",
+    });
+    setActivePluginRegistry(registry);
+
+    const result = await createBridgeWithToolResult(
+      "wait",
+      textToolResult("raw terminal failure", rawDetails),
+    ).handleToolCall({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      callId: "call-1",
+      namespace: null,
+      tool: "wait",
+      arguments: { runId: "run-1" },
+    });
+
+    expect(readWaitingClaimMutation(result.transcriptDetails)).toEqual(mutation);
+    expect(JSON.stringify(result)).not.toContain("waitingCodeModeRunId");
+    expect(JSON.stringify(result)).not.toContain("sourceSessionId");
   });
 
   it("drops a private waiting claim after a mismatched legacy extension replacement", async () => {

@@ -35,6 +35,34 @@ describe("createAgentToolResultMiddlewareRunner", () => {
     expect(Object.keys(result.details as object)).toEqual(["status", "runId"]);
   });
 
+  it("reattaches a terminal clear after middleware replacement", async () => {
+    const mutation = {
+      kind: "clear" as const,
+      waitingCodeModeRunId: "run-1",
+      expectedClaim: { waitingCodeModeRunId: "run-1" } as never,
+    };
+    const details = { status: "failed", code: "invalid_input" };
+    attachCodeModeWaitingClaimMutation(details, mutation);
+    const runner = createAgentToolResultMiddlewareRunner({ runtime: "openclaw" }, [
+      () => ({
+        result: {
+          content: [{ type: "text", text: "compacted terminal failure" }],
+          details: { status: "failed", code: "invalid_input" },
+        },
+      }),
+    ]);
+
+    const result = await runner.applyToolResultMiddleware({
+      toolCallId: "call-1",
+      toolName: "wait",
+      args: { runId: "run-1" },
+      result: { content: [{ type: "text", text: "raw terminal failure" }], details },
+    });
+
+    expect(readCodeModeWaitingClaimMutation(result.details)).toEqual(mutation);
+    expect(Object.keys(result.details as object)).toEqual(["status", "code"]);
+  });
+
   it.each([
     ["different run", { status: "waiting", runId: "run-2" }],
     ["terminal status", { status: "completed", runId: "run-1" }],

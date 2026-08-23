@@ -440,4 +440,37 @@ describe("SQLite Code Mode waiting claims", () => {
       ),
     ).toBe(true);
   });
+
+  it("commits the terminal transcript append when claim clearing fails", () => {
+    appendTranscriptMessageSync(scope, waitingMessage("run-clear-failed", "waiting-clear-failed"));
+    const claim = claims()?.["run-clear-failed"];
+    expect(claim).toBeDefined();
+    const resolved = resolveSqliteTranscriptScope(scope);
+    const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
+    database.db.exec(`
+      CREATE TRIGGER fail_code_mode_claim_clear
+      BEFORE UPDATE ON session_nodes
+      BEGIN
+        SELECT RAISE(ABORT, 'synthetic claim clear failure');
+      END
+    `);
+
+    expect(() => appendTerminal("run-clear-failed", claim!, "terminal-clear-failed")).not.toThrow();
+    expect(claims()?.["run-clear-failed"]).toEqual(claim);
+    expect(
+      loadTranscriptEventsSync(scope).some(
+        (event) =>
+          event.type === "message" &&
+          "message" in event &&
+          event.message &&
+          typeof event.message === "object" &&
+          "toolCallId" in event.message &&
+          event.message.toolCallId === "wait-run-clear-failed",
+      ),
+    ).toBe(true);
+    expect(claimWarningMock).toHaveBeenCalledWith(
+      "Code Mode waiting claim failed; transcript append was preserved",
+      { mutation: "clear" },
+    );
+  });
 });

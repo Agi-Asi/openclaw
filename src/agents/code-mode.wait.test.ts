@@ -5,7 +5,10 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { runWithAgentToolExecutionContext } from "../../packages/agent-core/src/tool-execution-context.js";
 import { cleanupTempDirs, makeTempDir } from "../../test/helpers/temp-dir.js";
-import { readCodeModeWaitingClaimMutation } from "../config/sessions/code-mode-waiting-claim.js";
+import {
+  attachCodeModeWaitingClaimMutation,
+  readCodeModeWaitingClaimMutation,
+} from "../config/sessions/code-mode-waiting-claim.js";
 import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
 import { replaceSessionEntrySync } from "../config/sessions/session-accessor.sqlite-entry.js";
 import { appendTranscriptMessageSync } from "../config/sessions/session-accessor.sqlite-transcript-write.js";
@@ -29,6 +32,74 @@ function createTerminalBridgeHarness() {
   const config = { tools: { codeMode: { enabled: true, timeoutMs: 60_000 } } } as never;
   const ctx = { ...harness.ctx, config, runtimeConfig: config };
   return { ...harness, config, tools: createCodeModeTools(ctx) };
+}
+
+async function createPersistedWaitingRun(label: string) {
+  const storePath = path.join(makeTempDir(tempDirs, `code-mode-wait-${label}-`), "sessions.json");
+  const config = {
+    session: { store: storePath },
+    tools: { codeMode: { enabled: true, timeoutMs: 60_000 } },
+  } as never;
+  const ctx = {
+    config,
+    runtimeConfig: config,
+    agentId: "main",
+    sessionId: `session-${label}`,
+    sessionKey: `agent:main:${label}`,
+    runId: `writer-${label}`,
+    catalogRef: createToolSearchCatalogRef(),
+  };
+  replaceSessionEntrySync(
+    { agentId: ctx.agentId, sessionKey: ctx.sessionKey, storePath },
+    {
+      activeWriterRunId: ctx.runId,
+      lifecycleRevision: `lifecycle-${label}`,
+      sessionId: ctx.sessionId,
+      updatedAt: 1,
+    },
+  );
+  const tools = createCodeModeTools(ctx);
+  applyCodeModeCatalog({
+    tools,
+    config,
+    sessionId: ctx.sessionId,
+    sessionKey: ctx.sessionKey,
+    agentId: ctx.agentId,
+    runId: ctx.runId,
+    catalogRef: ctx.catalogRef,
+  });
+  const waiting = await expectDefined(tools[0], "exec tool").execute(`exec-${label}`, {
+    code: 'await yield_control("pause"); return "done";',
+  });
+  const waitingRunId = resultDetails(waiting).runId;
+  expect(typeof waitingRunId).toBe("string");
+  if (typeof waitingRunId !== "string") {
+    throw new Error("expected a suspended Code Mode run");
+  }
+  const scope = {
+    agentId: ctx.agentId,
+    expectedLifecycleRevision: `lifecycle-${label}`,
+    expectedWriterRunId: ctx.runId,
+    sessionId: ctx.sessionId,
+    sessionKey: ctx.sessionKey,
+    storePath,
+  };
+  appendTranscriptMessageSync(scope, {
+    eventId: `waiting-${label}`,
+    message: {
+      role: "toolResult",
+      toolCallId: `exec-${label}`,
+      toolName: "exec",
+      content: waiting.content,
+      details: waiting.details,
+    },
+  });
+  const claim = loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims?.[waitingRunId];
+  expect(claim).toBeDefined();
+  if (!claim) {
+    throw new Error("expected a persisted Code Mode waiting claim");
+  }
+  return { claim, ctx, scope, tools, waitingRunId };
 }
 
 describe("Code Mode wait, scope, and suspended runs", () => {
@@ -461,21 +532,124 @@ describe("Code Mode wait, scope, and suspended runs", () => {
     expect(testing.activeRuns.size).toBe(0);
   });
 
-  it("does not rehydrate a missing run when wait follows restart-like state loss", async () => {
-    const { tools: codeModeTools } = createCodeModeHarness();
-    testing.activeRuns.set("invalid-expiry-run", {
-      expiresAt: 8_640_000_000_000_001,
-    } as never);
+  it("returns a visible terminal failure and clears a persisted claim after restart-like loss", async () => {
+    const { claim, scope, tools, waitingRunId } = await createPersistedWaitingRun("missing-run");
+    testing.activeRuns.clear();
 
-    await expect(
-      expectDefined(codeModeTools[1], "codeModeTools[1] test invariant").execute(
-        "code-wait-invalid-expiry",
-        { runId: "invalid-expiry-run" },
-      ),
-    ).rejects.toThrow(
-      "code mode run is unavailable after restart or expired; rerun exec to start fresh",
+    const terminal = await expectDefined(tools[1], "wait tool").execute("wait-missing-run", {
+      runId: waitingRunId,
+    });
+
+    expect(resultDetails(terminal)).toEqual({
+      status: "failed",
+      error: "code mode run is unavailable after restart or expired; rerun exec to start fresh.",
+      code: "invalid_input",
+      failurePhase: "input",
+      bridgeDispatchStarted: false,
+      output: [],
+      replaySafe: false,
+    });
+    expect(terminal.content).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining(
+          "code mode run is unavailable after restart or expired; rerun exec to start fresh",
+        ),
+      },
+    ]);
+    expect(readCodeModeWaitingClaimMutation(terminal.details)).toEqual({
+      kind: "clear",
+      waitingCodeModeRunId: waitingRunId,
+      expectedClaim: claim,
+    });
+
+    appendTranscriptMessageSync(scope, {
+      eventId: "terminal-missing-run",
+      message: {
+        role: "toolResult",
+        toolCallId: "wait-missing-run",
+        toolName: "wait",
+        content: terminal.content,
+        details: terminal.details,
+        isError: true,
+      },
+    });
+    expect(loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims).toBeUndefined();
+  });
+
+  it("preserves a replacement claim when an unavailable wait clears its earlier authority", async () => {
+    const { claim, scope, tools, waitingRunId } = await createPersistedWaitingRun("replacement");
+    testing.activeRuns.clear();
+    const terminal = await expectDefined(tools[1], "wait tool").execute("wait-replacement-old", {
+      runId: waitingRunId,
+    });
+    expect(readCodeModeWaitingClaimMutation(terminal.details)).toMatchObject({
+      kind: "clear",
+      expectedClaim: claim,
+    });
+
+    const replacementDetails = { status: "waiting", runId: waitingRunId };
+    attachCodeModeWaitingClaimMutation(replacementDetails, {
+      kind: "set",
+      waitingCodeModeRunId: waitingRunId,
+      expiresAt: Date.now() + 60_000,
+    });
+    appendTranscriptMessageSync(scope, {
+      eventId: "waiting-replacement-new",
+      message: {
+        role: "toolResult",
+        toolCallId: "wait-replacement-new",
+        toolName: "wait",
+        content: [{ type: "text", text: "waiting" }],
+        details: replacementDetails,
+      },
+    });
+    const replacement = loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims?.[waitingRunId];
+    expect(replacement?.sourceToolCallId).toBe("wait-replacement-new");
+
+    appendTranscriptMessageSync(scope, {
+      eventId: "terminal-replacement-old",
+      message: {
+        role: "toolResult",
+        toolCallId: "wait-replacement-old",
+        toolName: "wait",
+        content: terminal.content,
+        details: terminal.details,
+        isError: true,
+      },
+    });
+    expect(loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims?.[waitingRunId]).toEqual(
+      replacement,
     );
-    expect(testing.activeRuns.has("invalid-expiry-run")).toBe(false);
+  });
+
+  it("preserves persisted claims when wait ownership or concurrency checks reject", async () => {
+    const { claim, ctx, scope, tools, waitingRunId } = await createPersistedWaitingRun("rejected");
+    for (const [label, override, message] of [
+      ["wrong-run", { runId: "writer-other" }, "different agent run"],
+      ["wrong-session", { sessionId: "session-other" }, "different session"],
+    ] as const) {
+      const rejectedWait = expectDefined(
+        createCodeModeTools({ ...ctx, ...override })[1],
+        `${label} wait tool`,
+      );
+      await expect(
+        rejectedWait.execute(`wait-${label}-claim`, { runId: waitingRunId }),
+      ).rejects.toThrow(message);
+      expect(loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims?.[waitingRunId]).toEqual(claim);
+    }
+
+    testing.resumingRunIds.add(waitingRunId);
+    try {
+      await expect(
+        expectDefined(tools[1], "wait tool").execute("wait-concurrent-claim", {
+          runId: waitingRunId,
+        }),
+      ).rejects.toThrow("already being resumed");
+    } finally {
+      testing.resumingRunIds.delete(waitingRunId);
+    }
+    expect(loadSessionEntryReadOnly(scope)?.codeModeWaitingClaims?.[waitingRunId]).toEqual(claim);
   });
 
   it("carries the exact persisted claim through a terminal wait result", async () => {
