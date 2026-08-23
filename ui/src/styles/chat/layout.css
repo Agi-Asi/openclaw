@@ -294,6 +294,12 @@ openclaw-chat-page {
 /* Composer neighbors share one quiet card frame. Status color belongs to the
    item, never to the surface: only the icon, heading and a low-opacity edge
    carry tone while the card keeps the composer's own surface and geometry. */
+:is(.chat-composer-neighbor-card, .session-suggestion, .chat-pr.chat-pr) {
+  padding: 10px 12px;
+  border-radius: calc(16px * var(--openclaw-corner-radius-scale));
+  corner-shape: superellipse(1.5);
+}
+
 .chat-composer-neighbor-card {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
@@ -304,10 +310,7 @@ openclaw-chat-page {
   max-width: var(--chat-thread-max-width, 48rem);
   min-height: 52px;
   margin: 8px auto 0;
-  padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: calc(16px * var(--openclaw-corner-radius-scale));
-  corner-shape: superellipse(1.5);
   background: var(--chat-composer-surface, var(--popover));
   color: var(--text);
   box-shadow: none;
@@ -2053,9 +2056,7 @@ button.chat-reply-preview--message:disabled {
   align-items: center;
   gap: 10px;
   min-height: 38px;
-  padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 10px;
   background: color-mix(in srgb, var(--panel-strong) 74%, transparent);
 }
 
@@ -2821,9 +2822,7 @@ button.chat-reply-preview--message:disabled {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
   background: var(--panel);
   font-size: 13px;
 }
