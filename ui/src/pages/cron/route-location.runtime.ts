@@ -1,6 +1,6 @@
 import type { RouteLocation } from "@openclaw/uirouter";
 import { automationRouteFromPath } from "../../app-automation-paths.runtime.ts";
-import { INTERNAL_AUTOMATION_PATH_PARAM } from "../../app-route-paths.ts";
+import { INTERNAL_ROUTE_PATH_PARAM } from "../../app-route-paths.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { CronDetailTab } from "./view.ts";
 
@@ -11,8 +11,8 @@ export type CronRouteData = {
 
 function cronRouteLocation(location: RouteLocation): RouteLocation {
   const params = new URLSearchParams(location.search);
-  const pathname = params.get(INTERNAL_AUTOMATION_PATH_PARAM) ?? location.pathname;
-  params.delete(INTERNAL_AUTOMATION_PATH_PARAM);
+  const pathname = params.get(INTERNAL_ROUTE_PATH_PARAM) ?? location.pathname;
+  params.delete(INTERNAL_ROUTE_PATH_PARAM);
   const search = params.toString();
   return { pathname, search: search ? `?${search}` : "", hash: location.hash };
 }

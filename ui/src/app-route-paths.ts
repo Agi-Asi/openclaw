@@ -4,12 +4,7 @@ import type { RouteLocation } from "@openclaw/uirouter";
 import { isValidWorkboardBoardId } from "@openclaw/workboard-contract";
 import { DEFAULT_AGENT_PANEL, isAgentsPanel, type AgentsPanel } from "./lib/agents/panels.ts";
 import type { BoardFace } from "./lib/board/settings.ts";
-export const INTERNAL_AGENT_PATH_PARAM = "__openclawAgentPath";
-export const INTERNAL_AUTOMATION_PATH_PARAM = "__openclawAutomationPath";
-export const INTERNAL_SESSION_PATH_PARAM = "__openclawSessionPath";
-export const INTERNAL_MEMORY_PATH_PARAM = "__openclawMemoryPath";
-export const INTERNAL_PLUGINS_PATH_PARAM = "__openclawPluginsPath";
-export const INTERNAL_WORKBOARD_PATH_PARAM = "__openclawWorkboardPath";
+export const INTERNAL_ROUTE_PATH_PARAM = "__openclawPath";
 
 export type MemoryRouteTab = "overview" | "memories" | "dreams" | "settings";
 export type PluginsHubRouteTab = "installed" | "discover";
