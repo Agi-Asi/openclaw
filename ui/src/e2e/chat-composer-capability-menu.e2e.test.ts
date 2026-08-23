@@ -245,14 +245,7 @@ suite.define(() => {
           ?.dispatchEvent(new CustomEvent("wa-select", { bubbles: true, detail: { item } }));
       });
       await expect.poll(() => dropdown.getAttribute("data-view")).toBe("skills");
-      await expect
-        .poll(() => dropdown.locator("wa-dropdown-item:focus").textContent())
-        .toContain("Back");
-      await dropdown.locator("wa-dropdown-item:focus").evaluate((item) => {
-        item
-          .closest("wa-dropdown")
-          ?.dispatchEvent(new CustomEvent("wa-select", { bubbles: true, detail: { item } }));
-      });
+      await dropdown.getByRole("menuitem", { name: "Back" }).click();
       await expect.poll(() => dropdown.getAttribute("data-view")).toBe("root");
       await expect
         .poll(() => dropdown.locator("wa-dropdown-item:focus").textContent())
