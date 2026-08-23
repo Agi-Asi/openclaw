@@ -10,6 +10,7 @@ import {
   resetPluginStateStoreForTests,
 } from "../plugin-state/plugin-state-store.js";
 import { seedPluginStateEntriesForTests } from "../plugin-state/plugin-state-store.test-helpers.js";
+import type { PluginDoctorStateMigration } from "../plugins/doctor-contract-registry.js";
 import {
   closeOpenClawAgentDatabasesForTest,
   openOpenClawAgentDatabase,
@@ -21,7 +22,11 @@ vi.mock("../../packages/terminal-core/src/note.js", () => ({ note }));
 
 vi.mock("../plugins/doctor-contract-registry.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../plugins/doctor-contract-registry.js")>();
-  const { stateMigrations } = await import("../../extensions/codex/doctor-contract-api.js");
+  const { loadBundledPluginPublicSurface } =
+    await import("../plugin-sdk/test-helpers/public-surface-loader.js");
+  const { stateMigrations } = await loadBundledPluginPublicSurface<{
+    stateMigrations: PluginDoctorStateMigration[];
+  }>({ pluginId: "codex", artifactBasename: "doctor-contract-api.js" });
   return {
     ...actual,
     listPluginDoctorStateMigrationEntries: () =>
