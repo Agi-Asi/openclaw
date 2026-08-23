@@ -6,6 +6,11 @@
   "activation": {
     "onStartup": true
   },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
   "catalog": {
     "featured": true,
     "order": 40
