@@ -69,7 +69,12 @@ export function renderChatSessionSharing(props: ChatSessionSharingProps) {
   const shouldCapMembers =
     membersAvailable && visibilityOptions.length + identities.length + (canPublish ? 1 : 0) > 12;
   return html`
-    <openclaw-tooltip .content=${t("chat.sessionSharing.visibility")}>
+    <openclaw-tooltip
+      .content=${props.openDisabledReason ??
+      t("chat.sessionSharing.current", {
+        visibility: t(VISIBILITY_LABEL_KEYS[visibility]),
+      })}
+    >
       <span class="chat-pane__sharing-tooltip-anchor">
         <wa-dropdown
           class="chat-pane__sharing-menu ${shouldCapMembers

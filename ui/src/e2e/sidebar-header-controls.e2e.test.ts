@@ -152,6 +152,14 @@ suite.define(() => {
         ]);
         expect(new Set(collapsedMetrics.map(({ centerY }) => centerY)).size).toBe(1);
         expect(collapsedMetrics[1]!.left - collapsedMetrics[0]!.right).toBe(4);
+        const dividerRight = await separator.evaluate(
+          (element) => element.getBoundingClientRect().right,
+        );
+        const identityLeft = await page
+          .locator(".chat-pane__crumbs")
+          .first()
+          .evaluate((element) => element.getBoundingClientRect().left);
+        expect(identityLeft).toBeGreaterThan(dividerRight);
         expect(await page.locator(".sidebar-attention--floating").count()).toBe(0);
         await expect
           .poll(() =>
