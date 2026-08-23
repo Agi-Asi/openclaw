@@ -20,12 +20,18 @@ import { createNonExitingRuntime, ExitError, type RuntimeEnv } from "../../runti
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import { WizardClientCapabilityError, WizardSession } from "../../wizard/session.js";
 import { formatForLog } from "../ws-log.js";
+import { resolveGatewaySessionOwnerKey } from "./gateway-session-owner.js";
 import {
   createAdmittedWizardSession,
   SETUP_ADMISSION_BUSY_MESSAGE,
   whenAdmittedWizardSessionSettled,
 } from "./setup-admission.js";
-import type { GatewayRequestContext, GatewayRequestHandlers, RespondFn } from "./types.js";
+import type {
+  GatewayClient,
+  GatewayRequestContext,
+  GatewayRequestHandlers,
+  RespondFn,
+} from "./types.js";
 import { assertValidParams } from "./validation.js";
 
 export type SetupWizardRunner = (
@@ -104,11 +110,12 @@ async function readWizardResultForClient(params: {
 /** Resolves a live wizard session or sends the public not-found error. */
 function findWizardSessionOrRespond(params: {
   context: GatewayRequestContext;
+  client: GatewayClient | null;
   respond: RespondFn;
   sessionId: string;
 }): WizardSession | null {
   const session = params.context.wizardSessions.get(params.sessionId);
-  if (!session) {
+  if (!session || !session.isOwnedBy(resolveGatewaySessionOwnerKey(params.client))) {
     params.respond(
       false,
       undefined,
@@ -125,6 +132,15 @@ function findWizardSessionOrRespond(params: {
 export const wizardHandlers: GatewayRequestHandlers = {
   "wizard.start": async ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateWizardStartParams, "wizard.start", respond)) {
+      return;
+    }
+    const ownerKey = resolveGatewaySessionOwnerKey(client);
+    if (!ownerKey) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "wizard caller identity unavailable"),
+      );
       return;
     }
     const sessionId = randomUUID();
@@ -151,7 +167,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
                   prompter,
                 ),
               ),
-            { supportsQrCode },
+            { supportsQrCode, ownerKey },
           )
         : new WizardSession(
             (prompter) =>
@@ -166,7 +182,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
                   prompter,
                 ),
               ),
-            { supportsQrCode },
+            { supportsQrCode, ownerKey },
           );
     const session = await createAdmittedWizardSession(createSession, flow === "setup");
     if (!session) {
@@ -195,7 +211,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
       return;
     }
     const sessionId = params.sessionId;
-    const session = findWizardSessionOrRespond({ context, respond, sessionId });
+    const session = findWizardSessionOrRespond({ context, client, respond, sessionId });
     if (!session) {
       return;
     }
@@ -243,12 +259,12 @@ export const wizardHandlers: GatewayRequestHandlers = {
     }
     respond(true, result, undefined);
   },
-  "wizard.cancel": ({ params, respond, context }) => {
+  "wizard.cancel": ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateWizardCancelParams, "wizard.cancel", respond)) {
       return;
     }
     const sessionId = params.sessionId;
-    const session = findWizardSessionOrRespond({ context, respond, sessionId });
+    const session = findWizardSessionOrRespond({ context, client, respond, sessionId });
     if (!session) {
       return;
     }
@@ -260,12 +276,12 @@ export const wizardHandlers: GatewayRequestHandlers = {
     }
     respond(true, status, undefined);
   },
-  "wizard.status": async ({ params, respond, context }) => {
+  "wizard.status": async ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateWizardStatusParams, "wizard.status", respond)) {
       return;
     }
     const sessionId = params.sessionId;
-    const session = findWizardSessionOrRespond({ context, respond, sessionId });
+    const session = findWizardSessionOrRespond({ context, client, respond, sessionId });
     if (!session) {
       return;
     }

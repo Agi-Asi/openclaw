@@ -302,11 +302,9 @@ export class ChatWizardHost {
 
   /** Advance a producer-settled passive step during an input-free rejoin poll. */
   async refreshReply(fallback: SystemAgentChatReply): Promise<SystemAgentChatReply> {
-    if (this.bridge?.step?.type === "qr" && !this.bridge.step.qrDataUrl) {
-      this.bridge.step = null;
-    }
+    const projected = this.decorateReply(fallback);
     if (!this.bridge || this.bridge.step !== null) {
-      return this.decorateReply(fallback);
+      return projected;
     }
     const result = await this.pump();
     return this.decorateReply({ ...fallback, text: result.text || fallback.text });

@@ -79,6 +79,8 @@ describe("SystemAgentChatEngine QR wizard", () => {
       vi.setSystemTime(2_101);
       const rejoined = await engine.decorateRejoinReply({ text: "Welcome", action: "none" });
       expect(rejoined.step).toBeUndefined();
+      expect(rejoined.text).toContain("QR presentation expired");
+      expect(rejoined.text).toContain("restart setup to retry");
     } finally {
       vi.useRealTimers();
       await engine.dispose();

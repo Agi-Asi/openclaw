@@ -48,7 +48,10 @@ import {
 } from "./setup-admission.js";
 import { systemAgentHandlers } from "./system-agent.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
-import { type SetupWizardRunner, wizardHandlers } from "./wizard.js";
+import { bindWizardTestClient, createWizardTestClient } from "./wizard-test-client.test-support.js";
+import { type SetupWizardRunner, wizardHandlers as rawWizardHandlers } from "./wizard.js";
+
+const wizardHandlers = bindWizardTestClient(rawWizardHandlers);
 
 afterEach(() => {
   __setFsSafeTestHooksForTest(undefined);
@@ -633,7 +636,7 @@ describe("wizard step serialization", () => {
       "wizard.start test invariant",
     )({
       params: {},
-      client: { connect: { caps: [GATEWAY_CLIENT_CAPS.WIZARD_QR] } },
+      client: createWizardTestClient([GATEWAY_CLIENT_CAPS.WIZARD_QR]),
       respond: startRespond,
       context,
     } as never);
@@ -648,7 +651,7 @@ describe("wizard step serialization", () => {
         sessionId: start.sessionId,
         answer: { stepId: (start.step as { id: string }).id, value: true },
       },
-      client: { connect: { caps: [] } },
+      client: createWizardTestClient(),
       respond: unsupportedRespond,
       context,
     } as never);
@@ -666,7 +669,7 @@ describe("wizard step serialization", () => {
       "wizard.next test invariant",
     )({
       params: { sessionId: start.sessionId },
-      client: { connect: { caps: [GATEWAY_CLIENT_CAPS.WIZARD_QR] } },
+      client: createWizardTestClient([GATEWAY_CLIENT_CAPS.WIZARD_QR]),
       respond: supportedRespond,
       context,
     } as never);

@@ -377,6 +377,7 @@ export class WizardSession {
   private error: string | undefined;
   private configuredAccounts: Array<{ channel: string; accountId: string }> | undefined;
   private preparedModelRef: string | undefined;
+  private readonly ownerKey: string | undefined;
 
   constructor(
     private runner: (
@@ -384,14 +385,20 @@ export class WizardSession {
       signal: AbortSignal,
       session: WizardSession,
     ) => Promise<void>,
-    options?: { timeoutMs?: number; supportsQrCode?: boolean },
+    options?: { timeoutMs?: number; supportsQrCode?: boolean; ownerKey?: string },
   ) {
+    this.ownerKey = options?.ownerKey;
     const prompter = new WizardSessionPrompter(this, options?.supportsQrCode === true);
     if (options?.timeoutMs !== undefined) {
       this.expiryTimer = setTimeout(() => this.cancel(), options.timeoutMs);
       this.expiryTimer.unref?.();
     }
     this.runnerPromise = this.run(prompter);
+  }
+
+  /** Match Gateway-owned sessions while leaving local wizard sessions unbound. */
+  isOwnedBy(ownerKey: string | undefined): boolean {
+    return this.ownerKey === undefined || this.ownerKey === ownerKey;
   }
 
   async next(options?: { supportsQrCode?: boolean }): Promise<WizardNextResult> {

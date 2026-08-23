@@ -5,6 +5,58 @@ import { WizardSession } from "../../wizard/session.js";
 import { wizardHandlers } from "./wizard.js";
 
 describe("locked wizard session lifecycle", () => {
+  it.each(["wizard.next", "wizard.cancel", "wizard.status"] as const)(
+    "rejects a foreign authenticated caller from %s",
+    async (method) => {
+      const linked = createDeferred<string>();
+      const session = new WizardSession(
+        async (prompter) => {
+          await prompter.qrCode?.({
+            title: "Link Signal",
+            text: "sgnl://linkdevice?uuid=test",
+            settled: linked.promise,
+          });
+        },
+        { supportsQrCode: true, ownerKey: "user:owner-profile" },
+      );
+      const wizardSessions = new Map([["owned", session]]);
+      const context = {
+        wizardSessions,
+        purgeWizardSession: (sessionId: string) => wizardSessions.delete(sessionId),
+      };
+      const respond = vi.fn();
+      try {
+        await expectDefined(
+          wizardHandlers[method],
+          `${method} test invariant`,
+        )({
+          params: { sessionId: "owned" },
+          client: {
+            connId: "foreign-connection",
+            connect: { caps: ["wizard-qr"] },
+            authenticatedUserProfile: {
+              profileId: "foreign-profile",
+              displayName: null,
+              hasAvatar: false,
+              updatedAt: 1,
+            },
+          },
+          respond,
+          context,
+        } as never);
+
+        expect(respond).toHaveBeenCalledWith(false, undefined, {
+          code: "INVALID_REQUEST",
+          message: "wizard not found",
+          details: { code: "WIZARD_NOT_FOUND" },
+        });
+      } finally {
+        session.cancel();
+        await session.whenSettled();
+      }
+    },
+  );
+
   it("keeps a QR cancellable after external-effect authority revalidation", async () => {
     const linked = createDeferred<string>();
     const wizardSessions = new Map();
@@ -34,7 +86,7 @@ describe("locked wizard session lifecycle", () => {
       "wizard.start test invariant",
     )({
       params: { flow: "channels" },
-      client: { connect: { caps: ["wizard-qr"] } },
+      client: { connId: "owner-connection", connect: { caps: ["wizard-qr"] } },
       respond,
       context,
     } as never);
@@ -49,7 +101,7 @@ describe("locked wizard session lifecycle", () => {
     );
     const session = expectDefined([...wizardSessions.values()][0], "channel wizard session");
     expect(session.cancel()).toBe(true);
-    await session.settledPromise;
+    await session.whenSettled();
   });
 
   it.each(["wizard.cancel", "wizard.status"] as const)(
