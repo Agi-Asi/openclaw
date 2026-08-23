@@ -1600,10 +1600,9 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         getRect(page, ".agent-chat__composer-shell"),
         getRect(page, ".chat-turn-terminal-status--interrupted"),
       ]);
-      expect(Math.abs(status.left + status.width / 2 - (composer.left + composer.width / 2))).toBe(
-        0,
-        1,
-      );
+      expect(
+        Math.abs(status.left + status.width / 2 - (composer.left + composer.width / 2)),
+      ).toBeLessThan(1);
       const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
       if (artifactDir) {
         await mkdir(artifactDir, { recursive: true });

@@ -313,17 +313,23 @@ suite.define(() => {
       await menu.getByRole("menuitem", { name: "Back" }).click();
       const webSearch = webSearchSwitch(menu);
       await expect
-        .poll(() => webSearch.evaluate((node) => (node as { checked: boolean }).checked))
+        .poll(() =>
+          webSearch.evaluate((node) => (node as HTMLElement & { checked: boolean }).checked),
+        )
         .toBe(true);
       await webSearchItem(menu).click();
       await expect.poll(() => latestToolOverrides(gateway)).toEqual({ webSearch: false });
       await expect
-        .poll(() => webSearch.evaluate((node) => (node as { checked: boolean }).checked))
+        .poll(() =>
+          webSearch.evaluate((node) => (node as HTMLElement & { checked: boolean }).checked),
+        )
         .toBe(false);
       await webSearchItem(menu).click();
       await expect.poll(() => latestToolOverrides(gateway)).toEqual({});
       await expect
-        .poll(() => webSearch.evaluate((node) => (node as { checked: boolean }).checked))
+        .poll(() =>
+          webSearch.evaluate((node) => (node as HTMLElement & { checked: boolean }).checked),
+        )
         .toBe(true);
 
       const themeBackgrounds: string[] = [];
