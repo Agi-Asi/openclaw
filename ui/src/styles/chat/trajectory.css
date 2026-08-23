@@ -10,39 +10,50 @@
 
 .trajectory-toolbar {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 4px 7px;
   border-block-end: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 92%, var(--card));
+  background: var(--bg);
 }
 
-.trajectory-toolbar button,
-.trajectory-toolbar input,
+.trajectory-toolbar button {
+  min-block-size: 28px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+}
+
 .trajectory-inspector__tabs button {
+  min-block-size: 28px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.trajectory-toolbar button[aria-pressed="true"] {
+  border-color: var(--border-strong);
+}
+
+.trajectory-toolbar input {
+  min-inline-size: 120px;
   min-block-size: 30px;
+  flex: 1;
+  padding-inline: 9px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--card);
   color: var(--text);
 }
 
-.trajectory-toolbar button[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--card));
-}
-
-.trajectory-toolbar input {
-  min-inline-size: 120px;
-  flex: 1;
-  padding-inline: 9px;
-}
-
 .trajectory-timeline {
   overflow-x: auto;
-  padding: 8px 10px;
+  padding: 3px 7px;
   border-block-end: 1px solid var(--border);
-  background: var(--bg-muted);
+  background: var(--bg);
 }
 
 .trajectory-timeline__canvas {
@@ -52,13 +63,13 @@
 
 .trajectory-timeline__lane {
   display: grid;
-  grid-template-columns: 46px 1fr;
+  grid-template-columns: 38px 1fr;
   align-items: center;
-  min-block-size: 22px;
+  min-block-size: 14px;
 }
 
 .trajectory-timeline__label {
-  font-size: 10px;
+  font-size: 9px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -66,17 +77,17 @@
 
 .trajectory-timeline__track {
   position: relative;
-  block-size: 12px;
-  border-radius: 5px;
+  block-size: 6px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--border) 45%, transparent);
 }
 
 .trajectory-timeline__mark {
   position: absolute;
-  inset-block: 2px;
+  inset-block: 1px;
   min-inline-size: 3px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 1px;
   background: var(--accent);
 }
 
@@ -120,8 +131,8 @@
   position: absolute;
   inset-block-start: 0;
   inset-inline: 0;
-  block-size: 74px;
-  padding: 3px 8px;
+  block-size: 52px;
+  padding: 1px 6px;
 }
 
 .trajectory-turn-header {
@@ -131,8 +142,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  block-size: 68px;
-  padding-inline: 12px;
+  block-size: 48px;
+  padding-inline: 8px;
   border-block-end: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 94%, transparent);
 }
@@ -146,8 +157,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  block-size: 68px;
-  padding-inline: 12px;
+  block-size: 48px;
+  padding-inline: 8px;
   border-block-end: 1px solid var(--border);
   color: var(--muted);
 }
@@ -158,15 +169,15 @@
 
 .trajectory-record {
   display: grid;
-  grid-template-columns: 4px minmax(88px, auto) minmax(0, 1fr) auto;
-  gap: 9px;
+  grid-template-columns: 2px minmax(58px, auto) minmax(0, 1fr) auto;
+  gap: 6px;
   align-items: center;
   inline-size: 100%;
-  block-size: 68px;
-  padding: 8px;
+  block-size: 48px;
+  padding: 4px 6px;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: inherit;
   text-align: start;
@@ -174,8 +185,8 @@
 
 .trajectory-record:hover,
 .trajectory-record.is-selected {
-  border-color: var(--border-strong);
-  background: var(--card);
+  border-color: transparent;
+  background: var(--bg-muted);
 }
 
 .trajectory-record__rail {
@@ -197,7 +208,7 @@
 .trajectory-record__meta {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
   min-inline-size: 0;
 }
 
@@ -207,7 +218,7 @@
   color: var(--muted);
   font-size: 12px;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .trajectory-record__meta {
@@ -220,9 +231,9 @@
 .trajectory-kind,
 .trajectory-request-pill {
   inline-size: fit-content;
-  padding: 2px 6px;
+  padding: 2px 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  background: transparent;
   color: var(--muted);
   font-size: 10px;
   text-transform: capitalize;
@@ -239,7 +250,7 @@
   inset-inline: 0;
   display: grid;
   place-items: center;
-  block-size: 74px;
+  block-size: 52px;
   border-block-end: 1px solid var(--border);
 }
 
@@ -269,9 +280,9 @@
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   inline-size: min(var(--trajectory-inspector-width), 50%);
-  min-inline-size: 280px;
+  min-inline-size: 260px;
   border-inline-start: 1px solid var(--border);
-  background: var(--card);
+  background: var(--bg);
 }
 
 .trajectory-inspector__resize {
@@ -288,7 +299,7 @@
   justify-content: space-between;
   gap: 8px;
   align-items: center;
-  padding: 12px;
+  padding: 8px;
   border-block-end: 1px solid var(--border);
 }
 
@@ -300,20 +311,20 @@
 
 .trajectory-inspector__tabs {
   display: flex;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 0 7px;
   overflow-x: auto;
   border-block-end: 1px solid var(--border);
 }
 
 .trajectory-inspector__tabs button[aria-selected="true"] {
-  border-color: var(--accent);
+  border-block-end-color: var(--accent);
   color: var(--accent);
 }
 
 .trajectory-inspector__body {
   overflow: auto;
-  padding: 12px;
+  padding: 8px;
 }
 
 .trajectory-inspector pre {
@@ -325,7 +336,7 @@
 
 .trajectory-summary {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   margin: 0;
 }
 
@@ -368,7 +379,7 @@
   }
 
   .trajectory-record {
-    grid-template-columns: 4px 76px minmax(0, 1fr);
+    grid-template-columns: 2px 58px minmax(0, 1fr);
   }
 
   .trajectory-record__meta {
@@ -397,7 +408,7 @@
   }
 
   .trajectory-record {
-    grid-template-columns: 4px 76px minmax(0, 1fr);
+    grid-template-columns: 2px 58px minmax(0, 1fr);
   }
 
   .trajectory-record__meta {

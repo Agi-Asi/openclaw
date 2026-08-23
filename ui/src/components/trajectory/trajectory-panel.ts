@@ -24,7 +24,7 @@ type LedgerRow =
   | { kind: "group"; key: string; label: string; description?: string }
   | { kind: "record"; key: string; record: TrajectoryRecord; requestNumber?: number };
 
-const ROW_HEIGHT = 74;
+const ROW_HEIGHT = 52;
 const OVERSCAN = 7;
 
 function eventSessionKey(event: GatewayEventFrame): string | undefined {
