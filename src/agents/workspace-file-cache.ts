@@ -6,7 +6,7 @@ type WorkspaceFileCacheEntry = {
   sizeBytes: number;
 };
 
-// One fully populated canonical workspace may retain six 2 MiB bootstrap files.
+// Retain at most one fully populated canonical workspace of six 2 MiB files.
 const MAX_WORKSPACE_FILE_CACHE_BYTES = 12 * 1024 * 1024;
 const MAX_WORKSPACE_FILE_CACHE_ENTRIES = 64;
 const workspaceFileCache = new Map<string, WorkspaceFileCacheEntry>();

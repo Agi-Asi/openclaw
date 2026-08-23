@@ -1,6 +1,5 @@
 const MAX_WORKSPACE_ATTESTATION_FILENAME_LENGTH = 255;
-// Plain ASCII markdown basenames exclude separators, traversal, colons, NUL,
-// and Win32 superscript/`CONIN$` device aliases in one closed rule.
+// A closed ASCII basename excludes traversal, NUL, and Win32 device aliases.
 const SAFE_ATTESTATION_BASENAME = /^[A-Za-z0-9._-]+\.md$/u;
 const WINDOWS_RESERVED_DEVICE_STEMS = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$/iu;
 

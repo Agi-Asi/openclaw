@@ -1,10 +1,9 @@
-function isCanonicalIsoTimestamp(value: string): boolean {
-  const timestamp = new Date(value);
-  return Number.isFinite(timestamp.getTime()) && timestamp.toISOString() === value;
-}
-
 export function assertWorkspaceStateTimestamp(value: string | null, label: string): void {
-  if (value !== null && !isCanonicalIsoTimestamp(value)) {
+  if (value === null) {
+    return;
+  }
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString() !== value) {
     throw new Error(`workspace ${label} timestamp is invalid`);
   }
 }
