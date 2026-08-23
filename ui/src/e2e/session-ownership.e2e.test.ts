@@ -526,6 +526,7 @@ suite.define(() => {
     await currentPage.goto(`${suite.server?.baseUrl ?? ""}new`);
     // Playwright check()/isChecked() support role="switch" buttons via aria-checked.
     const draftToggle = currentPage.getByRole("switch", { name: "Draft", exact: true });
+    await currentPage.locator(".new-session-page__composer .agent-chat__composer-footer").hover();
     await draftToggle.waitFor();
     await captureUiProof(currentPage, "02-create-draft-available.png");
     await draftToggle.check();
@@ -941,6 +942,7 @@ suite.define(() => {
 
     await currentPage.goto(`${suite.server?.baseUrl ?? ""}new`);
     const draftToggle = currentPage.getByRole("switch", { name: "Draft", exact: true });
+    await currentPage.locator(".new-session-page__composer .agent-chat__composer-footer").hover();
     await draftToggle.check();
     await gateway.setSessionSharingPolicy({
       allowedSessionVisibilities: ["shared"],
@@ -954,6 +956,7 @@ suite.define(() => {
       hasMultipleSessionSharingIdentities: true,
     });
     await replaceGatewayClient(currentPage);
+    await currentPage.locator(".new-session-page__composer .agent-chat__composer-footer").hover();
     await draftToggle.waitFor();
     expect(await draftToggle.isChecked()).toBe(false);
   });
