@@ -215,9 +215,7 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
     try {
       await expect.poll(() => heldChatPageModule).toBe(true);
       await page.locator("openclaw-device-scope-upgrade-banner").waitFor({ state: "attached" });
-      await page.evaluate(() =>
-        customElements.whenDefined("openclaw-device-scope-upgrade-banner"),
-      );
+      await page.evaluate(() => customElements.whenDefined("openclaw-device-scope-upgrade-banner"));
     } finally {
       releaseChatPageModule();
       await chatPageModuleRouteSettled;
