@@ -415,6 +415,11 @@ openclaw-chat-page {
   transition: transform var(--duration-fast) var(--ease-out);
 }
 
+.chat-workspace-conflict-notice__chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
 .chat-workspace-conflict-notice:not([open]) .chat-workspace-conflict-notice__chevron {
   transform: rotate(180deg);
 }
