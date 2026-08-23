@@ -2,7 +2,16 @@
 
 Docs: https://docs.openclaw.ai
 
-## Unreleased
+## 2026.8.1
+
+### Highlights
+
+- **GPT-5.6 Ultra and runtime switching:** support Sol, Terra, and Luna across OpenClaw and Codex engines, keeping model, runtime, and thinking selection atomic through `/model` and fallback. (#98021) Thanks @anyech.
+- **Control UI first-run setup:** continue verified model setup into Custodian, explain that the web app is ready without a channel, and offer an optional path to Channels.
+- **Browser extension relay CDP compatibility:** let Puppeteer-based clients drive paired Chrome through a DevTools-compatible relay without the remote-debugging permission prompt.
+- **External gateway supervision:** add an explicit external lifecycle-owner mode with verified restart handoff while blocking native service mutation and self-update. Thanks @shakkernerd.
+- **SQLite snapshots:** add compact, verified global and per-agent database backup, listing, verification, and fresh-target restore commands. (#94805) Thanks @giodl73-repo.
+- **Channel plugin ingress monitors:** add shared durable admission, polling, pruning, claim validation, adoption, and shutdown ownership for channel plugins.
 
 ### Changes
 

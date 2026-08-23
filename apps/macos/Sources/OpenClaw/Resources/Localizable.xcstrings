@@ -105265,6 +105265,822 @@
         }
       }
     },
+    "Realtime Talk requested an invalid audio sample rate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk requested an invalid audio sample rate"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时对话请求了无效的音频采样率"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時對話要求了無效的音訊取樣率"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Realtime Talk solicitou uma taxa de amostragem de áudio inválida"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk hat eine ungültige Audio-Abtastrate angefordert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk solicitó una frecuencia de muestreo de audio no válida"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talkが無効なオーディオサンプルレートを要求しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk에서 잘못된 오디오 샘플링 레이트를 요청했습니다"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk a demandé une fréquence d’échantillonnage audio non valide"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk ने अमान्य ऑडियो सैंपल रेट का अनुरोध किया"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "طلبت المحادثة في الوقت الفعلي معدل أخذ عينات صوتية غير صالح"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk ha richiesto una frequenza di campionamento audio non valida"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk geçersiz bir ses örnekleme hızı istedi"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для розмови в реальному часі запитано неприпустиму частоту дискретизації аудіо"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk meminta laju sampel audio yang tidak valid"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk zażądał nieprawidłowej częstotliwości próbkowania dźwięku"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk ร้องขออัตราการสุ่มตัวอย่างเสียงที่ไม่ถูกต้อง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk đã yêu cầu tốc độ lấy mẫu âm thanh không hợp lệ"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk heeft een ongeldige audiosamplefrequentie aangevraagd"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Talk نرخ نمونه‌برداری صوتی نامعتبری درخواست کرد"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для Realtime Talk запрошена недопустимая частота дискретизации аудио"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtidssamtal begärde en ogiltig samplingsfrekvens för ljud"
+          }
+        }
+      }
+    },
+    "Realtime disconnected repeatedly — using native speech": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime disconnected repeatedly — using native speech"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时连接反复断开 — 正在使用原生语音"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時連線反覆中斷 — 正在使用原生語音"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conexão em tempo real foi interrompida repetidamente — usando a fala nativa"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime wurde wiederholt getrennt — native Sprachausgabe wird verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión en tiempo real se desconectó repetidamente — se usará la voz nativa"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイム接続が繰り返し切断されました — ネイティブ音声を使用します"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 연결이 반복적으로 끊겼습니다 — 기본 음성 기능을 사용합니다"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déconnexions répétées du service en temps réel — utilisation de la synthèse vocale native"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "रीयलटाइम बार-बार डिस्कनेक्ट हुआ — डिवाइस की स्पीच सुविधा का उपयोग किया जा रहा है"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "انقطع الاتصال في الوقت الفعلي مرارًا — جارٍ استخدام النطق الأصلي"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connessione in tempo reale si è interrotta ripetutamente — utilizzo della sintesi vocale nativa"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerçek zamanlı bağlantı tekrar tekrar kesildi — yerel konuşma kullanılıyor"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З’єднання в реальному часі неодноразово розривалося — використовується вбудоване мовлення"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime terputus berulang kali — menggunakan ucapan native"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tryb czasu rzeczywistego wielokrotnie się rozłączał — używana jest natywna obsługa mowy"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระบบแบบเรียลไทม์ตัดการเชื่อมต่อซ้ำหลายครั้ง — กำลังใช้เสียงพูดแบบเนทีฟ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết nối thời gian thực bị ngắt nhiều lần — đang sử dụng giọng nói gốc"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime is herhaaldelijk verbroken — native spraak wordt gebruikt"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اتصال بلادرنگ چندین بار قطع شد — در حال استفاده از گفتار بومی"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение в реальном времени неоднократно прерывалось — используется встроенный синтез речи"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtidsanslutningen kopplades från upprepade gånger — använder inbyggt tal"
+          }
+        }
+      }
+    },
+    "Realtime disconnected — reconnecting…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime disconnected — reconnecting…"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时连接已断开 — 正在重新连接…"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時連線已中斷 — 正在重新連線…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conexão em tempo real foi interrompida — reconectando…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime wurde getrennt — Verbindung wird wiederhergestellt…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión en tiempo real se desconectó — reconectando…"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイム接続が切断されました — 再接続しています…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 연결이 끊겼습니다 — 다시 연결하는 중…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service en temps réel déconnecté — reconnexion…"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "रीयलटाइम डिस्कनेक्ट हुआ — फिर से कनेक्ट किया जा रहा है…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "انقطع الاتصال في الوقت الفعلي — جارٍ إعادة الاتصال…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connessione in tempo reale interrotta — riconnessione…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerçek zamanlı bağlantı kesildi — yeniden bağlanılıyor…"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З’єднання в реальному часі розірвано — повторне підключення…"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime terputus — menghubungkan kembali…"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tryb czasu rzeczywistego został rozłączony — ponowne łączenie…"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระบบแบบเรียลไทม์ตัดการเชื่อมต่อ — กำลังเชื่อมต่อใหม่…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết nối thời gian thực bị ngắt — đang kết nối lại…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime-verbinding verbroken — opnieuw verbinden…"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اتصال بلادرنگ قطع شد — در حال اتصال مجدد…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение в реальном времени прервано — повторное подключение…"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtidsanslutningen kopplades från — återansluter…"
+          }
+        }
+      }
+    },
+    "Realtime microphone became unavailable: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime microphone became unavailable: %@"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时麦克风不可用：%@"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時麥克風無法使用：%@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O microfone em tempo real ficou indisponível: %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Realtime-Mikrofon ist nicht mehr verfügbar: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono en tiempo real dejó de estar disponible: %@"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイムマイクが利用できなくなりました: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 마이크를 사용할 수 없게 되었습니다: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le microphone en temps réel est devenu indisponible : %@"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "रीयलटाइम माइक्रोफ़ोन अनुपलब्ध हो गया: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أصبح الميكروفون في الوقت الفعلي غير متاح: %@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il microfono in tempo reale non è più disponibile: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerçek zamanlı mikrofon kullanılamaz hâle geldi: %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мікрофон для роботи в реальному часі став недоступним: %@"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mikrofon realtime menjadi tidak tersedia: %@"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mikrofon w trybie czasu rzeczywistego stał się niedostępny: %@"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ไมโครโฟนแบบเรียลไทม์ไม่พร้อมใช้งาน: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Micrô thời gian thực không còn khả dụng: %@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime-microfoon is niet meer beschikbaar: %@"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "میکروفون بلادرنگ از دسترس خارج شد: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Микрофон для режима реального времени стал недоступен: %@"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtidsmikrofonen blev otillgänglig: %@"
+          }
+        }
+      }
+    },
+    "Realtime unavailable — native speech could not start": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime unavailable — native speech could not start"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时功能不可用 — 无法启动原生语音"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時功能無法使用 — 無法啟動原生語音"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexão em tempo real indisponível — não foi possível iniciar a fala nativa"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime nicht verfügbar — native Sprachausgabe konnte nicht gestartet werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión en tiempo real no está disponible — no se pudo iniciar la voz nativa"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイム機能を利用できません — ネイティブ音声を開始できませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 기능을 사용할 수 없습니다 — 기본 음성 기능을 시작할 수 없습니다"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service en temps réel indisponible — impossible de démarrer la synthèse vocale native"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "रीयलटाइम अनुपलब्ध है — डिवाइस की स्पीच सुविधा शुरू नहीं हो सकी"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الاتصال في الوقت الفعلي غير متاح — تعذر بدء النطق الأصلي"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connessione in tempo reale non disponibile — impossibile avviare la sintesi vocale nativa"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerçek zamanlı bağlantı kullanılamıyor — yerel konuşma başlatılamadı"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим реального часу недоступний — не вдалося запустити вбудоване мовлення"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime tidak tersedia — ucapan native tidak dapat dimulai"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tryb czasu rzeczywistego jest niedostępny — nie udało się uruchomić natywnej obsługi mowy"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระบบแบบเรียลไทม์ไม่พร้อมใช้งาน — ไม่สามารถเริ่มเสียงพูดแบบเนทีฟได้"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết nối thời gian thực không khả dụng — không thể khởi động giọng nói gốc"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime niet beschikbaar — native spraak kon niet worden gestart"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بلادرنگ در دسترس نیست — گفتار بومی نتوانست شروع شود"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим реального времени недоступен — не удалось запустить встроенный синтез речи"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtid är inte tillgängligt — inbyggt tal kunde inte startas"
+          }
+        }
+      }
+    },
+    "Realtime unavailable — using native speech": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime unavailable — using native speech"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时功能不可用 — 正在使用原生语音"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時功能無法使用 — 正在使用原生語音"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexão em tempo real indisponível — usando a fala nativa"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime nicht verfügbar — native Sprachausgabe wird verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión en tiempo real no está disponible — se usará la voz nativa"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイム機能を利用できません — ネイティブ音声を使用します"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 기능을 사용할 수 없습니다 — 기본 음성 기능을 사용합니다"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service en temps réel indisponible — utilisation de la synthèse vocale native"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "रीयलटाइम अनुपलब्ध है — डिवाइस की स्पीच सुविधा का उपयोग किया जा रहा है"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الاتصال في الوقت الفعلي غير متاح — جارٍ استخدام النطق الأصلي"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connessione in tempo reale non disponibile — utilizzo della sintesi vocale nativa"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerçek zamanlı bağlantı kullanılamıyor — yerel konuşma kullanılıyor"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим реального часу недоступний — використовується вбудоване мовлення"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime tidak tersedia — menggunakan ucapan native"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tryb czasu rzeczywistego jest niedostępny — używana jest natywna obsługa mowy"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระบบแบบเรียลไทม์ไม่พร้อมใช้งาน — กำลังใช้เสียงพูดแบบเนทีฟ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết nối thời gian thực không khả dụng — đang sử dụng giọng nói gốc"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime niet beschikbaar — native spraak wordt gebruikt"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بلادرنگ در دسترس نیست — در حال استفاده از گفتار بومی"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим реального времени недоступен — используется встроенный синтез речи"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtid är inte tillgängligt — använder inbyggt tal"
+          }
+        }
+      }
+    },
     "Reasoning": {
       "localizations": {
         "en": {
@@ -122941,6 +123757,278 @@
           "stringUnit": {
             "state": "translated",
             "value": "Markerat område"
+          }
+        }
+      }
+    },
+    "Selected audio input has no usable Float32 format": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected audio input has no usable Float32 format"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选音频输入没有可用的 Float32 格式"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所選音訊輸入沒有可用的 Float32 格式"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A entrada de áudio selecionada não tem um formato Float32 utilizável"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der ausgewählte Audioeingang hat kein verwendbares Float32-Format"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La entrada de audio seleccionada no tiene ningún formato Float32 utilizable"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したオーディオ入力には使用可能なFloat32形式がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 오디오 입력에 사용 가능한 Float32 형식이 없습니다"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’entrée audio sélectionnée ne dispose d’aucun format Float32 utilisable"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "चुने गए ऑडियो इनपुट में उपयोग योग्य Float32 फ़ॉर्मैट नहीं है"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يحتوي إدخال الصوت المحدد على تنسيق Float32 قابل للاستخدام"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'input audio selezionato non dispone di un formato Float32 utilizzabile"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seçilen ses girişinde kullanılabilir bir Float32 biçimi yok"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вибраний аудіовхід не має придатного формату Float32"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input audio yang dipilih tidak memiliki format Float32 yang dapat digunakan"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wybrane wejście dźwięku nie ma obsługiwanego formatu Float32"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "อินพุตเสียงที่เลือกไม่มีรูปแบบ Float32 ที่ใช้งานได้"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đầu vào âm thanh đã chọn không có định dạng Float32 khả dụng"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De geselecteerde audio-invoer heeft geen bruikbare Float32-indeling"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ورودی صوتی انتخاب‌شده قالب Float32 قابل‌استفاده‌ای ندارد"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для выбранного аудиовхода нет пригодного формата Float32"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den valda ljudingången har inget användbart Float32-format"
+          }
+        }
+      }
+    },
+    "Selected input and system default are unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected input and system default are unavailable"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选输入和系统默认输入均不可用"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所選輸入與系統預設輸入皆無法使用"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A entrada selecionada e o padrão do sistema estão indisponíveis"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der ausgewählte Eingang und der Systemstandard sind nicht verfügbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La entrada seleccionada y la predeterminada del sistema no están disponibles"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択した入力とシステムのデフォルト入力は利用できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 입력과 시스템 기본 입력을 사용할 수 없습니다"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’entrée sélectionnée et l’entrée système par défaut sont indisponibles"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "चुना गया इनपुट और सिस्टम डिफ़ॉल्ट अनुपलब्ध हैं"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الإدخال المحدد والإعداد الافتراضي للنظام غير متاحين"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'input selezionato e quello predefinito di sistema non sono disponibili"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seçilen giriş ve sistem varsayılanı kullanılamıyor"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вибраний вхід і системний вхід за замовчуванням недоступні"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input yang dipilih dan default sistem tidak tersedia"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wybrane wejście i domyślne wejście systemowe są niedostępne"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "อินพุตที่เลือกและค่าเริ่มต้นของระบบไม่พร้อมใช้งาน"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đầu vào đã chọn và đầu vào mặc định của hệ thống đều không khả dụng"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De geselecteerde invoer en de systeemstandaard zijn niet beschikbaar"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ورودی انتخاب‌شده و پیش‌فرض سیستم در دسترس نیستند"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбранный вход и системный вход по умолчанию недоступны"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Varken den valda ingången eller systemets standardingång är tillgänglig"
           }
         }
       }
@@ -158165,6 +159253,278 @@
           "stringUnit": {
             "state": "translated",
             "value": "Använd filversion"
+          }
+        }
+      }
+    },
+    "Use realtime Gateway relay": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use realtime Gateway relay"
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用实时 Gateway 中继"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用即時 Gateway 轉送"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar retransmissão em tempo real do Gateway"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway-Relay in Echtzeit verwenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar la retransmisión en tiempo real del Gateway"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイム Gateway リレーを使用"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 Gateway 릴레이 사용"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser le relais en temps réel du Gateway"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "रीयलटाइम Gateway रिले का उपयोग करें"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استخدام ترحيل Gateway في الوقت الفعلي"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa l'inoltro in tempo reale del Gateway"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerçek zamanlı Gateway aktarımını kullan"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Використовувати ретрансляцію Gateway у реальному часі"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gunakan relai Gateway waktu nyata"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Używaj przekaźnika Gateway w czasie rzeczywistym"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ใช้รีเลย์ Gateway แบบเรียลไทม์"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sử dụng chuyển tiếp Gateway theo thời gian thực"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime Gateway-relay gebruiken"
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استفاده از رلهٔ بلادرنگ Gateway"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Использовать ретрансляцию Gateway в реальном времени"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Använd Gateway-relä i realtid"
+          }
+        }
+      }
+    },
+    "Use the Gateway's configured realtime voice session on this Mac. Requires realtime, gateway-relay, and agent-consult in Talk settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the Gateway's configured realtime voice session on this Mac. Requires realtime, gateway-relay, and agent-consult in Talk settings."
+          }
+        },
+        "zh-CN": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这台 Mac 上使用 Gateway 中配置的实时语音会话。需要在 Talk 设置中启用 realtime、gateway-relay 和 agent-consult。"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此 Mac 上使用 Gateway 已設定的即時語音工作階段。需要在 Talk 設定中啟用 realtime、gateway-relay 和 agent-consult。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use a sessão de voz em tempo real configurada no Gateway neste Mac. Requer realtime, gateway-relay e agent-consult nas configurações de Conversa."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die im Gateway konfigurierte Echtzeit-Sprachsitzung auf diesem Mac verwenden. Erfordert realtime, gateway-relay und agent-consult in den Talk-Einstellungen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa la sesión de voz en tiempo real configurada en el Gateway en esta Mac. Requiere realtime, gateway-relay y agent-consult en los ajustes de Talk."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Mac で Gateway に設定されたリアルタイム音声セッションを使用します。Talk 設定で realtime、gateway-relay、agent-consult を有効にする必要があります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에서 Gateway에 구성된 실시간 음성 세션을 사용합니다. Talk 설정에서 realtime, gateway-relay 및 agent-consult가 필요합니다."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez la session vocale en temps réel configurée du Gateway sur ce Mac. Nécessite realtime, gateway-relay et agent-consult dans les réglages de Talk."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "इस Mac पर Gateway के कॉन्फ़िगर किए गए रीयलटाइम वॉइस सेशन का उपयोग करें। इसके लिए Talk सेटिंग्स में realtime, gateway-relay और agent-consult आवश्यक हैं।"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استخدم جلسة الصوت في الوقت الفعلي المُعدّة في Gateway على جهاز Mac هذا. يتطلب ذلك تفعيل realtime وgateway-relay وagent-consult في إعدادات Talk."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa la sessione vocale in tempo reale configurata del Gateway su questo Mac. Richiede realtime, gateway-relay e agent-consult nelle impostazioni di Talk."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway'in yapılandırılmış gerçek zamanlı sesli oturumunu bu Mac'te kullanın. Konuşma ayarlarında realtime, gateway-relay ve agent-consult seçeneklerinin etkinleştirilmesini gerektirir."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Використовувати налаштований у Gateway голосовий сеанс у реальному часі на цьому Mac. У налаштуваннях Talk мають бути ввімкнені realtime, gateway-relay і agent-consult."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gunakan sesi suara waktu nyata yang dikonfigurasi di Gateway pada Mac ini. Memerlukan realtime, gateway-relay, dan agent-consult dalam pengaturan Talk."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Używaj skonfigurowanej w Gateway sesji głosowej w czasie rzeczywistym na tym Macu. Wymaga włączenia opcji realtime, gateway-relay i agent-consult w ustawieniach Talk."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ใช้เซสชันเสียงแบบเรียลไทม์ที่กำหนดค่าไว้ของ Gateway บน Mac เครื่องนี้ ต้องเปิดใช้ realtime, gateway-relay และ agent-consult ในการตั้งค่า Talk"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sử dụng phiên thoại theo thời gian thực đã được cấu hình của Gateway trên máy Mac này. Yêu cầu bật realtime, gateway-relay và agent-consult trong cài đặt Talk."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gebruik de geconfigureerde realtime-spraaksessie van de Gateway op deze Mac. Vereist realtime, gateway-relay en agent-consult in de Talk-instellingen."
+          }
+        },
+        "fa": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "از نشست صوتی بلادرنگ پیکربندی‌شدهٔ Gateway در این Mac استفاده کنید. نیازمند فعال بودن realtime، gateway-relay و agent-consult در تنظیمات Talk است."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Использовать настроенный в Gateway голосовой сеанс в реальном времени на этом Mac. Для этого в настройках Talk должны быть включены realtime, gateway-relay и agent-consult."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Använd Gateways konfigurerade röstsamtal i realtid på denna Mac. Kräver realtime, gateway-relay och agent-consult i Talk-inställningarna."
           }
         }
       }
