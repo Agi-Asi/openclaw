@@ -15,7 +15,12 @@ const suite = createControlUiE2eSuite({
 });
 const requireRecord = createRequireRecord("record", "expected-object-value");
 const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
-const proofDir = path.join(process.cwd(), ".artifacts", "control-ui-e2e", "surface-activity");
+const proofDir = path.join(
+  process.cwd(),
+  ".artifacts",
+  "control-ui-e2e",
+  "surface-inline-activity",
+);
 
 function sessionsList(placement: "local" | "active") {
   return {
@@ -241,9 +246,21 @@ suite.define(() => {
             ts: Date.now() - 12_000,
           });
 
-          const activity = sidePanel.locator(".agent-chat__surface-activity");
-          await activity.getByText("$ pnpm test", { exact: true }).waitFor();
-          expect(await activity.textContent()).toContain("Working…");
+          const activity = composer.locator(".agent-chat__surface-activity");
+          await activity
+            .locator(
+              compact
+                ? ".agent-chat__surface-activity-mobile"
+                : ".agent-chat__surface-activity-meta",
+            )
+            .getByText("Working…", { exact: true })
+            .waitFor();
+          expect(await activity.textContent()).toContain("$ pnpm test");
+          expect(
+            await activity.evaluate(
+              (element) => element.closest(".agent-chat__surface-overlay") !== null,
+            ),
+          ).toBe(true);
           expect(await activity.locator("openclaw-elapsed-time").count()).toBe(1);
           const activityStop = activity.locator("button.agent-chat__surface-activity-stop");
           expect(await activityStop.count()).toBe(1);
@@ -258,10 +275,14 @@ suite.define(() => {
               )
               .toBe("none");
           }
+          const activityBox = await composer.boundingBox();
+          expect(activityBox?.height ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+            initialBox.height + 8,
+          );
           if (captureUiProof) {
             await page.screenshot({
               animations: "disabled",
-              path: path.join(proofDir, `${compact ? "phone" : "desktop"}-activity-shelf.png`),
+              path: path.join(proofDir, `${compact ? "phone" : "desktop"}-inline-activity.png`),
             });
             await page.waitForTimeout(600);
           }

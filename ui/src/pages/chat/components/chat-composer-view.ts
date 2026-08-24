@@ -216,6 +216,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                 class="agent-chat__surface-overlay-label agent-chat__surface-overlay-label--desktop"
                 >${t("tabs.chat")} · ${t("desktop.title")}</span
               >
+              <span class="agent-chat__surface-overlay-activity"></span>
             </div>
             ${props.offline
               ? html`<div class="agent-chat__offline-hint" role="status" aria-live="polite">
