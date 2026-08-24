@@ -523,6 +523,21 @@ export function refreshPreparedModelRuntimeSnapshots(
   const replacement = pendingModelRuntimeReplacement;
   const isPublicationCurrent = () =>
     requestEpoch === refreshRequestEpoch && options.isPublicationCurrent?.() !== false;
+  const commitReplacement = () => {
+    if (
+      !isPublicationCurrent() ||
+      !replacement ||
+      pendingModelRuntimeReplacement !== replacement
+    ) {
+      return;
+    }
+    replyDispatchPublication.rebuild(owners.values());
+    pendingModelRuntimeReplacement = undefined;
+    replacement.resolve();
+    // Publication listeners may synchronously read the committed owner. Clear the lifecycle
+    // gate before announcing availability so they cannot observe a false missing generation.
+    notifyPreparedModelRuntimePublication({ phase: "published" });
+  };
   return enqueuePreparedModelRuntimePublication(async () => {
     if (!isPublicationCurrent()) {
       return;
@@ -535,42 +550,35 @@ export function refreshPreparedModelRuntimeSnapshots(
     if (!isPublicationCurrent()) {
       return;
     }
-    await drainPendingAuthMutations();
-    if (!isPublicationCurrent()) {
-      return;
+    await drainPendingAuthMutations({
+      // The final queue check, dispatch rebuild, and replacement resolution are one synchronous
+      // commit. A mutation before it is adopted; a mutation after it starts a new auth transaction.
+      commit: commitReplacement,
+    });
+  }).then(commitReplacement, (error: unknown) => {
+    const refreshError = toStringifiedError(error);
+    if (isPublicationCurrent()) {
+      // Candidate and queued auth builds may finish independently. A failed transaction must
+      // leave no owner from its partially published generation request-visible.
+      for (const owner of owners.values()) {
+        owner.generation += 1;
+        owner.pending = undefined;
+        owner.needsRefresh = true;
+        owner.refreshError = refreshError;
+        owner.pluginGeneration = undefined;
+      }
     }
-    replyDispatchPublication.rebuild(owners.values());
-  }).then(
-    () => {
-      if (isPublicationCurrent() && replacement && pendingModelRuntimeReplacement === replacement) {
-        pendingModelRuntimeReplacement = undefined;
-        replacement.resolve();
-        // Publication listeners may synchronously read the committed owner. Clear the lifecycle
-        // gate before announcing availability so they cannot observe a false missing generation.
-        notifyPreparedModelRuntimePublication({ phase: "published" });
-      }
-    },
-    (error: unknown) => {
-      const refreshError = toStringifiedError(error);
-      if (isPublicationCurrent()) {
-        // Candidate and queued auth builds may finish independently. A failed transaction must
-        // leave no owner from its partially published generation request-visible.
-        for (const owner of owners.values()) {
-          owner.generation += 1;
-          owner.pending = undefined;
-          owner.needsRefresh = true;
-          owner.refreshError = refreshError;
-          owner.pluginGeneration = undefined;
-        }
-      }
-      if (isPublicationCurrent() && replacement && pendingModelRuntimeReplacement === replacement) {
-        pendingModelRuntimeReplacement = undefined;
-        replacement.reject(refreshError);
-        notifyPreparedModelRuntimePublication({ phase: "failed", error: refreshError });
-      }
-      throw refreshError;
-    },
-  );
+    if (
+      isPublicationCurrent() &&
+      replacement &&
+      pendingModelRuntimeReplacement === replacement
+    ) {
+      pendingModelRuntimeReplacement = undefined;
+      replacement.reject(refreshError);
+      notifyPreparedModelRuntimePublication({ phase: "failed", error: refreshError });
+    }
+    throw refreshError;
+  });
 }
 
 function enqueuePreparedModelRuntimePublication(task: () => Promise<void>): Promise<void> {
@@ -582,7 +590,11 @@ function enqueuePreparedModelRuntimePublication(task: () => Promise<void>): Prom
   return publication;
 }
 
-async function drainPendingAuthMutations(): Promise<void> {
+async function drainPendingAuthMutations(
+  options: {
+    commit?: () => void;
+  } = {},
+): Promise<void> {
   while (pendingAuthMutations.length > 0) {
     const events = pendingAuthMutations.splice(0);
     for (const event of events) {
@@ -611,6 +623,9 @@ async function drainPendingAuthMutations(): Promise<void> {
       reusePluginGenerations: true,
     });
   }
+  // The queue check and commit share one synchronous section. A mutation cannot appear after the
+  // final drain but before its owning transaction publishes the resulting dispatch projection.
+  options.commit?.();
 }
 
 function invalidateForAuthMutation(event: AuthMutationEvent): void {
@@ -644,6 +659,15 @@ function invalidateForAuthMutation(event: AuthMutationEvent): void {
   }
   replyDispatchPublication.remove(invalidatedConfiguredAgentIds);
   pendingAuthMutations.push(normalizedEvent);
+  if (pendingModelRuntimeReplacement) {
+    // The active config transaction drains this event before its atomic dispatch commit. Retire
+    // the superseded build gate; queuing another task would make this commit depend on future work.
+    for (const owner of invalidatedOwners) {
+      owner.pending = undefined;
+    }
+    notifyPreparedModelRuntimePublication({ phase: "invalidated" });
+    return;
+  }
   const ownerPublications = new Map<
     PreparedModelRuntimeOwner,
     Promise<PreparedModelRuntimeSnapshot>
@@ -656,19 +680,20 @@ function invalidateForAuthMutation(event: AuthMutationEvent): void {
     if (pendingModelRuntimeReplacement) {
       return;
     }
-    await drainPendingAuthMutations();
-    if (pendingModelRuntimeReplacement) {
-      return;
-    }
-    for (const owner of invalidatedOwners) {
-      if (owner.pending === ownerPublications.get(owner)) {
-        owner.pending = undefined;
-      }
-    }
-    // No await may separate clearing the transaction gate from rebuilding its dispatch projection.
-    // Otherwise an admitted request can observe neither the pending owner nor the new publication.
-    replyDispatchPublication.rebuild(owners.values());
-    notifyPreparedModelRuntimePublication({ phase: "published" });
+    await drainPendingAuthMutations({
+      commit: () => {
+        if (pendingModelRuntimeReplacement) {
+          return;
+        }
+        for (const owner of invalidatedOwners) {
+          if (owner.pending === ownerPublications.get(owner)) {
+            owner.pending = undefined;
+          }
+        }
+        replyDispatchPublication.rebuild(owners.values());
+        notifyPreparedModelRuntimePublication({ phase: "published" });
+      },
+    });
   });
   for (const owner of invalidatedOwners) {
     const pending = publication.then(() => owner.snapshot!);
