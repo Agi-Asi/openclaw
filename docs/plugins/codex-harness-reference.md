@@ -768,17 +768,19 @@ response remains authoritative even if it contains no visible models; HTTP
 `401` and `403` return an empty catalog rather than exposing fallback models.
 
 <Note>
-The current bundled harness is `@openai/codex` `0.148.0`. A live `model/list`
-probe against the official `0.148.0` app-server returned these public picker
+The current bundled harness is `@openai/codex` `0.149.1`. A live `model/list`
+probe against the official `0.149.1` app-server returned these public picker
 rows:
 
-| Model id        | Input modalities | Reasoning efforts                    |
-| --------------- | ---------------- | ------------------------------------ |
-| `gpt-5.6-sol`   | text, image      | low, medium, high, xhigh, max, ultra |
-| `gpt-5.6-terra` | text, image      | low, medium, high, xhigh, max, ultra |
-| `gpt-5.6-luna`  | text, image      | low, medium, high, xhigh, max        |
-| `gpt-5.5`       | text, image      | low, medium, high, xhigh             |
-| `gpt-5.2`       | text, image      | low, medium, high, xhigh             |
+| Model id              | Input modalities | Reasoning efforts                    |
+| --------------------- | ---------------- | ------------------------------------ |
+| `gpt-5.6-sol`         | text, image      | low, medium, high, xhigh, max, ultra |
+| `gpt-5.6-terra`       | text, image      | low, medium, high, xhigh, max, ultra |
+| `gpt-5.6-luna`        | text, image      | low, medium, high, xhigh, max        |
+| `gpt-5.5`             | text, image      | low, medium, high, xhigh             |
+| `gpt-5.4`             | text, image      | low, medium, high, xhigh             |
+| `gpt-5.4-mini`        | text, image      | low, medium, high, xhigh             |
+| `gpt-5.3-codex-spark` | text             | low, medium, high, xhigh             |
 
 Available model IDs, input modalities, and reasoning efforts remain
 account-scoped. Run `/codex models` after starting or upgrading the gateway to

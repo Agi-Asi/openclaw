@@ -92,7 +92,7 @@ channel is the communication surface.
 - The official `@openclaw/codex` plugin installed. Include `codex` in
   `plugins.allow` if your config uses an allowlist.
 - Codex app-server `0.147.0` or newer. The plugin ships and manages the exact
-  `@openai/codex` `0.148.0` artifact, so a `codex` command on `PATH` does not
+  `@openai/codex` `0.149.1` artifact, so a `codex` command on `PATH` does not
   affect normal startup. Explicit custom, remote, and macOS desktop-owned
   app-servers must report valid SemVer at or above the supported minimum.
   Versions newer than the managed artifact initialize with a warning;
