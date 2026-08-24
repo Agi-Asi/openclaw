@@ -542,6 +542,7 @@ jobs:
           OPENCLAW_CI_CHANGED_PATHS_JSON: ${{ steps.changed_scope.outputs.changed_paths_json || 'null' }}
           OPENCLAW_CI_CHECKOUT_REVISION: ${{ steps.checkout_ref.outputs.sha }}
           OPENCLAW_CI_HISTORICAL_TARGET: ${{ steps.historical_target.outputs.eligible || 'false' }}
+          OPENCLAW_CI_RELEASE_GATE: ${{ inputs.release_gate && 'true' || 'false' }}
           OPENCLAW_CI_RELEASE_CANDIDATE_TARGET: ${{ steps.release_candidate_target.outputs.eligible || 'false' }}
           OPENCLAW_CI_TARGET_CONTEXT_TARGET: ${{ steps.target_context_target.outputs.eligible || 'false' }}
           OPENCLAW_CI_WORKFLOW_REVISION: ${{ github.sha }}
@@ -665,6 +666,7 @@ jobs:
           })();
           const docsOnly = parseBoolean(process.env.OPENCLAW_CI_DOCS_ONLY);
           const docsChanged = parseBoolean(process.env.OPENCLAW_CI_DOCS_CHANGED);
+          const releaseGate = parseBoolean(process.env.OPENCLAW_CI_RELEASE_GATE);
           const runNode = parseBoolean(process.env.OPENCLAW_CI_RUN_NODE) && !docsOnly;
           const runNodeFastOnly =
             runNode && parseBoolean(process.env.OPENCLAW_CI_RUN_NODE_FAST_ONLY);
@@ -751,6 +753,24 @@ jobs:
                 task: "ci-routing",
               });
             }
+          }
+          if (releaseGate) {
+            checksFastCoreTasks.push(
+              ...Array.from({ length: 5 }, (_, index) => {
+                const stripe = index + 1;
+                return {
+                  check_name: `checks-fast-release-lint-core-${stripe}`,
+                  runtime: "node",
+                  stripe,
+                  task: `release-lint-core-${stripe}`,
+                };
+              }),
+              {
+                check_name: "checks-fast-release-lint-extensions",
+                runtime: "node",
+                task: "release-lint-extensions",
+              },
+            );
           }
 
           const compactPullRequest = isCanonicalRepository && eventName === "pull_request";
@@ -1922,11 +1942,11 @@ jobs:
       max-parallel: 12
       matrix: ${{ fromJson(needs.preflight.outputs.checks_fast_core_matrix) }}
     env:
-      CHECKOUT_BASE_SHA: ${{ matrix.task == 'baseline-ratchets' && needs.preflight.outputs.diff_base_revision || '' }}
+      CHECKOUT_BASE_SHA: ${{ (matrix.task == 'baseline-ratchets' || startsWith(matrix.task, 'release-lint-')) && needs.preflight.outputs.diff_base_revision || '' }}
     steps:
       - *linux_node_checkout_step
       - name: Prepare release-gate ratchet merge tree
-        if: matrix.task == 'baseline-ratchets' && github.event_name == 'workflow_dispatch' && inputs.release_gate
+        if: (matrix.task == 'baseline-ratchets' || startsWith(matrix.task, 'release-lint-')) && github.event_name == 'workflow_dispatch' && inputs.release_gate
         env:
           GH_TOKEN: ${{ github.token }}
           PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
@@ -2038,9 +2058,14 @@ jobs:
               fi
               pnpm check:max-lines-ratchet --base "$base_ref"
               pnpm check:assertion-safety --base "$base_ref"
-              if [[ "${RATCHET_RELEASE_MERGE_TREE:-}" == "true" ]]; then
-                node --import tsx scripts/run-oxlint-shards.mts --only=core --only=extensions --threads=1
-              fi
+              ;;
+            release-lint-core-*)
+              stripe="${TASK#release-lint-core-}"
+              node --import tsx scripts/run-oxlint-shards.mts \
+                --only=core --split-core --core-stripe="${stripe}/5" --threads=1
+              ;;
+            release-lint-extensions)
+              node --import tsx scripts/run-oxlint-shards.mts --only=extensions --threads=1
               ;;
             bun-launcher)
               OPENCLAW_E2E_SKIP_BUILD=1 OPENCLAW_TEST_BUN_LAUNCHER=1 pnpm test test/openclaw-launcher.e2e.test.ts

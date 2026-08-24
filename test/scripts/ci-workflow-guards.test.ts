@@ -210,6 +210,7 @@ function runCiManifestFixture(options: {
   qaSmokePlan?: boolean;
   formatCheck?: boolean;
   releaseCandidateCompatibility?: boolean;
+  releaseGate?: boolean;
   targetContextCompatibility?: boolean;
   nodeFastOnly?: boolean;
   nodeFastPluginContracts?: boolean;
@@ -398,6 +399,7 @@ function runCiManifestFixture(options: {
           (options.eventName ?? "workflow_dispatch") === "workflow_dispatch"
             ? "true"
             : "false",
+        OPENCLAW_CI_RELEASE_GATE: String(options.releaseGate ?? false),
         OPENCLAW_CI_RELEASE_CANDIDATE_TARGET:
           options.releaseCandidateCompatibility === true ? "true" : "false",
         OPENCLAW_CI_TARGET_CONTEXT_TARGET:
@@ -6354,14 +6356,14 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "pull-requests": "read",
     });
     expect(checksFastJob.env.CHECKOUT_BASE_SHA).toBe(
-      "${{ matrix.task == 'baseline-ratchets' && needs.preflight.outputs.diff_base_revision || '' }}",
+      "${{ (matrix.task == 'baseline-ratchets' || startsWith(matrix.task, 'release-lint-')) && needs.preflight.outputs.diff_base_revision || '' }}",
     );
     expect(checkout.run).toContain(
       'fetch_refs+=("+${CHECKOUT_BASE_SHA}:refs/remotes/origin/ci-ratchet-base")',
     );
     expect(checkout.run).toContain('"${fetch_refs[@]}" || return 1');
     expect(releaseGateMerge.if).toBe(
-      "matrix.task == 'baseline-ratchets' && github.event_name == 'workflow_dispatch' && inputs.release_gate",
+      "(matrix.task == 'baseline-ratchets' || startsWith(matrix.task, 'release-lint-')) && github.event_name == 'workflow_dispatch' && inputs.release_gate",
     );
     expect(checksFastRun.run).toContain("baseline-ratchets)");
     expect(checksFastRun.run).toContain("coercion-helpers)");
@@ -6441,10 +6443,10 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     );
     expect(maxLinesRatchet).toContain("checkEnvVarCount(envVarCountArgs(argv), root);");
     expect(checksFastRun.run).toContain(
-      'if [[ "${RATCHET_RELEASE_MERGE_TREE:-}" == "true" ]]; then',
+      '--only=core --split-core --core-stripe="${stripe}/5" --threads=1',
     );
     expect(checksFastRun.run).toContain(
-      "node --import tsx scripts/run-oxlint-shards.mts --only=core --only=extensions --threads=1",
+      "node --import tsx scripts/run-oxlint-shards.mts --only=extensions --threads=1",
     );
     expect(checksFastRun.run).not.toContain(
       "node scripts/run-oxlint.mjs src ui/src packages extensions",
@@ -6473,6 +6475,55 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
         check_name: "checks-fast-coercion-helpers",
         runtime: "node",
         task: "coercion-helpers",
+      },
+    ]);
+
+    const releaseGate = runCiManifestFixture({
+      bundledPlanner: true,
+      eventName: "workflow_dispatch",
+      historicalCompatibility: false,
+      releaseGate: true,
+    });
+    expect(releaseGate.status, releaseGate.output).toBe(0);
+    expect(
+      JSON.parse(
+        expectDefined(releaseGate.outputs.checks_fast_core_matrix, "release-gate checks matrix"),
+      ).include.filter((entry: { task: string }) => entry.task.startsWith("release-lint-")),
+    ).toEqual([
+      {
+        check_name: "checks-fast-release-lint-core-1",
+        runtime: "node",
+        stripe: 1,
+        task: "release-lint-core-1",
+      },
+      {
+        check_name: "checks-fast-release-lint-core-2",
+        runtime: "node",
+        stripe: 2,
+        task: "release-lint-core-2",
+      },
+      {
+        check_name: "checks-fast-release-lint-core-3",
+        runtime: "node",
+        stripe: 3,
+        task: "release-lint-core-3",
+      },
+      {
+        check_name: "checks-fast-release-lint-core-4",
+        runtime: "node",
+        stripe: 4,
+        task: "release-lint-core-4",
+      },
+      {
+        check_name: "checks-fast-release-lint-core-5",
+        runtime: "node",
+        stripe: 5,
+        task: "release-lint-core-5",
+      },
+      {
+        check_name: "checks-fast-release-lint-extensions",
+        runtime: "node",
+        task: "release-lint-extensions",
       },
     ]);
   });
