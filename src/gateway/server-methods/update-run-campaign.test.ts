@@ -35,10 +35,10 @@ const runGatewayUpdateMock =
   vi.fn<typeof import("../../infra/update-runner.js").runGatewayUpdate>();
 const runGatewayUpdatePreflightMock =
   vi.fn<typeof import("../../infra/update-runner.js").runGatewayUpdatePreflight>();
-type UpdateInstallSurface = Awaited<
-  ReturnType<typeof import("../../infra/update-runner.js").resolveUpdateInstallSurface>
->;
-const resolveUpdateInstallSurfaceMock = vi.fn<() => Promise<UpdateInstallSurface>>();
+const resolveUpdateInstallSurfaceMock =
+  vi.fn<typeof import("../../infra/update-runner.js").resolveUpdateInstallSurface>();
+const initializeGatewayUpdateStatusMock =
+  vi.fn<typeof import("../../infra/update-startup.js").initializeGatewayUpdateStatus>();
 const detectRespawnSupervisorMock = vi.fn<() => RespawnSupervisor | null>();
 const startManagedServiceUpdateHandoffMock = vi.fn<
   typeof import("../../infra/update-managed-service-handoff.js").startManagedServiceUpdateHandoff
@@ -48,6 +48,7 @@ const startManagedServiceUpdateHandoffMock = vi.fn<
   command: "openclaw update --yes --timeout 1800",
   logPath: "/tmp/openclaw-update-run-handoff/handoff.log",
   handoffId: "handoff-1",
+  installRoot: "/tmp/openclaw",
 }));
 const scheduleGatewaySigusr1RestartMock = vi.fn(() => ({ scheduled: true }));
 const logGatewayInfoMock = vi.fn();
@@ -73,10 +74,6 @@ vi.mock("../../infra/gateway-supervision.js", () => ({
   isGatewayExternallySupervised: () => false,
 }));
 
-vi.mock("../../infra/openclaw-root.js", () => ({
-  resolveOpenClawPackageRoot: async () => "/tmp/openclaw",
-}));
-
 vi.mock("../../infra/package-json.js", () => ({
   readPackageVersion: async () => "1.0.0",
 }));
@@ -91,8 +88,8 @@ vi.mock("../../infra/restart-sentinel.js", async () => {
   };
 });
 
-vi.mock("../../infra/restart.js", () => ({
-  resolveGatewayRestartDeferralTimeoutMs: () => 300_000,
+vi.mock("../../infra/restart.js", async () => ({
+  ...(await vi.importActual<typeof import("../../infra/restart.js")>("../../infra/restart.js")),
   scheduleGatewaySigusr1Restart: scheduleGatewaySigusr1RestartMock,
 }));
 
@@ -138,6 +135,7 @@ vi.mock("../../infra/update-runner.js", () => ({
 vi.mock("../../infra/update-startup.js", () => ({
   getUpdateAvailable: () => null,
   getUpdateSchedule: () => updateSchedule,
+  initializeGatewayUpdateStatus: initializeGatewayUpdateStatusMock,
 }));
 
 vi.mock("../../version.js", () => ({
@@ -191,6 +189,12 @@ beforeEach(() => {
     root: "/tmp/openclaw",
     packageRoot: "/tmp/openclaw",
   });
+  initializeGatewayUpdateStatusMock.mockReset();
+  initializeGatewayUpdateStatusMock.mockResolvedValue({
+    root: "/tmp/openclaw",
+    status: { root: "/tmp/openclaw", installKind: "git", packageManager: "pnpm" },
+    installReceipt: null,
+  });
   detectRespawnSupervisorMock.mockReset();
   detectRespawnSupervisorMock.mockReturnValue(null);
   startManagedServiceUpdateHandoffMock.mockClear();
@@ -229,6 +233,20 @@ function setDevCampaignSchedule(upstreamSha = "frozen-upstream-sha"): void {
   };
 }
 
+function mockPackageInstallSurface(kind: "global" | "package-root"): void {
+  const root = "/tmp/openclaw";
+  initializeGatewayUpdateStatusMock.mockResolvedValueOnce({
+    root,
+    status: { root, installKind: "package", packageManager: "npm" },
+    installReceipt: null,
+  });
+  resolveUpdateInstallSurfaceMock.mockResolvedValueOnce(
+    kind === "global"
+      ? { kind, mode: "npm", root, packageRoot: root }
+      : { kind, mode: "unknown", root, packageRoot: root },
+  );
+}
+
 async function invokeUpdateRun(): Promise<void> {
   const { updateHandlers } = await import("./update.js");
   await expectDefined(
@@ -252,12 +270,7 @@ async function invokeUpdateRun(): Promise<void> {
 describe("update.run campaign ownership", () => {
   it("pins a directly applied package campaign to its announced version", async () => {
     updateChannel = "beta";
-    resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({
-      kind: "package-root",
-      mode: "unknown",
-      root: "/tmp/openclaw",
-      packageRoot: "/tmp/openclaw",
-    });
+    mockPackageInstallSurface("package-root");
 
     await invokeUpdateRun();
 
@@ -273,12 +286,7 @@ describe("update.run campaign ownership", () => {
   it("pins a managed package campaign handoff to its announced version", async () => {
     updateChannel = "beta";
     detectRespawnSupervisorMock.mockReturnValueOnce("launchd");
-    resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({
-      kind: "global",
-      mode: "npm",
-      root: "/tmp/openclaw",
-      packageRoot: "/tmp/openclaw",
-    });
+    mockPackageInstallSurface("global");
 
     await withEnvAsync({ OPENCLAW_LAUNCHD_LABEL: "ai.openclaw.gateway" }, invokeUpdateRun);
 
@@ -290,12 +298,7 @@ describe("update.run campaign ownership", () => {
   it("keeps a configless extended-stable package install on that channel", async () => {
     versionMock.value = "2026.6.33";
     detectRespawnSupervisorMock.mockReturnValueOnce("launchd");
-    resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({
-      kind: "global",
-      mode: "npm",
-      root: "/tmp/openclaw",
-      packageRoot: "/tmp/openclaw",
-    });
+    mockPackageInstallSurface("global");
 
     await withEnvAsync({ OPENCLAW_LAUNCHD_LABEL: "ai.openclaw.gateway" }, invokeUpdateRun);
 
@@ -307,12 +310,7 @@ describe("update.run campaign ownership", () => {
   it("keeps a plain package update on the moving configured channel", async () => {
     updateChannel = "beta";
     adoptCampaignMock.mockReturnValueOnce(undefined);
-    resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({
-      kind: "package-root",
-      mode: "unknown",
-      root: "/tmp/openclaw",
-      packageRoot: "/tmp/openclaw",
-    });
+    mockPackageInstallSurface("package-root");
 
     await invokeUpdateRun();
 
@@ -320,6 +318,57 @@ describe("update.run campaign ownership", () => {
     expect(runGatewayUpdateMock).toHaveBeenCalledWith(
       expect.not.objectContaining({ tag: expect.anything() }),
     );
+  });
+
+  it("uses the prepared Git checkout instead of process artifacts", async () => {
+    adoptCampaignMock.mockReturnValueOnce(undefined);
+    initializeGatewayUpdateStatusMock.mockResolvedValueOnce({
+      root: "/tmp/openclaw-source",
+      status: {
+        root: "/tmp/openclaw-source",
+        installKind: "git",
+        packageManager: "pnpm",
+      },
+      installReceipt: null,
+    });
+    resolveUpdateInstallSurfaceMock.mockImplementationOnce(async ({ root, installKind }) =>
+      root === "/tmp/openclaw-source" && installKind === "git"
+        ? { kind: "git", mode: "git", root, packageRoot: root }
+        : {
+            kind: "global",
+            mode: "npm",
+            root: "/tmp/openclaw-launcher-package",
+            packageRoot: "/tmp/openclaw-launcher-package",
+          },
+    );
+    runGatewayUpdateMock.mockResolvedValueOnce({
+      status: "ok",
+      mode: "git",
+      root: "/tmp/openclaw-source",
+      steps: [],
+      durationMs: 100,
+    });
+
+    await invokeUpdateRun();
+
+    expect(runGatewayUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/tmp/openclaw-source" }),
+    );
+    expect(startManagedServiceUpdateHandoffMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing prepared root without scanning the process working directory", async () => {
+    adoptCampaignMock.mockReturnValueOnce(undefined);
+    initializeGatewayUpdateStatusMock.mockResolvedValueOnce({
+      root: null,
+      status: { root: null, installKind: "unknown", packageManager: "unknown" },
+      installReceipt: null,
+    });
+    resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({ kind: "missing", mode: "unknown" });
+
+    await invokeUpdateRun();
+
+    expect(runGatewayUpdateMock).not.toHaveBeenCalled();
   });
 
   it("pins a directly applied dev campaign to its announced commit", async () => {
@@ -439,12 +488,7 @@ describe("update.run campaign ownership", () => {
 
   it("keeps the adopted campaign after a managed-service handoff starts", async () => {
     detectRespawnSupervisorMock.mockReturnValueOnce("launchd");
-    resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({
-      kind: "global",
-      mode: "npm",
-      root: "/tmp/openclaw",
-      packageRoot: "/tmp/openclaw",
-    });
+    mockPackageInstallSurface("global");
 
     await withEnvAsync({ OPENCLAW_LAUNCHD_LABEL: "ai.openclaw.gateway" }, invokeUpdateRun);
 
