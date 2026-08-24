@@ -5930,6 +5930,7 @@ export const en: TranslationMap = {
       responding: "{name} is responding...",
       sendingMessage: "Sending message...",
       working: "{name} is working...",
+      openChat: "Open chat",
       runDone: "Done",
       runInterrupted: "Interrupted",
       runStatus: "Run status: {status}",

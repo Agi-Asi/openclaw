@@ -1,3 +1,6 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { expect, it } from "vitest";
 import { waitForControlUiGatewayReady } from "../test-helpers/control-ui-e2e-readiness.ts";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
@@ -10,6 +13,9 @@ const suite = createControlUiE2eSuite({
   unavailableMessage: (executablePath) =>
     `Playwright Chromium is not installed or cannot start at ${executablePath}. Run \`pnpm --dir ui exec playwright install --with-deps chromium\`.`,
 });
+const requireRecord = createRequireRecord("record", "expected-object-value");
+const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
+const proofDir = path.join(process.cwd(), ".artifacts", "control-ui-e2e", "surface-activity");
 
 function sessionsList(placement: "local" | "active") {
   return {
@@ -121,11 +127,18 @@ suite.define(() => {
   ])(
     "keeps the active composer above an expanded desktop at $width×$height",
     async ({ compact, height, width }) => {
+      if (captureUiProof) {
+        await mkdir(proofDir, { recursive: true });
+      }
       await suite.withPage(
-        { serviceWorkers: "block", viewport: { width, height } },
+        {
+          ...(captureUiProof ? { recordVideo: { dir: proofDir, size: { width, height } } } : {}),
+          serviceWorkers: "block",
+          viewport: { width, height },
+        },
         async ({ page }) => {
           const gateway = await installMockGateway(page, {
-            featureMethods: ["desktop.observe", "environments.list"],
+            featureMethods: ["chat.abort", "desktop.observe", "environments.list"],
             methodResponses: {
               "sessions.list": sessionsList("local"),
               "environments.list": {
@@ -145,9 +158,10 @@ suite.define(() => {
           });
           const panel = await openDesktopPanel(page);
           await gateway.waitForRequest("environments.list");
-          await installDesktopClientFake(panel);
+          await installScriptedRfbServer(page);
           await panel.getByRole("button", { name: "Connect", exact: true }).click();
           await gateway.waitForRequest("desktop.observe");
+          await panel.locator(".desktop-surface canvas").waitFor();
           await panel.locator(".desktop-surface").evaluate((element) => {
             element.setAttribute("data-retained-surface", "true");
           });
@@ -155,6 +169,9 @@ suite.define(() => {
           const sidePanel = page.locator(".side-panel");
           await sidePanel.getByRole("button", { name: "Expand side panel" }).click();
           await page.locator(".sidebar-region--expanded").waitFor();
+          if (captureUiProof) {
+            await page.waitForTimeout(300);
+          }
 
           expect(await panel.locator('[data-retained-surface="true"]').count()).toBe(1);
           expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
@@ -191,6 +208,7 @@ suite.define(() => {
               "flex",
             );
           }
+          expect(await composer.locator(".agent-chat__surface-activity").count()).toBe(0);
           await page.keyboard.type("x");
           await expect.poll(async () => await textarea.inputValue()).toBe("x");
           if (compact) {
@@ -203,12 +221,70 @@ suite.define(() => {
             expect(focusedBox?.height ?? 0).toBeGreaterThan(initialBox.height + 30);
           }
 
+          await gateway.deferNext("chat.send");
           await composer.getByRole("button", { name: "Send message" }).click();
           const sendRequest = await gateway.waitForRequest("chat.send");
           expect(sendRequest.params).toMatchObject({ message: "x", sessionKey: "main" });
+          const runId = String(requireRecord(sendRequest.params).idempotencyKey);
+          await gateway.resolveDeferred("chat.send", { runId, status: "started" });
+          await gateway.emitGatewayEvent("agent", {
+            data: {
+              args: { command: "pnpm test" },
+              name: "exec",
+              phase: "start",
+              toolCallId: "surface-activity-command",
+            },
+            runId,
+            seq: 1,
+            sessionKey: "main",
+            stream: "tool",
+            ts: Date.now() - 12_000,
+          });
+
+          const activity = sidePanel.locator(".agent-chat__surface-activity");
+          await activity.getByText("$ pnpm test", { exact: true }).waitFor();
+          expect(await activity.textContent()).toContain("Working…");
+          expect(await activity.locator("openclaw-elapsed-time").count()).toBe(1);
+          const activityStop = activity.locator("button.agent-chat__surface-activity-stop");
+          expect(await activityStop.count()).toBe(1);
           await expect.poll(() => page.locator(".sidebar-region--expanded").count()).toBe(1);
           await expect.poll(() => composer.count()).toBe(1);
           expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
+          await textarea.blur();
+          if (compact) {
+            await expect
+              .poll(
+                async () => await footer.evaluate((element) => getComputedStyle(element).display),
+              )
+              .toBe("none");
+          }
+          if (captureUiProof) {
+            await page.screenshot({
+              animations: "disabled",
+              path: path.join(proofDir, `${compact ? "phone" : "desktop"}-activity-shelf.png`),
+            });
+            await page.waitForTimeout(600);
+          }
+
+          if (compact) {
+            await activity.getByRole("button", { name: "Open chat" }).click();
+            await expect.poll(() => page.locator(".sidebar-region--expanded").count()).toBe(0);
+            expect(await panel.locator('[data-retained-surface="true"]').count()).toBe(1);
+            expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
+            if (captureUiProof) {
+              await page.waitForTimeout(400);
+            }
+            await sidePanel.getByRole("button", { name: "Expand side panel" }).click();
+            await page.locator(".sidebar-region--expanded").waitFor();
+          } else {
+            await activityStop.click();
+            expect(await gateway.waitForRequest("chat.abort")).toMatchObject({
+              params: { runId, sessionKey: "main" },
+            });
+            if (captureUiProof) {
+              await page.waitForTimeout(400);
+            }
+          }
 
           await sidePanel.getByRole("button", { name: "Restore side panel" }).click();
           await expect.poll(() => composer.count()).toBe(0);

@@ -157,7 +157,6 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
     t("chat.composer.menu.webSearch"),
   ).join(", ");
   const disabledReasonId = paneDomId(props.paneId, "disabled-reason");
-
   return html`
     ${renderChatQueue({
       queue: props.queue,

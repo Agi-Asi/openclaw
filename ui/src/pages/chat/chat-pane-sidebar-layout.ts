@@ -13,6 +13,7 @@ import type {
   SidebarPanelDefinition,
   SidebarPanelTemplates,
   SidebarRegionCallbacks,
+  SidebarSurfaceActivity,
 } from "./components/chat-sidebar-region-types.ts";
 import type { SidebarFullMessageLoader } from "./components/chat-sidebar.ts";
 import {
@@ -149,6 +150,7 @@ export function renderSidebarRegion(params: {
   primary: TemplateResult;
   requestUpdate: () => void;
   surfaceComposer?: TemplateResult | typeof nothing;
+  surfaceActivity?: SidebarSurfaceActivity | null;
   surfaceSlot?: "browser" | "desktop" | "terminal";
 }): TemplateResult {
   const panelOpen = params.layout.open === true;
@@ -182,6 +184,7 @@ export function renderSidebarRegion(params: {
           .narrow=${params.narrow}
           .availableWidth=${params.availableWidth}
           .surfaceComposer=${params.surfaceComposer ?? nothing}
+          .surfaceActivity=${params.surfaceActivity ?? null}
           .surfaceSlot=${params.surfaceSlot ?? null}
         ></openclaw-chat-sidebar-region>`}
     <div class="sidebar-region__primary">${params.primary}</div>

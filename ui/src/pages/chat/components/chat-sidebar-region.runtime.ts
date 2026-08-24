@@ -3,6 +3,7 @@ import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { renderDockDestinations } from "../../../components/dock-destination-controls.ts";
+import "../../../components/elapsed-time.ts";
 import { icons } from "../../../components/icons.ts";
 import { renderPanelEmptyState } from "../../../components/panel-empty-state.ts";
 import { renderPanelTabStrip } from "../../../components/panel-tab-strip.ts";
@@ -29,6 +30,7 @@ import type {
   SidebarPanelDefinition,
   SidebarPanelTemplates,
   SidebarRegionCallbacks,
+  SidebarSurfaceActivity,
 } from "./chat-sidebar-region-types.ts";
 
 function panelType(
@@ -73,6 +75,7 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
   @property({ type: Boolean }) narrow = false;
   @property({ type: Number }) availableWidth = 0;
   @property({ attribute: false }) surfaceComposer: TemplateResult | typeof nothing = nothing;
+  @property({ attribute: false }) surfaceActivity: SidebarSurfaceActivity | null = null;
   @property({ attribute: false }) surfaceSlot: "browser" | "desktop" | "terminal" | null = null;
 
   deliverPanelEvent(slot: SidebarSlotId, event: Event): boolean {
@@ -347,8 +350,55 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
       return nothing;
     }
     return html`<div class="side-panel__composer-overlay" data-surface-overlay=${this.surfaceSlot}>
-      ${this.surfaceComposer}
+      ${this.renderSurfaceActivity()} ${this.surfaceComposer}
     </div>`;
+  }
+
+  private renderSurfaceActivity() {
+    const activity = this.surfaceActivity;
+    if (!activity) {
+      return nothing;
+    }
+    return html`
+      <div class="agent-chat__surface-activity" role="status" aria-live="off">
+        <span class="agent-chat__surface-activity-pulse" aria-hidden="true"></span>
+        <span class="agent-chat__surface-activity-copy">
+          <strong class="agent-chat__surface-activity-label">${activity.label}</strong>
+          <span class="agent-chat__surface-activity-meta">
+            ${activity.detail ? html`<span>${activity.detail}</span>` : nothing}
+            ${activity.startedAt != null
+              ? html`
+                  ${activity.detail ? html`<span aria-hidden="true">·</span>` : nothing}
+                  <openclaw-elapsed-time .startMs=${activity.startedAt}></openclaw-elapsed-time>
+                `
+              : nothing}
+          </span>
+        </span>
+        <span class="agent-chat__surface-activity-actions">
+          <button
+            class="btn btn--sm agent-chat__surface-activity-open"
+            type="button"
+            @click=${() => this.callbacks?.setExpanded(false)}
+          >
+            ${t("chat.composer.openChat")}
+          </button>
+          ${activity.onStop
+            ? html`
+                <openclaw-tooltip .content=${t("chat.runControls.stop")}>
+                  <button
+                    class="btn btn--sm danger agent-chat__surface-activity-stop"
+                    type="button"
+                    aria-label=${t("chat.runControls.stopGenerating")}
+                    @click=${activity.onStop}
+                  >
+                    ${icons.stop}
+                  </button>
+                </openclaw-tooltip>
+              `
+            : nothing}
+        </span>
+      </div>
+    `;
   }
 
   private renderPanel() {
