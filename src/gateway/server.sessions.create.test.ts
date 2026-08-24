@@ -43,6 +43,11 @@ import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import {
+  createCronCreatorAuthorityRunScope,
+  mintDetachedSessionCreationAuthority,
+  revokeCronCreatorAuthorityRunScope,
+} from "./cron-creator-authority-grant.js";
+import {
   attachGatewayLocalUserIngress,
   prepareGatewayLocalUserIngress,
 } from "./local-user-ingress.js";
@@ -2985,6 +2990,57 @@ test.each([undefined, "main"])(
   },
 );
 
+test("sessions.create commits an admitted agent-tool creation as a detached root", async () => {
+  const { storePath } = await createSessionStoreDir();
+  testState.sessionConfig = { dmScope: "main" };
+  const scope = createCronCreatorAuthorityRunScope("detached-admin", { kind: "local" });
+  const authority = mintDetachedSessionCreationAuthority(scope, true);
+
+  const created = await directSessionReq<{
+    key?: string;
+    entry?: {
+      createdVia?: string;
+      createdActor?: { type?: string; id?: string };
+      parentSessionKey?: string;
+      spawnedBy?: string;
+      spawnDepth?: number;
+      permissionMode?: string;
+    };
+  }>(
+    "sessions.create",
+    { agentId: "main", label: "Detached", permissionMode: "full" },
+    {
+      client: {
+        connect: { scopes: ["operator.admin"] },
+        internal: {
+          syntheticClient: true,
+          sessionCreation: {
+            via: "operator",
+            actor: { type: "agent", id: "main" },
+            detachedAuthority: authority,
+          },
+        },
+      } as never,
+    },
+  );
+
+  expect(created.ok, JSON.stringify(created.error)).toBe(true);
+  expect(created.payload?.entry).toMatchObject({
+    createdVia: "operator",
+    createdActor: { type: "agent", id: "main" },
+    spawnDepth: 0,
+    permissionMode: "full",
+  });
+  expect(created.payload?.entry).not.toHaveProperty("parentSessionKey");
+  expect(created.payload?.entry).not.toHaveProperty("spawnedBy");
+  expect(() => authority.assertActive()).not.toThrow();
+  const key = requireNonEmptyString(created.payload?.key, "detached session key");
+  expect(loadSessionEntry({ agentId: "main", sessionKey: key, storePath })).toMatchObject({
+    spawnDepth: 0,
+    permissionMode: "full",
+  });
+});
+
 test("sessions.create preserves an explicit parent under main dmScope", async () => {
   await createSessionStoreDir();
   testState.sessionConfig = { dmScope: "main" };
@@ -3207,6 +3263,84 @@ test("sessions.create commits no session after delegated authority closes", asyn
 
   expect(created.ok).toBe(false);
   expect(created.error?.message).toContain("agent runtime authority is no longer active");
+  expect(
+    loadCombinedSessionStoreForGatewayCore(getRuntimeConfig()).store[sessionKey],
+  ).toBeUndefined();
+});
+
+test("sessions.create commits no detached root after its turn authority closes", async () => {
+  const { storePath } = await createSessionStoreDir();
+  const sessionKey = "agent:main:dashboard:detached-authority-race";
+  const scope = createCronCreatorAuthorityRunScope("detached-stale", { kind: "local" });
+  const authority = mintDetachedSessionCreationAuthority(scope, false);
+  const writerEntered = createDeferredCore();
+  const releaseWriter = createDeferredCore();
+  const resolvedStore = resolveSqliteStoreScope(storePath, { agentId: "main" });
+  const heldWriter = runExclusiveSqliteSessionWrite(resolvedStore, async () => {
+    writerEntered.resolve();
+    await releaseWriter.promise;
+  });
+  await writerEntered.promise;
+
+  const creating = directSessionReq(
+    "sessions.create",
+    { agentId: "main", key: sessionKey, permissionMode: "guarded" },
+    {
+      client: {
+        connect: { scopes: ["operator.write"] },
+        internal: {
+          syntheticClient: true,
+          sessionCreation: {
+            via: "operator",
+            actor: { type: "agent", id: "main" },
+            detachedAuthority: authority,
+          },
+        },
+      } as never,
+    },
+  );
+  try {
+    await vi.waitFor(() =>
+      expect(isSessionLifecycleMutationActive(storePath, [sessionKey])).toBe(true),
+    );
+    revokeCronCreatorAuthorityRunScope(scope);
+  } finally {
+    releaseWriter.resolve();
+    await heldWriter;
+  }
+  const created = await creating;
+
+  expect(created.ok).toBe(false);
+  expect(created.error?.message).toContain("authority is no longer active");
+  expect(
+    loadCombinedSessionStoreForGatewayCore(getRuntimeConfig()).store[sessionKey],
+  ).toBeUndefined();
+});
+
+test("sessions.create rejects a forged detached authority", async () => {
+  await createSessionStoreDir();
+  const sessionKey = "agent:main:dashboard:forged-detached-authority";
+
+  const created = await directSessionReq(
+    "sessions.create",
+    { agentId: "main", key: sessionKey, permissionMode: "full" },
+    {
+      client: {
+        connect: { scopes: ["operator.admin"] },
+        internal: {
+          syntheticClient: true,
+          sessionCreation: {
+            via: "operator",
+            actor: { type: "agent", id: "main" },
+            detachedAuthority: { admin: true, assertActive: () => {} },
+          },
+        },
+      } as never,
+    },
+  );
+
+  expect(created.ok).toBe(false);
+  expect(created.error?.message).toBe("Detached session creation authority is invalid.");
   expect(
     loadCombinedSessionStoreForGatewayCore(getRuntimeConfig()).store[sessionKey],
   ).toBeUndefined();

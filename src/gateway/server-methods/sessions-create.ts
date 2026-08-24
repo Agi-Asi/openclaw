@@ -49,6 +49,10 @@ import {
 } from "./session-create-initial-turn.js";
 import { prepareSessionCreateFilesystemRoot } from "./session-create-root.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
+import {
+  DetachedSessionAuthorityExpiredError,
+  resolveDetachedSessionAuthority,
+} from "./session-detached-create-authority.js";
 import { sessionLog } from "./sessions-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
@@ -147,6 +151,21 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       hasInitialTurn,
       message: initialMessage,
     } = initialTurn;
+    const sessionCreation = resolveOperatorSessionCreation(client, { allowTrustedHint: true });
+    const detached = resolveDetachedSessionAuthority({
+      creation: sessionCreation,
+      hasInitialTurn,
+      parentSessionKey,
+      spawnDepth: p.spawnDepth,
+      fork: p.fork,
+      forkFrom: p.forkFrom,
+      succeedsParent: p.succeedsParent,
+      permissionMode: p.permissionMode,
+    });
+    if (detached.error) {
+      respond(false, undefined, detached.error);
+      return;
+    }
     let requestedCwd = normalizeOptionalString(p.cwd);
     const requestedExecNode = normalizeOptionalString(p.execNode);
     const requestedProjectId = normalizeOptionalString(p.projectId);
@@ -485,7 +504,6 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
     let runError: unknown;
     let runMeta: Record<string, unknown> | undefined;
     let messageSeq: number | undefined;
-    const sessionCreation = resolveOperatorSessionCreation(client, { allowTrustedHint: true });
     const spawnRequesterSessionKey =
       sessionCreation.via === "spawn"
         ? normalizeOptionalString(sessionCreation.requesterSessionKey)
@@ -502,6 +520,13 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       ADMIN_SCOPE,
       clientScopes,
     ).allowed;
+    const createCommitGuard =
+      commitGuard || detached.assertActive
+        ? () => {
+            commitGuard?.();
+            detached.assertActive?.();
+          }
+        : undefined;
     const modelCatalogAgentId = sessionAgentId;
     if (!authority.ensureActive()) {
       return;
@@ -521,6 +546,7 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       visibility: p.visibility,
       allowExistingModelSelection,
       parentSessionKey,
+      detachedRoot: detached.authority !== undefined,
       spawnDepth: p.spawnDepth,
       spawnToolPolicy:
         sessionCreation.via === "spawn" && sessionCreation.inheritedToolPolicy
@@ -556,7 +582,7 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       armSessionDiffBaselineCapture: true,
       loadGatewayModelCatalog: () =>
         context.loadGatewayModelCatalog({ agentId: modelCatalogAgentId }),
-      ...(commitGuard ? { commitGuard } : {}),
+      ...(createCommitGuard ? { commitGuard: createCommitGuard } : {}),
       afterCreate: async ({ key, agentId, entry, storePath }) => {
         if (!authority.hasActive()) {
           return;
@@ -602,7 +628,13 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
           });
         }
       },
-    }).catch((error: unknown) => authority.handleClosedError(error));
+    }).catch((error: unknown) => {
+      if (error instanceof DetachedSessionAuthorityExpiredError) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, error.message));
+        return undefined;
+      }
+      return authority.handleClosedError(error);
+    });
     if (!created) {
       return;
     }

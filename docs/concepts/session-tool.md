@@ -11,20 +11,20 @@ OpenClaw gives agents tools to work across sessions, inspect status, and orchest
 
 ## Available tools
 
-| Tool                 | What it does                                                                            |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `sessions`           | Patch, reset, delete, or assign ownership of visible sessions and manage session groups |
-| `sessions_list`      | List sessions with optional filters (kind, label, agent, archive, preview)              |
-| `sessions_search`    | Search visible session transcripts and return matching excerpts                         |
-| `sessions_history`   | Read the transcript of a specific session                                               |
-| `sessions_send`      | Run another session on the same Gateway and optionally wait                             |
-| `conversations_list` | List stable external conversation addresses                                             |
-| `conversations_send` | Send to one exact external conversation without running a local session                 |
-| `conversations_turn` | Send to one exact external conversation and wait for its correlated reply               |
-| `sessions_spawn`     | Spawn an isolated sub-agent session for background work                                 |
-| `sessions_yield`     | End the current turn and wait for follow-up sub-agent results                           |
-| `subagents`          | List or cancel background work in this session tree                                     |
-| `session_status`     | Show a `/status`-style card and optionally set a per-session model override             |
+| Tool                 | What it does                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `sessions`           | Create detached sessions; patch, reset, delete, or assign ownership; manage groups |
+| `sessions_list`      | List sessions with optional filters (kind, label, agent, archive, preview)         |
+| `sessions_search`    | Search visible session transcripts and return matching excerpts                    |
+| `sessions_history`   | Read the transcript of a specific session                                          |
+| `sessions_send`      | Run another session on the same Gateway and optionally wait                        |
+| `conversations_list` | List stable external conversation addresses                                        |
+| `conversations_send` | Send to one exact external conversation without running a local session            |
+| `conversations_turn` | Send to one exact external conversation and wait for its correlated reply          |
+| `sessions_spawn`     | Spawn an isolated sub-agent session for background work                            |
+| `sessions_yield`     | End the current turn and wait for follow-up sub-agent results                      |
+| `subagents`          | List or cancel background work in this session tree                                |
+| `session_status`     | Show a `/status`-style card and optionally set a per-session model override        |
 
 These tools are still subject to the active tool profile and allow/deny policy. `tools.profile: "coding"` includes the full session orchestration set. `tools.profile: "messaging"` includes session self-service, discovery, recall, cross-session messaging, external-conversation tools, and the complete spawn lifecycle (`sessions_spawn`, `sessions_yield`, and `subagents`). The UI-only task-suggestion tools `suggest_task` and `dismiss_task` remain coding-profile tools.
 
@@ -60,13 +60,14 @@ Use [`sessions_search`](/concepts/session-search) for exact full-text recall acr
 
 The owner-gated `sessions` tool exposes bounded self-service surfaces:
 
+- `action: "create"` creates an idle, detached root session with no parent, spawn lineage, inherited sub-agent policy, or child-count relationship. Pass `label`, `agentId`, and `permissionMode` (`read-only`, `guarded`, `workspace`, or `full`); omission defaults to `guarded`. The result returns its session key and durable session ID. Use `sessions_send` with that key during the same turn to start work; the narrow create-to-send access grant expires when the creating turn ends. This action appears only during a direct admitted operator turn, and `full` additionally requires a direct local administrator turn.
 - `action: "patch"` changes the current session by default, or another visible session selected by `sessionKey`. It can set the label, persistent sidebar `icon`, sidebar `category`, pin/archive state, model, and thinking level. Pass `null` or an empty string to clear `category`; assigning a category adds it to the catalog on first use. The icon must be one emoji grapheme or one of the named icons `braces`, `book`, `monitor`, `bot`, `kanban`, and `coins`; pass an empty string to clear it. The Control UI picker also accepts a custom emoji and shows the macOS (Control-Command-Space) or Windows (Windows-period) system emoji picker shortcut. Archiving or restoring another session requires its `sessions_list` `sessionId` as `expectedSessionId`.
 - `action: "reset"` resets another visible session selected by `sessionKey`.
 - `action: "delete"` first archives and then deletes the exact same generation of another visible session selected by `sessionKey`. By default its transcript is retained as a deleted archive; pass `deleteTranscript: false` to leave the transcript state untouched. Resetting or deleting the session currently running the tool is rejected.
 - `action: "assign_owner"` hands session responsibility to a person or agent. Pass `ownerType` (`"human"` or `"agent"`) and `ownerId`; the target is the current session by default, or another visible session via `sessionKey`. Agent owner ids must name a configured agent. The assignment records who reassigned it and when, and the Control UI reflects the new owner immediately. Ownership is display and responsibility, not access control; see [Multi-user mode](/concepts/multi-user).
 - `group_list`, `group_set`, `group_rename`, and `group_delete` manage the global ordered session-group catalog. `group_set` replaces the ordered name list rather than assigning a session; use `action: "patch"` with `category` for membership.
 
-Use `sessions_spawn` with `visible: true` to create a persistent dashboard session. Pass `category` to place it in a sidebar group atomically; omit `category` or pass an empty string to leave it ungrouped. This keeps session creation on the controlled spawn path, which enforces the parent's tool policy, sandbox, concurrency limits, and run timeout.
+Use `sessions_spawn` with `visible: true` when the new session should run a delegated task as a child. Pass `category` to place it in a sidebar group atomically; omit `category` or pass an empty string to leave it ungrouped. The spawn path enforces the parent's tool policy, sandbox, depth, concurrency limits, and run timeout. Use `sessions action=create` instead when the new session must be an independent sibling with no parent lifecycle relationship.
 
 An agent-selected model patch stays reversible until that selection completes a successful run. If the selected model is definitively unusable because of authentication, billing, or model-not-found failure, OpenClaw restores the previous model and writes a visible system note. Transient rate-limit, overload, timeout, network, and server failures do not undo the selection.
 

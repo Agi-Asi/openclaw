@@ -36,6 +36,7 @@ type AgentToolGatewayRequest = Pick<
 > & {
   agentRunTracking?: GatewayAgentRunTaskOwner;
   agentToolCaller?: TrustedAgentToolCaller;
+  sessionCreation?: TrustedSessionCreation;
 };
 
 const agentToolGatewayRuntimeIdentities = new WeakMap<object, AgentRuntimeIdentity>();
@@ -80,10 +81,14 @@ export const callAgentToolGatewayRequest: AgentToolGatewayRequestCaller = async 
     if (runtimeIdentity) {
       throw new Error("trusted agent runtime identity requires in-process Gateway dispatch");
     }
+    if (request.sessionCreation?.detachedAuthority) {
+      throw new Error("detached session authority requires in-process Gateway dispatch");
+    }
     const { callGateway } = await import("../../gateway/call.js");
     const {
       agentRunTracking: _agentRunTracking,
       agentToolCaller: _agentToolCaller,
+      sessionCreation: _sessionCreation,
       ...wireRequest
     } = request;
     return await callGateway<T>(wireRequest);
@@ -98,6 +103,7 @@ export const callAgentToolGatewayRequest: AgentToolGatewayRequestCaller = async 
     forceSyntheticClient: true,
     ...(request.agentRunTracking ? { agentRunTracking: request.agentRunTracking } : {}),
     ...(request.agentToolCaller ? { agentToolCaller: request.agentToolCaller } : {}),
+    ...(request.sessionCreation ? { sessionCreation: request.sessionCreation } : {}),
     syntheticScopes: scopes,
     ...(request.expectFinal !== undefined ? { expectFinal: request.expectFinal } : {}),
     ...(request.onAccepted ? { onAccepted: request.onAccepted } : {}),

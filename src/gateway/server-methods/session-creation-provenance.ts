@@ -3,10 +3,13 @@ import type {
   SessionCreatedVia,
 } from "../../config/sessions/session-entry-provenance.js";
 import type { AgentRuntimeIdentity } from "../agent-runtime-identity-token.js";
+import type { DetachedSessionCreationAuthority } from "../cron-creator-authority-grant.js";
 
 export type TrustedSessionCreation = {
   via: SessionCreatedVia;
   actor?: SessionCreatedActor;
+  /** In-process authority for an agent-authored detached root creation. */
+  detachedAuthority?: DetachedSessionCreationAuthority;
   /** Exact spawning session retained separately from the stable actor identity. */
   requesterSessionKey?: string;
   /** Immutable completion recipient for a spawn-owned visible session. */

@@ -15,9 +15,15 @@ export type CronCreatorAuthorityRunScope = {
   readonly callerOrigin: CronScheduledToolCallerOrigin;
   readonly signal: AbortSignal;
   readonly grantTokens: Set<string>;
+  readonly onRevoke: Set<() => void>;
   active: boolean;
   abort: () => void;
 };
+
+export type DetachedSessionCreationAuthority = Readonly<{
+  admin: boolean;
+  assertActive: () => void;
+}>;
 
 type CronCreatorAuthorityGrantEntry = {
   scope: CronCreatorAuthorityRunScope;
@@ -27,6 +33,7 @@ type CronCreatorAuthorityGrantEntry = {
 };
 
 const grantsByToken = new Map<string, CronCreatorAuthorityGrantEntry>();
+const detachedSessionAuthorities = new WeakSet<object>();
 
 function expiredAuthorityError(): Error & { status: number } {
   return Object.assign(
@@ -47,6 +54,7 @@ export function createCronCreatorAuthorityRunScope(
     callerOrigin: normalizeCronScheduledToolCallerOrigin(callerOrigin),
     signal: abortController.signal,
     grantTokens: new Set(),
+    onRevoke: new Set(),
     active: true,
     abort: () => abortController.abort(expiredAuthorityError()),
   };
@@ -101,9 +109,48 @@ export function revokeCronCreatorAuthorityRunScope(scope: CronCreatorAuthorityRu
   }
   scope.active = false;
   scope.abort();
+  for (const cleanup of scope.onRevoke) {
+    cleanup();
+  }
+  scope.onRevoke.clear();
   for (const token of scope.grantTokens) {
     revokeCronCreatorAuthorityGrant(token);
   }
+}
+
+export function mintDetachedSessionCreationAuthority(
+  scope: CronCreatorAuthorityRunScope,
+  admin: boolean,
+): DetachedSessionCreationAuthority {
+  const authority = Object.freeze({
+    admin,
+    assertActive: () => {
+      scope.signal.throwIfAborted();
+      if (!scope.active) {
+        scope.signal.throwIfAborted();
+      }
+    },
+  });
+  authority.assertActive();
+  detachedSessionAuthorities.add(authority);
+  return authority;
+}
+
+export function registerCronCreatorAuthorityCleanup(
+  scope: CronCreatorAuthorityRunScope,
+  cleanup: () => void,
+): void {
+  if (!scope.active || scope.signal.aborted) {
+    cleanup();
+    return;
+  }
+  scope.onRevoke.add(cleanup);
+}
+
+export function isDetachedSessionCreationAuthority(
+  value: unknown,
+): value is DetachedSessionCreationAuthority {
+  return typeof value === "object" && value !== null && detachedSessionAuthorities.has(value);
 }
 
 /** Consumes one live exact-run grant synchronously at the cron commit boundary. */

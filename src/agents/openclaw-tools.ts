@@ -359,6 +359,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createSessionsTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
             agentSessionId: options?.sessionId,
+            runId: options?.runId,
             requesterAgentIdOverride: sessionAgentId,
             sandboxed: options?.sandboxed,
             config: resolvedConfig,

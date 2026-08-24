@@ -30,6 +30,7 @@ import {
 
 export {
   createAgentToAgentPolicy,
+  createSessionVisibilityChecker,
   createSessionVisibilityRowChecker,
   resolveEffectiveSessionToolsVisibility,
 } from "../../plugin-sdk/session-visibility.js";

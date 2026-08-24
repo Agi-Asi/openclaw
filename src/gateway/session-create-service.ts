@@ -341,6 +341,8 @@ export async function createGatewaySession(params: {
   requestingOperatorScopes?: readonly string[];
   /** Trusted in-process creation provenance; never populated from public Gateway params. */
   creation?: { via: SessionCreatedVia; actor?: SessionCreatedActor };
+  /** Authorized agent-tool creation that must not join navigation or spawn lineage. */
+  detachedRoot?: boolean;
   /** Exact harness namespace authorized by the scoped plugin runtime. */
   authorizedAgentHarnessId?: string;
   /** Exact plugin namespace authorized by the scoped plugin runtime. */
@@ -658,6 +660,7 @@ export async function createGatewaySession(params: {
   // Incognito roots omit durable lineage so notices cannot cross the storage boundary.
   const dashboardParentSessionKey =
     !parentSessionKey &&
+    params.detachedRoot !== true &&
     !params.authorizedPluginId &&
     !incognito &&
     params.fork !== true &&

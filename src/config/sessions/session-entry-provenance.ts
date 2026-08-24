@@ -36,7 +36,7 @@ export type SessionOwnerAssignment = {
   assignedAt?: number;
 };
 export type SessionCreatedVia =
-  | "operator" // gateway sessions.create (Control UI / operator clients)
+  | "operator" // gateway sessions.create (Control UI, operator clients, or admitted agent tool)
   | "spawn" // sessions_spawn native or ACP subagent spawn
   | "channel" // inbound channel conversation materialization
   | "cron"

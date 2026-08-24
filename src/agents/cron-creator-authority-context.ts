@@ -4,9 +4,12 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import type { CronScheduledToolCallerOrigin } from "../cron/scheduled-tool-policy.js";
 import {
   createCronCreatorAuthorityRunScope,
+  mintDetachedSessionCreationAuthority,
   mintCronCreatorAuthorityGrant,
+  registerCronCreatorAuthorityCleanup,
   revokeCronCreatorAuthorityRunScope,
   type CronCreatorAuthorityRunScope,
+  type DetachedSessionCreationAuthority,
 } from "../gateway/cron-creator-authority-grant.js";
 import type {
   CronCreatorToolAuthorityMaterialization,
@@ -178,6 +181,8 @@ export function bindActiveOperatorTurnAuthority(runId: string | undefined):
   | {
       source: "channel-owner" | "local";
       assertActive: () => void;
+      detachedSessionAuthority: DetachedSessionCreationAuthority;
+      onClose: (cleanup: () => void) => void;
     }
   | undefined {
   const authority = activeCronCreatorAuthority.getStore();
@@ -199,5 +204,10 @@ export function bindActiveOperatorTurnAuthority(runId: string | undefined):
         throw new Error("operator turn authority is no longer active");
       }
     },
+    detachedSessionAuthority: mintDetachedSessionCreationAuthority(
+      authority,
+      authority.callerOrigin.kind === "local",
+    ),
+    onClose: (cleanup) => registerCronCreatorAuthorityCleanup(authority, cleanup),
   };
 }

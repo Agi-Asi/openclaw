@@ -368,6 +368,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       emoji: "🗂️",
       title: "Session Settings",
       actions: {
+        create: { label: "create", detailKeys: ["agentId", "label", "permissionMode"] },
         patch: {
           label: "update",
           detailKeys: ["sessionKey", "label", "pinned", "archived", "model", "thinkingLevel"],

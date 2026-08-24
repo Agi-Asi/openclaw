@@ -44,6 +44,10 @@ import {
 } from "./sessions-access.js";
 import { resolveSessionToolContext } from "./sessions-helpers.js";
 import { resolveSessionReference, shouldResolveSessionIdInput } from "./sessions-resolution.js";
+import {
+  prepareDetachedSessionCreation,
+  SESSION_CREATE_PERMISSION_MODES,
+} from "./sessions-tool-create.js";
 
 const ACTIONS = [
   "patch",
@@ -162,9 +166,27 @@ const SessionsToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
+function buildSessionsCreateSchema(admin: boolean) {
+  const permissionModes = admin
+    ? SESSION_CREATE_PERMISSION_MODES
+    : SESSION_CREATE_PERMISSION_MODES.slice(0, -1);
+  return Type.Object(
+    {
+      ...SessionsToolSchema.properties,
+      action: stringEnum(["create", ...ACTIONS] as const, { description: "Action" }),
+      agentId: Type.Optional(
+        Type.String({ description: "Configured agent for a newly created detached session" }),
+      ),
+      permissionMode: Type.Optional(stringEnum(permissionModes)),
+    },
+    { additionalProperties: false },
+  );
+}
+
 type SessionsToolOptions = {
   agentSessionKey?: string;
   agentSessionId?: string;
+  runId?: string;
   requesterAgentIdOverride?: string;
   sandboxed?: boolean;
   config?: OpenClawConfig;
@@ -325,6 +347,7 @@ async function resolvePatchTarget(
 
 export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool {
   const gatewayRequest = opts.callGateway ?? callAgentToolGatewayRequest;
+  const detachedCreate = prepareDetachedSessionCreation({ ...opts, callGateway: gatewayRequest });
   const callGateway = <T = Record<string, unknown>>(
     method: string,
     params: Record<string, unknown>,
@@ -332,12 +355,23 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
   return {
     label: "Sessions",
     name: "sessions",
-    description:
-      "Session settings, ownership, reset, delete, and sidebar categories: patch label/icon/category/status, pin, archive/restore, model/thinking override; category assigns one session while group_set replaces the ordered category catalog; assign_owner hands responsibility to a human or agent; reset/delete visible sessions; group_list/group_set/group_rename/group_delete.",
-    parameters: SessionsToolSchema,
+    description: detachedCreate
+      ? "Create detached sessions; patch visible session settings and ownership; reset/delete sessions; manage sidebar categories."
+      : "Patch visible session settings and ownership; reset/delete sessions; manage sidebar categories.",
+    parameters: detachedCreate
+      ? buildSessionsCreateSchema(detachedCreate.admin)
+      : SessionsToolSchema,
     execute: async (_toolCallId, rawArgs) => {
       const params = rawArgs as Record<string, unknown>;
       const action = readToolStringParam(params, "action", { required: true });
+      if (action === "create") {
+        if (!detachedCreate) {
+          throw new ToolAuthorizationError(
+            "Detached session creation is available only during a direct admitted operator turn.",
+          );
+        }
+        return await detachedCreate.execute(params);
+      }
       if (action === "reset" || action === "delete") {
         const rawKey = readToolStringParam(params, "sessionKey", { required: true });
         const { agentId, isRequesterSession, key } = await resolvePatchTarget(

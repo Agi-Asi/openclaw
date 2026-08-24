@@ -180,23 +180,6 @@ describe("sessions tool", () => {
     expect(tool.parameters).not.toHaveProperty("properties.message");
   });
 
-  it("does not expose direct session creation outside controlled spawning", async () => {
-    const callGateway = vi.fn();
-    const tool = createSessionsTool({
-      agentSessionKey: "agent:main:main",
-      config: {},
-      callGateway,
-    });
-
-    await expect(tool.execute("create-uncontrolled-session", { action: "create" })).rejects.toThrow(
-      "Unknown action: create",
-    );
-    expect(tool.parameters).not.toHaveProperty("properties.parentSessionKey");
-    expect(tool.parameters).not.toHaveProperty("properties.agentId");
-    expect(tool.parameters).not.toHaveProperty("properties.fork");
-    expect(callGateway).not.toHaveBeenCalled();
-  });
-
   it("assigns a visible session owner and returns the projected identity", async () => {
     const callGateway = vi.fn(async (request: { method: string }) => {
       if (request.method !== "sessions.assignOwner") {
