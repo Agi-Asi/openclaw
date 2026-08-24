@@ -8,6 +8,7 @@ import {
   mocks,
   type WizardPrompter,
 } from "./chat-engine.test-support.js";
+import { ChatWizardHost } from "./chat-wizard-host.js";
 
 describe("SystemAgentChatEngine QR wizard", () => {
   it("projects producer-owned QR setup and records its polled terminal outcome", async () => {
@@ -134,6 +135,50 @@ describe("SystemAgentChatEngine QR wizard", () => {
     release();
     await engine.dispose();
   });
+
+  it.each(["external", "persistent"] as const)(
+    "rejects %s effects when cancellation lands during authority validation",
+    async (effect) => {
+      let authorityEntered!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        authorityEntered = resolve;
+      });
+      let releaseAuthority!: () => void;
+      const authority = new Promise<void>((resolve) => {
+        releaseAuthority = resolve;
+      });
+      let effectReached = false;
+      const host = new ChatWizardHost({
+        surface: "gateway",
+        supportsQrCode: true,
+        beforePersistentApply: async () => {
+          authorityEntered();
+          await authority;
+        },
+        dependencies: {
+          runChannelSetupWizard: async (
+            _channel,
+            _prompter,
+            beforeExternalApply,
+            beforePersistentApply,
+          ) => {
+            await (effect === "external" ? beforeExternalApply : beforePersistentApply)(
+              createNonExitingRuntime(),
+            );
+            effectReached = true;
+          },
+        },
+      });
+
+      const start = host.startChannel("signal");
+      await entered;
+      host.dispose();
+      releaseAuthority();
+      await start;
+
+      expect(effectReached).toBe(false);
+    },
+  );
 
   it("does not rejoin with a QR after its deadline before timer cleanup", async () => {
     useTempStateDir();

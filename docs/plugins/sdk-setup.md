@@ -579,7 +579,7 @@ const setupWizard: ChannelSetupWizard = {
     }
     ```
 
-    `expiresInMs` is optional. When set, it must be an integer from `0` through `2_147_483_647` milliseconds (about 24.8 days), inclusive; `0` expires immediately. A value outside that range rejects with a `RangeError` before OpenClaw presents the QR, so choose a valid duration before starting transient link work. If you omit the field, the QR has no host-owned deadline.
+    `expiresInMs` is optional. When set, it must be an integer from `0` through `2_147_000_000` milliseconds (about 24.8 days), inclusive; `0` expires immediately. A value outside that range rejects with a `RangeError` before OpenClaw presents the QR, so choose a valid duration before starting transient link work. If you omit the field, the QR has no host-owned deadline.
 
     `settled` is the producer's lifecycle: its result dismisses the QR and becomes the return value. Client answers never settle the step. If the wizard is cancelled or the deadline passes, `qrCode` rejects so the producer can stop transient work in `finally`. Check the optional capability before starting credential-bearing work; do not fall back to placing the raw payload in a note, URL, error, or transcript.
 

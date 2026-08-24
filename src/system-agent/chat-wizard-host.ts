@@ -493,10 +493,13 @@ export class ChatWizardHost {
     const session = new WizardSession(
       async (prompter, signal, owner) => {
         const beforeExternalApply = async (runtime: RuntimeEnv) => {
+          signal.throwIfAborted();
           await this.options.beforePersistentApply(runtime);
+          signal.throwIfAborted();
         };
         const result = await params.run(prompter, signal, beforeExternalApply, async (runtime) => {
           await beforeExternalApply(runtime);
+          signal.throwIfAborted();
           owner.lockCancellation();
         });
         if (typeof result === "string") {
