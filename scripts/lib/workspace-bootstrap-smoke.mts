@@ -535,7 +535,6 @@ export async function buildAndSmokeDistRuntimeArtifact(params: {
     const gatewayEnv = { ...smokeEnv };
     delete gatewayEnv.OPENCLAW_DISABLE_BUNDLED_PLUGINS;
 
-    let gateway: GatewayProcess | undefined;
     let gatewayOutput = "";
     try {
       execFileSync(
@@ -565,7 +564,7 @@ export async function buildAndSmokeDistRuntimeArtifact(params: {
       }
 
       const port = await reserveLoopbackPort();
-      gateway = spawn(
+      const gateway = spawn(
         process.execPath,
         [
           join(packageRoot, "openclaw.mjs"),
@@ -586,20 +585,21 @@ export async function buildAndSmokeDistRuntimeArtifact(params: {
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
-      const appendGatewayOutput = (chunk: Buffer) => {
-        gatewayOutput += chunk.toString();
-        if (Buffer.byteLength(gatewayOutput) > DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES) {
-          gatewayOutput = gatewayOutput.slice(-DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES);
-        }
-      };
-      gateway.stdout?.on("data", appendGatewayOutput);
-      gateway.stderr?.on("data", appendGatewayOutput);
-      await waitForGatewayReadiness({ child: gateway, port, readOutput: () => gatewayOutput });
-      await waitForGatewayPluginLoaded({ child: gateway, readOutput: () => gatewayOutput });
-    } finally {
-      if (gateway) {
+      try {
+        const appendGatewayOutput = (chunk: Buffer) => {
+          gatewayOutput += chunk.toString();
+          if (Buffer.byteLength(gatewayOutput) > DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES) {
+            gatewayOutput = gatewayOutput.slice(-DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES);
+          }
+        };
+        gateway.stdout?.on("data", appendGatewayOutput);
+        gateway.stderr?.on("data", appendGatewayOutput);
+        await waitForGatewayReadiness({ child: gateway, port, readOutput: () => gatewayOutput });
+        await waitForGatewayPluginLoaded({ child: gateway, readOutput: () => gatewayOutput });
+      } finally {
         await stopGatewaySmoke(gateway);
       }
+    } finally {
       rmSync(smokeRoot, { force: true, recursive: true });
     }
   } finally {
