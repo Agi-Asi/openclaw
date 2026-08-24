@@ -9,7 +9,6 @@ import "../../components/tooltip.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import type { SessionToolOverrides } from "../../lib/sessions/patch.ts";
-import { countSessionToolOverrides } from "../../lib/sessions/tool-overrides.ts";
 import { refreshSlashCommands } from "../chat/chat-commands.ts";
 import {
   createChatAttachmentDropHandlers,
@@ -439,7 +438,6 @@ function renderNewSessionPlusMenu(
   attachments: Parameters<typeof renderChatComposerPlusMenu>[0]["attachments"],
 ) {
   const capabilityMenu = options.capabilityMenu;
-  const overrideCount = countSessionToolOverrides(options.toolOverrides);
   const disabled = options.submitting || options.messageLocked === true;
   const controller = options.textareaController;
   return renderChatComposerPlusMenu({
@@ -449,10 +447,6 @@ function renderNewSessionPlusMenu(
     open: controller.capabilityMenuOpen,
     view: controller.capabilityMenuView,
     toolOverrides: options.toolOverrides,
-    selectedLabel:
-      overrideCount > 0
-        ? t("newSession.composerOptionsSelected", { count: String(overrideCount) })
-        : undefined,
     onOpenChange: (open) => {
       controller.capabilityMenuOpen = open;
       if (!open) {
@@ -465,34 +459,6 @@ function renderNewSessionPlusMenu(
       options.requestUpdate();
     },
   });
-}
-
-function renderNewSessionOverrideStatus(options: NewSessionComposerOptions) {
-  const overrideCount = countSessionToolOverrides(options.toolOverrides);
-  if (overrideCount === 0) {
-    return nothing;
-  }
-  const disabled = options.submitting || options.messageLocked === true;
-  const openMenu = () => {
-    options.textareaController.capabilityMenuView = "root";
-    options.textareaController.capabilityMenuOpen = true;
-    options.requestUpdate();
-  };
-  return html`
-    <button
-      type="button"
-      class="new-session-page__selection-status"
-      ?disabled=${disabled}
-      @click=${openMenu}
-    >
-      ${t(
-        overrideCount === 1
-          ? "chat.composer.overrides.countOne"
-          : "chat.composer.overrides.count",
-        { count: String(overrideCount) },
-      )}
-    </button>
-  `;
 }
 
 /** Draft message box styled as the chat composer shell so both pickers match. */
@@ -651,7 +617,6 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
                   options,
                 })
               : nothing}
-            ${renderNewSessionOverrideStatus(options)}
           </div>
           <div class="agent-chat__composer-trail">
             <div class="agent-chat__composer-controls">

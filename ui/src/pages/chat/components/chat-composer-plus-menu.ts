@@ -11,6 +11,7 @@ import type { McpServerSummary } from "../../../lib/config/mcp-servers.ts";
 import { formatUiExternalText } from "../../../lib/format-error.ts";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
 import {
+  countSessionToolOverrides,
   nextBooleanToolOverrides,
   nextMcpToolsDenyOverrides,
   nextWebSearchToolOverrides,
@@ -68,7 +69,6 @@ type ChatComposerPlusMenuProps = {
   canAdmin: boolean;
   adminBlockedReason: string | null;
   rootToggles?: readonly ChatComposerRootToggle[];
-  selectedLabel?: string;
   addServerDialog?: TemplateResult | typeof nothing;
   onOpenChange: (open: boolean) => void;
   onViewChange: (view: ChatComposerPlusMenuView) => void;
@@ -91,7 +91,6 @@ export type ChatComposerCapabilityMenuProps = Omit<
   | "onViewChange"
   | "showCapabilities"
   | "rootToggles"
-  | "selectedLabel"
 >;
 
 function menuDivider(): TemplateResult {
@@ -157,6 +156,7 @@ function renderCapabilityToggleRow(options: {
 }
 
 function renderRootView(props: ChatComposerPlusMenuProps) {
+  const overrideCount = countSessionToolOverrides(props.toolOverrides);
   const connectorCount = props.mcpServers.filter((server) =>
     resolveToolOverrideState(
       server.enabled,
@@ -231,7 +231,33 @@ function renderRootView(props: ChatComposerPlusMenuProps) {
               pathForRoute("plugins", props.basePath),
               t("chat.composer.menu.managePlugins"),
             )}
-          </wa-dropdown-item>`
+          </wa-dropdown-item>
+          ${overrideCount > 0
+            ? html`
+                <wa-dropdown-item
+                  class="agent-chat__capability-menu-item agent-chat__capability-menu-overrides"
+                  value="clear-overrides"
+                  ?disabled=${props.mutationBlockedReason !== null}
+                  title=${props.mutationBlockedReason ?? ""}
+                >
+                  <span slot="icon" aria-hidden="true">${icons.settings}</span>
+                  <span
+                    >${t(
+                      overrideCount === 1
+                        ? "chat.composer.overrides.countOne"
+                        : "chat.composer.overrides.count",
+                      { count: String(overrideCount) },
+                    )}</span
+                  >
+                  <span
+                    slot="details"
+                    class="agent-chat__capability-menu-clear-overrides"
+                    aria-hidden="true"
+                    >${icons.x}</span
+                  >
+                </wa-dropdown-item>
+              `
+            : nothing}`
       : nothing}
   `;
 }
@@ -485,6 +511,13 @@ function handleMenuSelection(
     );
     return;
   }
+  if (value === "clear-overrides") {
+    event.preventDefault();
+    if (!props.mutationBlockedReason) {
+      props.onPatchToolOverrides(null);
+    }
+    return;
+  }
   if (value.startsWith("skill:")) {
     event.preventDefault();
     const skill = props.skills?.[Number(value.slice("skill:".length))];
@@ -567,6 +600,7 @@ function handleMenuSelection(
 }
 
 function renderChatComposerPlusMenuContent(props: ChatComposerPlusMenuProps) {
+  const hasOverrides = countSessionToolOverrides(props.toolOverrides) > 0;
   const view = props.showCapabilities ? props.view : "root";
   if (view.startsWith("tools:")) {
     props.onEnsureToolAccess?.(view.slice("tools:".length));
@@ -600,16 +634,7 @@ function renderChatComposerPlusMenuContent(props: ChatComposerPlusMenuProps) {
       }}
       data-view=${view}
     >
-      ${renderChatAttachmentMenuTrigger(
-        props.disabled,
-        props.selectedLabel
-          ? {
-              active: true,
-              label: props.selectedLabel,
-            }
-          : undefined,
-      )}
-      ${content}
+      ${renderChatAttachmentMenuTrigger(props.disabled, hasOverrides)} ${content}
     </wa-dropdown>
     ${props.addServerDialog ?? nothing}
   `;
@@ -623,7 +648,6 @@ export function renderChatComposerPlusMenu(props: {
   view: ChatComposerPlusMenuView;
   toolOverrides: SessionToolOverrides | null | undefined;
   rootToggles?: readonly ChatComposerRootToggle[];
-  selectedLabel?: string;
   onOpenChange: (open: boolean) => void;
   onViewChange: (view: ChatComposerPlusMenuView) => void;
 }) {
@@ -649,7 +673,6 @@ export function renderChatComposerPlusMenu(props: {
     canAdmin: capabilityMenu?.canAdmin ?? false,
     adminBlockedReason: capabilityMenu?.adminBlockedReason ?? null,
     rootToggles: props.rootToggles,
-    selectedLabel: props.selectedLabel,
     addServerDialog: capabilityMenu?.addServerDialog,
     onOpenChange: props.onOpenChange,
     onViewChange: props.onViewChange,
