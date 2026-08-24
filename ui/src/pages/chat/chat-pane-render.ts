@@ -17,7 +17,10 @@ import {
   projectSessionObserverDigest,
   resolveChatPaneObserverRunId,
 } from "../../lib/observer-digest.ts";
-import { hasSessionPresenceViewers } from "../../lib/presence-users.ts";
+import {
+  hasSessionPresenceViewers,
+  projectOnlinePresenceViewers,
+} from "../../lib/presence-users.ts";
 import { buildAgentMainSessionKey } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
 import { generateUUID } from "../../lib/uuid.ts";
@@ -237,6 +240,11 @@ export class ChatPane extends ChatPaneLayoutRender {
       presenceEntries: readPresenceEntries(gatewaySnapshot.hello?.snapshot),
       presenceInstanceId: gatewaySnapshot.client?.instanceId,
     });
+    const onlineUsers = projectOnlinePresenceViewers(
+      this.presencePayload,
+      selfUser?.id,
+      gatewaySnapshot.client?.instanceId,
+    );
     const runOutputTokens = resolveActiveRunOutputTokens({
       localRunId: state.chatRunId,
       activeRunIds: selectedSession?.activeRunIds,
@@ -647,6 +655,7 @@ export class ChatPane extends ChatPaneLayoutRender {
       workspaceGit: selectedAgent?.workspaceGit === true,
       openPanelSlot,
       closePanelSlot,
+      onlineUsers,
     });
   }
 }

@@ -5,7 +5,7 @@ import {
   type NavigationRouteId,
   type SidebarZoneEntry,
 } from "../app-navigation.ts";
-import { activityPersonLocation, isRouteId, isSessionRouteId } from "../app-route-paths.ts";
+import { isRouteId, isSessionRouteId } from "../app-route-paths.ts";
 import { resolveControlUiAuthToken } from "../app/control-ui-auth.ts";
 import { isNativeWebChromeHost } from "../app/native-web-chrome.ts";
 import { readPresenceEntries, resolveCurrentSelfUser } from "../app/user-profile.ts";
@@ -15,11 +15,7 @@ import { normalizeAgentLabel, resolveAgentTextAvatar } from "../lib/agents/displ
 import { deriveAvatarInitial, resolveAgentAvatarUrl } from "../lib/avatar.ts";
 import { sessionHasBoard } from "../lib/board/provider.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
-import {
-  isPresenceViewerIdle,
-  presenceViewerLabel,
-  projectOnlinePresenceViewers,
-} from "../lib/presence-users.ts";
+import { projectOnlinePresenceViewers } from "../lib/presence-users.ts";
 import { isSessionRunActive } from "../lib/session-run-state.ts";
 import {
   resolveSessionPreferredFace,
@@ -37,6 +33,7 @@ import { renderSidebarSessionSectionHeader } from "./app-sidebar-session-section
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import type { SidebarWorkboardBoard } from "./app-sidebar-workboard.ts";
 import { icons } from "./icons.ts";
+import { renderOnlinePresenceList } from "./online-presence-list.ts";
 import {
   renderSessionAttentionIcon,
   renderSessionRunSpinner,
@@ -263,6 +260,9 @@ export function renderAppSidebarPagesHead(host: AppSidebarRenderHost) {
 }
 
 export function renderAppSidebarOnline(host: AppSidebarRenderHost) {
+  if (!host.mobile) {
+    return nothing;
+  }
   const sectionId = "online";
   const collapsed = host.collapsedSessionSections.has(sectionId);
   const label = t("presence.rosterTitle");
@@ -314,28 +314,10 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost) {
       ${collapsed
         ? nothing
         : html`<div class="sidebar-online__list">
-            ${users.map((user) => {
-              const { pathname, search, href } = activityPersonLocation(user.id, host.basePath);
-              return html`<a
-                class="sidebar-online__person ${isPresenceViewerIdle(user)
-                  ? "sidebar-online__person--away"
-                  : ""}"
-                data-online-user-id=${user.id}
-                href=${href}
-                @click=${(event: MouseEvent) => {
-                  if (!shouldHandleNavigationClick(event)) {
-                    return;
-                  }
-                  event.preventDefault();
-                  host.onNavigate?.("activity", { pathname, search });
-                }}
-              >
-                <openclaw-viewer-avatar .user=${user} variant="footer"></openclaw-viewer-avatar>
-                <span class="sidebar-online__person-name">${presenceViewerLabel(user)}</span>
-                <span class="sidebar-online__person-action" aria-hidden="true"
-                  >${icons.chevronRight}</span
-                >
-              </a>`;
+            ${renderOnlinePresenceList({
+              users,
+              basePath: host.basePath,
+              onNavigate: (location) => host.onNavigate?.("activity", location),
             })}
           </div>`}
     </section>

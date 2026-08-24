@@ -6,6 +6,7 @@ import {
   installMockGateway,
   waitForControlUiRoute,
 } from "../test-helpers/control-ui-e2e.ts";
+import { openChatSidePanelType } from "./chat-side-panel.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -168,60 +169,86 @@ suite.define(() => {
 
         const response = await page.goto(controlUiSessionUrl(suite.server.baseUrl, releaseKey));
         expect(response?.status()).toBe(200);
-        const presenceSidebar = page.locator("openclaw-presence-sidebar");
-        const presencePanel = presenceSidebar.locator(".presence-sidebar__panel");
-        await expect.poll(() => presencePanel.count()).toBe(1);
-        await expect.poll(() => presencePanel.locator(".sidebar-online__person").count()).toBe(4);
-        await expect.poll(() => presencePanel.locator(".viewer-avatar").count()).toBe(4);
+        expect(await page.locator("openclaw-presence-sidebar").count()).toBe(0);
         await expect.poll(() => page.locator(".sidebar-online").isHidden()).toBe(true);
+        await openChatSidePanelType(page, "Online");
+        const sidePanel = page.locator(".sidebar-region__right-runtime .side-panel");
+        const onlinePanel = sidePanel.locator('[data-panel-slot="online"]');
+        await expect.poll(() => onlinePanel.locator(".sidebar-online__person").count()).toBe(4);
+        await expect.poll(() => onlinePanel.locator(".viewer-avatar").count()).toBe(4);
         await mkdir(outputDir, { recursive: true });
         await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "01-presence-sidebar-default-open-light.png"),
+          path: path.join(outputDir, "01-online-side-panel-open-light.png"),
         });
 
-        await presenceSidebar.getByRole("button", { name: "Hide online people" }).click();
-        await expect.poll(() => presencePanel.count()).toBe(0);
-        const showPresence = presenceSidebar.getByRole("button", { name: "Show online people" });
-        await expect.poll(() => showPresence.isVisible()).toBe(true);
+        const divider = page.getByRole("separator", { name: "Resize side panel" });
+        const initialWidth = await sidePanel.evaluate(
+          (element) => element.getBoundingClientRect().width,
+        );
+        const dividerBounds = await divider.boundingBox();
+        expect(dividerBounds).not.toBeNull();
+        await page.mouse.move(dividerBounds!.x + 1, dividerBounds!.y + dividerBounds!.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(dividerBounds!.x - 80, dividerBounds!.y + dividerBounds!.height / 2);
+        await page.mouse.up();
+        await expect
+          .poll(() => sidePanel.evaluate((element) => element.getBoundingClientRect().width))
+          .toBeGreaterThan(initialWidth + 50);
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
         await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "02-presence-sidebar-user-closed-light.png"),
+          path: path.join(outputDir, "02-online-side-panel-resized-light.png"),
         });
 
-        expect(
-          await page.evaluate(() => {
-            const value = localStorage.getItem("openclaw.presence.sidebar.v1");
-            return value ? JSON.parse(value) : null;
-          }),
-        ).toMatchObject({ open: false });
+        await sidePanel.getByRole("button", { name: "Close Online" }).click();
+        await sidePanel.locator(".side-panel-empty--selector").waitFor();
+        await expect.poll(() => divider.isVisible()).toBe(true);
+        const emptyWidth = await sidePanel.evaluate(
+          (element) => element.getBoundingClientRect().width,
+        );
+        const emptyDividerBounds = await divider.boundingBox();
+        expect(emptyDividerBounds).not.toBeNull();
+        await page.mouse.move(
+          emptyDividerBounds!.x + 1,
+          emptyDividerBounds!.y + emptyDividerBounds!.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          emptyDividerBounds!.x - 60,
+          emptyDividerBounds!.y + emptyDividerBounds!.height / 2,
+        );
+        await page.mouse.up();
+        await expect
+          .poll(() => sidePanel.evaluate((element) => element.getBoundingClientRect().width))
+          .toBeGreaterThan(emptyWidth + 35);
+        const persistedEmptyWidth = await sidePanel.evaluate(
+          (element) => element.getBoundingClientRect().width,
+        );
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(outputDir, "03-empty-side-panel-resized-light.png"),
+        });
 
         await page.reload();
-        await expect.poll(() => showPresence.isVisible()).toBe(true);
+        await sidePanel.locator(".side-panel-empty--selector").waitFor();
+        await expect
+          .poll(() => sidePanel.evaluate((element) => element.getBoundingClientRect().width))
+          .toBeCloseTo(persistedEmptyWidth, 0);
+        await expect.poll(() => divider.isVisible()).toBe(true);
         await page.emulateMedia({ colorScheme: "dark" });
         await expect.poll(() => page.locator("html").getAttribute("data-theme-mode")).toBe("dark");
-        await page.screenshot({
-          animations: "disabled",
-          path: path.join(outputDir, "03-presence-sidebar-persisted-closed-dark.png"),
-        });
-        await showPresence.click();
-        await expect.poll(() => presencePanel.count()).toBe(1);
-        await expect.poll(() => presencePanel.locator(".sidebar-online__person").count()).toBe(4);
-        await expect.poll(() => presencePanel.locator(".viewer-avatar").count()).toBe(4);
+        await openChatSidePanelType(page, "Online");
+        await expect.poll(() => onlinePanel.locator(".sidebar-online__person").count()).toBe(4);
+        await expect.poll(() => onlinePanel.locator(".viewer-avatar").count()).toBe(4);
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
         await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "04-presence-sidebar-user-open-dark.png"),
+          path: path.join(outputDir, "04-online-side-panel-reopened-dark.png"),
         });
 
-        await page.evaluate(() => {
-          const app = document.querySelector("openclaw-app") as HTMLElement & {
-            runtime?: { context: { navigate: (routeId: string) => void } };
-          };
-          app.runtime?.context.navigate("activity");
-        });
+        await onlinePanel.locator('[data-online-user-id="profile-alice"]').click();
         await waitForControlUiRoute(page, { pathname: "/activity", routeId: "activity" });
         const activityPage = page.locator("openclaw-activity-page");
         await expect.poll(() => activityPage.count()).toBe(1);
@@ -232,6 +259,24 @@ suite.define(() => {
           .locator(".activity-mode-tabs")
           .evaluate((element) => element.getBoundingClientRect().left);
         expect(Math.abs(titleLeft - tabsLeft)).toBeLessThanOrEqual(8);
+        await expect
+          .poll(() => new URL(page.url()).searchParams.get("person"))
+          .toBe("profile-alice");
+        await expect
+          .poll(() => activityPage.locator('[data-activity-identity="profile-alice"]').isVisible())
+          .toBe(true);
+        await expect
+          .poll(() =>
+            activityPage.locator(".activity-feed__viewing-list .activity-feed__session").count(),
+          )
+          .toBe(2);
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(outputDir, "05-person-activity.png"),
+        });
+
+        await activityPage.locator(".activity-feed__people-clear").click();
+        await expect.poll(() => new URL(page.url()).searchParams.get("person")).toBeNull();
         await activityPage.locator(".activity-feed__people-trigger").click();
         await expect
           .poll(() =>
@@ -294,28 +339,8 @@ suite.define(() => {
         ).toEqual(["Last 24 hours", "Last 7 days", "Last 30 days", "All time"]);
         await page.screenshot({
           animations: "disabled",
-          path: path.join(outputDir, "05-global-activity.png"),
+          path: path.join(outputDir, "06-global-activity.png"),
         });
-
-        await presenceSidebar.locator('[data-online-user-id="profile-alice"]').click();
-        await expect
-          .poll(() => new URL(page.url()).searchParams.get("person"))
-          .toBe("profile-alice");
-        await expect
-          .poll(() => activityPage.locator('[data-activity-identity="profile-alice"]').isVisible())
-          .toBe(true);
-        await expect
-          .poll(() =>
-            activityPage.locator(".activity-feed__viewing-list .activity-feed__session").count(),
-          )
-          .toBe(2);
-        await page.screenshot({
-          animations: "disabled",
-          path: path.join(outputDir, "06-person-activity.png"),
-        });
-
-        await activityPage.locator(".activity-feed__people-clear").click();
-        await expect.poll(() => new URL(page.url()).searchParams.get("person")).toBeNull();
         await page.setViewportSize({ height: 844, width: 390 });
 
         const peopleControl = activityPage.locator(".activity-feed__people-control");

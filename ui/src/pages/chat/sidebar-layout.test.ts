@@ -71,9 +71,31 @@ describe("sidebar layout", () => {
     expect(chat?.slot).toBe("chat");
   });
 
-  it("keeps the panel open as a type selector after its final tab closes", () => {
-    const closed = closeSlot(openSlot({ columns: [] }, "detail"), "detail");
-    expect(closed).toEqual({ columns: [], open: true });
+  it("keeps the resizable column after its final tab closes", () => {
+    const open = openSlot({ columns: [] }, "detail");
+    const resized = resizeSidebarPanel(open, open.columns[0]!.id, 640);
+    const closed = closeSlot(resized, "detail");
+
+    expect(closed).toEqual({
+      columns: [
+        {
+          id: "side-panel-column",
+          side: "right",
+          panels: [],
+          activePanelId: "",
+          height: 360,
+          width: 640,
+        },
+      ],
+      open: true,
+    });
+    expect(
+      openSlot(resizeSidebarPanel(closed, closed.columns[0]!.id, 720), "online").columns[0],
+    ).toMatchObject({
+      panels: [{ id: "online", slot: "online" }],
+      activePanelId: "online",
+      width: 720,
+    });
   });
 
   it("minimizes and expands without discarding tabs", () => {

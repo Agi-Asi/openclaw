@@ -5,6 +5,7 @@ export type SidebarSlotId =
   | "desktop"
   | "detail"
   | "discussion"
+  | "online"
   | "tasks"
   | "terminal"
   | "workspace";

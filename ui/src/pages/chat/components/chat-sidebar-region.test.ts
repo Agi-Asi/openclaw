@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../../components/resizable-divider.ts";
 import {
   openSlot,
+  setSidebarOpen,
   setSidebarDock,
   setSidebarExpanded,
   type SidebarLayout,
@@ -27,7 +28,7 @@ async function createRegion(layout: SidebarLayout = openSlot({ columns: [] }, "d
     terminal: html`<div data-panel="terminal">Terminal panel</div>`,
     workspace: html`<div data-panel="workspace">Workspace panel</div>`,
   };
-  region.availableSlots = ["detail", "terminal", "workspace", "companion"];
+  region.availableSlots = ["detail", "terminal", "online", "workspace", "companion"];
   region.callbacks = {
     activatePanel: vi.fn(),
     closeSlot: vi.fn(),
@@ -229,7 +230,7 @@ describe("chat sidebar region", () => {
       Array.from(selector?.querySelectorAll(".side-panel-empty__type") ?? [], (item) =>
         item.textContent?.replace(/\s+/gu, " ").trim(),
       ),
-    ).toEqual(["Review", "Terminal Ctrl+`", "Files ⇧⌘B", "Side chat"]);
+    ).toEqual(["Review", "Terminal Ctrl+`", "Online", "Files ⇧⌘B", "Side chat"]);
     root(region).querySelector<HTMLButtonElement>(".side-panel-empty__type")?.click();
     expect(region.callbacks?.openSlot).toHaveBeenCalledWith("detail");
   });
@@ -242,6 +243,7 @@ describe("chat sidebar region", () => {
       ["detail", "Review"],
       ["browser", "Browser"],
       ["terminal", "Terminal"],
+      ["online", "Online"],
       ["workspace", "Files"],
       ["companion", "Side chat"],
       ["tasks", "Tasks"],
@@ -266,6 +268,7 @@ describe("chat sidebar region", () => {
       "detail",
       "terminal",
       "browser",
+      "online",
       "workspace",
       "companion",
       "tasks",
@@ -282,6 +285,7 @@ describe("chat sidebar region", () => {
     ).toEqual([
       "Terminal Ctrl+`",
       "Browser",
+      "Online",
       "Files ⇧⌘B",
       "Side chat",
       "Tasks",
@@ -321,10 +325,21 @@ describe("chat sidebar region", () => {
   });
 
   it("offers expand and minimize controls in the no-tabs selector", async () => {
-    const region = await createRegion({ columns: [], open: true });
+    const region = await createRegion(setSidebarOpen({ columns: [] }, true));
+    const primary = root(region).querySelector<HTMLElement>(".sidebar-region__primary")!;
+    const panel = root(region).querySelector<HTMLElement>(".side-panel")!;
+    const divider = root(region).querySelector<HTMLElement>("resizable-divider")!;
+    primary.getBoundingClientRect = () => ({ width: 800 }) as DOMRect;
+    panel.getBoundingClientRect = () => ({ width: 480 }) as DOMRect;
+
     expect(root(region).querySelector<HTMLElement>(".side-panel")?.style.width).toBe("480px");
+    expect(divider).not.toBeNull();
+    divider.dispatchEvent(
+      new CustomEvent("resize", { bubbles: true, detail: { splitRatio: 0.5 } }),
+    );
     root(region).querySelector<HTMLButtonElement>(".side-panel__expand")?.click();
     root(region).querySelector<HTMLButtonElement>(".side-panel__minimize")?.click();
+    expect(region.callbacks?.resizePanel).toHaveBeenCalledWith("side-panel-column", 640);
     expect(region.callbacks?.setExpanded).toHaveBeenCalledWith(true);
     expect(region.callbacks?.setOpen).toHaveBeenCalledWith(false);
   });

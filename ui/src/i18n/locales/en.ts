@@ -3492,8 +3492,6 @@ export const en: TranslationMap = {
   },
   presence: {
     rosterTitle: "Online",
-    showRoster: "Show online people",
-    hideRoster: "Hide online people",
   },
   activityFeed: {
     sessionsMode: "Sessions",
@@ -5832,6 +5830,8 @@ export const en: TranslationMap = {
       terminalEmpty: "Open a shell for this session's workspace.",
       browser: "Browser",
       browserEmpty: "A shared browser for you and the agent.",
+      online: "Online",
+      onlineEmpty: "No other people are online right now.",
       files: "Files",
       filesEmpty: "Browse files, artifacts, and changes from this session.",
       companion: "Side chat",

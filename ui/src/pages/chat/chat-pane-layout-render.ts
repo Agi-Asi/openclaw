@@ -5,6 +5,7 @@ import type {
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { isDesktopPanelAvailable } from "../../app/app-shell-chrome.ts";
+import type { PresenceViewer } from "../../lib/presence-users.ts";
 import { ChatPaneBrowserAnnotationRender } from "./chat-pane-browser-annotation-render.ts";
 import {
   availableSidebarSlots,
@@ -49,6 +50,7 @@ type ChatPaneLayoutRenderParams = {
   workspaceGit: boolean;
   openPanelSlot: (slot: SidebarSlotId) => void;
   closePanelSlot: (slot: SidebarSlotId) => void;
+  onlineUsers: readonly PresenceViewer[];
 };
 
 export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRender {
@@ -71,6 +73,7 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       workspaceGit,
       openPanelSlot,
       closePanelSlot,
+      onlineUsers,
     } = params;
     const header = this.renderPaneHeader(
       sessionWorkspace,
@@ -106,6 +109,8 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       desktopPresented,
       desktopRefreshOnPresentation,
       desktopAvailable,
+      onlineUsers,
+      onNavigateOnlineUser: (location) => this.context.navigate("activity", location),
       hasBoard: board.hasBoard,
       chat,
       workspace: renderSessionWorkspaceRail(sessionWorkspace, { embedded: true }),

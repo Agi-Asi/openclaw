@@ -1,4 +1,5 @@
 import type {
+  SidebarColumn,
   SidebarDock,
   SidebarLayout,
   SidebarPanel,
@@ -23,6 +24,17 @@ const SIDEBAR_MAX_HEIGHT_PX = 800;
 const SIDEBAR_MAIN_MIN_WIDTH_PX = 312;
 export const SIDEBAR_NARROW_BREAKPOINT_PX = 680;
 const SIDEBAR_DIVIDER_WIDTH_PX = 4;
+
+function createSidebarColumn(): SidebarColumn {
+  return {
+    id: "side-panel-column",
+    side: "right",
+    panels: [],
+    activePanelId: "",
+    height: SIDEBAR_DEFAULT_HEIGHT_PX,
+    width: SIDEBAR_DEFAULT_WIDTH_PX,
+  };
+}
 
 function cloneLayout(layout: SidebarLayout): SidebarLayout {
   return structuredClone(layout);
@@ -63,15 +75,15 @@ function nextPanelId(layout: SidebarLayout, slot: SidebarSlotId): string {
 }
 
 function removePanel(layout: SidebarLayout, panelId: string): SidebarPanel | null {
-  for (let columnIndex = 0; columnIndex < layout.columns.length; columnIndex += 1) {
-    const column = layout.columns[columnIndex]!;
+  for (const column of layout.columns) {
     const panelIndex = column.panels.findIndex((panel) => panel.id === panelId);
     if (panelIndex < 0) {
       continue;
     }
     const panel = column.panels.splice(panelIndex, 1)[0]!;
     if (column.panels.length === 0) {
-      layout.columns.splice(columnIndex, 1);
+      // The column owns side-panel geometry even when it owns no tabs.
+      column.activePanelId = "";
     } else if (column.activePanelId === panelId) {
       column.activePanelId =
         column.panels[Math.min(panelIndex, column.panels.length - 1)]?.id ?? "";
@@ -100,16 +112,10 @@ export function openSlot(layout: SidebarLayout, slot: SidebarSlotId): SidebarLay
     column.panels.push(panel);
     column.activePanelId = panel.id;
   } else {
-    next.columns = [
-      {
-        id: "side-panel-column",
-        side: "right",
-        panels: [panel],
-        activePanelId: panel.id,
-        height: SIDEBAR_DEFAULT_HEIGHT_PX,
-        width: SIDEBAR_DEFAULT_WIDTH_PX,
-      },
-    ];
+    const created = createSidebarColumn();
+    created.panels.push(panel);
+    created.activePanelId = panel.id;
+    next.columns = [created];
   }
   next.open = true;
   return next;
@@ -159,7 +165,12 @@ export function reorderPanel(
 }
 
 export function setSidebarOpen(layout: SidebarLayout, open: boolean): SidebarLayout {
-  return { ...cloneLayout(layout), open };
+  const next = cloneLayout(layout);
+  if (open && next.columns.length === 0) {
+    next.columns = [createSidebarColumn()];
+  }
+  next.open = open;
+  return next;
 }
 
 export function setSidebarExpanded(layout: SidebarLayout, expanded: boolean): SidebarLayout {

@@ -134,7 +134,14 @@ describe("chat pane session discussion", () => {
     expect(action?.ariaLabel).toBe("Hide discussion");
     expect(action?.getAttribute("aria-pressed")).toBe("true");
     action?.click();
-    expect(state.sidebarLayout.columns).toEqual([]);
+    expect(state.sidebarLayout.columns).toMatchObject([
+      {
+        id: "side-panel-column",
+        panels: [],
+        activePanelId: "",
+        width: 480,
+      },
+    ]);
     expect(updateSidebarLayout).toHaveBeenCalledTimes(2);
 
     container.remove();

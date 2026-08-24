@@ -622,6 +622,7 @@ openclaw-chat-sidebar-region,
     .chat-tasks-rail,
     openclaw-chat-detail-panel,
     openclaw-chat-session-rail,
+    .side-panel-online,
     openclaw-session-discussion,
     openclaw-terminal-panel,
     openclaw-browser-panel,
@@ -632,6 +633,11 @@ openclaw-chat-sidebar-region,
   min-width: 0;
   min-height: 0;
   flex: 1 1 0;
+}
+
+.side-panel-online {
+  overflow-y: auto;
+  padding: 8px;
 }
 
 .side-panel__empty-header-title {

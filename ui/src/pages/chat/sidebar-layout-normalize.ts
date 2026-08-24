@@ -16,6 +16,7 @@ function isSlotId(value: unknown): value is SidebarSlotId {
     value === "desktop" ||
     value === "detail" ||
     value === "discussion" ||
+    value === "online" ||
     value === "tasks" ||
     value === "terminal" ||
     value === "workspace"
@@ -50,6 +51,8 @@ export function normalizeSidebarLayout(value: unknown): SidebarLayout {
   const usedSlots = new Set<SidebarSlotId>();
   const panels: SidebarPanel[] = [];
   let activePanelId = "";
+  let columnId = "side-panel-column";
+  let hasColumn = false;
   let width = DEFAULT_WIDTH;
   let height = DEFAULT_HEIGHT;
   for (const rawColumn of value.columns) {
@@ -60,7 +63,19 @@ export function normalizeSidebarLayout(value: unknown): SidebarLayout {
     ) {
       continue;
     }
-    uniqueId(rawColumn.id, "column", usedColumnIds);
+    const normalizedColumnId = uniqueId(rawColumn.id, "column", usedColumnIds);
+    if (!hasColumn) {
+      columnId = normalizedColumnId;
+      hasColumn = true;
+    }
+    width =
+      typeof rawColumn.width === "number" && Number.isFinite(rawColumn.width)
+        ? clampWidth(rawColumn.width)
+        : width;
+    height =
+      typeof rawColumn.height === "number" && Number.isFinite(rawColumn.height)
+        ? clampHeight(rawColumn.height)
+        : height;
     const columnPanels: SidebarPanel[] = [];
     const panelIds = new Map<string, string>();
     for (const rawPanel of rawColumn.panels) {
@@ -76,40 +91,32 @@ export function normalizeSidebarLayout(value: unknown): SidebarLayout {
       usedSlots.add(rawPanel.slot);
       columnPanels.push({ id: panelId, slot: rawPanel.slot });
     }
-    if (columnPanels.length === 0) {
-      continue;
-    }
     const requestedActiveId =
       typeof rawColumn.activePanelId === "string" ? rawColumn.activePanelId.trim() : "";
     activePanelId = panelIds.get(requestedActiveId) ?? activePanelId;
-    width =
-      typeof rawColumn.width === "number" && Number.isFinite(rawColumn.width)
-        ? clampWidth(rawColumn.width)
-        : width;
-    height =
-      typeof rawColumn.height === "number" && Number.isFinite(rawColumn.height)
-        ? clampHeight(rawColumn.height)
-        : height;
     panels.push(...columnPanels);
   }
-  const columns = panels.length
-    ? [
-        {
-          id: usedColumnIds.values().next().value ?? "side-panel-column",
-          side: "right" as const,
-          panels,
-          activePanelId: panels.some((panel) => panel.id === activePanelId)
-            ? activePanelId
-            : panels[0]!.id,
-          height,
-          width,
-        },
-      ]
-    : [];
+  const open = typeof value.open === "boolean" ? value.open : panels.length > 0;
+  // An open panel keeps one empty column so resize remains available before a
+  // tab opens and after the final tab closes.
+  const columns =
+    panels.length > 0 || hasColumn || open
+      ? [
+          {
+            id: columnId,
+            side: "right" as const,
+            panels,
+            activePanelId:
+              panels.find((panel) => panel.id === activePanelId)?.id ?? panels[0]?.id ?? "",
+            height,
+            width,
+          },
+        ]
+      : [];
   return {
     columns,
     dock: value.dock === "bottom" ? "bottom" : "right",
-    open: typeof value.open === "boolean" ? value.open : columns.length > 0,
+    open,
     expanded: value.expanded === true,
   };
 }

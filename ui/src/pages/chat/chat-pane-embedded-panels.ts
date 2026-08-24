@@ -4,7 +4,9 @@ import type { SessionObserverDigest } from "../../../../packages/gateway-protoco
 import type { ControlUiSessionPullRequest } from "../../../../src/gateway/control-ui-contract.js";
 import { desktopFocusPath } from "../../components/desktop/desktop-focus-window.ts";
 import { icons } from "../../components/icons.ts";
+import { renderOnlinePresenceList } from "../../components/online-presence-list.ts";
 import { t } from "../../i18n/index.ts";
+import type { PresenceViewer } from "../../lib/presence-users.ts";
 import { resolveAssistantAttachmentAuthToken } from "./chat-pane-state.ts";
 import type { ChatSessionCompanionThread } from "./chat-session-companion.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
@@ -25,6 +27,8 @@ type SidebarPanelDefinitionParams = {
   desktopPresented: boolean;
   desktopRefreshOnPresentation: boolean;
   desktopAvailable: boolean;
+  onlineUsers: readonly PresenceViewer[];
+  onNavigateOnlineUser: (location: { pathname: string; search: string }) => void;
   hasBoard: boolean;
   chat: TemplateResult;
   workspace: TemplateResult | typeof nothing;
@@ -57,6 +61,7 @@ type SidebarPanelTextKey =
   | "desktop"
   | "discussion"
   | "files"
+  | "online"
   | "review"
   | "tasks"
   | "terminal";
@@ -111,6 +116,18 @@ export function sidebarPanelDefinitions(
           .resourceBasePath=${state.resourceBasePath}
           .authToken=${resolveAssistantAttachmentAuthToken(state)}
         ></openclaw-browser-panel>`
+      : null;
+  const online =
+    state && params?.onlineUsers.length
+      ? html`<div class="side-panel-online">
+          <div class="sidebar-online__list">
+            ${renderOnlinePresenceList({
+              users: params.onlineUsers,
+              basePath: state.basePath,
+              onNavigate: params.onNavigateOnlineUser,
+            })}
+          </div>
+        </div>`
       : null;
   const companion = params
     ? html`<openclaw-chat-session-rail
@@ -167,6 +184,7 @@ export function sidebarPanelDefinitions(
       shortcut: "Ctrl+`",
     }),
     definePanel("browser", "browser", icons.globe, browser, { available: browserAvailable }),
+    definePanel("online", "online", icons.users, online),
     definePanel("workspace", "files", icons.fileText, params?.workspace ?? null, {
       shortcut: "⇧⌘B",
     }),

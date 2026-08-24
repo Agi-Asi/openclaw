@@ -706,7 +706,14 @@ describe("chat pane keyboard shortcuts", () => {
     expect(press().defaultPrevented).toBe(true);
     expect(state.sidebarLayout.columns[0]?.panels.map((panel) => panel.slot)).toEqual(["terminal"]);
     expect(press().defaultPrevented).toBe(true);
-    expect(state.sidebarLayout.columns).toEqual([]);
+    expect(state.sidebarLayout.columns).toMatchObject([
+      {
+        id: "side-panel-column",
+        panels: [],
+        activePanelId: "",
+        width: 480,
+      },
+    ]);
     expect(state.sidebarLayout.open).toBe(true);
   });
 });

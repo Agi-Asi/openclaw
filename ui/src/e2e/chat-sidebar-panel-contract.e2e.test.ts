@@ -33,6 +33,7 @@ const offeredSlotLabels = [
   "Review",
   "Terminal",
   "Browser",
+  "Online",
   "Files",
   "Side chat",
   "Tasks",
@@ -45,6 +46,8 @@ type OfferedSlotLabel = (typeof offeredSlotLabels)[number];
 const actionlessEmptyStateAllowlist = new Set<OfferedSlotLabel>([
   // Review: no git checkout, nothing to diff.
   "Review",
+  // Online: no other viewers connected.
+  "Online",
   // Tasks: no background tasks, nothing to inspect.
   "Tasks",
   // Discussion: no external URL, nothing to open.
@@ -103,6 +106,11 @@ function populatedColdOpenScenario(): ControlUiMockGatewayScenario {
   const sparse = coldOpenScenario();
   return {
     ...sparse,
+    hasMultipleSessionSharingIdentities: true,
+    presenceUsers: [
+      { self: true, id: "profile-self", name: "Operator" },
+      { id: "profile-alice", name: "Alice Chen", lastInputSeconds: 12 },
+    ],
     methodResponses: {
       ...sparse.methodResponses,
       "browser.request": {
@@ -395,6 +403,82 @@ async function readSlotColdOpenOutcome(
 }
 
 suite.define(() => {
+  it("opens Online in the canonical side panel, resizes it, and closes it", async () => {
+    const context = await suite.newBrowserContext({
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1_400 },
+    });
+    try {
+      const page = await context.newPage();
+      const gateway = await installMockGateway(page, {
+        hasMultipleSessionSharingIdentities: true,
+        presenceUsers: [
+          { self: true, id: "profile-self", name: "Operator" },
+          { id: "profile-alice", name: "Alice Chen", lastInputSeconds: 12 },
+          { id: "profile-bob", name: "Bob Rivera", lastInputSeconds: 640 },
+        ],
+      });
+      await page.goto(`${suite.server.baseUrl}chat`);
+      await waitForControlUiGatewayReady(page);
+
+      await openChatSidePanelType(page, "Online");
+      const panel = page.locator(".sidebar-region__right-runtime .side-panel");
+      const online = panel.locator('[data-panel-slot="online"]');
+      await expect.poll(() => online.locator(".sidebar-online__person").count()).toBe(2);
+      await expect
+        .poll(() => online.locator(".sidebar-online__person-name").allTextContents())
+        .toEqual(["Alice Chen", "Bob Rivera"]);
+
+      await gateway.emitGatewayEvent("presence", {
+        presence: [
+          {
+            instanceId: "self-instance",
+            mode: "webchat",
+            reason: "connect",
+            user: { id: "profile-self", name: "Operator" },
+            watchedSessions: [],
+          },
+          {
+            instanceId: "alice-instance",
+            lastInputSeconds: 8,
+            mode: "webchat",
+            reason: "connect",
+            user: { id: "profile-alice", name: "Alice Updated" },
+            watchedSessions: [],
+          },
+          {
+            instanceId: "dana-instance",
+            lastInputSeconds: 20,
+            mode: "webchat",
+            reason: "connect",
+            user: { id: "profile-dana", name: "Dana Wu" },
+            watchedSessions: [],
+          },
+        ],
+      });
+      await expect
+        .poll(() => online.locator(".sidebar-online__person-name").allTextContents())
+        .toEqual(["Alice Updated", "Dana Wu"]);
+
+      const initialWidth = await panel.evaluate((element) => element.getBoundingClientRect().width);
+      const divider = page.getByRole("separator", { name: "Resize side panel" });
+      const bounds = await divider.boundingBox();
+      expect(bounds).not.toBeNull();
+      await page.mouse.move(bounds!.x + 1, bounds!.y + bounds!.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(bounds!.x - 100, bounds!.y + bounds!.height / 2);
+      await page.mouse.up();
+      await expect
+        .poll(() => panel.evaluate((element) => element.getBoundingClientRect().width))
+        .toBeGreaterThan(initialWidth + 70);
+
+      await panel.getByRole("button", { name: "Close", exact: true }).click();
+      await expect.poll(() => panel.count()).toBe(0);
+    } finally {
+      await suite.closeBrowserContext(context);
+    }
+  });
+
   it("closes a projected-empty side panel when a hidden board tab remains persisted", async () => {
     const context = await suite.newBrowserContext({ serviceWorkers: "block" });
     try {
