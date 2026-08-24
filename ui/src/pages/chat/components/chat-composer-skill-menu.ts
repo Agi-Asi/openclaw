@@ -32,6 +32,7 @@ export type SkillMenuHost = {
   getDraft: () => string;
   commitDraft: (next: string) => void;
   getTextarea: () => HTMLTextAreaElement | null;
+  getCommandCatalog?: () => readonly SlashCommandDef[];
   refreshCommands?: () => void | Promise<void>;
 };
 
@@ -159,7 +160,7 @@ export function updateSkillMenu(
     state.skillCommandRefreshTargetStart = target.start;
     requestSkillCommandRefresh(state, host, requestUpdate);
   }
-  const items = getSkillCommandCompletions(target.query);
+  const items = getSkillCommandCompletions(target.query, host.getCommandCatalog?.());
   state.skillMenuTarget = target;
   state.skillMenuItems = items;
   state.skillMenuIndex = Math.min(state.skillMenuIndex, Math.max(0, items.length - 1));

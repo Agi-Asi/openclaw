@@ -1,13 +1,15 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
+import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { icons } from "../../components/icons.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.ts";
 import { t } from "../../i18n/index.ts";
 import "../../components/tooltip.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
+import { buildFallbackSlashCommands, type SlashCommandDef } from "../../lib/chat/commands.ts";
+import { loadSlashCommandCatalog } from "../../lib/chat/slash-command-catalog.ts";
 import { formatUiError } from "../../lib/format-error.ts";
-import { refreshSlashCommands } from "../chat/chat-commands.ts";
 import {
   createChatAttachmentDropHandlers,
   handleChatAttachmentPaste,
@@ -140,6 +142,13 @@ function renderStartControl(options: NewSessionComposerOptions) {
 
 export class NewSessionComposerTextareaController {
   private textarea: HTMLTextAreaElement | null = null;
+  private commandClient: GatewayBrowserClient | null = null;
+  private commandAgentId = "";
+  private commandConnectionEpoch = 0;
+  private commandGeneration = 0;
+  private commandCatalog: readonly SlashCommandDef[] = buildFallbackSlashCommands();
+  private reconcileCommandMenu: (() => void) | null = null;
+  private commandMenuReconcilePending = false;
   readonly skillMenuState = createSkillMenuState();
 
   readonly ref = (element?: Element) => {
@@ -164,8 +173,90 @@ export class NewSessionComposerTextareaController {
 
   readonly getTextarea = () => this.textarea;
 
-  disconnect() {
+  syncCommandOwner(client: GatewayBrowserClient | null, agentId: string, connectionEpoch: number) {
+    const normalizedAgentId = agentId.trim();
+    if (
+      this.commandClient === client &&
+      this.commandAgentId === normalizedAgentId &&
+      this.commandConnectionEpoch === connectionEpoch
+    ) {
+      return;
+    }
+    const shouldReconcile =
+      this.skillMenuState.skillMenuTarget !== null || this.commandMenuReconcilePending;
+    this.commandClient = client;
+    this.commandAgentId = normalizedAgentId;
+    this.commandConnectionEpoch = connectionEpoch;
+    this.invalidateCommandCatalog();
+    this.commandMenuReconcilePending = shouldReconcile;
+  }
+
+  invalidateCommandCatalog() {
+    this.commandGeneration += 1;
+    this.commandCatalog = buildFallbackSlashCommands();
     resetSkillMenuState(this.skillMenuState);
+  }
+
+  setCommandMenuReconciler(reconcile: () => void) {
+    this.reconcileCommandMenu = reconcile;
+    this.scheduleCommandMenuReconciliation();
+  }
+
+  private scheduleCommandMenuReconciliation(): boolean {
+    if (!this.commandMenuReconcilePending || !this.reconcileCommandMenu) {
+      return false;
+    }
+    queueMicrotask(() => {
+      if (!this.commandMenuReconcilePending) {
+        return;
+      }
+      this.commandMenuReconcilePending = false;
+      this.reconcileCommandMenu?.();
+    });
+    return true;
+  }
+
+  handleGatewayEvent(event: string, requestUpdate: () => void) {
+    if (event !== "config.changed" && event !== "skills.changed") {
+      return;
+    }
+    const shouldReconcile =
+      this.skillMenuState.skillMenuTarget !== null || this.commandMenuReconcilePending;
+    this.invalidateCommandCatalog();
+    this.commandMenuReconcilePending = shouldReconcile;
+    if (!this.scheduleCommandMenuReconciliation()) {
+      requestUpdate();
+    }
+  }
+
+  async refreshCommandCatalog(
+    client: GatewayBrowserClient,
+    agentId: string,
+    connectionEpoch: number,
+  ): Promise<void> {
+    this.syncCommandOwner(client, agentId, connectionEpoch);
+    const normalizedAgentId = agentId.trim();
+    const generation = ++this.commandGeneration;
+    const catalog = await loadSlashCommandCatalog(client, normalizedAgentId);
+    if (
+      this.commandGeneration === generation &&
+      this.commandClient === client &&
+      this.commandAgentId === normalizedAgentId &&
+      this.commandConnectionEpoch === connectionEpoch
+    ) {
+      this.commandCatalog = catalog;
+    }
+  }
+
+  readonly getCommandCatalog = () => this.commandCatalog;
+
+  disconnect() {
+    this.invalidateCommandCatalog();
+    this.commandMenuReconcilePending = false;
+    this.reconcileCommandMenu = null;
+    this.commandClient = null;
+    this.commandAgentId = "";
+    this.commandConnectionEpoch = 0;
     if (this.textarea) {
       disconnectTextareaOverflowObserver(this.textarea);
       this.textarea = null;
@@ -250,6 +341,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
     getDraft: () => options.textareaController.getTextarea()?.value ?? options.message,
     commitDraft: options.onInput,
     getTextarea: options.textareaController.getTextarea,
+    getCommandCatalog: options.textareaController.getCommandCatalog,
     refreshCommands: options.refreshCommands,
   };
   const updateSkills = (target: HTMLTextAreaElement) =>
@@ -260,6 +352,14 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
       skillMenuHost,
       options.requestUpdate,
     );
+  options.textareaController.setCommandMenuReconciler(() => {
+    const target = options.textareaController.getTextarea();
+    if (target) {
+      updateSkills(target);
+    } else {
+      options.requestUpdate();
+    }
+  });
   const handleSelect = (event: Event) => {
     const target = event.currentTarget;
     if (target instanceof HTMLTextAreaElement) {
@@ -376,6 +476,7 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
 export function renderNewSessionDraftComposer(options: {
   agent?: import("../../api/types.ts").GatewayAgentRow;
   agentId: string;
+  connectionEpoch: number;
   attachmentDraft: NewSessionAttachmentDraft;
   canSubmit: boolean;
   context: import("../../app/context.ts").ApplicationContext | undefined;
@@ -403,6 +504,11 @@ export function renderNewSessionDraftComposer(options: {
 }) {
   const readSignal = options.attachmentDraft.readSignal;
   const commandClient = options.context?.gateway.snapshot.client;
+  options.textareaController.syncCommandOwner(
+    commandClient ?? null,
+    options.agentId,
+    options.connectionEpoch,
+  );
   return renderNewSessionComposer({
     attachmentLimits: options.context?.gateway.snapshot.hello?.policy?.attachments,
     attachments: options.attachmentDraft.attachments,
@@ -424,7 +530,12 @@ export function renderNewSessionDraftComposer(options: {
     requiresModifier: options.requiresModifier,
     requestUpdate: options.requestUpdate,
     refreshCommands: commandClient
-      ? () => refreshSlashCommands({ client: commandClient, agentId: options.agentId })
+      ? () =>
+          options.textareaController.refreshCommandCatalog(
+            commandClient,
+            options.agentId,
+            options.connectionEpoch,
+          )
       : undefined,
     submitDisabledReason: options.submitDisabledReason,
     blockedSubmitNotice: options.blockedSubmitNotice,

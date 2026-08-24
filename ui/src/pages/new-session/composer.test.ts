@@ -2,7 +2,13 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildFallbackSlashCommands, replaceSlashCommands } from "../../lib/chat/commands.ts";
+import type { ApplicationContext } from "../../app/context.ts";
+import {
+  SLASH_COMMANDS,
+  buildFallbackSlashCommands,
+  replaceSlashCommands,
+} from "../../lib/chat/commands.ts";
+import { invalidateSlashCommandCatalog } from "../../lib/chat/slash-command-catalog-cache.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import { adjustTextareaHeight } from "../chat/components/chat-composer-dom.ts";
 import { NewSessionAttachmentDraft } from "./attachment-draft.ts";
@@ -33,6 +39,9 @@ function renderComposer(
     onInput?: (message: string) => void;
     onSubmit?: () => void;
     textareaController?: NewSessionComposerTextareaController;
+    context?: ApplicationContext;
+    agentId?: string;
+    connectionEpoch?: number;
   } = {},
 ) {
   const container = document.createElement("div");
@@ -47,13 +56,16 @@ function renderComposer(
     textareaControllers.push(textareaController);
   }
   let message = overrides.message ?? "";
+  let agentId = overrides.agentId ?? "main";
+  let connectionEpoch = overrides.connectionEpoch ?? 1;
   const renderCurrent = () =>
     render(
       renderNewSessionDraftComposer({
-        agentId: "main",
+        agentId,
+        connectionEpoch,
         attachmentDraft,
         canSubmit: overrides.canSubmit ?? true,
-        context: undefined,
+        context: overrides.context,
         isCatalogTarget: true,
         message,
         visibility: overrides.visibility,
@@ -82,7 +94,17 @@ function renderComposer(
   if (!composer) {
     throw new Error("Expected new-session composer");
   }
-  return { attachmentDraft, composer, container, textareaController };
+  return {
+    attachmentDraft,
+    composer,
+    container,
+    textareaController,
+    rerenderOwner(nextAgentId: string, nextConnectionEpoch: number) {
+      agentId = nextAgentId;
+      connectionEpoch = nextConnectionEpoch;
+      renderCurrent();
+    },
+  };
 }
 
 function createDragEvent(type: string, files: File[] = [], types = ["Files"]): Event {
@@ -91,6 +113,18 @@ function createDragEvent(type: string, files: File[] = [], types = ["Files"]): E
     value: { files, types },
   });
   return event;
+}
+
+function skillCommand(name: string) {
+  return {
+    name,
+    textAliases: [`/${name}`],
+    description: `${name} skill`,
+    source: "skill",
+    scope: "text",
+    acceptsArgs: false,
+    skillModelVisible: true,
+  };
 }
 
 afterEach(() => {
@@ -108,18 +142,34 @@ afterEach(() => {
 });
 
 describe("new-session composer keyboard submission", () => {
-  it("opens skill mentions and inserts the selected skill with Enter", () => {
+  it("opens skill mentions and inserts the selected skill with Enter", async () => {
     replaceSlashCommands([
       {
-        key: "release_notes",
-        name: "release_notes",
-        description: "Draft release notes.",
+        key: "chat_skill",
+        name: "chat_skill",
+        description: "Active chat skill.",
         source: "skill",
         skillModelVisible: true,
       },
     ]);
+    const request = vi.fn().mockResolvedValue({
+      commands: [
+        {
+          name: "release_notes",
+          textAliases: ["/release_notes"],
+          description: "Draft release notes.",
+          source: "skill",
+          scope: "text",
+          acceptsArgs: false,
+          skillModelVisible: true,
+        },
+      ],
+    });
     let message = "";
     const { composer } = renderComposer({
+      context: {
+        gateway: { snapshot: { client: { request } } },
+      } as unknown as ApplicationContext,
       onInput: (next) => {
         message = next;
       },
@@ -133,11 +183,96 @@ describe("new-session composer keyboard submission", () => {
     textarea.setSelectionRange(1, 1);
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
 
-    expect(composer.querySelector(".skill-menu")?.textContent).toContain("release_notes");
+    await waitForFast(() =>
+      expect(composer.querySelector(".skill-menu")?.textContent).toContain("release_notes"),
+    );
+    expect(request).toHaveBeenCalledWith("commands.list", {
+      agentId: "main",
+      includeArgs: true,
+      scope: "text",
+    });
+    expect(SLASH_COMMANDS.map((command) => command.name)).toEqual(["chat_skill"]);
     textarea.dispatchEvent(
       new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter" }),
     );
     expect(message).toBe("$release_notes ");
+  });
+
+  it("refreshes an open skill menu after live skill changes", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ commands: [skillCommand("before_change")] })
+      .mockResolvedValueOnce({ commands: [skillCommand("after_change")] });
+    const client = { request } as never;
+    const { composer, textareaController } = renderComposer({
+      context: {
+        gateway: { snapshot: { client } },
+      } as unknown as ApplicationContext,
+    });
+    const textarea = composer.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea) {
+      throw new Error("Expected composer textarea");
+    }
+
+    textarea.value = "$";
+    textarea.setSelectionRange(1, 1);
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    await waitForFast(() =>
+      expect(composer.querySelector(".skill-menu")?.textContent).toContain("before_change"),
+    );
+
+    invalidateSlashCommandCatalog(client);
+    textareaController.handleGatewayEvent("skills.changed", () => undefined);
+    await waitForFast(() =>
+      expect(composer.querySelector(".skill-menu")?.textContent).toContain("after_change"),
+    );
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(composer.querySelector(".skill-menu")?.textContent).not.toContain("before_change");
+  });
+
+  it.each([
+    { label: "selected agent changes", agentId: "research", connectionEpoch: 1 },
+    { label: "connection changes", agentId: "main", connectionEpoch: 2 },
+  ])("reopens an active skill menu when the $label", async (owner) => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ commands: [skillCommand("before_change")] })
+      .mockResolvedValueOnce({ commands: [skillCommand("after_change")] });
+    const client = { request } as never;
+    const rendered = renderComposer({
+      context: {
+        gateway: { snapshot: { client } },
+      } as unknown as ApplicationContext,
+    });
+    const { composer } = rendered;
+    const textarea = composer.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea) {
+      throw new Error("Expected composer textarea");
+    }
+
+    textarea.value = "$";
+    textarea.setSelectionRange(1, 1);
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    await waitForFast(() =>
+      expect(composer.querySelector(".skill-menu")?.textContent).toContain("before_change"),
+    );
+
+    if (owner.connectionEpoch !== 1) {
+      invalidateSlashCommandCatalog(client);
+    }
+    rendered.rerenderOwner(owner.agentId, owner.connectionEpoch);
+
+    await waitForFast(() =>
+      expect(composer.querySelector(".skill-menu")?.textContent).toContain("after_change"),
+    );
+    expect(textarea.value).toBe("$");
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenLastCalledWith("commands.list", {
+      agentId: owner.agentId,
+      includeArgs: true,
+      scope: "text",
+    });
+    expect(composer.querySelector(".skill-menu")?.textContent).not.toContain("before_change");
   });
 
   it.each([
@@ -338,6 +473,7 @@ describe("new-session composer sizing lifecycle", () => {
     render(
       renderNewSessionDraftComposer({
         agentId: "main",
+        connectionEpoch: 1,
         attachmentDraft: first.attachmentDraft,
         canSubmit: true,
         context: undefined,
@@ -363,6 +499,7 @@ describe("new-session composer sizing lifecycle", () => {
     render(
       renderNewSessionDraftComposer({
         agentId: "main",
+        connectionEpoch: 1,
         attachmentDraft: first.attachmentDraft,
         canSubmit: true,
         context: undefined,

@@ -168,10 +168,12 @@ export class NewSessionPage extends OpenClawLightDomElement {
           this.presenceSignature = presenceStateSignature(
             readPresenceEntries(gateway.snapshot.hello?.snapshot) ?? [],
           );
+          const requestUpdate = () => this.requestUpdate();
           return gateway.subscribeEvents((event) => {
             if (this.context?.gateway !== gateway) {
               return;
             }
+            this.submission.composerTextarea.handleGatewayEvent(event.event, requestUpdate);
             if (isPlaceTopologyEvent(event.event)) {
               this.refreshPlaceTopology();
               return;
@@ -593,6 +595,7 @@ export class NewSessionPage extends OpenClawLightDomElement {
         ${renderNewSessionDraftComposer({
           agent: this.place.selectedAgent(),
           agentId: this.place.agentId,
+          connectionEpoch: this.gateway.connectionEpoch,
           attachmentDraft: this.submission.attachmentDraft,
           canSubmit: this.submission.canSubmit(),
           submitDisabledReason: this.submission.submitDisabledReason(),

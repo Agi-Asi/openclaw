@@ -26,7 +26,7 @@ import type { ThemeModeChangeDetail } from "../components/theme-mode-toggle.ts";
 import { i18n, t } from "../i18n/index.ts";
 import { normalizeAgentLabel } from "../lib/agents/display.ts";
 import type { BoardFace } from "../lib/board/settings.ts";
-import { invalidateChatMetadataStore } from "../lib/chat/chat-metadata-store.ts";
+import { invalidateSlashCommandCatalog } from "../lib/chat/slash-command-catalog-cache.ts";
 import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
 import { createIdleImport } from "../lib/idle-import.ts";
 import { isWorkboardEnabledInConfigSnapshot } from "../lib/plugin-activation.ts";
@@ -516,10 +516,10 @@ class OpenClawShell
     this.shellNavigation.selectChatSession(sessionKey, agentId);
   }
   private readonly handleGatewayEvent = (event: GatewayEventFrame) => {
-    if (event.event === "config.changed") {
+    if (event.event === "config.changed" || event.event === "skills.changed") {
       const client = this.context?.gateway?.snapshot.client;
       if (client) {
-        invalidateChatMetadataStore(client);
+        invalidateSlashCommandCatalog(client);
       }
     }
     this.shellGateway.handleGatewayEvent(event);
@@ -727,7 +727,7 @@ class OpenClawShell
       // A reconnect can retain the browser client, so object identity alone
       // cannot keep metadata from crossing logical Gateway connections.
       if (snapshot.client) {
-        invalidateChatMetadataStore(snapshot.client);
+        invalidateSlashCommandCatalog(snapshot.client);
       }
     }
     this.shellGateway.synchronizeGateway(snapshot);

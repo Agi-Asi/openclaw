@@ -12,6 +12,7 @@ import {
   getSlashCommandDescription,
   type SlashCommandDef,
 } from "../../lib/chat/commands.ts";
+import { invalidateSlashCommandCatalog } from "../../lib/chat/slash-command-catalog-cache.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import {
   applyRemoteSlashCommandsResult,
@@ -199,6 +200,31 @@ describe("refreshSlashCommands", () => {
       executeLocal: false,
       tier: "standard",
     });
+  });
+
+  it("reissues an in-flight catalog after app-level invalidation", async () => {
+    let resolveStale: ((value: unknown) => void) | undefined;
+    const stale = new Promise((resolve) => {
+      resolveStale = resolve;
+    });
+    const request = vi
+      .fn()
+      .mockImplementationOnce(async () => await stale)
+      .mockResolvedValueOnce({
+        commands: [remoteCommand("fresh-command", "Loaded after invalidation.")],
+      });
+    const client = { request } as never;
+
+    const pending = refreshSlashCommands({ client, agentId: "main" });
+    invalidateSlashCommandCatalog(client);
+    resolveStale?.({ commands: [remoteCommand("stale-command", "Removed command.")] });
+    await pending;
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expectRecordFields(requireCommandByName("fresh-command"), "fresh command", {
+      description: "Loaded after invalidation.",
+    });
+    expect(SLASH_COMMANDS.find((entry) => entry.name === "stale-command")).toBeUndefined();
   });
 
   it("ignores stale refresh responses after switching agents", async () => {
