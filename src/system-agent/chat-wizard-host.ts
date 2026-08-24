@@ -391,18 +391,12 @@ export class ChatWizardHost {
       kind: "channel",
       label: channel,
       autoSelectChannel: channel,
-      run: async (prompter, signal) =>
+      run: async (prompter, signal, beforePersistentApply) =>
         run
-          ? await run(channel, prompter, this.options.beforePersistentApply, signal)
+          ? await run(channel, prompter, beforePersistentApply, signal)
           : await (
               await loadHostedRuntime()
-            ).runHostedChannelSetup(
-              channel,
-              prompter,
-              this.options.beforePersistentApply,
-              undefined,
-              signal,
-            ),
+            ).runHostedChannelSetup(channel, prompter, beforePersistentApply, undefined, signal),
     });
   }
 
@@ -411,12 +405,10 @@ export class ChatWizardHost {
     return await this.start({
       kind: "skills",
       label: "skills",
-      run: async (prompter) =>
+      run: async (prompter, _signal, beforePersistentApply) =>
         run
-          ? await run(prompter, this.options.beforePersistentApply)
-          : await (
-              await loadHostedRuntime()
-            ).runHostedSkillsSetup(prompter, this.options.beforePersistentApply),
+          ? await run(prompter, beforePersistentApply)
+          : await (await loadHostedRuntime()).runHostedSkillsSetup(prompter, beforePersistentApply),
     });
   }
 
@@ -425,12 +417,10 @@ export class ChatWizardHost {
     return await this.start({
       kind: "search",
       label: "web search",
-      run: async (prompter) =>
+      run: async (prompter, _signal, beforePersistentApply) =>
         run
-          ? await run(prompter, this.options.beforePersistentApply)
-          : await (
-              await loadHostedRuntime()
-            ).runHostedSearchSetup(prompter, this.options.beforePersistentApply),
+          ? await run(prompter, beforePersistentApply)
+          : await (await loadHostedRuntime()).runHostedSearchSetup(prompter, beforePersistentApply),
     });
   }
 
@@ -439,12 +429,12 @@ export class ChatWizardHost {
     const result = await this.start({
       kind: "gateway",
       label: "gateway",
-      run: async (prompter) =>
+      run: async (prompter, _signal, beforePersistentApply) =>
         run
-          ? await run(prompter, this.options.beforePersistentApply)
+          ? await run(prompter, beforePersistentApply)
           : await (
               await loadHostedRuntime()
-            ).runHostedGatewaySetup(prompter, this.options.beforePersistentApply),
+            ).runHostedGatewaySetup(prompter, beforePersistentApply),
     });
     if (this.options.surface !== "gateway" || !this.bridge) {
       return result;
@@ -463,14 +453,12 @@ export class ChatWizardHost {
       kind: "memory-import",
       label: "memory import",
       memoryImportProviders: providers,
-      run: async (prompter) =>
+      run: async (prompter, _signal, beforePersistentApply) =>
         run
-          ? await run(prompter, this.options.beforePersistentApply, (value) =>
-              providers.push(value),
-            )
+          ? await run(prompter, beforePersistentApply, (value) => providers.push(value))
           : await (
               await loadHostedRuntime()
-            ).runHostedMemoryImport(prompter, this.options.beforePersistentApply, (value) =>
+            ).runHostedMemoryImport(prompter, beforePersistentApply, (value) =>
               providers.push(value),
             ),
     });
@@ -481,7 +469,11 @@ export class ChatWizardHost {
     label: string;
     autoSelectChannel?: string;
     memoryImportProviders?: MemoryImportProviderOutcome[];
-    run: (prompter: WizardPrompter, signal: AbortSignal) => Promise<HostedWizardRunResult>;
+    run: (
+      prompter: WizardPrompter,
+      signal: AbortSignal,
+      beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>,
+    ) => Promise<HostedWizardRunResult>;
   }): Promise<ChatWizardResult> {
     const completion: ActiveWizardBridge["completion"] = {
       status: "applied",
@@ -490,8 +482,11 @@ export class ChatWizardHost {
         : {}),
     };
     const session = new WizardSession(
-      async (prompter, signal) => {
-        const result = await params.run(prompter, signal);
+      async (prompter, signal, owner) => {
+        const result = await params.run(prompter, signal, async (runtime) => {
+          await this.options.beforePersistentApply(runtime);
+          owner.lockCancellation();
+        });
         if (typeof result === "string") {
           completion.status = result;
         } else if (result) {

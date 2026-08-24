@@ -1,5 +1,6 @@
 import "./chat-engine.mocks.test-support.js";
 import { describe, expect, it, vi } from "vitest";
+import { createNonExitingRuntime } from "../runtime.js";
 import {
   fakeOverviewLoader,
   useTempStateDir,
@@ -51,6 +52,45 @@ describe("SystemAgentChatEngine QR wizard", () => {
       role: "assistant",
       text: completed.text,
     });
+  });
+
+  it("locks cancellation before a hosted channel persistent effect", async () => {
+    useTempStateDir();
+    let finish!: (account: string) => void;
+    const settled = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    const engine = new SystemAgentChatEngine({
+      surface: "gateway",
+      supportsQrCode: true,
+      runAgentTurn: async () => null,
+      planWithAssistant: async () => null,
+      deps: { loadOverview: fakeOverviewLoader() },
+      runChannelSetupWizard: async (
+        _channel: string,
+        prompter: WizardPrompter,
+        beforePersistentApply,
+      ) => {
+        await beforePersistentApply(createNonExitingRuntime());
+        await prompter.qrCode?.({
+          title: "Link Signal",
+          text: "sgnl://linkdevice?credential=secret",
+          settled,
+        });
+      },
+    });
+
+    const presented = await engine.handle("connect signal");
+    expect(presented.step).toMatchObject({ type: "qr", canCancel: false });
+    await expect(engine.cancelWizard({ stepId: presented.step?.id ?? "missing" })).rejects.toThrow(
+      "cannot be cancelled right now",
+    );
+
+    finish("+15555550123");
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    await engine.dispose();
   });
 
   it("does not rejoin with a QR after its deadline before timer cleanup", async () => {
