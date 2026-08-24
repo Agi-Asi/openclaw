@@ -17,6 +17,7 @@ type LookupEntry = {
 class GitHubUserIdentityCoordinator {
   private readonly backoffs = new Map<string, number>();
   private readonly lookups = new Map<string, LookupEntry>();
+  private pendingLookups = 0;
   private queue = new KeyedAsyncQueue();
 
   lookup(params: {
@@ -26,8 +27,10 @@ class GitHubUserIdentityCoordinator {
     request: () => Promise<ResolvedGitHubUserIdentity>;
   }): Promise<ResolvedGitHubUserIdentity> {
     const cacheKey = `${params.credentialScope}:${params.lookupKey}`;
+    // Only immutable account IDs may share pending or completed verification.
+    // Login aliases stay queued but independent across authenticated connections.
     const cacheCompleted = params.identityKind === "account-id";
-    const cached = this.touchLookup(cacheKey);
+    const cached = cacheCompleted ? this.touchLookup(cacheKey) : undefined;
     if (cacheCompleted && cached?.value && cached.freshUntil > Date.now()) {
       return Promise.resolve(cached.value);
     }
@@ -44,7 +47,10 @@ class GitHubUserIdentityCoordinator {
       }
       return Promise.reject(this.rateLimitError(backoffRemaining));
     }
-    if (!cached) {
+    if (this.pendingLookups >= CACHE_LIMIT) {
+      return Promise.reject(this.capacityError());
+    }
+    if (cacheCompleted && !cached) {
       this.pruneLookups(CACHE_LIMIT - 1);
       if (this.lookups.size >= CACHE_LIMIT) {
         return Promise.reject(this.capacityError());
@@ -52,56 +58,67 @@ class GitHubUserIdentityCoordinator {
     }
 
     const entry = cached ?? { freshUntil: 0 };
-    const current = this.queue.enqueue(params.credentialScope, async () => {
-      const queuedBackoffRemaining = this.backoffRemaining(params.credentialScope);
-      if (queuedBackoffRemaining > 0) {
-        if (cacheCompleted && entry.value) {
-          return entry.value;
-        }
-        throw this.rateLimitError(queuedBackoffRemaining);
-      }
-      try {
-        const identity = await params.request();
-        if (!cacheCompleted) {
-          return identity;
-        }
-        entry.value = identity;
-        entry.freshUntil = Date.now() + SUCCESS_CACHE_MS;
-        return identity;
-      } catch (error) {
-        if (error instanceof ControlUiGitHubError && error.statusCode === 429) {
-          const retryAfterMs = error.retryAfterMs ?? RATE_LIMIT_FALLBACK_MS;
-          this.setBackoff(params.credentialScope, retryAfterMs);
+    const current = this.queue.enqueue(
+      params.credentialScope,
+      async () => {
+        const queuedBackoffRemaining = this.backoffRemaining(params.credentialScope);
+        if (queuedBackoffRemaining > 0) {
           if (cacheCompleted && entry.value) {
             return entry.value;
           }
+          throw this.rateLimitError(queuedBackoffRemaining);
         }
-        throw error;
-      }
-    });
-    entry.inFlight = current;
-    this.lookups.delete(cacheKey);
-    this.lookups.set(cacheKey, entry);
-    void current.then(
-      () => {
-        entry.inFlight = undefined;
-        if (!cacheCompleted) {
-          this.lookups.delete(cacheKey);
+        try {
+          const identity = await params.request();
+          if (!cacheCompleted) {
+            return identity;
+          }
+          entry.value = identity;
+          entry.freshUntil = Date.now() + SUCCESS_CACHE_MS;
+          return identity;
+        } catch (error) {
+          if (error instanceof ControlUiGitHubError && error.statusCode === 429) {
+            const retryAfterMs = error.retryAfterMs ?? RATE_LIMIT_FALLBACK_MS;
+            this.setBackoff(params.credentialScope, retryAfterMs);
+            if (cacheCompleted && entry.value) {
+              return entry.value;
+            }
+          }
+          throw error;
         }
       },
-      () => {
-        entry.inFlight = undefined;
-        if (!entry.value) {
-          this.lookups.delete(cacheKey);
-        }
+      {
+        onEnqueue: () => {
+          this.pendingLookups += 1;
+        },
+        onSettle: () => {
+          this.pendingLookups -= 1;
+        },
       },
     );
+    if (cacheCompleted) {
+      entry.inFlight = current;
+      this.lookups.delete(cacheKey);
+      this.lookups.set(cacheKey, entry);
+      void current.then(
+        () => {
+          entry.inFlight = undefined;
+        },
+        () => {
+          entry.inFlight = undefined;
+          if (!entry.value) {
+            this.lookups.delete(cacheKey);
+          }
+        },
+      );
+    }
     return current;
   }
 
   reset(): void {
     this.backoffs.clear();
     this.lookups.clear();
+    this.pendingLookups = 0;
     this.queue = new KeyedAsyncQueue();
   }
 
