@@ -409,7 +409,7 @@ function renderProviderRow(card: ModelProviderCard, props: ModelProvidersViewPro
       </div>
       ${renderProfiles(card, props)}
       <div class="model-providers__global-metrics">
-        <div class="model-providers__global-metrics-title">${t("modelProviders.globalUsage")}</div>
+        <div class="model-providers__global-metrics-title">${t("modelProviders.usageAndCost")}</div>
         ${card.usage
           ? renderProviderUsageDetails(card.usage)
           : html`<div class="model-providers__no-stats">${t("modelProviders.noStats")}</div>`}

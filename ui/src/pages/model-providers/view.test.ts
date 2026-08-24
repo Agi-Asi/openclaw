@@ -517,7 +517,6 @@ describe("renderModelProviders", () => {
     );
     const provider = container.querySelector('[data-provider-id="openai"]');
     expect(text(provider)).not.toContain("Credentials for");
-    expect(text(provider)).toContain("Global usage and cost");
     expect(text(provider)).toContain("Connected");
     expect(text(provider)).toContain("145 ms");
     expect(text(provider)).toContain("Default profile");
@@ -636,7 +635,7 @@ describe("renderModelProviders", () => {
     expect(container.querySelector(".model-providers__defaults")).not.toBeNull();
   });
 
-  it("labels provider usage and session cost as global", () => {
+  it("groups provider usage and session cost", () => {
     const container = mount(
       props({
         cards: [
@@ -649,8 +648,10 @@ describe("renderModelProviders", () => {
 
     const provider = container.querySelector('[data-provider-id="openai"]');
     expect(text(provider)).not.toContain("Credentials for");
-    expect(text(provider)).toContain("Global usage and cost");
-    expect(text(provider)).toContain("Global session spend · 30d");
+    expect(text(provider?.querySelector(".model-providers__global-metrics-title") ?? null)).toBe(
+      "Usage and cost",
+    );
+    expect(text(provider)).toContain("Session spend · 30d");
   });
 
   it("preserves complete graphemes in custom provider fallback icons", () => {
