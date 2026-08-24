@@ -878,6 +878,31 @@ describe("cron store", () => {
     expect(readOnly?.runtimeAuthority).toEqual(job.runtimeAuthority);
   });
 
+  it("loads populated legacy authority tables before the bindings column exists", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("legacy-authority-table");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    await saveCronStore(storePath, authorityStore);
+
+    const database = openOpenClawStateDatabase().db;
+    database
+      .prepare("UPDATE cron_job_runtime_authorities SET authority_json = ? WHERE job_id = ?")
+      .run(JSON.stringify(job.runtimeAuthority), job.id);
+    database.exec("ALTER TABLE cron_job_runtime_authorities DROP COLUMN tool_bindings_json");
+
+    const readOnly = (await loadCronJobsStoreWithConfigJobsReadOnly(storePath)).store.jobs[0];
+    expect(readOnly?.runtimeAuthority).toEqual(job.runtimeAuthority);
+    expect(
+      database
+        .prepare("SELECT 1 FROM pragma_table_info('cron_job_runtime_authorities') WHERE name = ?")
+        .get("tool_bindings_json"),
+    ).toBeUndefined();
+
+    const writable = (await loadCronStore(storePath)).jobs[0];
+    expect(writable?.runtimeAuthority).toEqual(job.runtimeAuthority);
+    expect(writable?.runtimeAuthorityRecoveryRequired).toBeUndefined();
+  });
+
   it("retires authority when an older writer changes its tool cap", async () => {
     const { storePath } = await makeStorePath();
     const authorityStore = makeAuthorityStore("downgrade-cap-change");

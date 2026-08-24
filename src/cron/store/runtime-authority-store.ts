@@ -4,7 +4,11 @@ import type { DatabaseSync } from "node:sqlite";
 import { safeParseJson } from "@openclaw/normalization-core";
 import type { Selectable } from "kysely";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
-import { ensureColumn, tableExists } from "../../state/openclaw-state-db-schema-helpers.js";
+import {
+  ensureColumn,
+  tableExists,
+  tableHasColumn,
+} from "../../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../../state/openclaw-state-db.generated.js";
 import {
   normalizeCronPersistedRuntimeAuthority,
@@ -89,6 +93,19 @@ function authorityJsonSha256(authorityJson: string): string {
   return createHash("sha256").update(authorityJson, "utf8").digest("hex");
 }
 
+function serializeStoredToolBindings(
+  bindings: ReturnType<typeof normalizeCronScheduledToolBindings>,
+  authorityJson: string,
+): string | null {
+  return bindings
+    ? JSON.stringify({
+        version: CRON_TOOL_BINDINGS_STORAGE_VERSION,
+        authoritySha256: authorityJsonSha256(authorityJson),
+        bindings,
+      })
+    : null;
+}
+
 function parseStoredToolBindings(
   value: unknown,
   authorityJson: string,
@@ -127,13 +144,46 @@ function loadCronRuntimeAuthorityRows(
   if (!tableExists(db, CRON_RUNTIME_AUTHORITY_TABLE)) {
     return [];
   }
+  const database = getCronAuthorityKysely(db);
+  if (tableHasColumn(db, CRON_RUNTIME_AUTHORITY_TABLE, "tool_bindings_json")) {
+    return executeSqliteQuerySync(
+      db,
+      database
+        .selectFrom("cron_job_runtime_authorities")
+        .selectAll()
+        .where("store_key", "=", storeKey),
+    ).rows;
+  }
   return executeSqliteQuerySync(
     db,
-    getCronAuthorityKysely(db)
+    database
       .selectFrom("cron_job_runtime_authorities")
-      .selectAll()
+      .select([
+        "store_key",
+        "job_id",
+        "authority_json",
+        "authority_input_fingerprint",
+        "recovery_required",
+      ])
       .where("store_key", "=", storeKey),
-  ).rows;
+  ).rows.map((row) => {
+    const legacyAuthority = normalizeCronRuntimeAuthority(safeParseJson(row.authority_json ?? ""));
+    const persistedAuthority = legacyAuthority
+      ? serializeCronRuntimeAuthority(legacyAuthority)
+      : undefined;
+    if (!legacyAuthority || !persistedAuthority) {
+      return Object.assign(row, { tool_bindings_json: null });
+    }
+    const authorityJson = JSON.stringify(persistedAuthority);
+    const toolBindingsJson = serializeStoredToolBindings(
+      legacyAuthority.toolBindings,
+      authorityJson,
+    );
+    return Object.assign(row, {
+      authority_json: authorityJson,
+      tool_bindings_json: toolBindingsJson,
+    });
+  });
 }
 
 function applyCronRuntimeAuthorityRow(
@@ -269,13 +319,7 @@ export function replaceCronRuntimeAuthorityRows(params: {
         continue;
       }
       const authorityJson = JSON.stringify(persistedAuthority);
-      const toolBindingsJson = authority.toolBindings
-        ? JSON.stringify({
-            version: CRON_TOOL_BINDINGS_STORAGE_VERSION,
-            authoritySha256: authorityJsonSha256(authorityJson),
-            bindings: authority.toolBindings,
-          })
-        : null;
+      const toolBindingsJson = serializeStoredToolBindings(authority.toolBindings, authorityJson);
       const authorityInputFingerprint = cronRuntimeAuthorityInputFingerprint(job);
       executeSqliteQuerySync(
         params.db,
