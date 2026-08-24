@@ -38,6 +38,7 @@ type ChatModelPickerParams = {
   sessionKey: string;
   triggerModelLabel: string;
   triggerStatusLabel?: string;
+  triggerLoading?: boolean;
   onModelSetup?: () => void;
   onOpen?: () => unknown;
   onModelSelect: (value: string, sessionKey: string) => Promise<unknown>;
@@ -334,6 +335,7 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
   // label replaces the model name outright, and a provider mark next to
   // "Loading..." would claim an identity the trigger is not showing.
   const triggerProviderIcon =
+    !params.triggerLoading &&
     !params.triggerStatusLabel &&
     activeModelOption &&
     hasProviderBrandIcon(activeModelOption.provider)
@@ -443,6 +445,7 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
         data-chat-select-value=${params.selectedModelValue}
         data-chat-model-tools=${modelToolsUnavailable ? "unavailable" : "available"}
         aria-label=${`${t("chat.selectors.model")}: ${triggerTitle}`}
+        aria-busy=${params.triggerLoading ? "true" : "false"}
         aria-disabled=${params.disabled ? "true" : "false"}
         title=${params.disabledReason ?? triggerTitle}
         @click=${(event: MouseEvent) => {
@@ -453,19 +456,29 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
           (event.currentTarget as HTMLElement).focus({ preventScroll: true });
         }}
       >
-        ${modelToolsUnavailable
-          ? html`
-              <openclaw-tooltip .content=${t("chat.modelControls.chatOnlyHelp")}>
-                <span class="chat-controls__model-capability-badge" aria-hidden="true">
-                  ${icons.alertTriangle}
-                  <span>${t("chat.modelControls.chatOnly")}</span>
-                </span>
-              </openclaw-tooltip>
-            `
-          : nothing}
-        ${triggerProviderIcon}
+        ${triggerProviderIcon === nothing
+          ? nothing
+          : html`<span class="chat-controls__trigger-provider-wrap">
+              ${triggerProviderIcon}
+              ${modelToolsUnavailable
+                ? html`<openclaw-tooltip .content=${t("chat.modelControls.chatOnlyHelp")}>
+                    <span
+                      class="chat-controls__model-capability-alert"
+                      tabindex="0"
+                      role="img"
+                      aria-label=${t("chat.modelControls.chatOnlyHelp")}
+                      >${icons.alertTriangle}</span
+                    >
+                  </openclaw-tooltip>`
+                : nothing}
+            </span>`}
         <span class="chat-controls__inline-select-label">
-          ${params.triggerStatusLabel ?? params.triggerModelLabel}
+          ${params.triggerLoading
+            ? html`<span
+                class="skeleton chat-controls__model-trigger-skeleton"
+                aria-hidden="true"
+              ></span>`
+            : (params.triggerStatusLabel ?? params.triggerModelLabel)}
         </span>
         ${showContextWindowBadge
           ? html`
