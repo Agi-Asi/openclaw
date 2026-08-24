@@ -24,9 +24,9 @@ import {
 } from "./session-accessor.sqlite-entry-equality.js";
 import {
   clearSessionCollaborationForKey,
+  copySessionNodeArtifactsForRepair,
   deleteSessionDeliveryArtifacts,
   deleteSessionNodeArtifacts,
-  rehomeLegacySessionNodeArtifacts,
 } from "./session-accessor.sqlite-node-artifacts.js";
 import {
   hasSqliteSessionOwnerColumns,
@@ -535,7 +535,9 @@ export function deleteLegacySessionEntryRows(
       continue;
     }
     rehomeSessionWindows(database, sessionKey, [legacyKey]);
-    rehomeLegacySessionNodeArtifacts(database, legacyKey, sessionKey, options);
+    copySessionNodeArtifactsForRepair(database, database, [legacyKey], sessionKey, {
+      includeMembers: options.rehomeMembers,
+    });
     executeSqliteQuerySync(
       database.db,
       db.deleteFrom("session_nodes").where("session_key", "=", legacyKey),
