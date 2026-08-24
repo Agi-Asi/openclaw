@@ -442,7 +442,6 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transform: translateX(-5px);
 }
 
 .session-progress-card__step-marker svg {
