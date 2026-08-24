@@ -2,9 +2,8 @@ import type { RouteMatch, Router } from "@openclaw/uirouter";
 import { nothing } from "lit";
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { property } from "lit/decorators.js";
-import { renderLazyViewError } from "../components/lazy-view-error.ts";
-import { renderLoadingState } from "../components/loading-state.ts";
 import { McpAppUnmountGate } from "../components/mcp-app-unmount.ts";
+import { renderLazyViewError, renderLoadingState } from "../components/panel-state.ts";
 import { t } from "../i18n/index.ts";
 import { OpenClawLightDomElement } from "../lit/openclaw-element.ts";
 import {

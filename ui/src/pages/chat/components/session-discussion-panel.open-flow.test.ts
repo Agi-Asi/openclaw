@@ -12,11 +12,10 @@ import {
 
 afterEach(resetDiscussionPanelTestState);
 
-async function emptyStateText(panel: HTMLElement): Promise<string> {
-  const empty = panel.querySelector("openclaw-panel-empty-state");
+function emptyStateText(panel: HTMLElement): string {
+  const empty = panel.querySelector(".panel-state--empty");
   expect(empty).not.toBeNull();
-  await empty!.updateComplete;
-  return empty!.shadowRoot?.textContent ?? "";
+  return empty!.textContent ?? "";
 }
 
 describe("session discussion panel", () => {

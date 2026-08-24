@@ -250,13 +250,10 @@ describe("chat sidebar region", () => {
       region.layout = openSlot({ columns: [] }, slot);
       await region.updateComplete;
       const empty = root(region).querySelector(".side-panel-empty--type");
-      const state = empty?.querySelector("openclaw-panel-empty-state");
-      await (state as HTMLElement & { updateComplete?: Promise<unknown> })?.updateComplete;
+      const state = empty?.querySelector(".panel-state--empty");
       expect(state?.querySelector("svg")).not.toBeNull();
-      expect(state?.shadowRoot?.querySelector(".empty-state__title")?.textContent).toBe(label);
-      expect(
-        state?.shadowRoot?.querySelector(".empty-state__description")?.textContent?.trim(),
-      ).not.toBe("");
+      expect(state?.querySelector(".lazy-view-error__title")?.textContent).toBe(label);
+      expect(state?.querySelector(".lazy-view-error__subtitle")?.textContent?.trim()).not.toBe("");
     }
   });
 

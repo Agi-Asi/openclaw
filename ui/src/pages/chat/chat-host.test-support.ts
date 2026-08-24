@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import type { ModelCatalogEntry } from "../../api/types.ts";
 import type { UiSettings } from "../../app/settings.ts";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import { createSessionCapability } from "../../lib/sessions/index.ts";
 import {
   createGatewayRequestMock,
@@ -111,6 +112,7 @@ export function makeChatHost(
   const host = {
     client: request ? createTestGatewayClient(request) : null,
     chatMessages: [],
+    chatHistoryStatus: createPanelRefreshStatus(),
     chatDisplayedLeafEntryId: undefined,
     chatStream: null,
     chatStreamSegments: [],

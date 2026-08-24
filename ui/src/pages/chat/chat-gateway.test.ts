@@ -5,6 +5,7 @@ import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { GatewayRequestError } from "../../api/gateway.ts";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
 import { handleChatGatewayEvent, type ChatEventPayload } from "./chat-gateway.ts";
 import { loadChatHistory, type ChatState } from "./chat-history.ts";
@@ -22,6 +23,7 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
   return {
     chatAttachments: [],
     chatHistoryPagination: { hasMore: false },
+    chatHistoryStatus: createPanelRefreshStatus(),
     chatLoading: false,
     chatMessage: "",
     chatMessages: [],
@@ -2966,8 +2968,8 @@ describe("loadChatHistory retry handling", () => {
       limit: 100,
     });
     expect(request).toHaveBeenCalledTimes(1);
-    expect(state.lastError).toContain("unknown method: chat.startup");
-    expect(state.chatError).toContain("unknown method: chat.startup");
+    expect(state.chatHistoryStatus.error).toContain("unknown method: chat.startup");
+    expect(state.lastError).toBeNull();
   });
 
   it("retries retryable startup unavailability before showing history", async () => {
@@ -3707,9 +3709,10 @@ describe("loadChatHistory retry handling", () => {
     expect(state.chatMessages).toStrictEqual([]);
     expect(state.chatThinkingLevel).toBeNull();
     expect(state.chatVerboseLevel).toBeNull();
-    expect(state.lastError).toBe(
+    expect(state.chatHistoryStatus.error).toBe(
       "This connection is missing operator.read, so existing chat history cannot be loaded yet.",
     );
+    expect(state.lastError).toBeNull();
     expect(state.chatLoading).toBe(false);
   });
 
@@ -3929,6 +3932,7 @@ describe("loadChatHistory retry handling", () => {
 
     expect(state.lastError).toBeNull();
     expect(state.chatError).toBeNull();
+    expect(state.chatHistoryStatus).toEqual(createPanelRefreshStatus());
     expect(state.chatLoading).toBe(true);
   });
 

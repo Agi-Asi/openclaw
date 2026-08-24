@@ -230,12 +230,11 @@ describe("session discussion panel", () => {
     });
 
     const empty = await vi.waitFor(() => {
-      const candidate = panel.querySelector("openclaw-panel-empty-state");
+      const candidate = panel.querySelector(".panel-state--empty");
       expect(candidate).not.toBeNull();
       return candidate!;
     });
-    await empty.updateComplete;
-    expect(empty.shadowRoot?.textContent).toContain("This discussion cannot be embedded");
+    expect(empty.textContent).toContain("This discussion cannot be embedded");
     const external = panel.querySelector<HTMLAnchorElement>("a");
     expect(panel.querySelector("iframe")).toBeNull();
     expect(external?.textContent).toContain("Open discussion in a new tab");

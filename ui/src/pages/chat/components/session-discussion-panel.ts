@@ -6,7 +6,7 @@ import type {
   SessionDiscussionState,
 } from "../../../../../packages/gateway-protocol/src/index.js";
 import { icons } from "../../../components/icons.ts";
-import { renderPanelEmptyState } from "../../../components/panel-empty-state.ts";
+import { renderPanelEmptyState } from "../../../components/panel-state.ts";
 import { t } from "../../../i18n/index.ts";
 import { formatUiError } from "../../../lib/format-error.ts";
 import { buildWidgetThemeMessage, postWidgetTheme } from "../../../lib/widget-theme.ts";
@@ -231,7 +231,7 @@ class SessionDiscussionPanel extends OpenClawLightDomElement {
                 ? html`<a class="session-link" href=${openUrl} target="_blank" rel="noopener">
                     ${t("chat.sessionDiscussion.openExternal")}
                   </a>`
-                : nothing,
+                : undefined,
             })}
       </div>
     `;

@@ -1839,6 +1839,44 @@ select.input {
   overflow-wrap: anywhere;
 }
 
+.panel-state--empty {
+  max-width: none;
+  min-height: 0;
+  flex: 1 1 auto;
+  gap: 0;
+  padding: 24px;
+  transform: translateY(-10px);
+}
+
+.panel-state--empty .lazy-view-error__icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 18px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.panel-state--empty .lazy-view-error__icon svg {
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.5px;
+}
+
+.panel-state--empty .lazy-view-error__title {
+  color: var(--text);
+  font-size: calc(16px * var(--control-ui-text-scale, 1));
+  font-weight: 500;
+}
+
+.panel-state--empty .lazy-view-error__subtitle {
+  max-width: 320px;
+  margin: 8px 0 0;
+}
+
+.panel-state--empty .lazy-view-error__actions {
+  margin-top: 16px;
+}
+
 /* Compaction indicator */
 .compaction-indicator {
   align-self: center;

@@ -14,6 +14,7 @@ import type {
 import { createChatAttachmentHandoff } from "../../app/chat-attachment-handoff.ts";
 import type { ExecApprovalRequest } from "../../app/exec-approval.ts";
 import type { UiSettings } from "../../app/settings.ts";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import { i18n, t } from "../../i18n/index.ts";
 import type { ChatAttachment, ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import {
@@ -679,6 +680,7 @@ function createChatProps(overrides: Partial<ChatProps> = {}): ChatProps {
     canSend: true,
     disabledReason: null,
     error: null,
+    historyStatus: createPanelRefreshStatus(),
     runError: null,
     approvalCanGrant: false,
     sessions: null,

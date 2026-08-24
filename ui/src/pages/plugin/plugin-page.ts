@@ -18,8 +18,7 @@ import {
   retryStaleChunkReloadWhenReachable,
   scheduleStaleChunkReload,
 } from "../../app/stale-chunk-reload.ts";
-import { renderLazyViewError } from "../../components/lazy-view-error.ts";
-import { renderLoadingState } from "../../components/loading-state.ts";
+import { renderLazyViewError, renderLoadingState } from "../../components/panel-state.ts";
 import { t } from "../../i18n/index.ts";
 import { resolveEmbedSandbox } from "../../lib/chat/tool-display.ts";
 import { OpenClawLightDomContentsElement } from "../../lit/openclaw-element.ts";

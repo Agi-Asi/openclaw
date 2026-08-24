@@ -22,6 +22,7 @@ import type { GatewaySessionRow } from "../../api/types.ts";
 import { createChatAttachmentHandoff } from "../../app/chat-attachment-handoff.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { createInitialUserMessageHandoff } from "../../app/initial-user-message-handoff.ts";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import type { CatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
 import type { TaskSuggestionAcceptMode } from "../../lib/task-suggestion-acceptance.ts";
@@ -335,6 +336,7 @@ export function createTestChatPane(params: {
     chatComposerFallbackByScope: {},
     chatError: null,
     chatHistoryPagination: { hasMore: false },
+    chatHistoryStatus: createPanelRefreshStatus(),
     chatLoading: false,
     chatMessages: [],
     chatQueue: [],

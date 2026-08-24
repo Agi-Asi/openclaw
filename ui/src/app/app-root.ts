@@ -9,7 +9,7 @@ import "../components/gateway-url-confirmation.ts";
 import "../components/github-link-hovercard-registration.ts";
 import "../components/login-gate.ts";
 import "../components/openclaw-mascot.ts";
-import { renderLazyElementState } from "../components/lazy-view-error.ts";
+import { renderLazyElementState } from "../components/panel-state.ts";
 import { installNativeTitleGuard } from "../components/tooltip.ts";
 import { t } from "../i18n/index.ts";
 import { formatUiError } from "../lib/format-error.ts";

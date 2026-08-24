@@ -2,6 +2,10 @@ import { html, nothing } from "lit";
 import type { SessionPlacementDiskSpace } from "../../../../packages/gateway-protocol/src/schema/session-placement.ts";
 import type { ApplicationPlacementStartupStatus } from "../../app/session-placement-startup.ts";
 import { icons } from "../../components/icons.ts";
+import {
+  renderPanelRefreshStatus,
+  type PanelRefreshStatus,
+} from "../../components/panel-refresh-status.ts";
 import { t } from "../../i18n/index.ts";
 import { formatBytes } from "../../lib/agents/display.ts";
 import { renderPlacementStartupStatus } from "./components/chat-working-indicator.ts";
@@ -17,7 +21,9 @@ type ChatViewNoticesProps = ChatPlacementStartupNoticeProps & {
   diskSpace?: SessionPlacementDiskSpace;
   error?: string | null;
   focusMode?: boolean;
+  historyStatus?: PanelRefreshStatus;
   onDismissError?: () => void;
+  onRefresh: () => void;
   onDismissWorkspaceConflict?: () => void;
   onToggleFocusMode?: () => void;
   workspaceConflict?: WorkspaceResultConflict | null;
@@ -56,6 +62,13 @@ function renderDiskSpaceNotice(diskSpace: SessionPlacementDiskSpace | undefined)
 export function renderChatViewNotices(props: ChatViewNoticesProps) {
   return html`
     ${renderDiskSpaceNotice(props.diskSpace)}
+    ${props.historyStatus
+      ? renderPanelRefreshStatus({
+          status: props.historyStatus,
+          onRetry: props.onRefresh,
+          className: "chat-error chat-history-error",
+        })
+      : nothing}
     ${props.error
       ? html`
           <div class="chat-error" role="alert">

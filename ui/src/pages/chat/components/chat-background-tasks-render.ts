@@ -1,7 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { icons } from "../../../components/icons.ts";
-import { renderPanelEmptyState } from "../../../components/panel-empty-state.ts";
+import { renderPanelEmptyState } from "../../../components/panel-state.ts";
 import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
 import { partitionTasks } from "../../../lib/tasks/data.ts";

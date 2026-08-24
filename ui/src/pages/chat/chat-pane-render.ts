@@ -388,6 +388,7 @@ export class ChatPane extends ChatPaneLayoutRender {
         modelSetupRequired && !selectedSessionArchived && !restartRecoveryTombstoned,
       onModelSetup: () => this.context.navigate("model-setup"),
       error: state.lastError,
+      historyStatus: state.chatHistoryStatus,
       diskSpace,
       runError: catalogKey ? null : (state.chatRunError ?? placementRunError),
       inlineApproval: sessionParticipationBlocked ? null : inlineApproval,

@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
+import { controlUiBundledSettingsStorageKey } from "../test-helpers/control-ui-e2e.ts";
 import {
   chatSessionListResponse,
   controlUiSessionUrl,
@@ -19,6 +20,63 @@ import {
 const suite = createChatFlowE2eSuite();
 
 suite.define(() => {
+  it("retries a failed history bootstrap from the visible panel error", async () => {
+    const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
+    if (artifactDir) {
+      await mkdir(artifactDir, { recursive: true });
+    }
+    const context = await suite.newBrowserContext({
+      colorScheme: "dark",
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    const settingsKey = controlUiBundledSettingsStorageKey(suite.server.baseUrl);
+    await page.addInitScript((key) => {
+      localStorage.setItem(key, JSON.stringify({ theme: "claw", themeMode: "dark" }));
+    }, settingsKey);
+    const gateway = await installMockGateway(page, { deferredMethods: ["chat.startup"] });
+
+    try {
+      await page.goto(`${suite.server.baseUrl}chat`);
+      await gateway.waitForRequest("chat.startup");
+      await gateway.rejectDeferred("chat.startup", {
+        code: "GATEWAY_UNAVAILABLE",
+        message: "history bootstrap unavailable",
+      });
+
+      const historyError = page.locator(".chat-history-error");
+      await historyError.getByText("history bootstrap unavailable").waitFor({ timeout: 10_000 });
+      const retry = historyError.getByRole("button", { name: "Retry", exact: true });
+      await retry.waitFor();
+      if (artifactDir) {
+        await page.screenshot({
+          path: path.join(artifactDir, "01-history-error.png"),
+          fullPage: true,
+        });
+      }
+
+      await gateway.setMethodResponse("chat.history", {
+        messages: [{ role: "assistant", content: "History recovered." }],
+        sessionId: "recovered-history-session",
+      });
+      await retry.click();
+
+      await gateway.waitForRequest("chat.history");
+      await page.getByText("History recovered.", { exact: true }).waitFor({ timeout: 10_000 });
+      await historyError.waitFor({ state: "detached" });
+      if (artifactDir) {
+        await page.screenshot({
+          path: path.join(artifactDir, "02-history-recovered.png"),
+          fullPage: true,
+        });
+      }
+    } finally {
+      await suite.closeBrowserContext(context);
+    }
+  });
+
   it("restores reasoning and tool activity after navigating away from a session", async () => {
     const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
     if (artifactDir) {

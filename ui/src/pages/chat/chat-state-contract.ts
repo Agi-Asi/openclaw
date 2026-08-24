@@ -1,6 +1,7 @@
 import type { GatewayBrowserClient, GatewayHelloOk } from "../../api/gateway.ts";
 import type { AgentsListResult, GatewaySessionRow, SessionBranch } from "../../api/types.ts";
 import type { ApplicationInitialUserMessageHandoff } from "../../app/initial-user-message-handoff.ts";
+import type { PanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import type { ChatAttachment, ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import type { SessionCapability, SessionMessageSubscription } from "../../lib/sessions/index.ts";
 import type { ChatHistoryPagination } from "./chat-history-pagination.ts";
@@ -42,6 +43,7 @@ export type ChatState = {
   chatStream: string | null;
   chatStreamStartedAt: number | null;
   chatRunStartup?: ChatRunStartupState | null;
+  chatHistoryStatus: PanelRefreshStatus;
   lastError: string | null;
   chatError?: string | null;
   chatRunError?: { summary: string } | null;

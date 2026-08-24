@@ -7,7 +7,7 @@ import type { SessionObserverDigest } from "../../../../../packages/gateway-prot
 import type { ControlUiSessionPullRequest } from "../../../../../src/gateway/control-ui-contract.js";
 import { icons } from "../../../components/icons.ts";
 import { toSanitizedMarkdownHtml } from "../../../components/markdown.ts";
-import { renderPanelEmptyState } from "../../../components/panel-empty-state.ts";
+import { renderPanelEmptyState } from "../../../components/panel-state.ts";
 import { renderSessionProgressCard } from "../../../components/session-progress-card.ts";
 import "../../../components/tooltip.ts";
 import "../../../components/web-awesome.ts";

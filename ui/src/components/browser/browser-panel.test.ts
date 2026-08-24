@@ -97,9 +97,8 @@ describe("normalizeBrowserUrlDraft", () => {
     document.body.append(panel);
     await panel.updateComplete;
 
-    const empty = panel.renderRoot.querySelector("openclaw-panel-empty-state");
-    await empty?.updateComplete;
-    expect(empty?.shadowRoot?.querySelector(".empty-state__title")?.textContent).toBe("Browser");
+    const empty = panel.renderRoot.querySelector(".panel-state--empty");
+    expect(empty?.querySelector(".lazy-view-error__title")?.textContent).toBe("Browser");
     expect(empty?.querySelector("svg")).not.toBeNull();
   });
 

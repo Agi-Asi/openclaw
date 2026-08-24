@@ -462,10 +462,8 @@ describe("ChatSessionRailElement", () => {
 
   it("uses the shared surface empty state before the first side-chat exchange", async () => {
     const element = await mount();
-    const empty = element.querySelector("openclaw-panel-empty-state");
-    await empty?.updateComplete;
-
-    expect(empty?.shadowRoot?.querySelector(".empty-state__title")?.textContent).toBe("Side chat");
+    const empty = element.querySelector(".panel-state--empty");
+    expect(empty?.querySelector(".lazy-view-error__title")?.textContent).toBe("Side chat");
     expect(empty?.querySelector("svg")).not.toBeNull();
   });
 

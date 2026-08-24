@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
 import {
   disposeSelectedSessionMessageSubscription,
@@ -22,6 +23,7 @@ function createSubscriptionState(
     connectionEpoch: 1,
     sessionKey: subscription.key,
     chatHistoryPagination: { hasMore: false },
+    chatHistoryStatus: createPanelRefreshStatus(),
     chatLoading: false,
     chatMessages: [],
     chatThinkingLevel: null,

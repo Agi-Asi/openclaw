@@ -4,7 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { renderDockDestinations } from "../../../components/dock-destination-controls.ts";
 import { icons } from "../../../components/icons.ts";
-import { renderPanelEmptyState } from "../../../components/panel-empty-state.ts";
+import { renderPanelEmptyState } from "../../../components/panel-state.ts";
 import { renderPanelTabStrip } from "../../../components/panel-tab-strip.ts";
 import {
   BROWSER_PANEL_TOGGLE_EVENT,

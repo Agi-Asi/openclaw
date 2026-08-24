@@ -21,6 +21,7 @@ import { renderExecApprovalCard } from "../../components/exec-approval-card.ts";
 import { icons } from "../../components/icons.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.ts";
 import type { SessionLinkTarget } from "../../components/markdown-session-links.ts";
+import type { PanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import type { PersonActivityRouting } from "../../components/person-activity-link.ts";
 import { t } from "../../i18n/index.ts";
 import type { BoardProvider } from "../../lib/board/provider.ts";
@@ -156,6 +157,7 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     modelSetupRequired?: boolean;
     onModelSetup?: () => void;
     error: string | null;
+    historyStatus?: PanelRefreshStatus;
     diskSpace?: SessionPlacementDiskSpace;
     runError?: { summary: string } | null;
     inlineApproval?: ExecApprovalRequest | null;

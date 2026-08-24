@@ -8,6 +8,12 @@ import type {
   SessionBranch,
   SessionsListResult,
 } from "../../api/types.ts";
+import {
+  beginPanelRefresh,
+  completePanelRefresh,
+  createPanelRefreshStatus,
+  failPanelRefresh,
+} from "../../components/panel-refresh-status.ts";
 import type { ChatMetadataResult } from "../../lib/chat/chat-metadata-store.ts";
 import {
   isAssistantHeartbeatAckForDisplay,
@@ -1512,6 +1518,7 @@ async function loadChatHistoryUncached(
   // Any pending input-history snapshot becomes invalid once we start reloading transcript state.
   state.resetChatInputHistoryNavigation?.();
   state.chatLoading = true;
+  state.chatHistoryStatus = beginPanelRefresh(state.chatHistoryStatus);
   setChatError(state, null);
   try {
     const requestModeKey = deltaCursor === undefined ? "page" : `cursor:${deltaCursor}`;
@@ -1574,6 +1581,7 @@ async function loadChatHistoryUncached(
       state.chatQueueModeOverride = response.sessionInfo.queueMode;
       state.chatEffectiveQueueMode = response.sessionInfo.effectiveQueueMode;
       replaceCachedChatMessages(state, sessionKey, requestAgentId, response.deltaCursor);
+      state.chatHistoryStatus = completePanelRefresh();
       recordChatHistoryTiming(state, "applied", startedAtMs, {
         requestSessionKey: sessionKey,
         requestAgentId,
@@ -1833,6 +1841,7 @@ async function loadChatHistoryUncached(
       visibleMessageCount: visibleMessages.length,
       resetStream,
     });
+    state.chatHistoryStatus = completePanelRefresh();
     return res;
   } catch (err) {
     if (!shouldApplyChatHistoryResult(state, ownership)) {
@@ -1853,9 +1862,12 @@ async function loadChatHistoryUncached(
       resetChatHistoryProjection(state, requestAgentId);
       state.chatThinkingLevel = null;
       state.chatVerboseLevel = null;
-      setChatError(state, formatMissingOperatorReadScopeMessage("existing chat history"));
+      state.chatHistoryStatus = failPanelRefresh(
+        createPanelRefreshStatus(),
+        formatMissingOperatorReadScopeMessage("existing chat history"),
+      );
     } else {
-      setChatError(state, formatUiError(err));
+      state.chatHistoryStatus = failPanelRefresh(state.chatHistoryStatus, formatUiError(err));
     }
   } finally {
     if (ownsChatHistoryRequest(state, ownership)) {

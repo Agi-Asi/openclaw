@@ -3,7 +3,7 @@ import { t } from "../../i18n/index.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import type { DockPanelPlacement } from "../dock-panel-layout.ts";
 import { icons } from "../icons.ts";
-import { renderPanelEmptyState } from "../panel-empty-state.ts";
+import { renderPanelEmptyState } from "../panel-state.ts";
 import {
   TerminalOpenTimeoutError,
   TerminalOpenUnusableSessionError,

@@ -351,7 +351,7 @@ async function readColdOpenOutcome(page: Page): Promise<ColdOpenOutcome> {
   const activePanel = page.locator(".side-panel__panel:not([hidden])");
   await activePanel.waitFor();
   await activePanel.locator(":scope > *").first().waitFor();
-  const emptyState = activePanel.locator("openclaw-panel-empty-state").first();
+  const emptyState = activePanel.locator(".panel-state--empty").first();
   const genericEmptyState = (await emptyState.count()) > 0;
   return {
     outcome: genericEmptyState ? "generic-empty" : "content",
@@ -443,7 +443,7 @@ suite.define(() => {
       await waitForControlUiGatewayReady(page);
       await openChatSidePanelType(page, "Browser");
       const browser = page.locator("openclaw-browser-panel");
-      await browser.locator("openclaw-panel-empty-state").waitFor();
+      await browser.locator(".panel-state--empty").waitFor();
 
       const initialRequests = await gateway.getRequests("browser.request");
       expect(initialRequests.map((request) => request.params)).toEqual([

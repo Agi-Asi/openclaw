@@ -10,6 +10,7 @@ import {
   shouldAutoPromptNotificationsOnSend,
 } from "../../app/notifications-auto-prompt.ts";
 import { loadLocalUserIdentity, loadSettings, patchSettings } from "../../app/settings.ts";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import { parseSlashCommand } from "../../lib/chat/commands.ts";
 import { resolveSafeExternalUrl } from "../../lib/open-external-url.ts";
 import {
@@ -189,6 +190,7 @@ export function createPageState(
     chatStream: null,
     chatStreamStartedAt: null,
     chatRunStartup: null,
+    chatHistoryStatus: createPanelRefreshStatus(),
     lastError: null,
     chatError: null,
     chatRunError: null,

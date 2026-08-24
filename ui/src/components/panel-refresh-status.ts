@@ -1,6 +1,7 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { nothing, type TemplateResult } from "lit";
 import { t } from "../i18n/index.ts";
 import { formatUiError } from "../lib/format-error.ts";
+import { renderPanelState } from "./panel-state.ts";
 
 export type PanelRefreshStatus = Readonly<{
   error: string | null;
@@ -46,21 +47,14 @@ export function renderPanelRefreshStatus(params: {
   if (!error && !status.stale) {
     return nothing;
   }
-  const className = params.className ? ` ${params.className}` : "";
   if (!error) {
-    return html`
-      <div class="callout warn${className}" role="status">
-        <strong>${t("common.staleData")}</strong>
-      </div>
-    `;
+    return renderPanelState(
+      { kind: "notice", message: t("common.staleData") },
+      { className: params.className },
+    );
   }
-  return html`
-    <div class="callout danger callout--dismissible${className}" role="alert">
-      <span class="callout__content">
-        <span>${error}</span>
-        ${status.stale ? html`<br /><strong>${t("common.staleData")}</strong>` : nothing}
-      </span>
-      <button class="btn btn--sm" @click=${params.onRetry}>${t("common.retry")}</button>
-    </div>
-  `;
+  return renderPanelState(
+    { kind: "error", error, stale: status.stale, onRetry: params.onRetry },
+    { className: params.className, layout: "callout" },
+  );
 }

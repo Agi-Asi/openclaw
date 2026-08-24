@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPanelRefreshStatus } from "../../components/panel-refresh-status.ts";
 import { handleChatGatewayEvent, type ChatEventPayload } from "./chat-gateway.ts";
 import type { ChatState } from "./chat-history.ts";
 
@@ -19,6 +20,7 @@ function createAbortDiagnosticState(runId = "run-validation-abort"): AbortDiagno
   return {
     chatAttachments: [],
     chatHistoryPagination: { hasMore: false },
+    chatHistoryStatus: createPanelRefreshStatus(),
     chatLoading: false,
     chatMessage: "",
     chatMessages: [],

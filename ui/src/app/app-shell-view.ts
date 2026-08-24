@@ -7,7 +7,7 @@ import type {
   SidebarWorkboardSnapshot,
 } from "../components/app-sidebar-workboard.ts";
 import { icons } from "../components/icons.ts";
-import { renderLazyElementModal } from "../components/lazy-view-error.ts";
+import { renderLazyElementModal } from "../components/panel-state.ts";
 import { CUSTODIAN_PANEL_TOGGLE_EVENT } from "../components/panel-toggle-contract.ts";
 import {
   renderLazySettingsSidebar,
