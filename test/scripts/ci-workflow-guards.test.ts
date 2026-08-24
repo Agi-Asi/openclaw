@@ -7534,7 +7534,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "Current CI target is missing scripts/dist-runtime-build-artifact.mjs",
     );
     expect(uploadStep.with.path).toBe("${{ runner.temp }}/dist-runtime-build.tar.zst");
-    const artifactBuilder = readFileSync("scripts/lib/workspace-bootstrap-smoke.mjs", "utf8");
+    const artifactBuilder = readFileSync("scripts/lib/workspace-bootstrap-smoke.mts", "utf8");
     for (const requiredPath of [
       '"openclaw.mjs"',
       '"package.json"',
@@ -7558,6 +7558,10 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     );
     expect(artifactBuilder).toContain("delete gatewayEnv.OPENCLAW_DISABLE_BUNDLED_PLUGINS");
     expect(artifactBuilder).toContain('const BUNDLED_PLUGIN_SMOKE_ID = "acpx"');
+    expect(artifactBuilder).toContain('const BUNDLED_PLUGIN_SMOKE_PACKAGE = "@openclaw/acpx"');
+    expect(artifactBuilder).toContain('"@agentclientprotocol/codex-acp"');
+    expect(artifactBuilder).toContain('"@agentclientprotocol/claude-agent-acp"');
+    expect(artifactBuilder).toContain("assertExtractedPluginRuntimeDependencies");
     expect(artifactBuilder).toContain("waitForGatewayPluginLoaded");
     expect(artifactBuilder).toContain("plugin: ${BUNDLED_PLUGIN_SMOKE_ID}");
     expect(artifactBuilder).toContain('detached: process.platform !== "win32"');

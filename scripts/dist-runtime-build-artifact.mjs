@@ -1,5 +1,5 @@
 import path from "node:path";
-import { buildAndSmokeDistRuntimeArtifact } from "./lib/workspace-bootstrap-smoke.mjs";
+import { buildAndSmokeDistRuntimeArtifact } from "./lib/workspace-bootstrap-smoke.mts";
 
 const archivePath = process.argv[2];
 if (!archivePath) {

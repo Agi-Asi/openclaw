@@ -1,6 +1,7 @@
 // Verifies installed packages can bootstrap the default OpenClaw workspace files.
 import { execFileSync, spawn } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -40,22 +41,22 @@ const DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS = DIST_RUNTIME_ARTIFACT_PACKAGE
   },
 );
 
-function packageArtifactPath(sourcePath) {
+function packageArtifactPath(sourcePath: string): string {
   return sourcePath.replace(/^packages\//u, "node_modules/@openclaw/");
 }
 
 function copyDistRuntimeArtifactPath(
-  rootDir,
-  artifactRoot,
-  sourcePath,
+  rootDir: string,
+  artifactRoot: string,
+  sourcePath: string,
   destinationPath = sourcePath,
-) {
+): void {
   const destination = join(artifactRoot, destinationPath);
   mkdirSync(dirname(destination), { recursive: true });
   cpSync(join(rootDir, sourcePath), destination, { dereference: true, recursive: true });
 }
 
-function stageDistRuntimeArtifact(rootDir, artifactRoot) {
+function stageDistRuntimeArtifact(rootDir: string, artifactRoot: string): void {
   const deploymentRoot = join(artifactRoot, "deployment");
   execFileSync(
     "pnpm",
@@ -74,6 +75,25 @@ function stageDistRuntimeArtifact(rootDir, artifactRoot) {
   copyDistRuntimeArtifactPath(deploymentRoot, artifactRoot, "node_modules");
   rmSync(deploymentRoot, { force: true, recursive: true });
 
+  const pluginDeploymentRoot = join(artifactRoot, "acpx-deployment");
+  execFileSync(
+    "pnpm",
+    [
+      "--frozen-lockfile",
+      "--config.inject-workspace-packages=true",
+      "--ignore-scripts",
+      "--filter",
+      BUNDLED_PLUGIN_SMOKE_PACKAGE,
+      "deploy",
+      "--prod",
+      pluginDeploymentRoot,
+    ],
+    { cwd: rootDir, stdio: "inherit" },
+  );
+  // ACPX is bundled, but its adapters are plugin-owned and load on the first ACP session.
+  copyDistRuntimeArtifactPath(pluginDeploymentRoot, artifactRoot, "node_modules");
+  rmSync(pluginDeploymentRoot, { force: true, recursive: true });
+
   for (const sourcePath of DIST_RUNTIME_ARTIFACT_BASE_PATHS) {
     if (sourcePath !== "node_modules") {
       copyDistRuntimeArtifactPath(rootDir, artifactRoot, sourcePath);
@@ -81,6 +101,23 @@ function stageDistRuntimeArtifact(rootDir, artifactRoot) {
   }
   for (const sourcePath of DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS) {
     copyDistRuntimeArtifactPath(rootDir, artifactRoot, sourcePath, packageArtifactPath(sourcePath));
+  }
+}
+
+function assertExtractedPluginRuntimeDependencies(packageRoot: string): void {
+  const pluginEntry = join(
+    packageRoot,
+    "dist-runtime",
+    "extensions",
+    BUNDLED_PLUGIN_SMOKE_ID,
+    "index.js",
+  );
+  const requireFromPlugin = createRequire(pluginEntry);
+  for (const dependency of BUNDLED_PLUGIN_SMOKE_RUNTIME_DEPENDENCIES) {
+    const manifestPath = requireFromPlugin.resolve(`${dependency}/package.json`);
+    if (!manifestPath.startsWith(join(packageRoot, "node_modules"))) {
+      throw new Error(`extracted ACPX runtime resolved ${dependency} outside its artifact`);
+    }
   }
 }
 
@@ -99,6 +136,15 @@ const DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS = 20_000;
 const DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const SAFE_UNIX_SMOKE_PATH = "/usr/bin:/bin";
 const BUNDLED_PLUGIN_SMOKE_ID = "acpx";
+const BUNDLED_PLUGIN_SMOKE_PACKAGE = "@openclaw/acpx";
+const BUNDLED_PLUGIN_SMOKE_RUNTIME_DEPENDENCIES = [
+  "@agentclientprotocol/codex-acp",
+  "@agentclientprotocol/claude-agent-acp",
+];
+
+type GatewayProcess = ReturnType<typeof spawn>;
+type GatewaySmokeParams = { child: GatewayProcess; port: number; readOutput: () => string };
+type GatewayPluginSmokeParams = { child: GatewayProcess; readOutput: () => string };
 
 /**
  * Creates a minimal isolated environment for workspace bootstrap smoke runs.
@@ -176,7 +222,11 @@ function describeExecFailure(error: unknown): string {
 /**
  * Runs the installed CLI workspace bootstrap smoke and validates created files.
  */
-export function runInstalledWorkspaceBootstrapSmoke(params: { packageRoot: string }): void {
+export function runInstalledWorkspaceBootstrapSmoke(params: {
+  packageRoot: string;
+  nodeArgs?: string[];
+  envOverrides?: NodeJS.ProcessEnv;
+}): void {
   const tempRoot = mkdtempSync(join(tmpdir(), "openclaw-workspace-bootstrap-smoke-"));
   const homeDir = join(tempRoot, "home");
   const cwd = join(tempRoot, "cwd");
@@ -237,7 +287,7 @@ export function runInstalledWorkspaceBootstrapSmoke(params: { packageRoot: strin
   }
 }
 
-function collectDistRuntimeArtifactPaths(rootDir) {
+function collectDistRuntimeArtifactPaths(rootDir: string): string[] {
   const missingPaths = DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS.filter(
     (artifactPath) => !existsSync(join(rootDir, artifactPath)),
   );
@@ -252,7 +302,7 @@ function collectDistRuntimeArtifactPaths(rootDir) {
   ].toSorted((left, right) => left.localeCompare(right));
 }
 
-function listDistRuntimeArtifactEntries(archivePath, compressor) {
+function listDistRuntimeArtifactEntries(archivePath: string, compressor: string): string[] {
   return execFileSync("tar", ["--use-compress-program", compressor, "-tf", archivePath], {
     encoding: "utf8",
     maxBuffer: DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES,
@@ -262,7 +312,7 @@ function listDistRuntimeArtifactEntries(archivePath, compressor) {
     .filter(Boolean);
 }
 
-function validateDistRuntimeArtifactEntries(entries, expectedPaths) {
+function validateDistRuntimeArtifactEntries(entries: string[], expectedPaths: string[]): void {
   const entrySet = new Set(entries);
   const missingPaths = expectedPaths.filter(
     (expectedPath) =>
@@ -311,8 +361,8 @@ function validateDistRuntimeArtifactEntries(entries, expectedPaths) {
   }
 }
 
-function reserveLoopbackPort() {
-  return new Promise((resolvePromise, reject) => {
+function reserveLoopbackPort(): Promise<number> {
+  return new Promise<number>((resolvePromise, reject) => {
     const server = createServer();
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -333,7 +383,7 @@ function reserveLoopbackPort() {
   });
 }
 
-async function waitForGatewayReadiness(params) {
+async function waitForGatewayReadiness(params: GatewaySmokeParams): Promise<void> {
   const deadline = Date.now() + DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (params.child.exitCode !== null) {
@@ -359,7 +409,7 @@ async function waitForGatewayReadiness(params) {
   throw new Error(`extracted gateway did not become ready:\n${params.readOutput()}`);
 }
 
-async function waitForGatewayPluginLoaded(params) {
+async function waitForGatewayPluginLoaded(params: GatewayPluginSmokeParams): Promise<void> {
   const expectedOutput = `plugin: ${BUNDLED_PLUGIN_SMOKE_ID}`;
   const deadline = Date.now() + DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -380,13 +430,16 @@ async function waitForGatewayPluginLoaded(params) {
   );
 }
 
-async function waitForGatewayProcessGroupExit(processGroupId, timeoutMs) {
+async function waitForGatewayProcessGroupExit(
+  processGroupId: number,
+  timeoutMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       process.kill(processGroupId, 0);
     } catch (error) {
-      if (error && typeof error === "object" && error.code === "ESRCH") {
+      if (error && typeof error === "object" && "code" in error && error.code === "ESRCH") {
         return true;
       }
       throw error;
@@ -398,7 +451,7 @@ async function waitForGatewayProcessGroupExit(processGroupId, timeoutMs) {
   return false;
 }
 
-async function stopGatewaySmoke(child) {
+async function stopGatewaySmoke(child: GatewayProcess): Promise<void> {
   if (process.platform === "win32" || !child.pid) {
     if (child.exitCode === null) {
       child.kill("SIGTERM");
@@ -431,7 +484,11 @@ async function stopGatewaySmoke(child) {
   }
 }
 
-export async function buildAndSmokeDistRuntimeArtifact(params) {
+export async function buildAndSmokeDistRuntimeArtifact(params: {
+  rootDir: string;
+  archivePath: string;
+  compressor?: string;
+}): Promise<{ archivePath: string; artifactPaths: string[] }> {
   const rootDir = resolve(params.rootDir);
   const archivePath = resolve(params.archivePath);
   const compressor = params.compressor ?? "zstdmt";
@@ -478,7 +535,7 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
     const gatewayEnv = { ...smokeEnv };
     delete gatewayEnv.OPENCLAW_DISABLE_BUNDLED_PLUGINS;
 
-    let gateway;
+    let gateway: GatewayProcess | undefined;
     let gatewayOutput = "";
     try {
       execFileSync(
@@ -490,6 +547,7 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
         packageRoot,
         envOverrides: artifactEnvOverrides,
       });
+      assertExtractedPluginRuntimeDependencies(packageRoot);
 
       const acpHelp = execFileSync(
         process.execPath,
@@ -528,14 +586,14 @@ export async function buildAndSmokeDistRuntimeArtifact(params) {
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
-      const appendGatewayOutput = (chunk) => {
+      const appendGatewayOutput = (chunk: Buffer) => {
         gatewayOutput += chunk.toString();
         if (Buffer.byteLength(gatewayOutput) > DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES) {
           gatewayOutput = gatewayOutput.slice(-DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES);
         }
       };
-      gateway.stdout.on("data", appendGatewayOutput);
-      gateway.stderr.on("data", appendGatewayOutput);
+      gateway.stdout?.on("data", appendGatewayOutput);
+      gateway.stderr?.on("data", appendGatewayOutput);
       await waitForGatewayReadiness({ child: gateway, port, readOutput: () => gatewayOutput });
       await waitForGatewayPluginLoaded({ child: gateway, readOutput: () => gatewayOutput });
     } finally {
