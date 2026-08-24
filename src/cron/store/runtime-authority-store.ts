@@ -166,24 +166,7 @@ function loadCronRuntimeAuthorityRows(
         "recovery_required",
       ])
       .where("store_key", "=", storeKey),
-  ).rows.map((row) => {
-    const legacyAuthority = normalizeCronRuntimeAuthority(safeParseJson(row.authority_json ?? ""));
-    const persistedAuthority = legacyAuthority
-      ? serializeCronRuntimeAuthority(legacyAuthority)
-      : undefined;
-    if (!legacyAuthority || !persistedAuthority) {
-      return Object.assign(row, { tool_bindings_json: null });
-    }
-    const authorityJson = JSON.stringify(persistedAuthority);
-    const toolBindingsJson = serializeStoredToolBindings(
-      legacyAuthority.toolBindings,
-      authorityJson,
-    );
-    return Object.assign(row, {
-      authority_json: authorityJson,
-      tool_bindings_json: toolBindingsJson,
-    });
-  });
+  ).rows.map((row) => Object.assign(row, { tool_bindings_json: null }));
 }
 
 function applyCronRuntimeAuthorityRow(

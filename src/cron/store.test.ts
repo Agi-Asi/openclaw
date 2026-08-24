@@ -886,13 +886,14 @@ describe("cron store", () => {
     await saveCronStore(storePath, authorityStore);
 
     const database = openOpenClawStateDatabase().db;
-    database
-      .prepare("UPDATE cron_job_runtime_authorities SET authority_json = ? WHERE job_id = ?")
-      .run(JSON.stringify(job.runtimeAuthority), job.id);
     database.exec("ALTER TABLE cron_job_runtime_authorities DROP COLUMN tool_bindings_json");
 
     const readOnly = (await loadCronJobsStoreWithConfigJobsReadOnly(storePath)).store.jobs[0];
-    expect(readOnly?.runtimeAuthority).toEqual(job.runtimeAuthority);
+    const { toolBindings: _toolBindings, ...persistedAuthority } = expectDefined(
+      job.runtimeAuthority,
+      "runtime authority test invariant",
+    );
+    expect(readOnly?.runtimeAuthority).toEqual(persistedAuthority);
     expect(
       database
         .prepare("SELECT 1 FROM pragma_table_info('cron_job_runtime_authorities') WHERE name = ?")
@@ -900,8 +901,62 @@ describe("cron store", () => {
     ).toBeUndefined();
 
     const writable = (await loadCronStore(storePath)).jobs[0];
-    expect(writable?.runtimeAuthority).toEqual(job.runtimeAuthority);
+    expect(writable?.runtimeAuthority).toEqual(persistedAuthority);
     expect(writable?.runtimeAuthorityRecoveryRequired).toBeUndefined();
+  });
+
+  it("rejects unsealed inline bindings from a predecessor authority table", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("legacy-inline-bindings");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    if (job.payload.kind !== "agentTurn") {
+      throw new Error("authority job payload test invariant");
+    }
+    job.payload.toolsAllow = ["gateway_exec"];
+    job.payload.toolsAllowIsDefault = false;
+    await saveCronStore(storePath, authorityStore);
+
+    const database = openOpenClawStateDatabase().db;
+    database
+      .prepare("UPDATE cron_job_runtime_authorities SET authority_json = ? WHERE job_id = ?")
+      .run(JSON.stringify(job.runtimeAuthority), job.id);
+    database.exec("ALTER TABLE cron_job_runtime_authorities DROP COLUMN tool_bindings_json");
+
+    const reloaded = (await loadCronStore(storePath)).jobs[0];
+    expect(reloaded?.runtimeAuthority).toBeUndefined();
+    expect(reloaded?.runtimeAuthorityRecoveryRequired).toBe(true);
+
+    const forbiddenMarker = path.join(path.dirname(storePath), "unsealed-inline-binding-forbidden");
+    const forbiddenCommand = `printf forbidden > ${JSON.stringify(forbiddenMarker)}`;
+    const result = await createCronScriptRuntime({
+      config: {
+        agents: { defaults: { workspace: path.dirname(storePath) } },
+        tools: { exec: { host: "gateway", security: "full", ask: "off" } },
+      },
+    }).evaluateTrigger({
+      jobId: job.id,
+      script: `await exec({ command: ${JSON.stringify(forbiddenCommand)} }); return { fire: false };`,
+      state: null,
+      toolsAllow: reloaded?.payload.toolsAllow,
+      runtimeAuthority: reloaded?.runtimeAuthority,
+      scheduledToolPolicy: { version: 1, mode: "trusted" },
+    });
+    expect(result).toMatchObject({ kind: "error", code: "internal_error" });
+    expect(result.kind === "error" ? result.error : "").toContain("exec is not defined");
+    await expectPathMissing(forbiddenMarker);
+
+    expect(
+      database
+        .prepare(
+          "SELECT authority_json, authority_input_fingerprint, recovery_required, tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?",
+        )
+        .get(job.id),
+    ).toEqual({
+      authority_json: null,
+      authority_input_fingerprint: null,
+      recovery_required: 1,
+      tool_bindings_json: null,
+    });
   });
 
   it("retires drifted authority from a predecessor table after adding the bindings column", async () => {
