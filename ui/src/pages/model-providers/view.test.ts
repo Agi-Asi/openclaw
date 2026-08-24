@@ -35,6 +35,7 @@ function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelProviders
     loading: false,
     refreshing: false,
     error: null,
+    providerUsageFailed: false,
     updatedAt: 1,
     costDays: 30,
     cards: [card()],
@@ -46,6 +47,7 @@ function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelProviders
     fastMode: false,
     fastModeOverridden: true,
     configBusy: false,
+    quickAddSupported: true,
     unconfiguredProviders: [{ id: "anthropic", displayName: "Anthropic" }],
     canMutate: true,
     mutationBlockedReason: null,
@@ -131,6 +133,14 @@ describe("renderModelProviders", () => {
     }
     document.body.replaceChildren();
     vi.restoreAllMocks();
+  });
+
+  it("surfaces a provider-usage request failure on the provider list", () => {
+    const container = mount(props({ providerUsageFailed: true }));
+
+    expect(container.textContent).toContain(
+      "Provider usage is unavailable; the last request failed. Refresh to retry.",
+    );
   });
 
   it("renders model behavior next to default models and emits canonical values", () => {
@@ -635,7 +645,7 @@ describe("renderModelProviders", () => {
     expect(container.querySelector(".model-providers__defaults")).not.toBeNull();
   });
 
-  it("keeps provider-wide session cost separate from account allowances", () => {
+  it("keeps provider-wide session cost separate from account usage", () => {
     const container = mount(
       props({
         cards: [
@@ -649,9 +659,104 @@ describe("renderModelProviders", () => {
     const provider = container.querySelector('[data-provider-id="openai"]');
     expect(text(provider)).not.toContain("Credentials for");
     expect(text(provider?.querySelector(".model-providers__global-metrics-title") ?? null)).toBe(
-      "Cost",
+      "Usage and cost",
     );
     expect(text(provider)).toContain("Session spend · 30d");
+  });
+
+  it("retains provider cost history and summaries with multiple accounts", () => {
+    const profiles = [
+      {
+        profileId: "openai:one",
+        type: "oauth" as const,
+        status: "ok" as const,
+        email: "one@example.com",
+        usage: {
+          providerId: "openai",
+          windows: [{ label: "5h", usedPercent: 10 }],
+          plan: "Pro",
+          billing: [{ type: "balance" as const, amount: 12, unit: "credits" }],
+        },
+      },
+      {
+        profileId: "openai:two",
+        type: "oauth" as const,
+        status: "ok" as const,
+        email: "two@example.com",
+        usage: {
+          providerId: "openai",
+          windows: [{ label: "Week", usedPercent: 20 }],
+          plan: "Plus",
+        },
+      },
+    ];
+    const container = mount(
+      props({
+        cards: [
+          card({
+            profiles,
+            usage: {
+              provider: "openai",
+              displayName: "OpenAI",
+              windows: [{ label: "5h", usedPercent: 10 }],
+              plan: "Pro",
+              summary: "Organization usage",
+              costHistory: {
+                unit: "USD",
+                periodDays: 30,
+                daily: [
+                  {
+                    date: new Date().toISOString().slice(0, 10),
+                    amount: 4,
+                    requests: 2,
+                    inputTokens: 100,
+                    cacheReadTokens: 20,
+                    cacheWriteTokens: 0,
+                    outputTokens: 30,
+                    totalTokens: 150,
+                  },
+                ],
+                models: [],
+                categories: [],
+              },
+            },
+          }),
+        ],
+      }),
+    );
+
+    const provider = container.querySelector('[data-provider-id="openai"]');
+    expect(text(provider)).toContain("Pro");
+    expect(text(provider)).toContain("Plus");
+    expect(text(provider)).toContain("Balance 12 credits");
+    expect(text(provider)).toContain("Today $4.00");
+    expect(text(provider)).toContain("Organization usage");
+  });
+
+  it("keeps provider usage errors and the explicit no-data state visible", () => {
+    const container = mount(
+      props({
+        cards: [
+          card({
+            id: "openai",
+            usage: {
+              provider: "openai",
+              displayName: "OpenAI",
+              windows: [],
+              error: "usage endpoint unavailable",
+            },
+          }),
+          card({ id: "anthropic", displayName: "Anthropic", usage: undefined }),
+        ],
+      }),
+    );
+
+    expect(text(container.querySelector('[data-provider-id="openai"]'))).toContain(
+      "usage endpoint unavailable",
+    );
+    expect(text(container.querySelector('[data-provider-id="anthropic"]'))).toContain(
+      "No live usage data reported by this provider.",
+    );
   });
 
   it("preserves complete graphemes in custom provider fallback icons", () => {

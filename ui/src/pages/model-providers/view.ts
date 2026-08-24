@@ -18,6 +18,7 @@ import {
 } from "../../components/settings-ui.ts";
 import { t } from "../../i18n/index.ts";
 import { formatThinkingOverrideLabel } from "../../lib/chat/thinking.ts";
+import { formatUiExternalText } from "../../lib/format-error.ts";
 import { formatCompactTokenCount, formatCost, formatTimeMs } from "../../lib/format.ts";
 import { MODEL_SETTINGS_TARGET_IDS } from "../config/settings-targets.ts";
 import "../../styles/model-providers.css";
@@ -43,6 +44,7 @@ export type ModelProvidersViewProps = {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
+  providerUsageFailed: boolean;
   updatedAt: number | null;
   costDays: number;
   cards: ModelProviderCard[];
@@ -54,6 +56,7 @@ export type ModelProvidersViewProps = {
   fastMode: FastMode | undefined;
   fastModeOverridden: boolean;
   configBusy: boolean;
+  quickAddSupported: boolean;
   unconfiguredProviders: ProviderOption[];
   canMutate: boolean;
   mutationBlockedReason: string | null;
@@ -234,25 +237,45 @@ function renderLocalCost(card: ModelProviderCard, costDays: number) {
   `;
 }
 
-function renderProviderCost(card: ModelProviderCard, costDays: number) {
+function hasAccountScopedProfiles(card: ModelProviderCard): boolean {
+  return card.profiles.some((profile) => profile.type === "oauth" || profile.type === "token");
+}
+
+function renderProviderUsageAndCost(card: ModelProviderCard, costDays: number) {
   const hasLocalCost = Boolean(
     card.localCost && (card.localCost.totalTokens > 0 || card.localCost.totalCost > 0),
   );
-  const providerFinancials =
-    card.profiles.length <= 1 &&
-    card.usage &&
-    (Boolean(card.usage.billing?.length) ||
-      Boolean(card.usage.costHistory?.daily.length) ||
-      Boolean(card.usage.summary?.trim()))
-      ? { ...card.usage, windows: [] }
-      : undefined;
-  if (!providerFinancials && !hasLocalCost) {
+  const accountScoped = hasAccountScopedProfiles(card);
+  const providerUsage = card.usage
+    ? accountScoped
+      ? {
+          ...card.usage,
+          windows: [],
+          billing: undefined,
+          plan: undefined,
+        }
+      : card.usage
+    : undefined;
+  const hasProviderUsage = Boolean(
+    providerUsage &&
+    (providerUsage.error ||
+      providerUsage.windows.length > 0 ||
+      providerUsage.billing?.length ||
+      providerUsage.costHistory?.daily.length ||
+      providerUsage.summary?.trim()),
+  );
+  const showNoProviderData = !accountScoped && !hasProviderUsage;
+  if (!hasProviderUsage && !hasLocalCost && !showNoProviderData) {
     return nothing;
   }
   return html`
     <div class="model-providers__global-metrics">
-      <div class="model-providers__global-metrics-title">${t("modelProviders.cost")}</div>
-      ${providerFinancials ? renderProviderUsageDetails(providerFinancials) : nothing}
+      <div class="model-providers__global-metrics-title">${t("modelProviders.usageAndCost")}</div>
+      ${hasProviderUsage && providerUsage
+        ? renderProviderUsageDetails(providerUsage)
+        : showNoProviderData
+          ? html`<div class="model-providers__no-stats">${t("modelProviders.noStats")}</div>`
+          : nothing}
       ${renderLocalCost(card, costDays)}
     </div>
   `;
@@ -262,22 +285,24 @@ function renderProbeResult(result: ModelsProbeResult | undefined) {
   if (!result) {
     return nothing;
   }
+  const hasWarnings =
+    result.status === "ok" && result.results.some((target) => target.status !== "ok");
+  const presentation = hasWarnings ? "warning" : result.status === "ok" ? "success" : "error";
   return html`
-    <div
-      class="model-providers__probe model-providers__probe--${result.status === "ok"
-        ? "success"
-        : "error"}"
-      role="status"
-    >
+    <div class="model-providers__probe model-providers__probe--${presentation}" role="status">
       <div class="model-providers__probe-summary">
-        <strong>${t(`modelProviders.probe.status.${result.status}`)}</strong>
+        <strong
+          >${hasWarnings
+            ? t("modelProviders.probe.status.partial")
+            : t(`modelProviders.probe.status.${result.status}`)}</strong
+        >
         ${result.latencyMs !== undefined
           ? html`<span
               >${t("modelProviders.probe.latency", { ms: String(result.latencyMs) })}</span
             >`
           : nothing}
       </div>
-      ${result.error ? html`<div>${result.error}</div>` : nothing}
+      ${result.error ? html`<div>${formatUiExternalText(result.error)}</div>` : nothing}
       ${result.results.map(
         (target) => html`
           <div class="model-providers__probe-target">
@@ -287,7 +312,7 @@ function renderProbeResult(result: ModelsProbeResult | undefined) {
                 ? ` · ${t("modelProviders.probe.latency", { ms: String(target.latencyMs) })}`
                 : ""}
             </span>
-            ${target.error ? html`<small>${target.error}</small>` : nothing}
+            ${target.error ? html`<small>${formatUiExternalText(target.error)}</small>` : nothing}
           </div>
         `,
       )}
@@ -427,13 +452,13 @@ function renderProviderRow(card: ModelProviderCard, props: ModelProvidersViewPro
           </div>
         </div>
         <div class="settings-row__control">
-          ${card.profiles.length <= 1 && card.usage?.plan
+          ${!hasAccountScopedProfiles(card) && card.usage?.plan
             ? renderSettingsValue(card.usage.plan)
             : nothing}
           ${renderProviderStatus(card)}
         </div>
       </div>
-      ${renderProfiles(card, props)} ${renderProviderCost(card, props.costDays)}
+      ${renderProfiles(card, props)} ${renderProviderUsageAndCost(card, props.costDays)}
       ${renderProviderActions(card, props)} ${renderKeyEditor(card, props)}
       ${renderProbeResult(props.probeResults[card.id])} ${renderMutationMessage(message)}
     </div>
@@ -441,6 +466,9 @@ function renderProviderRow(card: ModelProviderCard, props: ModelProvidersViewPro
 }
 
 function renderAddProvider(props: ModelProvidersViewProps) {
+  if (!props.quickAddSupported) {
+    return nothing;
+  }
   const busy = Boolean(props.busy.add);
   const disabled = configMutationDisabled(props) || busy;
   const rows = html`
@@ -553,15 +581,17 @@ export function renderModelProviders(props: ModelProvidersViewProps) {
       <div aria-busy="true">${renderSettingsGroup(renderSettingsEmpty(t("common.loading")))}</div>
     `);
   }
+  const renderProviderNotice = (text: string) => html`
+    <div class="settings-row">
+      <div class="settings-row__text">
+        <span class="settings-row__desc provider-usage-error">${text}</span>
+      </div>
+    </div>
+  `;
   const providerRows = html`
-    ${props.error
-      ? html`
-          <div class="settings-row">
-            <div class="settings-row__text">
-              <span class="settings-row__desc provider-usage-error">${props.error}</span>
-            </div>
-          </div>
-        `
+    ${props.error ? renderProviderNotice(props.error) : nothing}
+    ${props.providerUsageFailed
+      ? renderProviderNotice(t("usage.providerUsage.unavailable"))
       : nothing}
     ${props.cards.length === 0
       ? renderSettingsEmpty(

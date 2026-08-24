@@ -626,6 +626,7 @@ export class ModelProvidersPage extends OpenClawLightDomElement {
       loading: gatewaySnapshot.phase === "connected" && this.data === null && !rosterError,
       refreshing: this.loadClient !== null,
       error: rosterError ?? data.error ?? data.catalogError,
+      providerUsageFailed: data.providerUsage?.ok === false,
       updatedAt: data.updatedAt,
       costDays: MODEL_PROVIDERS_COST_DAYS,
       cards,
@@ -634,8 +635,9 @@ export class ModelProvidersPage extends OpenClawLightDomElement {
       defaultModelsDirty: this.defaultsDraft !== null,
       ...modelBehavior,
       configBusy,
+      quickAddSupported: data.authStatus?.providerCapabilities !== undefined,
       unconfiguredProviders: buildUnconfiguredProviderOptions(
-        data.catalogModels,
+        data.authStatus?.providerCapabilities,
         configuredProviderIds,
       ),
       canMutate: this.canMutate(),
