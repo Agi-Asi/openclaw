@@ -2,7 +2,6 @@
   --session-progress-neutral: var(--muted);
   --session-progress-marker-size: 14px;
 
-  box-sizing: border-box;
   min-width: 0;
   color: var(--text);
 }
@@ -209,7 +208,6 @@
 .session-hovercard__creator-avatar,
 .session-hovercard__creator-avatar .viewer-avatar {
   display: block;
-  box-sizing: border-box;
   width: var(--session-hovercard-context-icon-size);
   height: var(--session-hovercard-context-icon-size);
   aspect-ratio: 1;
@@ -439,7 +437,6 @@
 
 .session-progress-card__step-marker {
   display: inline-flex;
-  box-sizing: border-box;
   width: var(--session-progress-marker-size);
   height: var(--session-progress-marker-size);
   align-items: center;
