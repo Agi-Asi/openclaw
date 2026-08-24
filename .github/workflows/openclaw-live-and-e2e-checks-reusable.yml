@@ -3342,7 +3342,9 @@ jobs:
     needs: validate_selected_ref
     if: inputs.include_live_suites && !inputs.live_models_only && (inputs.live_suite_filter == '' || (startsWith(inputs.live_suite_filter, 'native-live-') && !startsWith(inputs.live_suite_filter, 'native-live-extensions-media') && inputs.live_suite_filter != 'native-live-extensions-a-k'))
     continue-on-error: ${{ inputs.advisory || inputs.live_advisory }}
-    runs-on: ${{ inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    # Source-transformed gateway profile startup can saturate standard hosted
+    # runners long enough to invalidate its same-event-loop startup probe.
+    runs-on: ${{ startsWith(matrix.suite_id, 'native-live-src-gateway-profiles') && 'blacksmith-8vcpu-ubuntu-2404' || (inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404') }}
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false

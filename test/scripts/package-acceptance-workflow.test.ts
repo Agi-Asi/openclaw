@@ -3549,7 +3549,7 @@ describe("package artifact reuse", () => {
       /validate_special_e2e:[\s\S]*?runs-on: \$\{\{ inputs\.use_github_hosted_runners && 'ubuntu-24\.04' \|\| 'blacksmith-8vcpu-ubuntu-2404' \}\}/u,
     );
     expect(workflow).toMatch(
-      /validate_live_provider_suites:[\s\S]*?runs-on: \$\{\{ inputs\.use_github_hosted_runners && 'ubuntu-24\.04' \|\| 'blacksmith-8vcpu-ubuntu-2404' \}\}/u,
+      /validate_live_provider_suites:[\s\S]*?runs-on: \$\{\{ startsWith\(matrix\.suite_id, 'native-live-src-gateway-profiles'\) && 'blacksmith-8vcpu-ubuntu-2404' \|\| \(inputs\.use_github_hosted_runners && 'ubuntu-24\.04' \|\| 'blacksmith-8vcpu-ubuntu-2404'\) \}\}/u,
     );
     expect(workflow).toContain("suite_id: native-live-src-gateway-core");
     expect(workflow).toContain("suite_id: native-live-src-gateway-backends");
