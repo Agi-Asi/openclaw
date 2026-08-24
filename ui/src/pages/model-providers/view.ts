@@ -234,6 +234,30 @@ function renderLocalCost(card: ModelProviderCard, costDays: number) {
   `;
 }
 
+function renderProviderCost(card: ModelProviderCard, costDays: number) {
+  const hasLocalCost = Boolean(
+    card.localCost && (card.localCost.totalTokens > 0 || card.localCost.totalCost > 0),
+  );
+  const providerFinancials =
+    card.profiles.length <= 1 &&
+    card.usage &&
+    (Boolean(card.usage.billing?.length) ||
+      Boolean(card.usage.costHistory?.daily.length) ||
+      Boolean(card.usage.summary?.trim()))
+      ? { ...card.usage, windows: [] }
+      : undefined;
+  if (!providerFinancials && !hasLocalCost) {
+    return nothing;
+  }
+  return html`
+    <div class="model-providers__global-metrics">
+      <div class="model-providers__global-metrics-title">${t("modelProviders.cost")}</div>
+      ${providerFinancials ? renderProviderUsageDetails(providerFinancials) : nothing}
+      ${renderLocalCost(card, costDays)}
+    </div>
+  `;
+}
+
 function renderProbeResult(result: ModelsProbeResult | undefined) {
   if (!result) {
     return nothing;
@@ -403,18 +427,13 @@ function renderProviderRow(card: ModelProviderCard, props: ModelProvidersViewPro
           </div>
         </div>
         <div class="settings-row__control">
-          ${card.usage?.plan ? renderSettingsValue(card.usage.plan) : nothing}
+          ${card.profiles.length <= 1 && card.usage?.plan
+            ? renderSettingsValue(card.usage.plan)
+            : nothing}
           ${renderProviderStatus(card)}
         </div>
       </div>
-      ${renderProfiles(card, props)}
-      <div class="model-providers__global-metrics">
-        <div class="model-providers__global-metrics-title">${t("modelProviders.usageAndCost")}</div>
-        ${card.usage
-          ? renderProviderUsageDetails(card.usage)
-          : html`<div class="model-providers__no-stats">${t("modelProviders.noStats")}</div>`}
-        ${renderLocalCost(card, props.costDays)}
-      </div>
+      ${renderProfiles(card, props)} ${renderProviderCost(card, props.costDays)}
       ${renderProviderActions(card, props)} ${renderKeyEditor(card, props)}
       ${renderProbeResult(props.probeResults[card.id])} ${renderMutationMessage(message)}
     </div>

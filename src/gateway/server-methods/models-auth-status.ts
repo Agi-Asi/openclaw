@@ -54,6 +54,7 @@ import { mapModelAuthStatusProvider } from "./models-auth-status-profiles.js";
 import { suppressSyntheticAliasRowsCoveredByExternalCli } from "./models-auth-status-projection.js";
 import {
   clearModelAuthStatusUsageCache,
+  loadProfileUsageStaleWhileRevalidate,
   readProviderUsageStaleWhileRevalidate,
 } from "./models-auth-status-usage-cache.js";
 import type {
@@ -539,15 +540,21 @@ export const modelsAuthStatusHandlers: GatewayRequestHandlers = {
         authAliasLookupParams,
       });
 
-      // Usage queries usually need refreshable credentials. Keep API-key status
-      // enrichment explicit so static auth providers are not polled by default.
+      const profileUsageTargets = authHealth.profiles.flatMap((profile) => {
+        if (profile.type !== "oauth" && profile.type !== "token") {
+          return [];
+        }
+        const providerId = resolveUsageProviderId(profile.provider, {
+          credentialType: profile.type,
+        });
+        return providerId ? [{ profileId: profile.profileId, providerId }] : [];
+      });
+      // Static API-key usage remains provider-scoped. Refreshable credentials
+      // are queried separately so each account keeps its own quota.
       const usageProviderIds = [
         ...new Set(
           authHealth.profiles
             .filter((p) => {
-              if (p.type === "oauth" || p.type === "token") {
-                return true;
-              }
               const usageProvider = resolveUsageProviderId(p.provider, {
                 credentialType: p.type,
               });
@@ -563,6 +570,17 @@ export const modelsAuthStatusHandlers: GatewayRequestHandlers = {
         agentId,
         agentDir,
         store,
+      });
+      const usageByProfile = await loadProfileUsageStaleWhileRevalidate({
+        agentId,
+        agentDir,
+        workspaceDir,
+        authStore: providerUsageRuntime.store,
+        configRef: cfg,
+        credentialKey: providerUsageRuntime.credentialKey,
+        forceRefresh: refreshRequested,
+        targets: profileUsageTargets,
+        now,
       });
       const usageByProvider = readProviderUsageStaleWhileRevalidate({
         agentId,
@@ -597,6 +615,7 @@ export const modelsAuthStatusHandlers: GatewayRequestHandlers = {
             provider: prov,
             config: cfg,
             usageByProvider,
+            usageByProfile,
             expectsOAuth: configured.expectsOAuth,
             apiKeys,
             logoutProfileIds,

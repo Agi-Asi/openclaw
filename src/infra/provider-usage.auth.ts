@@ -7,6 +7,7 @@ import {
   hasAnyAuthProfileStoreSource,
   resolveApiKeyForProfile,
   resolveAuthProfileOrder,
+  type AuthProfileStore,
 } from "../agents/auth-profiles.js";
 import { resolveEnvApiKey } from "../agents/model-auth-env.js";
 import { isNonSecretApiKeyMarker } from "../agents/model-auth-markers.js";
@@ -297,17 +298,20 @@ function resolveUsageCredentialProviderIds(params: {
 async function resolveOAuthToken(params: {
   state: UsageAuthState;
   provider: string;
+  profileIds?: readonly string[];
 }): Promise<ProviderAuth | null> {
   if (!params.state.allowAuthProfileStore) {
     return null;
   }
   const store = resolveUsageAuthStore(params.state);
-  const order = resolveAuthProfileOrder({
-    cfg: params.state.cfg,
-    store,
-    provider: params.provider,
-  });
-  const deduped = dedupeProfileIds(order);
+  const order =
+    params.profileIds ??
+    resolveAuthProfileOrder({
+      cfg: params.state.cfg,
+      store,
+      provider: params.provider,
+    });
+  const deduped = dedupeProfileIds([...order]);
 
   for (const profileId of deduped) {
     const cred = store.profiles[profileId];
@@ -352,6 +356,28 @@ async function resolveOAuthToken(params: {
   }
 
   return null;
+}
+
+/** Resolve one exact saved OAuth/token profile for an account-scoped usage query. */
+export async function resolveProviderProfileUsageAuth(params: {
+  provider: UsageProviderId;
+  profileId: string;
+  store: AuthProfileStore;
+  agentDir?: string;
+  config: OpenClawConfig;
+}): Promise<ProviderAuth | null> {
+  const auth = await resolveOAuthToken({
+    state: {
+      cfg: params.config,
+      env: process.env,
+      agentDir: params.agentDir,
+      allowAuthProfileStore: true,
+      store: params.store,
+    },
+    provider: params.provider,
+    profileIds: [params.profileId],
+  });
+  return auth ? { ...auth, authProfileId: params.profileId } : null;
 }
 
 async function resolveProviderUsageAuthViaPlugin(params: {

@@ -635,7 +635,7 @@ describe("renderModelProviders", () => {
     expect(container.querySelector(".model-providers__defaults")).not.toBeNull();
   });
 
-  it("groups provider usage and session cost", () => {
+  it("keeps provider-wide session cost separate from account allowances", () => {
     const container = mount(
       props({
         cards: [
@@ -649,7 +649,7 @@ describe("renderModelProviders", () => {
     const provider = container.querySelector('[data-provider-id="openai"]');
     expect(text(provider)).not.toContain("Credentials for");
     expect(text(provider?.querySelector(".model-providers__global-metrics-title") ?? null)).toBe(
-      "Usage and cost",
+      "Cost",
     );
     expect(text(provider)).toContain("Session spend · 30d");
   });
