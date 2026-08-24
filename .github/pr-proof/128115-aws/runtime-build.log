@@ -1,0 +1,140 @@
+$ node scripts/run-node.mjs gateway --help
+[openclaw] Building TypeScript (dist is stale: missing_build_stamp - build stamp missing).
+[openclaw] Building bundled plugin assets.
+[canvas] build: node scripts/bundle-a2ui.mjs
+[log] <DIR>/a2ui.bundle.js  chunk │ size: 399.96 kB
+[log] <DIR>/a2ui-v0.9.bundle.js  chunk │ size: 615.66 kB
+[log]
+[success] rolldown v1.2.0 Finished in 325.79 ms
+[diffs] build: node --import tsx ../../scripts/build-diffs-viewer-runtime.mts curated
+[diffs-language-pack] build: node --import tsx ../../scripts/build-diffs-viewer-runtime.mts full
+[discord] build: node --import tsx ../../scripts/build-discord-activity-sdk.mts
+[tsdown-build] invocation 1/2 finished in 0.6s
+../../../../var/tmp/openclaw-pnpm/node_modules/playwright-core/lib/coreBundle.js (65821:28) [33m[EVAL] [0mUse of direct `eval` function is strongly discouraged as it poses security risks and may cause issues with minification.
+       [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m ../../../../var/tmp/openclaw-pnpm/node_modules/playwright-core/lib/coreBundle.js:65821:29 [38;5;246m][0m
+       [38;5;246m│[0m
+ [38;5;246m65821 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mv[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249mu[0m[38;5;249me[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0meval[38;5;249m([0m[38;5;249m`[0m[38;5;249m([0m[38;5;249m$[0m[38;5;249m{[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mr[0m[38;5;249m}[0m[38;5;249m)[0m[38;5;249m`[0m[38;5;249m)[0m[38;5;249m;[0m
+ [38;5;240m      │[0m                             ──┬─
+ [38;5;240m      │[0m                               ╰─── Use of direct `eval` here.
+ [38;5;240m      │[0m
+ [38;5;240m      │[0m [38;5;115mHelp[0m: Consider using indirect eval. For more information, check the documentation: https://rolldown.rs/guide/troubleshooting#avoiding-direct-eval
+[38;5;246m───────╯[0m
+
+../../../../var/tmp/openclaw-pnpm/node_modules/playwright-core/lib/coreBundle.js (65828:28) [33m[EVAL] [0mUse of direct `eval` function is strongly discouraged as it poses security risks and may cause issues with minification.
+       [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m ../../../../var/tmp/openclaw-pnpm/node_modules/playwright-core/lib/coreBundle.js:65828:29 [38;5;246m][0m
+       [38;5;246m│[0m
+ [38;5;246m65828 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mv[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249mu[0m[38;5;249me[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0meval[38;5;249m([0m[38;5;249m`[0m[38;5;249m([0m[38;5;249m$[0m[38;5;249m{[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mr[0m[38;5;249m}[0m[38;5;249m)[0m[38;5;249m`[0m[38;5;249m)[0m[38;5;249m;[0m
+ [38;5;240m      │[0m                             ──┬─
+ [38;5;240m      │[0m                               ╰─── Use of direct `eval` here.
+ [38;5;240m      │[0m
+ [38;5;240m      │[0m [38;5;115mHelp[0m: Consider using indirect eval. For more information, check the documentation: https://rolldown.rs/guide/troubleshooting#avoiding-direct-eval
+[38;5;246m───────╯[0m
+
+../../../../var/tmp/openclaw-pnpm/node_modules/web-tree-sitter/web-tree-sitter.js (2343:30) [33m[EVAL] [0mUse of direct `eval` function is strongly discouraged as it poses security risks and may cause issues with minification.
+      [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m ../../../../var/tmp/openclaw-pnpm/node_modules/web-tree-sitter/web-tree-sitter.js:2343:31 [38;5;246m][0m
+      [38;5;246m│[0m
+ [38;5;246m2343 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mA[0m[38;5;249mS[0m[38;5;249mM[0m[38;5;249m_[0m[38;5;249mC[0m[38;5;249mO[0m[38;5;249mN[0m[38;5;249mS[0m[38;5;249mT[0m[38;5;249mS[0m[38;5;249m[[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0meval[38;5;249m([0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m)[0m[38;5;249m;[0m
+ [38;5;240m     │[0m                               ──┬─
+ [38;5;240m     │[0m                                 ╰─── Use of direct `eval` here.
+ [38;5;240m     │[0m
+ [38;5;240m     │[0m [38;5;115mHelp[0m: Consider using indirect eval. For more information, check the documentation: https://rolldown.rs/guide/troubleshooting#avoiding-direct-eval
+[38;5;246m──────╯[0m
+
+../../../../var/tmp/openclaw-pnpm/node_modules/web-tree-sitter/web-tree-sitter.js (2366:32) [33m[EVAL] [0mUse of direct `eval` function is strongly discouraged as it poses security risks and may cause issues with minification.
+      [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m ../../../../var/tmp/openclaw-pnpm/node_modules/web-tree-sitter/web-tree-sitter.js:2366:33 [38;5;246m][0m
+      [38;5;246m│[0m
+ [38;5;246m2366 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mm[0m[38;5;249mo[0m[38;5;249md[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249mE[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249ms[0m[38;5;249m[[0m[38;5;249mn[0m[38;5;249ma[0m[38;5;249mm[0m[38;5;249me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0meval[38;5;249m([0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m)[0m[38;5;249m;[0m
+ [38;5;240m     │[0m                                 ──┬─
+ [38;5;240m     │[0m                                   ╰─── Use of direct `eval` here.
+ [38;5;240m     │[0m
+ [38;5;240m     │[0m [38;5;115mHelp[0m: Consider using indirect eval. For more information, check the documentation: https://rolldown.rs/guide/troubleshooting#avoiding-direct-eval
+[38;5;246m──────╯[0m
+
+[tsdown-build] invocation 2/2 finished in 8.0s
+[plugin-control-plane-loads] verified 35 built modules with native require and checked doctor closures
+runtime-postbuild: 11 phases completed in 3210ms (slowest: built plugin control-plane loads 2563ms)
+
+OpenClaw 2026.8.1 (ff8a668) — All your chats, one OpenClaw.
+
+Usage: openclaw gateway [options] [command]
+
+Run, inspect, and query the WebSocket Gateway
+
+Options:
+  --allow-unconfigured      Allow gateway start without enforcing
+                            gateway.mode=local in config (does not repair
+                            config) (default: false)
+  --ambient-channels        Allow the gateway to auto-configure channels from
+                            ambient environment variables (default: false)
+  --auth <mode>             Gateway auth mode
+                            ("none"|"token"|"password"|"trusted-proxy")
+  --bind <mode>             Bind mode
+                            ("loopback"|"lan"|"tailnet"|"auto"|"custom").
+                            Defaults to config gateway.bind (or loopback).
+  --claude-cli-logs         Deprecated alias for --cli-backend-logs (default:
+                            false)
+  --cli-backend-logs        Only show CLI backend logs in the console (includes
+                            stdout/stderr) (default: false)
+  --compact                 Alias for "--ws-log compact" (default: false)
+  --dev                     Create a dev config + workspace if missing (no
+                            BOOTSTRAP.md) (default: false)
+  --dev-ambient-channels    Deprecated alias for --ambient-channels (default:
+                            false)
+  --force                   Kill any existing listener on the target port before
+                            starting (default: false)
+  -h, --help                Display help for command
+  --password <password>     Password for auth mode=password
+  --password-file <path>    Read gateway password from file
+  --port <port>             Port for the gateway WebSocket
+  --raw-stream              Log raw model stream events to jsonl (default:
+                            false)
+  --raw-stream-path <path>  Raw stream jsonl path
+  --reset                   Reset dev config + credentials + sessions +
+                            workspace (requires --dev) (default: false)
+  --tailscale <mode>        Tailscale exposure mode ("off"|"serve"|"funnel")
+  --token <token>           Shared token required in connect.params.auth.token
+                            (default: OPENCLAW_GATEWAY_TOKEN env if set)
+  --verbose                 Verbose logging to stdout/stderr (default: false)
+  --ws-log <style>          WebSocket log style ("auto"|"full"|"compact")
+                            (default: "auto")
+
+Commands:
+  auth-token                Reveal the configured shared Gateway token
+  call                      Call a Gateway method
+  diagnostics               Export local support diagnostics
+  discover                  Discover gateways via Bonjour (local + wide-area if
+                            configured)
+  health                    Fetch Gateway health
+  install                   Install the Gateway service
+                            (launchd/systemd/schtasks)
+  probe                     Show gateway reachability, auth capability, and
+                            read-probe summary (local + remote)
+  restart                   Restart the Gateway service
+                            (launchd/systemd/schtasks)
+  resume                    Release a cooperative Gateway suspension
+  run                       Run the WebSocket Gateway (foreground)
+  stability                 Fetch payload-free Gateway stability diagnostics
+  start                     Start the Gateway service (launchd/systemd/schtasks)
+  status                    Show gateway service status + probe
+                            connectivity/capability
+  stop                      Stop the Gateway service (launchd/systemd/schtasks)
+  suspend                   Prepare the Gateway for cooperative host suspension
+  uninstall                 Uninstall the Gateway service
+                            (launchd/systemd/schtasks)
+  usage-cost                Fetch usage cost summary from session logs
+
+Examples:
+  openclaw gateway run
+    Run the gateway in the foreground.
+  openclaw gateway status
+    Show service status plus connectivity/capability.
+  openclaw gateway auth-token --show
+    Reveal the shared token interactively.
+  openclaw gateway discover
+    Find local and wide-area gateway beacons.
+  openclaw gateway stability
+    Show recent stability diagnostics.
+  openclaw gateway call health
+    Call a gateway RPC method directly.
+
+Docs: https://docs.openclaw.ai/cli/gateway

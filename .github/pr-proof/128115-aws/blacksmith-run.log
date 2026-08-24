@@ -1,0 +1,10 @@
+exact_head=ff8a668b770d9501b4260f98494849cdfa914ce1
+provider=blacksmith-testbox
+lease=tbx_01m0rtpj1199ymp480v2amt42q
+actions_run=https://github.com/openclaw/openclaw/actions/runs/32684268220
+command=CI=1 NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 OPENCLAW_TESTBOX=1 OPENCLAW_TESTBOX_REMOTE_RUN=1 bash -lc 'pnpm exec playwright install ffmpeg && node scripts/run-vitest.mjs run --config test/vitest/vitest.ui-e2e.config.ts --configLoader runner ui/src/pages/workboard/workboard.e2e.test.ts ui/src/e2e/workboard-board-widget-layout.e2e.test.ts'
+test_files=2
+tests=6
+result=passed
+exit=0
+lease_stopped=true

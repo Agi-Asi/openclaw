@@ -1,0 +1,15 @@
+{
+  "desktopDirectionIcons": {
+    "collapseHorizontal": 1,
+    "collapseVertical": 0,
+    "expandHorizontal": 8,
+    "expandVertical": 0
+  },
+  "head": "ff8a668b770d9501b4260f98494849cdfa914ce1",
+  "mockedGateway": false,
+  "mockedRpc": false,
+  "touchDirectionIcons": {
+    "collapseVertical": 1,
+    "expandVertical": 8
+  }
+}

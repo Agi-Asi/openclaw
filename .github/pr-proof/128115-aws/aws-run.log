@@ -1,0 +1,11 @@
+exact_head=ff8a668b770d9501b4260f98494849cdfa914ce1
+base_head=1ac7f0161c9d65bfe3dd7d20e50a6284bed8cf45
+provider=aws
+run=run_30c413f6ea67
+lease=cbx_21d10369320d
+instance=c7a.8xlarge
+image=ami-0461d919be7deb53c
+region=eu-west-1
+result=passed
+exit=0
+lease_released=true

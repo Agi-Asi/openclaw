@@ -1,0 +1,35 @@
+$ node scripts/run-node.mjs gateway run --port 18889 --bind loopback --auth none --allow-unconfigured --force --compact
+2026-08-24T02:43:12.252+00:00 [gateway] loading configuration…
+2026-08-24T02:43:12.740+00:00 [gateway] resolving authentication…
+2026-08-24T02:43:12.755+00:00 [gateway] auth mode=none explicitly configured; all gateway connections are unauthenticated.
+2026-08-24T02:43:12.810+00:00 [gateway] starting...
+2026-08-24T02:43:15.156+00:00 [gateway] starting HTTP server...
+2026-08-24T02:43:15.770+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-08-24T02:43:26.173+00:00 [gateway] starting channels and sidecars...
+2026-08-24T02:43:26.185+00:00 [gateway] agent model: openai/gpt-5.6-sol (thinking=medium, fast=off)
+2026-08-24T02:43:26.185+00:00 [gateway] http server listening (15 plugins: acpx, anthropic, browser, canvas, device-pair, file-transfer, google-meet, linux-node, memory-core, ollama, talk-voice, teams-meetings, workboard, xai, zoom-meetings; 12.8s)
+2026-08-24T02:43:26.186+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-08-24.log
+2026-08-24T02:43:26.878+00:00 [plugins] embedded acpx runtime backend registered lazily
+2026-08-24T02:43:26.885+00:00 [gateway] startup outcomes: internal-hooks=skipped (not-configured); internal-startup-hook=skipped (no-handlers-loaded); gateway-start-hooks=scheduled; gmail-watcher=skipped (hooks-disabled); gmail-model=skipped (not-configured)
+2026-08-24T02:43:26.889+00:00 [gateway] ready
+2026-08-24T02:43:26.989+00:00 [heartbeat] started
+2026-08-24T02:43:27.560+00:00 [plugins] memory-core: created managed dreaming cron job.
+2026-08-24T02:43:33.520+00:00 [ws] webchat connected conn=f34b7de1-327e-4ae7-969e-086265bfa61b remote=127.0.0.1 client=openclaw-control-ui webchat v2026.8.1 build=2026.8.1-ff8a668b770d-2026-08-24T02-42-33.593Z
+2026-08-24T02:43:34.050+00:00 [ws] ⇄ res ✓ sessions.subscribe 520ms conn=f34b7de1…a61b id=2:df32d378-c…86f2
+2026-08-24T02:43:34.051+00:00 [ws] ⇄ res ✓ openclaw.approval.list 522ms conn=f34b7de1…a61b id=6:b996c8ee-3…9226
+2026-08-24T02:43:34.052+00:00 [ws] ⇄ res ✓ sessions.observer.visibility 523ms conn=f34b7de1…a61b id=7:e4f46a95-7…107e
+2026-08-24T02:43:34.053+00:00 [ws] ⇄ res ✓ exec.approval.list 523ms conn=f34b7de1…a61b id=4:3678230e-a…d744
+2026-08-24T02:43:34.054+00:00 [ws] ⇄ res ✓ plugin.approval.list 524ms conn=f34b7de1…a61b id=5:8592c6be-8…0647
+2026-08-24T02:43:34.584+00:00 [ws] ⇄ res ✓ config.get 1055ms conn=f34b7de1…a61b id=3:8dbc3829-e…d0c5
+2026-08-24T02:43:37.868+00:00 [ws] ⇄ res ✓ models.authStatus 3076ms conn=f34b7de1…a61b id=18:6f6c13b6-…f8e8
+2026-08-24T02:43:37.869+00:00 [gateway] external session catalog HOME fallback skipped: isolated state; configure an explicit root to enable
+2026-08-24T02:43:37.903+00:00 [ws] ⇄ res ✓ cron.list 3112ms conn=f34b7de1…a61b id=17:bb830a8e-…f866
+2026-08-24T02:43:37.948+00:00 [ws] ⇄ res ✓ sessions.catalog.list 3157ms conn=f34b7de1…a61b id=19:cae20342-…a426
+2026-08-24T02:43:38.935+00:00 [ws] webchat disconnected code=1001 reason=n/a conn=f34b7de1-327e-4ae7-969e-086265bfa61b
+2026-08-24T02:43:39.059+00:00 [ws] webchat connected conn=bbe44214-3a70-4725-a476-44194c75cf4b remote=127.0.0.1 client=openclaw-control-ui webchat v2026.8.1 build=2026.8.1-ff8a668b770d-2026-08-24T02-42-33.593Z
+2026-08-24T02:43:48.178+00:00 [ws] webchat disconnected code=1001 reason=n/a conn=bbe44214-3a70-4725-a476-44194c75cf4b
+2026-08-24T02:43:48.302+00:00 [ws] webchat connected conn=81d31fa4-8dbe-4e5d-9ad6-0574e786b26a remote=127.0.0.1 client=openclaw-control-ui webchat v2026.8.1 build=2026.8.1-ff8a668b770d-2026-08-24T02-42-33.593Z
+2026-08-24T02:43:49.955+00:00 [ws] webchat disconnected code=1001 reason=n/a conn=81d31fa4-8dbe-4e5d-9ad6-0574e786b26a
+[ELIFECYCLE] Command failed.
+2026-08-24T02:43:50.428+00:00 [reload] config reload retry (1/2): config file not found
+2026-08-24T02:43:50.579+00:00 [reload] config reload retry (2/2): config file not found

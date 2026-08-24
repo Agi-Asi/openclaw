@@ -1,0 +1,78 @@
+{
+  "assertions": {
+    "collapsedColumns": 8,
+    "hiddenColumns": 1,
+    "showColumns": 9,
+    "desktopDirectionIcons": {
+      "collapseHorizontal": 1,
+      "collapseVertical": 0,
+      "expandHorizontal": 8,
+      "expandVertical": 0
+    },
+    "mobileDirectionIcons": {
+      "collapseHorizontal": 0,
+      "collapseVertical": 2,
+      "expandHorizontal": 0,
+      "expandVertical": 7
+    }
+  },
+  "browser": "chromium",
+  "desktop": {
+    "options": [
+      {
+        "clientWidth": 122,
+        "scrollWidth": 122,
+        "text": "Show all"
+      },
+      {
+        "clientWidth": 122,
+        "scrollWidth": 122,
+        "text": "Collapse empty"
+      },
+      {
+        "clientWidth": 122,
+        "scrollWidth": 122,
+        "text": "Hide empty"
+      }
+    ],
+    "trigger": {
+      "clientWidth": 131,
+      "scrollWidth": 131,
+      "text": "Show all"
+    }
+  },
+  "gateway": "real isolated OpenClaw Gateway with bundled Workboard plugin",
+  "head": "ff8a668b770d9501b4260f98494849cdfa914ce1",
+  "mobile": {
+    "options": [
+      {
+        "clientWidth": 308,
+        "scrollWidth": 308,
+        "text": "Show all"
+      },
+      {
+        "clientWidth": 308,
+        "scrollWidth": 308,
+        "text": "Collapse empty"
+      },
+      {
+        "clientWidth": 308,
+        "scrollWidth": 308,
+        "text": "Hide empty"
+      }
+    ],
+    "trigger": {
+      "clientWidth": 317,
+      "scrollWidth": 317,
+      "text": "Collapse empty"
+    }
+  },
+  "mockedGateway": false,
+  "mockedRpc": false
+}
+{
+  "touchDirectionIcons": {
+    "collapseVertical": 1,
+    "expandVertical": 8
+  }
+}
