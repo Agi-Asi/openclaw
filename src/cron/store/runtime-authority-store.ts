@@ -273,6 +273,7 @@ export function repairCronRuntimeAuthorityRows(params: {
   if (!tableExists(params.db, CRON_RUNTIME_AUTHORITY_TABLE)) {
     return false;
   }
+  ensureColumn(params.db, CRON_RUNTIME_AUTHORITY_TABLE, "tool_bindings_json TEXT");
   const requested = new Set(params.jobIds);
   const jobsById = new Map(params.jobs.map((job) => [job.id, job] as const));
   let repaired = false;

@@ -24,6 +24,7 @@ import {
   saveCronStore,
 } from "./store.js";
 import { saveCronJobsStoreWithTransactionHooks } from "./store/transaction-hooks.js";
+import { createCronScriptRuntime } from "./trigger-script.js";
 import type { CronStoreFile } from "./types.js";
 
 let fixtureRoot = "";
@@ -901,6 +902,119 @@ describe("cron store", () => {
     const writable = (await loadCronStore(storePath)).jobs[0];
     expect(writable?.runtimeAuthority).toEqual(job.runtimeAuthority);
     expect(writable?.runtimeAuthorityRecoveryRequired).toBeUndefined();
+  });
+
+  it("retires drifted authority from a predecessor table after adding the bindings column", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("legacy-authority-recovery");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    await saveCronStore(storePath, authorityStore);
+
+    const database = openOpenClawStateDatabase().db;
+    database
+      .prepare("UPDATE cron_job_runtime_authorities SET authority_json = ? WHERE job_id = ?")
+      .run(JSON.stringify(job.runtimeAuthority), job.id);
+    database.exec("ALTER TABLE cron_job_runtime_authorities DROP COLUMN tool_bindings_json");
+    database
+      .prepare(
+        "UPDATE cron_job_runtime_authorities SET authority_input_fingerprint = ? WHERE job_id = ?",
+      )
+      .run("v1:stale", job.id);
+
+    const reloaded = (await loadCronStore(storePath)).jobs[0];
+    expect(reloaded?.runtimeAuthority).toBeUndefined();
+    expect(reloaded?.runtimeAuthorityRecoveryRequired).toBe(true);
+    expect(
+      database
+        .prepare(
+          "SELECT authority_json, authority_input_fingerprint, recovery_required, tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?",
+        )
+        .get(job.id),
+    ).toEqual({
+      authority_json: null,
+      authority_input_fingerprint: null,
+      recovery_required: 1,
+      tool_bindings_json: null,
+    });
+  });
+
+  it("allows persisted exec authority and blocks its final effect after invalidation", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("persisted-authority-final-effect");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    if (job.payload.kind !== "agentTurn") {
+      throw new Error("authority job payload test invariant");
+    }
+    job.payload.toolsAllow = ["gateway_exec"];
+    job.payload.toolsAllowIsDefault = false;
+    await saveCronStore(storePath, authorityStore);
+
+    const workspaceDir = path.dirname(storePath);
+    const evaluate = createCronScriptRuntime({
+      config: {
+        agents: { defaults: { workspace: workspaceDir } },
+        tools: {
+          exec: {
+            host: "node",
+            node: "configured-node-must-not-run",
+            security: "full",
+            ask: "off",
+          },
+        },
+      },
+    }).evaluateTrigger;
+    const allowedMarker = path.join(workspaceDir, "persisted-authority-allowed");
+    const allowedCommand = `printf allowed > ${JSON.stringify(allowedMarker)}`;
+    const loaded = expectDefined(
+      (await loadCronStore(storePath)).jobs[0],
+      "persisted authority reload test invariant",
+    );
+
+    await expect(
+      evaluate({
+        jobId: loaded.id,
+        script: `await exec({ command: ${JSON.stringify(allowedCommand)} }); return { fire: false };`,
+        state: null,
+        toolsAllow: loaded.payload.toolsAllow,
+        runtimeAuthority: loaded.runtimeAuthority,
+        scheduledToolPolicy: { version: 1, mode: "trusted" },
+      }),
+    ).resolves.toEqual({ kind: "evaluated", fire: false });
+    await expect(fs.readFile(allowedMarker, "utf8")).resolves.toBe("allowed");
+
+    const database = openOpenClawStateDatabase().db;
+    database
+      .prepare("UPDATE cron_job_runtime_authorities SET authority_json = ? WHERE job_id = ?")
+      .run(
+        JSON.stringify({
+          version: 1,
+          runtimeId: "codex",
+          namespace: "scheduled-tools",
+          payload: { version: 2 },
+        }),
+        job.id,
+      );
+    const invalidated = expectDefined(
+      (await loadCronStore(storePath)).jobs[0],
+      "invalidated authority reload test invariant",
+    );
+    expect(invalidated.runtimeAuthority).toBeUndefined();
+    expect(invalidated.runtimeAuthorityRecoveryRequired).toBe(true);
+
+    const forbiddenMarker = path.join(workspaceDir, "persisted-authority-forbidden");
+    const forbiddenCommand = `printf forbidden > ${JSON.stringify(forbiddenMarker)}`;
+    const result = await evaluate({
+      jobId: invalidated.id,
+      script: `await exec({ command: ${JSON.stringify(forbiddenCommand)} }); return { fire: false };`,
+      state: null,
+      toolsAllow: invalidated.payload.toolsAllow,
+      runtimeAuthority: invalidated.runtimeAuthority,
+      scheduledToolPolicy: { version: 1, mode: "trusted" },
+    });
+
+    expect(result).toMatchObject({ kind: "error", code: "internal_error" });
+    expect(result.kind === "error" ? result.error : "").toContain("exec is not defined");
+    await expect(fs.access(forbiddenMarker)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("retires authority when an older writer changes its tool cap", async () => {
