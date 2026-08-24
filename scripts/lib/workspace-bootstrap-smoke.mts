@@ -164,6 +164,24 @@ function probeExtractedAcpxRuntime(params: {
   stateDir: string;
   env: NodeJS.ProcessEnv;
 }): void {
+  const requireFromArtifact = createRequire(join(params.packageRoot, "package.json"));
+  const codexLauncher = requireFromArtifact.resolve("@openai/codex/bin/codex.js");
+  if (!codexLauncher.startsWith(join(params.packageRoot, "node_modules"))) {
+    throw new Error("extracted ACPX runtime resolved Codex outside its artifact");
+  }
+  // The upstream launcher selects the native Codex binary for this consumer target.
+  // Run it from the extracted package before ACPX starts its app-server connection.
+  const codexVersion = execFileSync(process.execPath, [codexLauncher, "--version"], {
+    cwd: params.packageRoot,
+    encoding: "utf8",
+    env: params.env,
+    maxBuffer: DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES,
+    timeout: DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS,
+  });
+  if (!codexVersion.trim()) {
+    throw new Error("extracted Codex launcher did not report a version");
+  }
+
   const probe = `
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";

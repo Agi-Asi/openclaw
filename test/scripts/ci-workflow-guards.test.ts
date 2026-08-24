@@ -7585,6 +7585,9 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(artifactBuilder).toContain('"@agentclientprotocol/claude-agent-acp"');
     expect(artifactBuilder).toContain("assertExtractedPluginRuntimeDependencies");
     expect(artifactBuilder).toContain("probeExtractedAcpxRuntime");
+    expect(artifactBuilder).toContain('"@openai/codex/bin/codex.js"');
+    expect(artifactBuilder).toContain("extracted ACPX runtime resolved Codex outside its artifact");
+    expect(artifactBuilder).toContain('"--version"');
     expect(artifactBuilder).toContain("createAcpRuntime");
     expect(artifactBuilder).toContain("runtime.probeAvailability()");
     expect(artifactBuilder).toContain("runtime.isHealthy()");
