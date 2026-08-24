@@ -2121,7 +2121,7 @@
     "jsdom": "29.1.1",
     "lit": "3.3.3",
     "lit-analyzer": "2.0.3",
-    "markdown-it": "14.3.0",
+    "markdown-it": "15.0.0",
     "marked": "18.0.7",
     "oxfmt": "0.60.0",
     "oxlint": "1.75.0",
