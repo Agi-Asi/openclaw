@@ -267,6 +267,18 @@ struct OnboardingViewSmokeTests {
         #expect(states.service == .failed)
     }
 
+    @Test func `running gateway resolving target selection completes both setup steps`() {
+        let states = OnboardingView.cliInstallStepStates(
+            executableReady: false,
+            gatewayReady: true,
+            statusKnown: true,
+            installing: false,
+            phase: .idle)
+
+        #expect(states.install == .done)
+        #expect(states.service == .done)
+    }
+
     @Test func `failed CLI install does not report a service failure`() {
         let states = OnboardingView.cliInstallStepStates(
             executableReady: false,

@@ -901,7 +901,7 @@ extension OnboardingView {
         installing: Bool,
         phase: CLIInstallPhase) -> (install: InstallStepState, service: InstallStepState)
     {
-        let install: InstallStepState = if executableReady {
+        let install: InstallStepState = if executableReady || gatewayReady {
             .done
         } else if installing {
             if phase == .choosingTarget {
