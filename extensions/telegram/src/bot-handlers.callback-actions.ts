@@ -107,7 +107,7 @@ export function createTelegramCallbackMessageActions(params: {
     extra?: { parse_mode?: "HTML" | "Markdown" | "MarkdownV2" },
   ) => {
     const keyboard = buildInlineKeyboard(buttons);
-    const editParams = keyboard ? { reply_markup: keyboard, ...extra } : extra;
+    const editParams = { reply_markup: keyboard ?? { inline_keyboard: [] }, ...extra };
     try {
       await editCallbackMessage(text, editParams);
     } catch (editErr) {

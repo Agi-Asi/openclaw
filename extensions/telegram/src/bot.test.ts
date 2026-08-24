@@ -2858,6 +2858,7 @@ describe("createTelegramBot", () => {
       `${CHECK_MARK_EMOJI} Model changed to <b>openai/gpt-5.4</b>\n\nSession-only model selection. Runtime unchanged. Use /model openai/gpt-5.4 --runtime &lt;runtime&gt; -s to switch harnesses. The agent default in openclaw.json is unchanged. This chat keeps the model selection across /new and /reset; use /model default -s to clear the session model selection.`,
     );
     expect(requireRecord(editCall[3], "edit params").parse_mode).toBe("HTML");
+    expect(requireRecord(editCall[3], "edit params").reply_markup).toEqual({ inline_keyboard: [] });
 
     const entry = readOnlySessionEntry(storePath);
     expect(entry?.providerOverride).toBe("openai");

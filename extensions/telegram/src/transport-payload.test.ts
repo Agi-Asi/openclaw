@@ -367,6 +367,10 @@ describe("Telegram topic transport payloads", () => {
 
     try {
       await actions.editCallbackMessageWithButtons("Replacement", []);
+      expect(editMessage).toHaveBeenCalledWith(DIRECT_CHAT_ID, 41, "Replacement", {
+        business_connection_id: "business-media-1",
+        reply_markup: { inline_keyboard: [] },
+      });
     } finally {
       editMessage.mockRestore();
     }
