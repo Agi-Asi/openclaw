@@ -1967,6 +1967,14 @@ button.chat-reply-preview--message:disabled {
   flex-shrink: 0;
   color: var(--muted);
 }
+/* Keep size containment outside the flex surface: retained mobile panes can be
+   measured at zero width, and containment there collapses the editor subtree. */
+.agent-chat__composer-shell,
+.chat-session-rail__composer {
+  container-name: chat-composer;
+  container-type: inline-size;
+}
+
 .agent-chat__composer-shell {
   --chat-composer-shell-gap: 6px;
 
@@ -3106,8 +3114,6 @@ button.chat-pr__diff {
      writing surface in the foreground so their backgrounds cannot paint over
      the footer controls while their exposed content remains below it. */
   z-index: 1;
-  container-name: chat-composer;
-  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-width: 0;
