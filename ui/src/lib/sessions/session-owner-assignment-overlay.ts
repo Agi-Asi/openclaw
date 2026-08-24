@@ -3,7 +3,7 @@ import type { SessionsListResult } from "../../api/types.ts";
 
 type ConfirmedOwnerClaim = {
   owner: SessionOwner;
-  requestRevision: number;
+  scopeRevisions: Map<string, number>;
   sessionId?: string;
 };
 
@@ -17,6 +17,14 @@ function ownersMatch(left: SessionOwner | undefined, right: SessionOwner): boole
   );
 }
 
+function ownerSupersedes(current: SessionOwner | undefined, confirmed: SessionOwner): boolean {
+  return (
+    current?.assignedAt !== undefined &&
+    confirmed.assignedAt !== undefined &&
+    current.assignedAt > confirmed.assignedAt
+  );
+}
+
 export function createSessionOwnerAssignmentOverlay() {
   const claims = new Map<string, ConfirmedOwnerClaim>();
 
@@ -24,11 +32,15 @@ export function createSessionOwnerAssignmentOverlay() {
     confirm(
       key: string,
       owner: SessionOwner,
-      requestRevision: number,
+      scopeRevisions: ReadonlyMap<string, number>,
       sessionId?: string,
     ): ConfirmedOwnerClaim {
-      const claim = { owner, requestRevision, ...(sessionId ? { sessionId } : {}) };
-      claims.set(key, claim);
+      const claim = {
+        owner,
+        scopeRevisions: new Map(scopeRevisions),
+        ...(sessionId ? { sessionId } : {}),
+      };
+      claims.set(key.trim(), claim);
       return claim;
     },
     retire(key: string): void {
@@ -41,7 +53,7 @@ export function createSessionOwnerAssignmentOverlay() {
       if (!result || claims.size === 0) {
         return result;
       }
-      let changed = result.owners !== undefined;
+      let changed = false;
       const sessions = result.sessions.map((row) => {
         const claim = claims.get(row.key);
         if (!claim) {
@@ -59,16 +71,40 @@ export function createSessionOwnerAssignmentOverlay() {
       });
       return changed ? { ...result, sessions, owners: undefined } : result;
     },
-    observeCanonical(result: SessionsListResult | null, requestRevision: number): void {
-      for (const row of result?.sessions ?? []) {
-        const claim = claims.get(row.key);
-        if (
-          claim &&
-          ((claim.sessionId && row.sessionId && claim.sessionId !== row.sessionId) ||
-            ownersMatch(row.owner, claim.owner) ||
-            requestRevision > claim.requestRevision)
-        ) {
-          claims.delete(row.key);
+    observeCanonical(
+      result: SessionsListResult | null,
+      requestRevision: number,
+      scope: string | undefined,
+    ): void {
+      if (!scope) {
+        return;
+      }
+      for (const [key, claim] of claims) {
+        const scopeRevision = claim.scopeRevisions.get(scope);
+        if (scopeRevision === undefined) {
+          continue;
+        }
+        const row = result?.sessions.find((candidate) => candidate.key === key);
+        if (claim.sessionId && row?.sessionId && claim.sessionId !== row.sessionId) {
+          claims.delete(key);
+          continue;
+        }
+        if (ownerSupersedes(row?.owner, claim.owner)) {
+          claims.delete(key);
+          continue;
+        }
+        if (ownersMatch(row?.owner, claim.owner) || (requestRevision > scopeRevision && !row)) {
+          claim.scopeRevisions.delete(scope);
+          if (claim.scopeRevisions.size === 0) {
+            claims.delete(key);
+          }
+        }
+      }
+    },
+    retireScope(scope: string): void {
+      for (const [key, claim] of claims) {
+        if (claim.scopeRevisions.delete(scope) && claim.scopeRevisions.size === 0) {
+          claims.delete(key);
         }
       }
     },

@@ -47,7 +47,7 @@ type SessionMutationsHost = {
   readState: () => SessionState;
   publish: (state: SessionState, errorSource?: "session-observer" | "operation") => void;
   refreshReplacement: (agentId?: string | null) => Promise<void>;
-  listRequestRevision: () => number;
+  ownerAssignmentScopeRevisions: (key: string) => ReadonlyMap<string, number>;
   publishedRow: (key: string) => GatewaySessionRow | undefined;
   redecorateLists: () => void;
   notifyCreated: (key: string) => void;
@@ -612,13 +612,11 @@ export function createSessionMutations(host: SessionMutationsHost) {
       if (!host.connection.isCurrent(scope)) {
         return null;
       }
-      const normalizedKey = result.key.trim();
-      const publishedRow = host.publishedRow(normalizedKey);
       ownerAssignments.confirm(
-        normalizedKey,
+        result.key,
         result.owner,
-        host.listRequestRevision(),
-        publishedRow?.sessionId,
+        host.ownerAssignmentScopeRevisions(result.key),
+        host.publishedRow(result.key)?.sessionId,
       );
       patchRowLocal(result.key, { owner: result.owner });
       host.redecorateLists();
@@ -696,8 +694,12 @@ export function createSessionMutations(host: SessionMutationsHost) {
       return changed ? { ...result, sessions } : result;
     },
     applyConfirmedOwners: (result: SessionsListResult | null) => ownerAssignments.decorate(result),
-    observeCanonicalOwners: (result: SessionsListResult | null, requestRevision: number) =>
-      ownerAssignments.observeCanonical(result, requestRevision),
+    observeCanonicalOwners: (
+      result: SessionsListResult | null,
+      requestRevision: number,
+      scope?: string,
+    ) => ownerAssignments.observeCanonical(result, requestRevision, scope),
+    retireCanonicalOwnerScope: (scope: string) => ownerAssignments.retireScope(scope),
     observeArchiveState(key: string, archived: boolean | null, row?: GatewaySessionRow): void {
       const normalizedKey = key.trim();
       if (!normalizedKey || archived === null) {

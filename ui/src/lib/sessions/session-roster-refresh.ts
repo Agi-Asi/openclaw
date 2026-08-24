@@ -32,9 +32,16 @@ type SessionRosterRefreshHost = {
   publish: (state: SessionState, errorSource?: "session-observer" | "operation") => void;
   observerError: () => string | null;
   decorate: (result: SessionsListResult | null) => SessionsListResult | null;
-  observeCanonicalRows: (result: SessionsListResult | null, requestRevision: number) => void;
+  observeCanonicalRows: (
+    result: SessionsListResult | null,
+    requestRevision: number,
+    scope?: string,
+  ) => void;
+  retireCanonicalScope: (scope: string) => void;
   onCanonicalList: (result: SessionsListResult | null) => void;
 };
+
+const PRIMARY_LIST_SCOPE = "primary";
 
 type ManagedSessionListRefresh = {
   append: boolean;
@@ -66,6 +73,10 @@ function normalizeManagedSessionListQuery(options: SessionListOptions): ManagedS
 
 function managedSessionListAgentId(entry: ManagedSessionList): string | undefined {
   return typeof entry.query.agentId === "string" ? entry.query.agentId : undefined;
+}
+
+function managedSessionListScope(entry: ManagedSessionList): string {
+  return `managed:${entry.key}`;
 }
 
 function isPrimarySessionListQuery(options: SessionListScope): boolean {
@@ -167,7 +178,11 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
           if (!isCurrent()) {
             return;
           }
-          host.observeCanonicalRows(result, currentRequestRevision);
+          host.observeCanonicalRows(
+            result,
+            currentRequestRevision,
+            next.append ? undefined : managedSessionListScope(entry),
+          );
           const previous = entry.snapshot.result;
           const nextResult =
             result && next.append && requestParams.offset && previous
@@ -264,7 +279,11 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
       if (!host.connection.isCurrent(scope)) {
         return;
       }
-      host.observeCanonicalRows(result ?? null, currentRequestRevision);
+      host.observeCanonicalRows(
+        result ?? null,
+        currentRequestRevision,
+        append ? undefined : PRIMARY_LIST_SCOPE,
+      );
       const currentState = host.readState();
       let nextResult =
         result && append && requestOptions.offset && currentState.result
@@ -484,6 +503,7 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
         entry.listeners.delete(listener);
         if (entry.listeners.size === 0 && managedLists.get(entry.key) === entry) {
           entry.coordinator.dispose();
+          host.retireCanonicalScope(managedSessionListScope(entry));
           managedLists.delete(entry.key);
         }
       };
@@ -512,8 +532,14 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
     },
     refresh,
     refreshReplacement,
-    get requestRevision() {
-      return requestRevision;
+    ownerAssignmentScopeRevisions(key: string): ReadonlyMap<string, number> {
+      const scopes = [PRIMARY_LIST_SCOPE];
+      for (const entry of managedLists.values()) {
+        if (entry.snapshot.result?.sessions.some((row) => row.key === key)) {
+          scopes.push(managedSessionListScope(entry));
+        }
+      }
+      return new Map(scopes.map((scope) => [scope, requestRevision]));
     },
     /** The row as currently published. The archived/all sidebars render their
      * own snapshot, so a displayed row can be absent from the primary state.
@@ -590,6 +616,7 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
         entry.pending = entry.queued = null;
         if (entry.listeners.size === 0) {
           entry.coordinator.dispose();
+          host.retireCanonicalScope(managedSessionListScope(entry));
           managedLists.delete(entry.key);
           continue;
         }

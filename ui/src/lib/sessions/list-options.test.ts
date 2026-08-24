@@ -96,6 +96,43 @@ describe("session list replacement options", () => {
     sessions.dispose();
   });
 
+  it("accepts a newer owner assignment before the confirmed owner propagates", async () => {
+    const key = "agent:main:superseded-owner";
+    const ada = { type: "human" as const, id: "profile-ada", label: "Ada" };
+    const bob = { type: "human" as const, id: "profile-bob", label: "Bob" };
+    const carol = { type: "human" as const, id: "profile-carol", label: "Carol" };
+    const assignedOwner = { actor: ada, assignedBy: ada, assignedAt: 20 };
+    const supersedingOwner = { actor: carol, assignedBy: carol, assignedAt: 30 };
+    let listCalls = 0;
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.assignOwner") {
+        return { ok: true, key, owner: assignedOwner };
+      }
+      if (method !== "sessions.list") {
+        throw new Error(`Unexpected request: ${method}`);
+      }
+      listCalls += 1;
+      const owner =
+        listCalls === 1 ? { actor: bob, assignedBy: ada, assignedAt: 10 } : supersedingOwner;
+      return {
+        ...sessionsResult([{ key, kind: "direct", updatedAt: listCalls, owner }], listCalls),
+        owners: listCalls === 1 ? [ada, bob] : [carol],
+      };
+    });
+    const sessions = createSessions({ request } as unknown as GatewayBrowserClient, key);
+
+    await sessions.refresh({ agentId: "main", force: true });
+    await expect(sessions.assignOwner(key, ada, { agentId: "main" })).resolves.toEqual(
+      assignedOwner,
+    );
+
+    await vi.waitFor(() =>
+      expect(sessions.state.result?.sessions[0]?.owner).toEqual(supersedingOwner),
+    );
+    expect(sessions.state.result?.owners).toEqual([carol]);
+    sessions.dispose();
+  });
+
   it("retains the confirmed owner through an older in-flight list response", async () => {
     const key = "agent:main:owned";
     const ada = { type: "human" as const, id: "profile-ada", label: "Ada" };
@@ -153,7 +190,6 @@ describe("session list replacement options", () => {
 
   it("retains the confirmed owner until the matching managed list catches up", async () => {
     const key = "agent:main:managed-owner";
-    const otherKey = "agent:main:other";
     const ada = { type: "human" as const, id: "profile-ada", label: "Ada" };
     const bob = { type: "human" as const, id: "profile-bob", label: "Bob" };
     const oldOwner = { actor: bob, assignedBy: ada, assignedAt: 10 };
@@ -177,7 +213,10 @@ describe("session list replacement options", () => {
         params.search === managedScope.search;
       if (!managed) {
         primaryCalls += 1;
-        return sessionsResult([{ key: otherKey, kind: "direct", updatedAt: 30 }], 30);
+        return {
+          ...sessionsResult([{ key, kind: "direct", updatedAt: 30, owner: assignedOwner }], 30),
+          owners: [ada],
+        };
       }
       managedCalls += 1;
       if (managedCalls === 2) {
