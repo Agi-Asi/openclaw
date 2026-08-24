@@ -7,9 +7,7 @@ const scheduledToolBindings = new WeakMap<AnyAgentTool, CronScheduledToolBinding
 const EXEC_POLICY_PARAMETER_NAMES = new Set(["host", "security", "ask"]);
 const NODE_EXEC_PARAMETER_NAMES = new Set(["command", "workdir", "env", "timeoutSeconds", "node"]);
 
-type PinnedExecToolTarget =
-  | { host: "gateway"; ask?: "always" }
-  | { host: "node"; node?: string };
+type PinnedExecToolTarget = { host: "gateway"; ask?: "always" } | { host: "node"; node?: string };
 
 export function bindCronScheduledTool(
   tool: AnyAgentTool,
@@ -23,6 +21,13 @@ export function getCronScheduledToolBinding(
   tool: AnyAgentTool,
 ): CronScheduledToolBinding | undefined {
   return scheduledToolBindings.get(tool);
+}
+
+export function copyCronScheduledToolBinding(source: AnyAgentTool, target: AnyAgentTool): void {
+  const binding = scheduledToolBindings.get(source);
+  if (binding) {
+    scheduledToolBindings.set(target, binding);
+  }
 }
 
 /** Restricts an exec tool to one host target even when callers submit broader arguments. */

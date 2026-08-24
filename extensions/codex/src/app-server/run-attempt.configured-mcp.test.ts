@@ -1,5 +1,6 @@
 import path from "node:path";
 import { openFileBackedSessionManagerForTest } from "openclaw/plugin-sdk/agent-runtime-test-contracts";
+import { normalizeOpenAIToolSchemas } from "openclaw/plugin-sdk/provider-tools";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mcpMocks = vi.hoisted(() => ({
@@ -233,7 +234,22 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     const params = createParams(sessionFile, path.join(tempDir, "workspace-cron-shell-aliases"));
     setCodexTestModelSupportsTools(params, true);
     params.disableTools = false;
-    params.runtimePlan = createCodexRuntimePlanFixture();
+    const runtimePlan = createCodexRuntimePlanFixture();
+    let strictNormalizerClonedAliases = false;
+    runtimePlan.tools.normalize = (tools) => {
+      const normalized = normalizeOpenAIToolSchemas({
+        tools,
+        provider: "openai",
+        modelId: "gpt-5.4-codex",
+        modelApi: "openai-chatgpt-responses",
+      });
+      strictNormalizerClonedAliases = ["gateway_exec", "gateway_process"].every((name) => {
+        const source = tools.find((tool) => tool.name === name);
+        return source !== undefined && normalized.find((tool) => tool.name === name) !== source;
+      });
+      return normalized as typeof tools;
+    };
+    params.runtimePlan = runtimePlan;
     admitLocalOperatorCronAuthority(params);
 
     const harness = createStartedThreadHarness();
@@ -242,6 +258,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     await expect(run).resolves.toBeDefined();
 
+    expect(strictNormalizerClonedAliases).toBe(true);
     expect(mcpMocks.captureCalls).toHaveLength(1);
     expect(mcpMocks.captureCalls[0]?.storedNames).toEqual(mcpMocks.captureCalls[0]?.sourceNames);
     expect(mcpMocks.captureCalls[0]?.storedNames).toContain("gateway_exec");
