@@ -264,6 +264,7 @@ export {
 export { readActiveTranscriptEntryAnchor } from "./session-accessor.sqlite-transcript-anchor.js";
 export {
   isSessionTranscriptProjectionUnavailableError,
+  readSessionTranscriptBoundedActiveContextCore,
   readRecentSessionTranscriptActiveEvents,
   readSessionTranscriptActiveStats,
   readSessionTranscriptBoundedMessageTailPage,
@@ -283,6 +284,7 @@ export {
   type SessionTranscriptTitleProbe,
 } from "./session-accessor.sqlite-title-probes.js";
 export type {
+  SessionTranscriptBoundedActiveContext,
   SessionTranscriptBoundedMessageTailPage,
   SessionTranscriptMessageAnchorPage,
   SessionTranscriptMessageEvent,

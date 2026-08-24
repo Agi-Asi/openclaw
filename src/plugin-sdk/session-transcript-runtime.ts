@@ -9,6 +9,7 @@ import {
   loadTranscriptEvents,
   publishTranscriptUpdate,
   persistSessionTranscriptTurn,
+  readSessionTranscriptBoundedActiveContextCore as readBoundedActiveContext,
   readTranscriptRawDelta,
   readSessionTranscriptVisibleMessageDeltaCore as readVisibleMessageDelta,
   readLatestTranscriptAssistantText,
@@ -19,6 +20,7 @@ import {
   type TranscriptUpdatePayload,
   type SessionTranscriptRawDeltaLimits,
   type SessionTranscriptRawDeltaResult,
+  type SessionTranscriptBoundedActiveContext,
   type SessionTranscriptVisibleMessageDeltaLimits,
 } from "../config/sessions/session-accessor.js";
 import { resolveMirroredTranscriptText } from "../config/sessions/transcript-mirror.js";
@@ -213,6 +215,14 @@ export async function readSessionTranscriptEvents(
   params: SessionTranscriptTargetParams,
 ): Promise<SessionTranscriptEvent[]> {
   return await loadTranscriptEvents(params);
+}
+
+/** Reads the selected transcript branch under explicit event and serialized-byte limits. */
+export function readSessionTranscriptBoundedActiveContext(
+  params: SessionTranscriptTargetParams & { maxBytes: number; maxEvents: number },
+): SessionTranscriptBoundedActiveContext {
+  const { maxBytes, maxEvents, ...target } = params;
+  return readBoundedActiveContext(target, { maxBytes, maxEvents });
 }
 
 /** Reads one bounded raw page; the opaque cursor survives append and resets after replacement. */

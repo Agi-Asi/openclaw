@@ -13,6 +13,7 @@ import {
   readRecentSessionTranscriptMessageEvents,
   readSessionTranscriptActivePathEntryRelation,
   readSessionTranscriptActiveStats,
+  readSessionTranscriptBoundedActiveContextCore,
   readSessionTranscriptBoundedMessageTailPage,
   readSessionTranscriptMessageAnchorPage,
   readSessionTranscriptMessageEventById,
@@ -380,6 +381,68 @@ describe("SQLite active transcript event projection", () => {
     expect(page.scannedMessages).toBe(2);
     expect(page.serializedBytes).toBeLessThanOrEqual(512);
     expect(page.events.map(({ event }) => (event as { id?: unknown }).id)).toEqual(["small"]);
+  });
+
+  it("reads only the newest bounded active context while retaining its transcript header", async () => {
+    await persistSessionTranscriptTurn(scope, {
+      messages: [
+        { eventId: "old", parentId: null, message: { role: "user", content: "old" } },
+        { eventId: "middle", parentId: "old", message: { role: "assistant", content: "middle" } },
+        { eventId: "new", parentId: "middle", message: { role: "user", content: "new" } },
+      ],
+      touchSessionEntry: false,
+    });
+
+    const context = readSessionTranscriptBoundedActiveContextCore(scope, {
+      maxBytes: 1024,
+      maxEvents: 2,
+    });
+
+    expect(context.events.map((event) => (event as { id?: string }).id)).toEqual([
+      scope.sessionId,
+      "middle",
+      "new",
+    ]);
+    expect(context.activeLeafEntryId).toBe("new");
+    expect(context.totalEvents).toBe(3);
+    expect(context.truncated).toBe(true);
+    expect(context.serializedBytes).toBeLessThanOrEqual(1024);
+  });
+
+  it("retains the latest compaction summary when an active context tail is truncated", async () => {
+    await persistSessionTranscriptTurn(scope, {
+      messages: [{ eventId: "old", parentId: null, message: { role: "user", content: "old" } }],
+      touchSessionEntry: false,
+    });
+    await appendTranscriptEvent(scope, {
+      type: "compaction",
+      id: "summary",
+      parentId: "old",
+      timestamp: "2026-08-24T00:00:00.000Z",
+      summary: "earlier work",
+      firstKeptEntryId: "old",
+      tokensBefore: 100,
+    });
+    await persistSessionTranscriptTurn(scope, {
+      messages: [
+        { eventId: "middle", parentId: "summary", message: { role: "user", content: "middle" } },
+        { eventId: "new", parentId: "middle", message: { role: "assistant", content: "new" } },
+      ],
+      touchSessionEntry: false,
+    });
+
+    const context = readSessionTranscriptBoundedActiveContextCore(scope, {
+      maxBytes: 2048,
+      maxEvents: 1,
+    });
+
+    expect(context.events.map((event) => (event as { id?: string }).id)).toEqual([
+      scope.sessionId,
+      "summary",
+      "new",
+    ]);
+    expect(context.events.at(-1)).toMatchObject({ parentId: "summary" });
+    expect(context.boundaryCount).toBe(1);
   });
 
   it("fails fast and schedules maintenance when out-of-band state is dirty", async () => {
@@ -980,6 +1043,10 @@ describe("SQLite active transcript event projection", () => {
       maxLines: 3,
       maxMessages: 10,
     });
+    const boundedContext = readSessionTranscriptBoundedActiveContextCore(scope, {
+      maxBytes: 1024 * 1024,
+      maxEvents: 25,
+    });
     const byId = readSessionTranscriptMessageEventById(scope, "m100000");
     const anchor = readSessionTranscriptMessageAnchorPage(scope, {
       maxMessages: 5,
@@ -991,6 +1058,9 @@ describe("SQLite active transcript event projection", () => {
       Array.from({ length: 25 }, (_, index) => 99_976 + index),
     );
     expect(recent.totalMessages).toBe(100_000);
+    expect(boundedContext.totalEvents).toBe(100_000);
+    expect(boundedContext.events).toHaveLength(26);
+    expect(boundedContext.events.at(-1)).toMatchObject({ id: "m100000" });
     expect(recent.events).toHaveLength(10);
     expect(recent.events.at(-1)?.seq).toBe(100_000);
     expect(lineCappedRecent.events).toHaveLength(3);

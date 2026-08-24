@@ -9,6 +9,7 @@ import {
 import {
   appendSessionTranscriptMessageByIdentity,
   readLatestAssistantTextByIdentity,
+  readSessionTranscriptBoundedActiveContext,
   readSessionTranscriptEvents,
   readSessionTranscriptRawDelta,
   readVisibleSessionTranscriptMessageEntries,
@@ -70,12 +71,17 @@ describe("session transcript runtime read fence", () => {
       const events = await readSessionTranscriptEvents(scope);
       const visible = await readVisibleSessionTranscriptMessageEntries(scope);
       const latest = await readLatestAssistantTextByIdentity(scope);
+      const bounded = readSessionTranscriptBoundedActiveContext({
+        ...scope,
+        maxBytes: 100_000,
+        maxEvents: 100,
+      });
       const page = await readSessionTranscriptRawDelta({
         ...scope,
         maxBytes: 100_000,
         maxEvents: 100,
       });
-      return { events, latest, page, visible };
+      return { bounded, events, latest, page, visible };
     });
 
     expect(
@@ -94,6 +100,17 @@ describe("session transcript runtime read fence", () => {
       priorAssistant.messageId,
     ]);
     expect(fenced.latest).toMatchObject({ id: priorAssistant.messageId, text: "prior answer" });
+    expect(
+      fenced.bounded.events.flatMap((event) =>
+        event &&
+        typeof event === "object" &&
+        "type" in event &&
+        event.type === "message" &&
+        "id" in event
+          ? [event.id]
+          : [],
+      ),
+    ).toEqual([priorUser.messageId, priorAssistant.messageId]);
     expect(fenced.page).toMatchObject({ kind: "page", hasMore: false });
     if (fenced.page.kind !== "page") {
       throw new Error("expected fenced raw transcript page");
