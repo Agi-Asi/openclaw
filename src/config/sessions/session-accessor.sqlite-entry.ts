@@ -32,7 +32,7 @@ import {
   type SessionEntryCacheSnapshot,
 } from "./session-accessor.sqlite-entry-cache.js";
 import {
-  assertLifecycleTargetSnapshotUnchanged,
+  assertSessionTargetSnapshotUnchanged,
   assertSessionEntrySelectionUnchanged,
   collectSessionEntryLookupKeys,
   createSessionIdentitySnapshot,
@@ -532,7 +532,7 @@ export async function patchSessionEntryTarget(
   const resolved = resolveSqliteStoreScope(scope.storePath, { agentId: scope.agentId });
   return await patchSqliteSessionEntrySnapshot<ReturnType<typeof readLifecycleTargetSnapshot>>({
     assertSnapshotUnchanged: (prepared, fresh) =>
-      assertLifecycleTargetSnapshotUnchanged(prepared, fresh, "session-entry-target.patch"),
+      assertSessionTargetSnapshotUnchanged(prepared, fresh, "session-entry-target.patch"),
     existingEntry: (snapshot) => snapshot.primary?.entry,
     legacyKeys: () => scope.target.storeKeys,
     options,

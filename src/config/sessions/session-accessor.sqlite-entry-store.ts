@@ -18,9 +18,9 @@ import {
 } from "./session-accessor.sqlite-entry-cache.js";
 import {
   sqliteLifecycleSessionEntriesEqual as lifecycleEntriesEqual,
-  sqliteLifecycleTargetSnapshotsEqual,
   sqliteSessionEntriesEqual,
   sqliteSessionSnapshotRowsEqual,
+  sqliteSessionTargetSnapshotsEqual,
 } from "./session-accessor.sqlite-entry-equality.js";
 import {
   clearSessionCollaborationForKey,
@@ -340,12 +340,12 @@ export function readLifecycleTargetSnapshot(
   };
 }
 
-export function assertLifecycleTargetSnapshotUnchanged(
+export function assertSessionTargetSnapshotUnchanged(
   expected: SqliteLifecycleTargetSnapshot,
   current: SqliteLifecycleTargetSnapshot,
   operationLabel: string,
 ): void {
-  if (!sqliteLifecycleTargetSnapshotsEqual(expected, current)) {
+  if (!sqliteSessionTargetSnapshotsEqual(expected, current)) {
     throw new SqliteSessionMutationConflictError(operationLabel);
   }
 }

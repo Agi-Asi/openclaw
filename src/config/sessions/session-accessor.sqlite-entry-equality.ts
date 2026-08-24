@@ -61,13 +61,6 @@ export function sqliteSessionSnapshotRowsEqual(
   );
 }
 
-export function sqliteLifecycleTargetSnapshotsEqual(
-  expected: SqliteLifecycleTargetSnapshot,
-  current: SqliteLifecycleTargetSnapshot,
-): boolean {
-  return sqliteTargetSnapshotsEqual(expected, current, sqliteLifecycleSessionEntriesEqual);
-}
-
 export function sqliteSessionTargetSnapshotsEqual(
   expected: SqliteLifecycleTargetSnapshot,
   current: SqliteLifecycleTargetSnapshot,

@@ -10,6 +10,7 @@ import {
   applySessionEntryLifecycleMutation,
   assignSessionOwner,
   loadSessionEntry,
+  patchSessionEntryTarget,
   resetSessionEntryLifecycle,
   updateSessionEntry,
   upsertSessionEntryCore,
@@ -374,6 +375,48 @@ describe("SQLite session owner assignment", () => {
         },
         sessionId: "session-owned-reply-patch",
       });
+    });
+  });
+
+  it("rejects a target replacement prepared before assigning an owner", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const sessionKey = "agent:main:owned-target-patch";
+      const scope = { agentId: "main", env: state.env, sessionKey };
+      const storePath = state.statePath("agents", "main", "sessions", "sessions.json");
+      await upsertSessionEntryCore(scope, {
+        sessionId: "session-owned-target-patch",
+        updatedAt: 1,
+      });
+
+      const patch = patchSessionEntryTarget(
+        {
+          agentId: "main",
+          storePath,
+          target: { canonicalKey: sessionKey, storeKeys: [sessionKey] },
+        },
+        (entry) => {
+          assignSessionOwner(scope, {
+            owner: { type: "human", id: "profile-owner" },
+            assignedBy: { type: "human", id: "profile-assigner" },
+            assignedAt: 2,
+          });
+          return { ...entry, label: "stale replacement", updatedAt: 3 };
+        },
+        { replaceEntry: true },
+      );
+
+      await expect(patch).rejects.toThrow(
+        "SQLite session state changed while preparing session-entry-target.patch",
+      );
+      expect(loadSessionEntry(scope)).toMatchObject({
+        owner: {
+          actor: { type: "human", id: "profile-owner" },
+          assignedBy: { type: "human", id: "profile-assigner" },
+          assignedAt: 2,
+        },
+        sessionId: "session-owned-target-patch",
+      });
+      expect(loadSessionEntry(scope)).not.toHaveProperty("label");
     });
   });
 });
