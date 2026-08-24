@@ -2869,7 +2869,7 @@ test("sessions.create persists declared spawn lineage for spawn-owned creations"
   expect(created.payload?.entry?.spawnDepth).toBe(2);
 });
 
-test("sessions.create inherits a parent category only for trusted visible spawns", async () => {
+test("sessions.create persists trusted visible-spawn policy and category inheritance", async () => {
   const { storePath } = await createSessionStoreDir();
   const parentSessionKey = "agent:main:main";
   await writeSessionStore({
