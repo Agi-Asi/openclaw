@@ -110,10 +110,13 @@ export type ChatComposerProps = ChatAttachmentControlsProps & {
   gatewayClient?: GatewayBrowserClient | null;
   composerHoldToRecord?: boolean;
   onComposerHoldToRecordChange?: (enabled: boolean) => void;
+  onOpenTalkSettings?: () => void;
+  onOpenDictationSettings?: () => void;
   suggestionComposer?: boolean;
   typingActors?: readonly { id: string; label: string; preview?: string }[];
   onTypingChange?: (typing: boolean, preview?: string) => void;
   composerControls?: TemplateResult | typeof nothing;
+  anchoredNotices?: TemplateResult | typeof nothing;
   permissionPicker?: ChatPermissionPickerProps;
   onDraftChange: (next: string) => void;
   onHistoryKeydown?: (input: ChatInputHistoryKeyInput) => ChatInputHistoryKeyResult;
@@ -157,6 +160,7 @@ export type ChatComposerState = SkillMenuState & {
   slashMenuArgItems: string[];
   slashCommandRefreshPending: boolean;
   composerComposing: boolean;
+  skillCaretOffset: number | null;
   composingDraft: ComposingDraft | null;
   composerInputIntentKey: string | null;
   pendingClearedSubmittedDraft: PendingClearedSubmittedDraft | null;
