@@ -11,6 +11,7 @@ import type { McpServerSummary } from "../../../lib/config/mcp-servers.ts";
 import { formatUiExternalText } from "../../../lib/format-error.ts";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
 import {
+  countSessionToolOverrides,
   nextBooleanToolOverrides,
   nextMcpToolsDenyOverrides,
   nextWebSearchToolOverrides,
@@ -131,6 +132,7 @@ function renderCapabilityToggleRow(options: {
 }
 
 function renderRootView(props: ChatComposerPlusMenuProps) {
+  const overrideCount = countSessionToolOverrides(props.toolOverrides);
   const connectorCount = props.mcpServers.filter((server) =>
     resolveToolOverrideState(
       server.enabled,
@@ -194,6 +196,32 @@ function renderRootView(props: ChatComposerPlusMenuProps) {
         t("chat.composer.menu.managePlugins"),
       )}
     </wa-dropdown-item>
+    ${overrideCount > 0
+      ? html`
+          <wa-dropdown-item
+            class="agent-chat__capability-menu-item agent-chat__capability-menu-overrides"
+            value="clear-overrides"
+            ?disabled=${props.mutationBlockedReason !== null}
+            title=${props.mutationBlockedReason ?? ""}
+          >
+            <span slot="icon" aria-hidden="true">${icons.settings}</span>
+            <span
+              >${t(
+                overrideCount === 1
+                  ? "chat.composer.overrides.countOne"
+                  : "chat.composer.overrides.count",
+                { count: String(overrideCount) },
+              )}</span
+            >
+            <span
+              slot="details"
+              class="agent-chat__capability-menu-clear-overrides"
+              aria-hidden="true"
+              >${icons.x}</span
+            >
+          </wa-dropdown-item>
+        `
+      : nothing}
   `;
 }
 
@@ -438,6 +466,13 @@ function handleMenuSelection(
     );
     return;
   }
+  if (value === "clear-overrides") {
+    event.preventDefault();
+    if (!props.mutationBlockedReason) {
+      props.onPatchToolOverrides(null);
+    }
+    return;
+  }
   if (value.startsWith("skill:")) {
     event.preventDefault();
     const skill = props.skills?.[Number(value.slice("skill:".length))];
@@ -520,6 +555,7 @@ function handleMenuSelection(
 }
 
 export function renderChatComposerPlusMenu(props: ChatComposerPlusMenuProps) {
+  const hasOverrides = countSessionToolOverrides(props.toolOverrides) > 0;
   const view = props.showCapabilities ? props.view : "root";
   if (view.startsWith("tools:")) {
     props.onEnsureToolAccess?.(view.slice("tools:".length));
@@ -553,7 +589,7 @@ export function renderChatComposerPlusMenu(props: ChatComposerPlusMenuProps) {
       }}
       data-view=${view}
     >
-      ${renderChatAttachmentMenuTrigger(props.disabled)} ${content}
+      ${renderChatAttachmentMenuTrigger(props.disabled, hasOverrides)} ${content}
     </wa-dropdown>
     ${props.addServerDialog ?? nothing}
   `;
