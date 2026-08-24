@@ -60,7 +60,7 @@ import {
 } from "./chat-transcript-render-guard.ts";
 import { renderChatTypingIndicator } from "./chat-typing-indicator.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
-import { renderTurnRecapRow, renderTurnTerminalStatusRow } from "./chat-working-indicator.ts";
+import { renderTurnRecapRow } from "./chat-working-indicator.ts";
 
 type ChatTranscriptProjection = {
   isDirectThread: boolean;
@@ -585,13 +585,6 @@ export function projectChatTranscript(
         : [],
     ),
   );
-  if (props.runStatus?.phase === "interrupted") {
-    transcriptRows.push({
-      kind: "content",
-      key: `interrupted:${props.runStatus.occurredAt}`,
-      content: renderTurnTerminalStatusRow("interrupted"),
-    });
-  }
   const realtimeConversation = renderRealtimeTalkConversation(props);
   if (realtimeConversation !== nothing) {
     transcriptRows.push({

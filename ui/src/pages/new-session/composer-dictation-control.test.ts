@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../i18n/index.ts";
 
 const dictationHarness = vi.hoisted(() => ({
   options: null as null | {
@@ -36,6 +37,9 @@ vi.mock("../chat/composer-microphone-picker.ts", () => ({
     loading = false;
     open = false;
     issue = null;
+    realtimeStatus = "ready";
+    dictationStatus = "ready";
+    syncCatalog() {}
     handleOpen() {}
     handleClose() {}
     dispose() {}
@@ -93,7 +97,7 @@ describe("NewSessionDictationControl", () => {
 
     control.render("agent-a");
     dictationHarness.options?.onTap();
-    const hint = "Hold the microphone to dictate, then release to insert what you said.";
+    const hint = t("newSession.dictationHoldToSpeak");
     expect(onError).toHaveBeenCalledWith(hint);
 
     dictationHarness.options?.onCommit("spoken task");

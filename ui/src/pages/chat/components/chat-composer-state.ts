@@ -24,6 +24,7 @@ function createChatComposerState(): ChatComposerState {
     skillCommandRefreshGeneration: 0,
     skillCommandRefreshTargetStart: null,
     composerComposing: false,
+    skillCaretOffset: null,
     composingDraft: null,
     composerInputIntentKey: null,
     pendingClearedSubmittedDraft: null,
