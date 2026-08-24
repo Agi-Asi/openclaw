@@ -276,11 +276,11 @@ function resolveCodexHarnessThinkingLevel(raw: string | undefined): CodexHarness
   return normalized as CodexHarnessThinkingLevel;
 }
 
-function resolveCodexHarnessExpectedRequestEffort(modelId: string): string | null {
+function resolveCodexHarnessExpectedTurnRequestEffort(modelId: string): string | null {
   const configured = process.env.OPENCLAW_LIVE_CODEX_HARNESS_EXPECTED_EFFORT;
   if (configured?.trim()) {
     const expected = resolveCodexHarnessThinkingLevel(configured);
-    return expected === "off" ? null : expected === "ultra" ? "max" : expected;
+    return expected === "off" ? null : expected;
   }
   const supported = CODEX_HARNESS_SUPPORTED_EFFORTS.get(modelId);
   if (!supported) {
@@ -289,14 +289,14 @@ function resolveCodexHarnessExpectedRequestEffort(modelId: string): string | nul
   if (CODEX_HARNESS_THINKING === "off") {
     return null;
   }
-  // Codex preserves Ultra in config but intentionally sends Max to the model.
-  // Compare the request-facing lifecycle event to that wire contract.
+  // OpenClaw projects the locally built turn/start request before dispatch.
+  // Lower requests choose the nearest advertised effort; Ultra remains explicit.
   const candidates =
     CODEX_HARNESS_THINKING === "ultra"
       ? supported
       : supported.filter((effort) => effort !== "ultra");
   const requestedRank = CODEX_HARNESS_REASONING_EFFORTS.indexOf(CODEX_HARNESS_THINKING);
-  const configuredEffort =
+  return (
     candidates.find(
       (effort) =>
         CODEX_HARNESS_REASONING_EFFORTS.indexOf(
@@ -304,8 +304,8 @@ function resolveCodexHarnessExpectedRequestEffort(modelId: string): string | nul
         ) >= requestedRank,
     ) ??
     candidates.at(-1) ??
-    null;
-  return configuredEffort === "ultra" ? "max" : configuredEffort;
+    null
+  );
 }
 
 function logCodexLiveStep(step: string, details?: Record<string, unknown>): void {
@@ -664,7 +664,8 @@ async function writeLiveGatewayConfig(params: {
       auth: { mode: "token", token: params.token },
     },
     plugins: {
-      allow: ["codex"],
+      // Codex owns the runtime; OpenAI owns provider thinking and catalog policy.
+      allow: ["codex", "openai"],
       entries: {
         codex: {
           enabled: true,
@@ -846,7 +847,7 @@ function recordCodexAttemptIdentity(params: {
   expect(turnStarting?.data).toMatchObject({ model: expectedModel });
   const actualEffort = turnStarting?.data?.effort;
   const actualCollaborationEffort = turnStarting?.data?.collaborationEffort;
-  const expectedEffort = resolveCodexHarnessExpectedRequestEffort(expectedModel);
+  const expectedEffort = resolveCodexHarnessExpectedTurnRequestEffort(expectedModel);
   expect(actualEffort ?? null).toBe(expectedEffort);
   expect(actualCollaborationEffort ?? null).toBe(actualEffort ?? null);
   if (CODEX_HARNESS_FULL_CONTEXT) {
