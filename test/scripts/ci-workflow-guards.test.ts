@@ -7562,6 +7562,11 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "dist runtime artifact base paths",
     );
     expect(artifactBasePaths).not.toContain('"node_modules"');
+    const artifactEntryValidation = expectDefined(
+      artifactBuilder.match(/function validateDistRuntimeArtifactEntries[\s\S]*?\n\}\n/u)?.[0],
+      "dist runtime artifact entry validation",
+    );
+    expect(artifactEntryValidation).not.toContain('entry.startsWith("node_modules/")');
     expect(artifactBuilder).toContain(
       'copyDistRuntimeArtifactPath(artifactRoot, packageRoot, "node_modules")',
     );
