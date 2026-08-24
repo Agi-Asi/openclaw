@@ -88,6 +88,10 @@ function twitchTestReceipt(messageId: string) {
   });
 }
 
+function expectPreparedAccount(accountId: string) {
+  return expect.objectContaining({ accountId });
+}
+
 describe("outbound", () => {
   const mockAccount = {
     ...BASE_TWITCH_TEST_ACCOUNT,
@@ -204,6 +208,7 @@ describe("outbound", () => {
               "default",
               true,
               console,
+              expectPreparedAccount("default"),
             );
           },
           messageSendingHooks: () => {
@@ -410,6 +415,7 @@ describe("outbound", () => {
         "default",
         true,
         console,
+        expectPreparedAccount("default"),
       );
       expect(result.timestamp).toBeGreaterThan(0);
     });
@@ -465,33 +471,23 @@ describe("outbound", () => {
         "default",
         true,
         console,
+        expectPreparedAccount("default"),
       );
     });
 
     it("uses configured defaultAccount when accountId is omitted", async () => {
       const { sendMessageTwitchInternal } = await import("./send.js");
 
-      vi.mocked(resolveTwitchAccountContext)
-        .mockImplementationOnce(() => ({
-          accountId: "secondary",
-          account: {
-            ...mockAccount,
-            channel: "secondary-channel",
-          },
-          tokenResolution: { source: "config", token: mockAccount.accessToken },
-          configured: true,
-          availableAccountIds: ["default", "secondary"],
-        }))
-        .mockImplementation((_cfg, accountId) => ({
-          accountId: accountId?.trim() || "secondary",
-          account: {
-            ...mockAccount,
-            channel: "secondary-channel",
-          },
-          tokenResolution: { source: "config", token: mockAccount.accessToken },
-          configured: true,
-          availableAccountIds: ["default", "secondary"],
-        }));
+      vi.mocked(resolveTwitchAccountContext).mockReturnValue({
+        accountId: "secondary",
+        account: {
+          ...mockAccount,
+          channel: "secondary-channel",
+        },
+        tokenResolution: { source: "config", token: mockAccount.accessToken },
+        configured: true,
+        availableAccountIds: ["default", "secondary"],
+      });
       vi.mocked(sendMessageTwitchInternal).mockResolvedValue({
         ok: true,
         messageId: "msg-secondary",
@@ -512,6 +508,7 @@ describe("outbound", () => {
         text: "Hello!",
       });
 
+      expect(resolveTwitchAccountContext).toHaveBeenCalledOnce();
       expect(sendMessageTwitchInternal).toHaveBeenCalledWith(
         "secondary-channel",
         "Hello!",
@@ -519,6 +516,7 @@ describe("outbound", () => {
         "secondary",
         true,
         console,
+        expectPreparedAccount("secondary"),
       );
     });
 
@@ -573,6 +571,7 @@ describe("outbound", () => {
         "default",
         true,
         console,
+        expectPreparedAccount("default"),
       );
     });
 
@@ -601,6 +600,7 @@ describe("outbound", () => {
         "default",
         true,
         console,
+        expectPreparedAccount("default"),
       );
     });
   });
