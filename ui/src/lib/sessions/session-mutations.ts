@@ -58,13 +58,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
   const confirmedArchives = new Map<string, ConfirmedArchiveState>();
   const preparedWorkSessionKeys = new Set<string>();
 
-  /**
-   * A session-changed rejection proves the published row no longer describes the key,
-   * so the refresh that repairs it happens here at the mutation owner - no caller did it,
-   * and the row stayed on screen until an incidental sessions.changed push arrived. The
-   * outcome is published here too because the archive-undo toast and the unread
-   * auto-patch have no error branch of their own.
-   */
+  // Refresh stale rows centrally and publish failures for callers without an error surface.
   const settleSessionChangedRejection = async (
     key: string,
     error: unknown,

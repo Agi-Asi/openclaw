@@ -1205,9 +1205,7 @@ class SessionsPage extends OpenClawLightDomElement {
       message: t("sessionsView.sessionArchived"),
       actionLabel: t("common.undo"),
       onAction: () => {
-        // The mutations store owns the visible outcome and the stale-row refresh for a
-        // rejected undo, so this only keeps the rejection from going unhandled: the
-        // toast host outlives this page and has no error surface of its own.
+        // The shared mutation store already publishes this failure.
         void scope.sessions
           .patch(
             row.key,

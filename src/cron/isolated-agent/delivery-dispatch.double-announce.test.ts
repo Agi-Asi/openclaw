@@ -283,6 +283,14 @@ function makeBaseParams(overrides: {
   };
 }
 
+function sessionChangedError(): Error {
+  return Object.assign(new Error("session changed"), {
+    name: "GatewayClientRequestError",
+    gatewayCode: "INVALID_REQUEST",
+    details: { code: "SESSION_CHANGED" },
+  });
+}
+
 const requireRecord = createRequireRecord("object", "expected-label");
 
 function outboundDeliveryCall(callIndex = 0) {
@@ -2098,14 +2106,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
   });
 
   it("does not retire a replacement runtime when guarded cleanup finds a changed session", async () => {
-    const changedError = new Error("session changed") as Error & {
-      gatewayCode: string;
-      details: { code: string };
-    };
-    changedError.name = "GatewayClientRequestError";
-    changedError.gatewayCode = "INVALID_REQUEST";
-    changedError.details = { code: "SESSION_CHANGED" };
-    vi.mocked(callGateway).mockRejectedValueOnce(changedError);
+    vi.mocked(callGateway).mockRejectedValueOnce(sessionChangedError());
 
     const params = makeBaseParams({ synthesizedText: SILENT_REPLY_TOKEN });
     params.agentSessionKey = "agent:main:cron:test-job";
@@ -2164,14 +2165,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
       sessionKey: "agent:main:cron:test-job",
       baseSessionKey: "agent:main:cron:test-job",
     });
-    const changedError = new Error("session changed") as Error & {
-      gatewayCode: string;
-      details: { code: string };
-    };
-    changedError.name = "GatewayClientRequestError";
-    changedError.gatewayCode = "INVALID_REQUEST";
-    changedError.details = { code: "SESSION_CHANGED" };
-    vi.mocked(callGateway).mockRejectedValueOnce(changedError);
+    vi.mocked(callGateway).mockRejectedValueOnce(sessionChangedError());
     loadCronSessionEntryLatestMock.mockReturnValue({
       sessionId: "test-session-id",
       lifecycleRevision: "test-lifecycle-revision",

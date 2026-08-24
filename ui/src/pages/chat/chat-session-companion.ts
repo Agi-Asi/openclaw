@@ -7,7 +7,6 @@ import type {
 } from "../../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 
-const COMPANION_BUSY_DETAIL_CODE = GatewayErrorDetailCodes.SESSION_COMPANION_BUSY;
 const MAX_COMPANION_EXCHANGES = 24;
 const COMPANION_ASK_TIMEOUT_MS = 70_000;
 
@@ -199,7 +198,7 @@ export class ChatSessionCompanionThreads {
       thread.failedQuestionKnownExchanges = knownExchanges;
       const reason = errorDetailReason(error);
       thread.hint =
-        errorDetailCode(error) === COMPANION_BUSY_DETAIL_CODE
+        errorDetailCode(error) === GatewayErrorDetailCodes.SESSION_COMPANION_BUSY
           ? "busy"
           : reason === "context-unavailable"
             ? "history-unavailable"

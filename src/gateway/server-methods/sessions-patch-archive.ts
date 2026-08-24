@@ -114,9 +114,7 @@ export async function prepareSessionPatchArchive(params: {
     agentId: target.requestedAgentId,
   });
   const freshCanonicalKey = fresh.target.canonicalKey ?? target.key;
-  // Both conflict exits below report the entry that now holds the key, so a same-key
-  // rollover is named as the continuation it is rather than an unrelated replacement.
-  // The store-path check moved under this read for that reason; it still always rejects.
+  // Read the current entry before rejecting so proven successor lineage can be reported.
   const archiveChangedError = (): ErrorShape =>
     sessionIdentityChangedError({
       action: "patch",

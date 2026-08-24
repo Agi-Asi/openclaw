@@ -1,5 +1,3 @@
-// Identity-conflict rejections across session mutations: every path that finds the
-// named identity gone must say whether the key's new occupant continues it.
 import { afterEach, expect, test } from "vitest";
 import {
   loadSessionEntry,
@@ -98,7 +96,7 @@ test.each([
     const contender = runExclusiveSessionLifecycleMutation({
       scope: storePath,
       identities: [sessionKey, sessionId],
-      run: async () => await contenderRelease.promise,
+      run: () => contenderRelease.promise,
     });
     try {
       const archive = directSessionReq("sessions.patch", {

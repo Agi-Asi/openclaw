@@ -62,11 +62,7 @@ export type WizardNotFoundErrorDetails = {
   code: typeof GatewayErrorDetailCodes.WIZARD_NOT_FOUND;
 };
 
-/**
- * A session mutation named an identity the store no longer holds, so nothing was
- * applied. `successorSessionId` is present only for a proven continuation; see
- * `sessionEntryContinuesIdentity` for what counts as proof.
- */
+/** A rejected session mutation, with a successor only when lineage proves continuation. */
 export type SessionChangedErrorDetails = {
   code: typeof GatewayErrorDetailCodes.SESSION_CHANGED;
   successorSessionId?: string;
@@ -141,11 +137,7 @@ export function sessionChangedErrorDetails(
   };
 }
 
-/**
- * Reads a session-changed rejection off a gateway error envelope or a batch outcome
- * error. The detail code is the discriminant on its own, so callers no longer pair an
- * error-code check with a message or `reason` string match.
- */
+/** Reads session-changed details from a gateway error or batch outcome. */
 export function readSessionChangedError(error: unknown): SessionChangedErrorDetails | null {
   const record = asProtocolRecord(asProtocolRecord(error)?.details);
   if (record?.code !== GatewayErrorDetailCodes.SESSION_CHANGED) {
