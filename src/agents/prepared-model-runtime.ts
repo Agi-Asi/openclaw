@@ -529,11 +529,7 @@ export function refreshPreparedModelRuntimeSnapshots(
   const isPublicationCurrent = () =>
     requestEpoch === refreshRequestEpoch && options.isPublicationCurrent?.() !== false;
   const commitReplacement = () => {
-    if (
-      !isPublicationCurrent() ||
-      !replacement ||
-      pendingModelRuntimeReplacement !== replacement
-    ) {
+    if (!isPublicationCurrent() || !replacement || pendingModelRuntimeReplacement !== replacement) {
       return;
     }
     const adoptedAuthTransaction = authPublication.prepareAdoptedCommit(replacement.gateId);
@@ -577,11 +573,7 @@ export function refreshPreparedModelRuntimeSnapshots(
         owner.pluginGeneration = undefined;
       }
     }
-    if (
-      isPublicationCurrent() &&
-      replacement &&
-      pendingModelRuntimeReplacement === replacement
-    ) {
+    if (isPublicationCurrent() && replacement && pendingModelRuntimeReplacement === replacement) {
       pendingModelRuntimeReplacement = undefined;
       authPublication.rejectAdopted(replacement.gateId, refreshError);
       replacement.reject(refreshError);
