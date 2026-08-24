@@ -89,8 +89,15 @@ export function createSessionOwnerAssignmentOverlay() {
           claims.delete(key);
           continue;
         }
-        if (ownerSupersedes(row?.owner, claim.owner)) {
-          claims.delete(key);
+        if (row?.owner && ownerSupersedes(row.owner, claim.owner)) {
+          claim.owner = row.owner;
+          if (row.sessionId) {
+            claim.sessionId = row.sessionId;
+          }
+          claim.scopeRevisions.delete(scope);
+          if (claim.scopeRevisions.size === 0) {
+            claims.delete(key);
+          }
           continue;
         }
         if (ownersMatch(row?.owner, claim.owner) || (requestRevision > scopeRevision && !row)) {
