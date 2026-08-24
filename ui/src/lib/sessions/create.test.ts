@@ -23,8 +23,11 @@ describe("requestSessionCreate", () => {
       })),
     };
 
-    await expect(requestSessionCreate(client as never, { message: "hello" })).resolves.toEqual({
+    await expect(
+      requestSessionCreate(client as never, { message: "hello", thinkingLevel: "xhigh" }),
+    ).resolves.toEqual({
       key: "agent:main:dashboard:new",
+      thinkingLevel: "xhigh",
       initialRun: { status: "started", runId: "initial-send-id", messageSeq: 7 },
     });
   });

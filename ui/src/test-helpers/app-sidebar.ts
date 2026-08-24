@@ -212,6 +212,7 @@ export function createSessionState(agentId: string, keys: string[]): SessionStat
     result,
     agentId,
     modelOverrides: {},
+    thinkingLevelOverrides: {},
     loading: false,
     error: null,
     deletedSessions: [],

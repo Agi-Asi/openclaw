@@ -9,13 +9,33 @@ it("claims created placement while carrying work metadata through background rec
   const pendingList = new Promise<SessionsListResult>((resolve) => {
     resolveList = resolve;
   });
+  let listCalls = 0;
   const key = "agent:main:created-in-background";
   const request = vi.fn(async (method: string) => {
     if (method === "sessions.create") {
-      return { key };
+      return {
+        key,
+        entry: {
+          sessionId: "created-session",
+          modelProvider: "openai",
+          model: "gpt-5.6-sol",
+          thinkingLevel: "xhigh",
+          updatedAt: 1,
+        },
+      };
     }
     if (method === "sessions.list") {
-      return await pendingList;
+      listCalls += 1;
+      if (listCalls === 1) {
+        return await pendingList;
+      }
+      return {
+        ts: 3,
+        path: "(multiple)",
+        count: 1,
+        defaults: { modelProvider: null, model: null, contextTokens: null },
+        sessions: [{ key, kind: "direct", thinkingLevel: "xhigh", updatedAt: 3 }],
+      };
     }
     throw new Error(`Unexpected request: ${method}`);
   });
@@ -44,6 +64,7 @@ it("claims created placement while carrying work metadata through background rec
   expect(created).toHaveBeenCalledWith(key);
   expect(sessions.isPreparedWorkSession(key)).toBe(true);
   expect(sessions.state.modelOverrides[key]).toBe("openai/gpt-5.6-sol");
+  expect(sessions.state.thinkingLevelOverrides[key]).toBe("xhigh");
 
   resolveList({
     ts: 2,
@@ -54,12 +75,16 @@ it("claims created placement while carrying work metadata through background rec
       {
         key,
         kind: "direct",
+        thinkingLevel: "high",
         updatedAt: 2,
         worktree: { id: "wt-1", branch: "openclaw/task", repoRoot: "/repo" },
       },
     ],
   });
   await waitForFast(() => expect(sessions.isPreparedWorkSession(key)).toBe(false));
+  expect(sessions.state.thinkingLevelOverrides[key]).toBe("xhigh");
+  await sessions.refresh({ force: true });
+  expect(sessions.state.thinkingLevelOverrides[key]).toBeUndefined();
   expect(created).toHaveBeenCalledOnce();
   expect(sessions.isPreparedWorkSession(key)).toBe(false);
   sessions.dispose();

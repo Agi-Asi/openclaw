@@ -89,6 +89,7 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     result: null,
     agentId: null,
     modelOverrides: {},
+    thinkingLevelOverrides: {},
     loading: false,
     error: null,
     deletedSessions: [],
@@ -184,10 +185,24 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     refreshReplacement: (agentId) => roster.refreshReplacement(agentId),
     publishedRow: (key) => roster.publishedRow(key),
     redecorateLists: () => roster.redecorateLists(),
-    notifyCreated(key) {
+    notifyCreated(key, thinkingLevel) {
+      if (thinkingLevel) {
+        publish({
+          ...state,
+          thinkingLevelOverrides: { ...state.thinkingLevelOverrides, [key]: thinkingLevel },
+        });
+      }
       for (const listener of createdListeners) {
         listener(key);
       }
+    },
+    retireThinkingLevelOverride(key) {
+      if (!Object.hasOwn(state.thinkingLevelOverrides, key)) {
+        return;
+      }
+      const thinkingLevelOverrides = { ...state.thinkingLevelOverrides };
+      delete thinkingLevelOverrides[key];
+      publish({ ...state, thinkingLevelOverrides });
     },
     retirePullRequestSummary,
   });
@@ -367,6 +382,7 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
         result: null,
         agentId: null,
         modelOverrides: state.modelOverrides,
+        thinkingLevelOverrides: state.thinkingLevelOverrides,
         loading: false,
         error: null,
         deletedSessions: [],

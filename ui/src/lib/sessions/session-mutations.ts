@@ -50,7 +50,8 @@ type SessionMutationsHost = {
   refreshReplacement: (agentId?: string | null) => Promise<void>;
   publishedRow: (key: string) => GatewaySessionRow | undefined;
   redecorateLists: () => void;
-  notifyCreated: (key: string) => void;
+  notifyCreated: (key: string, thinkingLevel?: string) => void;
+  retireThinkingLevelOverride: (key: string) => void;
   retirePullRequestSummary: (key: string) => void;
 };
 
@@ -133,6 +134,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
     }
     pendingModelPatches.delete(normalizedKey);
     setModelOverride(normalizedKey, undefined);
+    host.retireThinkingLevelOverride(normalizedKey);
   };
 
   const reconcileConfirmedPreviousConnection = async (
@@ -186,7 +188,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       }
       // Creation precedes canonical rows; claim placement before any event or
       // list publication can assign this key an ordinary roster position.
-      host.notifyCreated(result.key);
+      host.notifyCreated(result.key, result.thinkingLevel);
       if (requestParams.worktree === true || Boolean(requestParams.execNode?.trim())) {
         preparedWorkSessionKeys.add(result.key.trim());
       }
@@ -255,6 +257,9 @@ export function createSessionMutations(host: SessionMutationsHost) {
     const hasModelPatch = Object.hasOwn(patchParams, "model");
     const managesModelOverride = hasModelPatch && options.deferModelOverride !== true;
     const normalizedKey = key.trim();
+    if (Object.hasOwn(patchParams, "thinkingLevel")) {
+      host.retireThinkingLevelOverride(normalizedKey);
+    }
     const archivedPresentationRow =
       patchParams.archived === true ? host.publishedRow(normalizedKey) : undefined;
     let previousModelOverride: string | null | undefined;
@@ -741,9 +746,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       archiveVisibility.clearAll();
       preparedWorkSessionKeys.clear();
       const state = host.readState();
-      if (Object.keys(state.modelOverrides).length > 0) {
-        host.publish({ ...state, modelOverrides: {} });
-      }
+      host.publish({ ...state, modelOverrides: {}, thinkingLevelOverrides: {} });
     },
     dispose() {
       pendingModelPatches.clear();

@@ -71,6 +71,7 @@ describe("chat pane retained presentation", () => {
       groupSettings: [],
       loading: false,
       modelOverrides: {},
+      thinkingLevelOverrides: {},
       result,
       sectionOrder: [],
     });

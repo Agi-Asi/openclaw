@@ -54,8 +54,9 @@ describe("new-session CLI-agent model targets", () => {
     picker!.dispatchEvent(new Event("toggle"));
 
     await vi.waitFor(() => {
-      expect(request.mock.calls.filter(([method]) => method === "chat.metadata")).toHaveLength(2);
-      expect(request.mock.calls.filter(([method]) => method === "models.list")).toHaveLength(1);
+      const modelCalls = request.mock.calls.filter(([method]) => method === "models.list");
+      expect(modelCalls).toHaveLength(2);
+      expect(modelCalls[1]?.[1]).toMatchObject({ preparedOnly: true, refresh: true });
       expect(catalogCalls(request)).toHaveLength(2);
     });
     await vi.waitFor(() => {
@@ -97,7 +98,7 @@ describe("new-session CLI-agent model targets", () => {
     });
 
     await vi.waitFor(() => {
-      expect(request.mock.calls.filter(([method]) => method === "chat.metadata")).toHaveLength(1);
+      expect(request.mock.calls.filter(([method]) => method === "models.list")).toHaveLength(2);
       expect(catalogCalls(request)).toHaveLength(2);
     });
     expect(

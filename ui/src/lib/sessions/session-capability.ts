@@ -38,6 +38,7 @@ export type SessionState = {
   result: SessionsListResult | null;
   agentId: string | null;
   modelOverrides: Readonly<Record<string, string | null>>;
+  thinkingLevelOverrides: Readonly<Record<string, string>>;
   loading: boolean;
   error: string | null;
   deletedSessions: readonly SessionDeletionFact[];

@@ -5,11 +5,7 @@ import type {
 import type { GatewayAgentRow, ModelCatalogEntry } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { t } from "../../i18n/index.ts";
-import {
-  peekChatMetadata,
-  revalidateChatMetadata,
-  subscribeChatMetadata,
-} from "../../lib/chat/chat-metadata-store.ts";
+import { peekChatMetadata, subscribeChatMetadata } from "../../lib/chat/chat-metadata-store.ts";
 import {
   buildQualifiedChatModelValue,
   normalizeChatModelProviderId,
@@ -18,7 +14,7 @@ import {
 import { isChatModelUnavailable } from "../../lib/chat/model-select-state.ts";
 import { normalizeThinkingOptionValue } from "../../lib/chat/thinking.ts";
 import { isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
-import { loadModels } from "../../lib/model-catalog-store.ts";
+import { loadModels, peekModels } from "../../lib/model-catalog-store.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
 import {
   renderChatModelControls,
@@ -173,9 +169,7 @@ export class NewSessionModelControl {
           this.cancelMetadataRequest();
           this.restoringPreference = false;
           this.updateMetadataState({ ...this.metadataState, status: "offline" });
-          return;
         }
-        this.startMetadataRequest(client, agentId);
         return;
       }
       this.cancelMetadataRequest();
@@ -274,7 +268,7 @@ export class NewSessionModelControl {
     this.notify();
   }
 
-  private startMetadataRequest(client: NewSessionMetadataClient, agentId: string) {
+  private startMetadataRequest(client: NewSessionMetadataClient, agentId: string, refresh = false) {
     this.cancelMetadataRequest();
     const requestId = ++this.metadataRequestId;
     this.activeMetadataRequest = {
@@ -282,9 +276,9 @@ export class NewSessionModelControl {
       client,
       id: requestId,
     };
-    const cached = peekChatMetadata(client, agentId);
-    if (Array.isArray(cached?.models)) {
-      this.publishMetadataCatalog(cached.models, "ready");
+    const cached = peekModels(client, { agentId, preparedOnly: true });
+    if (cached) {
+      this.publishMetadataCatalog(cached, "ready");
     } else {
       this.updateMetadataState({
         ...this.metadataState,
@@ -292,16 +286,19 @@ export class NewSessionModelControl {
       });
     }
 
-    void revalidateChatMetadata(client, agentId, {
-      startupRetryWindowMs: 60_000,
+    void loadModels(client, {
+      agentId,
+      bypassCache: true,
+      preparedOnly: true,
+      ...(refresh ? { refreshIfDue: true } : {}),
+      rejectOnFailure: true,
     }).then(
-      () => {
-        // Accepted results publish through the store subscription. The request
-        // only retains ownership here when a newer writer superseded it.
+      (models) => {
         if (this.activeMetadataRequest?.id !== requestId) {
           return;
         }
         this.activeMetadataRequest = undefined;
+        this.publishMetadataCatalog(models, "ready");
       },
       () => {
         if (this.activeMetadataRequest?.id !== requestId) {
@@ -328,26 +325,10 @@ export class NewSessionModelControl {
     );
   }
 
-  private retryPickerCatalogs(refreshReadyMetadata = false) {
+  private refreshPickerCatalogs() {
     const metadataClient = this.metadataClient;
-    if (this.metadataState.status === "error" && metadataClient && this.agentId) {
-      this.startMetadataRequest(metadataClient, this.agentId);
-    } else if (
-      refreshReadyMetadata &&
-      this.metadataState.status === "ready" &&
-      metadataClient &&
-      this.agentId
-    ) {
-      const agentId = this.agentId;
-      void loadModels(metadataClient, {
-        agentId,
-        refreshIfDue: true,
-        rejectOnFailure: true,
-      }).catch(() => {
-        if (this.metadataClient === metadataClient && this.agentId === agentId) {
-          this.updateMetadataState({ ...this.metadataState, status: "error" });
-        }
-      });
+    if (metadataClient && this.agentId) {
+      this.startMetadataRequest(metadataClient, this.agentId, true);
     }
     const targetDiscovery = this.catalogTargetDiscovery;
     if (
@@ -457,20 +438,16 @@ export class NewSessionModelControl {
     this.restoringPreference = Boolean(
       options.preference?.model || options.preference?.thinkingLevel,
     );
-    const activeRequestMatches =
+    if (
       this.activeMetadataRequest?.client === client &&
-      this.activeMetadataRequest.agentId === normalizedAgentId;
-    const cached = peekChatMetadata(client, normalizedAgentId);
-    if (activeRequestMatches) {
-      if (cached) {
-        this.publishMetadataCatalog(Array.isArray(cached.models) ? cached.models : [], "ready");
-      } else {
-        this.notify();
-      }
+      this.activeMetadataRequest.agentId === normalizedAgentId
+    ) {
+      this.notify();
       return;
     }
+    const cached = peekModels(client, { agentId: normalizedAgentId, preparedOnly: true });
     if (cached && this.metadataState.status !== "error") {
-      this.publishMetadataCatalog(Array.isArray(cached.models) ? cached.models : [], "ready");
+      this.publishMetadataCatalog(cached, "ready");
       return;
     }
     this.startMetadataRequest(client, normalizedAgentId);
@@ -691,7 +668,7 @@ export class NewSessionModelControl {
       },
       onModelPickerTargetRetry: (groupId) => {
         if (groupId === "cliAgents") {
-          this.retryPickerCatalogs();
+          this.refreshPickerCatalogs();
         }
       },
       onThinkingSelect: (value) => {
@@ -707,7 +684,7 @@ export class NewSessionModelControl {
         this.notify();
       },
       onModelSetup: () => options.context?.navigate("model-setup"),
-      onModelPickerOpen: () => this.retryPickerCatalogs(true),
+      onModelPickerOpen: () => this.refreshPickerCatalogs(),
       onRequestUpdate: this.notify,
     });
   }

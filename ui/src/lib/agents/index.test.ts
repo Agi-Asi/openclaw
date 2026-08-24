@@ -68,6 +68,7 @@ function createState(): { state: AgentsState; request: ReturnType<typeof vi.fn<T
         result: null,
         agentId: null,
         modelOverrides: {},
+        thinkingLevelOverrides: {},
         loading: false,
         error: null,
         deletedSessions: [],

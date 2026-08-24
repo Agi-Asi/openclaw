@@ -1,4 +1,5 @@
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import { listSelectableAgents } from "../../lib/agents/display.ts";
 import {
   loadChatMetadata,
   peekChatMetadata,
@@ -9,7 +10,7 @@ import { formatUiError } from "../../lib/format-error.ts";
 import { loadModelAuthStatus } from "../../lib/model-auth.ts";
 import { loadModels } from "../../lib/model-catalog-store.ts";
 import { isSessionRunActive } from "../../lib/session-run-state.ts";
-import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
+import { areUiSessionKeysEquivalent, normalizeAgentId } from "../../lib/sessions/session-key.ts";
 import { refreshChatAvatar, resolveAgentIdForSession } from "./chat-avatar.ts";
 import { applyRemoteSlashCommandsResult, refreshSlashCommands } from "./chat-commands.ts";
 import { loadChatHistory, type ChatHistoryResult } from "./chat-history.ts";
@@ -50,6 +51,15 @@ type ChatMetadataRequest = {
 type ChatMetadataRefreshOptions = {
   requestVersion?: number;
 };
+
+function resolveChatModelAgentId(host: ChatPageHost): string | null {
+  const agentId = resolveChatAgentId(host);
+  const roster = host.agentsList?.agents;
+  return !roster ||
+    listSelectableAgents(roster).some((candidate) => normalizeAgentId(candidate.id) === agentId)
+    ? agentId
+    : null;
+}
 
 export function retireChatMetadataRequests(
   host: Pick<ChatPageHost, "chatMetadataRequestVersion">,
@@ -178,13 +188,20 @@ export async function refreshChatModelCatalogOnDemand(host: ChatPageHost): Promi
     return;
   }
   const client = host.client;
-  const agentId = resolveChatAgentId(host);
+  const agentId = resolveChatModelAgentId(host);
+  if (!agentId) {
+    host.chatModelCatalog = [];
+    host.chatModelCatalogError = null;
+    host.chatModelsLoading = false;
+    host.requestUpdate?.();
+    return;
+  }
   const connectionEpoch = host.connectionEpoch;
   const ownsRequest = () =>
     host.client === client &&
     host.connected &&
     host.connectionEpoch === connectionEpoch &&
-    resolveChatAgentId(host) === agentId;
+    resolveChatModelAgentId(host) === agentId;
   host.chatModelsLoading = host.chatModelCatalog.length === 0;
   host.chatModelCatalogError = null;
   host.requestUpdate?.();

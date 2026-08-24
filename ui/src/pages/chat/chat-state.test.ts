@@ -2719,6 +2719,21 @@ describe("refreshChatMetadata", () => {
     expect(SLASH_COMMANDS.some((command) => command.name === "help")).toBe(true);
     expect(SLASH_COMMANDS.some((command) => command.name === "remote-command")).toBe(false);
   });
+  it("does not request models for a system roster agent", async () => {
+    const request = vi.fn();
+    const state = createMetadataState(request, {
+      agentsList: { agents: [{ id: "openclaw", kind: "system" }] } as never,
+      sessionKey: "agent:openclaw:dashboard:system",
+      chatModelCatalog: [{ id: "stale", name: "Stale", provider: "openai" }],
+      chatModelCatalogError: "stale catalog error",
+    });
+
+    await refreshChatModelCatalogOnDemand(state);
+
+    expect(request).not.toHaveBeenCalled();
+    expect(state.chatModelCatalog).toEqual([]);
+    expect(state.chatModelCatalogError).toBeNull();
+  });
 });
 
 describe("refreshChatModelAuthStatus", () => {
