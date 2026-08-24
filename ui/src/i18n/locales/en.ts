@@ -5883,6 +5883,8 @@ export const en: TranslationMap = {
       addTab: "Add side panel tab",
       expand: "Expand side panel",
       restore: "Restore side panel",
+      showComposer: "Show composer",
+      hideComposer: "Hide composer",
       minimize: "Minimize side panel",
       resize: "Resize side panel",
       emptyTitle: "Open a tab",

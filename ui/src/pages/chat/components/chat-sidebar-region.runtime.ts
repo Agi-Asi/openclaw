@@ -74,6 +74,8 @@ function surfaceActivityAction(event: Event): HTMLElement | undefined {
 }
 
 class ChatSidebarRegion extends OpenClawLightDomElement {
+  private surfaceComposerVisible = true;
+
   @property({ attribute: false }) layout: SidebarLayout = { columns: [] };
   @property({ attribute: false }) panelDefinitions = sidebarPanelDefinitions();
   @property({ attribute: false }) panelTemplates: SidebarPanelTemplates = {};
@@ -222,6 +224,31 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
     });
   }
 
+  private renderComposerToggle() {
+    if (this.layout.expanded !== true || !this.surfaceSlot || this.surfaceComposer === nothing) {
+      return nothing;
+    }
+    const label = t(
+      this.surfaceComposerVisible ? "chat.sidePanel.hideComposer" : "chat.sidePanel.showComposer",
+    );
+    return html`<span class="side-panel__action-group side-panel__action-group--composer">
+      <openclaw-tooltip .content=${label}>
+        <button
+          class="rail-header__action side-panel__composer-toggle"
+          type="button"
+          aria-label=${label}
+          aria-pressed=${String(this.surfaceComposerVisible)}
+          @click=${() => {
+            this.surfaceComposerVisible = !this.surfaceComposerVisible;
+            this.requestUpdate();
+          }}
+        >
+          ${icons.messageSquare}
+        </button>
+      </openclaw-tooltip>
+    </span>`;
+  }
+
   private renderHeaderActions(panelActions: TemplateResult | typeof nothing | null) {
     const expandLabel = t(
       this.layout.expanded ? "chat.sidePanel.restore" : "chat.sidePanel.expand",
@@ -232,7 +259,7 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
             ${panelActions}
           </span>`
         : nothing}
-      ${this.renderDockControls()}
+      ${this.renderComposerToggle()} ${this.renderDockControls()}
       <span class="side-panel__action-group side-panel__action-group--layout">
         <openclaw-tooltip .content=${expandLabel}>
           <button
@@ -357,7 +384,12 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
   }
 
   private renderSurfaceComposer() {
-    if (this.layout.expanded !== true || !this.surfaceSlot || this.surfaceComposer === nothing) {
+    if (
+      this.layout.expanded !== true ||
+      !this.surfaceComposerVisible ||
+      !this.surfaceSlot ||
+      this.surfaceComposer === nothing
+    ) {
       return nothing;
     }
     return html`<div

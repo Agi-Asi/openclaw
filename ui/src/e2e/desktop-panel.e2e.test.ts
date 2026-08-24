@@ -185,6 +185,16 @@ suite.define(() => {
           );
           const textarea = composer.locator("textarea");
           await composer.getByText("Chat · Desktop", { exact: true }).waitFor();
+          const hideComposer = sidePanel.getByRole("button", { name: "Hide composer" });
+          expect(await hideComposer.getAttribute("aria-pressed")).toBe("true");
+          await hideComposer.click();
+          await expect.poll(() => composer.count()).toBe(0);
+          expect(await panel.locator('[data-retained-surface="true"]').count()).toBe(1);
+          expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
+          const showComposer = sidePanel.getByRole("button", { name: "Show composer" });
+          expect(await showComposer.getAttribute("aria-pressed")).toBe("false");
+          await showComposer.click();
+          await composer.getByText("Chat · Desktop", { exact: true }).waitFor();
           const initialBox = await composer.boundingBox();
           expect(initialBox).not.toBeNull();
           if (!initialBox) {
@@ -264,6 +274,22 @@ suite.define(() => {
           expect(await activity.locator("openclaw-elapsed-time").count()).toBe(1);
           const activityStop = activity.locator("button.agent-chat__surface-activity-stop");
           expect(await activityStop.count()).toBe(1);
+          await textarea.fill("Continue with the current task");
+          const followUpSend = composer.locator(
+            ".agent-chat__composer-actions .chat-send-btn:not(.chat-send-btn--voice):not(.chat-send-btn--stop)",
+          );
+          await followUpSend.waitFor();
+          expect(await followUpSend.getAttribute("aria-label")).toMatch(/^(Queue|Send|Steer)/);
+          expect(
+            await activityStop.evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              const hit = document.elementFromPoint(
+                box.left + box.width / 2,
+                box.top + box.height / 2,
+              );
+              return hit?.closest(".agent-chat__surface-activity-stop") === element;
+            }),
+          ).toBe(true);
           await expect.poll(() => page.locator(".sidebar-region--expanded").count()).toBe(1);
           await expect.poll(() => composer.count()).toBe(1);
           expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
@@ -287,7 +313,7 @@ suite.define(() => {
             await page.waitForTimeout(600);
           }
 
-          if (compact) {
+          if (compact && !captureUiProof) {
             await activity.getByRole("button", { name: "Open chat" }).click();
             await expect.poll(() => page.locator(".sidebar-region--expanded").count()).toBe(0);
             expect(await panel.locator('[data-retained-surface="true"]').count()).toBe(1);
@@ -297,16 +323,17 @@ suite.define(() => {
             }
             await sidePanel.getByRole("button", { name: "Expand side panel" }).click();
             await page.locator(".sidebar-region--expanded").waitFor();
-          } else {
-            await activityStop.click();
-            expect(await gateway.waitForRequest("chat.abort")).toMatchObject({
-              params: { runId, sessionKey: "main" },
-            });
-            if (captureUiProof) {
-              await page.waitForTimeout(400);
-            }
           }
+          await activityStop.click();
+          expect(await gateway.waitForRequest("chat.abort")).toMatchObject({
+            params: { runId, sessionKey: "main" },
+          });
+          await expect.poll(() => page.locator(".sidebar-region--expanded").count()).toBe(1);
 
+          if (captureUiProof) {
+            await page.waitForTimeout(400);
+            return;
+          }
           await sidePanel.getByRole("button", { name: "Restore side panel" }).click();
           await expect.poll(() => composer.count()).toBe(0);
           expect(
