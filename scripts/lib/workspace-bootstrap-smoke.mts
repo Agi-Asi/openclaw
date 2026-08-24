@@ -36,13 +36,11 @@ const DIST_RUNTIME_ARTIFACT_BASE_PATHS = [
   "src/agents/templates",
   "dist",
   "dist-runtime",
-  "node_modules",
 ];
 
-const DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS = [
-  ...TSDOWN_PACKAGE_OUTPUT_ROOTS,
-  "packages/plugin-sdk/dist",
-].toSorted((left, right) => left.localeCompare(right));
+const DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS = [...TSDOWN_PACKAGE_OUTPUT_ROOTS].toSorted(
+  (left, right) => left.localeCompare(right),
+);
 
 const DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS = DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS.flatMap(
   (distPath) => {
@@ -54,6 +52,9 @@ const DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS = DIST_RUNTIME_ARTIFACT_PACKAGE
 function packageArtifactPath(sourcePath: string): string {
   return sourcePath.replace(/^packages\//u, "node_modules/@openclaw/");
 }
+
+const DIST_RUNTIME_ARTIFACT_PACKAGE_ARTIFACT_PATHS =
+  DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS.map(packageArtifactPath);
 
 function copyDistRuntimeArtifactPath(
   rootDir: string,
@@ -378,7 +379,7 @@ function collectDistRuntimeArtifactPaths(rootDir: string): string[] {
   }
   return [
     ...DIST_RUNTIME_ARTIFACT_BASE_PATHS,
-    ...DIST_RUNTIME_ARTIFACT_PACKAGE_SOURCE_PATHS.map(packageArtifactPath),
+    ...DIST_RUNTIME_ARTIFACT_PACKAGE_ARTIFACT_PATHS,
   ].toSorted((left, right) => left.localeCompare(right));
 }
 
@@ -411,6 +412,13 @@ function validateDistRuntimeArtifactEntries(entries: string[], expectedPaths: st
   }
 
   const unexpectedEntries = entries.filter((entry) => {
+    if (
+      DIST_RUNTIME_ARTIFACT_PACKAGE_ARTIFACT_PATHS.some(
+        (artifactPath) => entry === artifactPath || entry.startsWith(`${artifactPath}/`),
+      )
+    ) {
+      return false;
+    }
     if (entry === "openclaw.mjs" || entry === "node-version.mjs" || entry === "package.json") {
       return false;
     }
@@ -426,9 +434,7 @@ function validateDistRuntimeArtifactEntries(entries: string[], expectedPaths: st
       entry === "docs" ||
       entry === "docs/reference" ||
       entry === "docs/reference/templates" ||
-      entry.startsWith("docs/reference/templates/") ||
-      entry === "node_modules" ||
-      entry.startsWith("node_modules/")
+      entry.startsWith("docs/reference/templates/")
     ) {
       return false;
     }
@@ -622,6 +628,9 @@ export async function buildAndSmokeDistRuntimeArtifact(params: {
         ["--use-compress-program", compressor, "-xf", archivePath, "-C", packageRoot],
         { stdio: "inherit" },
       );
+      // The shared artifact is platform-neutral; this producer-only smoke needs
+      // its host's deployed optional dependencies to exercise the ACPX adapters.
+      copyDistRuntimeArtifactPath(artifactRoot, packageRoot, "node_modules");
       runInstalledWorkspaceBootstrapSmoke({
         packageRoot,
         envOverrides: artifactEnvOverrides,

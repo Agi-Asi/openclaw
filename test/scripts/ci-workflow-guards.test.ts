@@ -7553,12 +7553,18 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       '"dist"',
       '"dist-runtime"',
       "TSDOWN_PACKAGE_OUTPUT_ROOTS",
-      '"packages/plugin-sdk/dist"',
       '"node_modules/@openclaw/"',
-      '"node_modules"',
     ]) {
       expect(artifactBuilder).toContain(requiredPath);
     }
+    const artifactBasePaths = expectDefined(
+      artifactBuilder.match(/const DIST_RUNTIME_ARTIFACT_BASE_PATHS = \[[\s\S]*?\];/u)?.[0],
+      "dist runtime artifact base paths",
+    );
+    expect(artifactBasePaths).not.toContain('"node_modules"');
+    expect(artifactBuilder).toContain(
+      'copyDistRuntimeArtifactPath(artifactRoot, packageRoot, "node_modules")',
+    );
     expect(artifactBuilder).toContain("runInstalledWorkspaceBootstrapSmoke");
     expect(artifactBuilder).not.toContain("--import");
     expect(artifactBuilder).not.toContain("dist-runtime-artifact-resolver-hook");
