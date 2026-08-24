@@ -8,6 +8,7 @@ import {
   tryResolveAmbientOwnerAgentId,
 } from "../agents/agent-scope.js";
 import { abortAndDrainEmbeddedAgentRun } from "../agents/embedded-agent.js";
+import { resolveScheduledToolPolicyContext } from "../agents/scheduled-tool-policy.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import { getRuntimeConfig } from "../config/io.js";
@@ -55,7 +56,7 @@ import {
 import { resolveCronJobsStorePathFromConfig } from "../cron/store.js";
 import { cronStreamScheduleKey } from "../cron/stream-schedule.js";
 import { createCronScriptRuntime } from "../cron/trigger-script.js";
-import type { CronJob, CronPayload } from "../cron/types.js";
+import type { CronJob, CronPayload, CronStoredJob } from "../cron/types.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveMainScopedEventSessionKey } from "../infra/event-session-routing.js";
 import { runHeartbeatOnce } from "../infra/heartbeat-runner.js";
@@ -107,6 +108,19 @@ import {
 } from "./session-automation-index.js";
 import { buildGatewaySessionEventFields } from "./session-event-payload.js";
 import { loadGatewaySessionRow } from "./session-utils.js";
+
+function resolveCronJobScheduledToolPolicyContext(job: CronStoredJob) {
+  const scheduledToolPolicy = resolveCronScheduledToolPolicy({
+    toolsAllow: job.payload.toolsAllow,
+    scheduledToolPolicy: job.scheduledToolPolicy,
+    owner: job.owner,
+  });
+  return resolveScheduledToolPolicyContext({
+    toolsAllow: job.payload.toolsAllow,
+    scheduledToolPolicy,
+    callerOrigin: job.toolsAllowProvenance?.callerOrigin,
+  });
+}
 
 export type GatewayCronState = {
   cron: GatewayCronServiceContract;
@@ -727,11 +741,7 @@ export function buildGatewayCronService(params: {
               streamBatch,
               toolsAllow: job.payload.toolsAllow,
               runtimeAuthority: job.runtimeAuthority,
-              scheduledToolPolicy: resolveCronScheduledToolPolicy({
-                toolsAllow: job.payload.toolsAllow,
-                scheduledToolPolicy: job.scheduledToolPolicy,
-                owner: job.owner,
-              }),
+              scheduledToolPolicy: resolveCronJobScheduledToolPolicyContext(job),
               abortSignal,
             }),
         }
@@ -929,11 +939,7 @@ export function buildGatewayCronService(params: {
         streamBatch,
         toolsAllow: job.payload.toolsAllow,
         runtimeAuthority: job.runtimeAuthority,
-        scheduledToolPolicy: resolveCronScheduledToolPolicy({
-          toolsAllow: job.payload.toolsAllow,
-          scheduledToolPolicy: job.scheduledToolPolicy,
-          owner: job.owner,
-        }),
+        scheduledToolPolicy: resolveCronJobScheduledToolPolicyContext(job),
         timeoutSeconds: job.payload.timeoutSeconds,
         toolBudget: job.payload.toolBudget,
         abortSignal,

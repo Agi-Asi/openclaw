@@ -830,9 +830,116 @@ describe("cron store", () => {
     expect(reloaded?.runtimeAuthorityRecoveryRequired).toBe(true);
     expect(
       database
-        .prepare("SELECT recovery_required FROM cron_job_runtime_authorities WHERE job_id = ?")
+        .prepare(
+          "SELECT recovery_required, tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?",
+        )
         .get(job.id),
-    ).toEqual({ recovery_required: 1 });
+    ).toEqual({ recovery_required: 1, tool_bindings_json: null });
+  });
+
+  it("rejects bindings preserved by an older writer across creator-origin changes", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("downgrade-stale-origin-binding");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    job.toolsAllowProvenance = {
+      version: 1,
+      source: "final-executable-surface",
+      callerOrigin: { kind: "external", channel: "discord" },
+    };
+    await saveCronStore(storePath, authorityStore);
+
+    const database = openOpenClawStateDatabase().db;
+    const row = database.prepare("SELECT job_json FROM cron_jobs WHERE job_id = ?").get(job.id) as {
+      job_json: string;
+    };
+    const downgradedJob = JSON.parse(row.job_json) as Record<string, unknown>;
+    const provenance = downgradedJob.toolsAllowProvenance as Record<string, unknown>;
+    provenance.callerOrigin = { kind: "local" };
+
+    // A downgraded writer can rewrite the parent while preserving the unknown
+    // sidecar and its row-compatible v1 fingerprint.
+    database
+      .prepare("UPDATE cron_jobs SET job_json = ? WHERE job_id = ?")
+      .run(JSON.stringify(downgradedJob), job.id);
+
+    const readOnly = (await loadCronJobsStoreWithConfigJobsReadOnly(storePath)).store.jobs[0];
+    expect(readOnly?.runtimeAuthority).toBeUndefined();
+    expect(readOnly?.runtimeAuthorityRecoveryRequired).toBe(true);
+    expect(
+      database
+        .prepare(
+          "SELECT recovery_required, tool_bindings_json IS NOT NULL AS has_bindings FROM cron_job_runtime_authorities WHERE job_id = ?",
+        )
+        .get(job.id),
+    ).toEqual({ recovery_required: 0, has_bindings: 1 });
+
+    const reloaded = (await loadCronStore(storePath)).jobs[0];
+    expect(reloaded?.runtimeAuthority).toBeUndefined();
+    expect(reloaded?.runtimeAuthorityRecoveryRequired).toBe(true);
+    expect(
+      database
+        .prepare(
+          "SELECT recovery_required, tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?",
+        )
+        .get(job.id),
+    ).toEqual({ recovery_required: 1, tool_bindings_json: null });
+  });
+
+  it("clears preserved bindings from downgrade recovery rows before recapture", async () => {
+    const { storePath } = await makeStorePath();
+    const authorityStore = makeAuthorityStore("downgrade-recovery-sidecar");
+    const job = expectDefined(authorityStore.jobs[0], "authority job test invariant");
+    await saveCronStore(storePath, authorityStore);
+
+    const database = openOpenClawStateDatabase().db;
+    const original = database
+      .prepare(
+        "SELECT authority_json, authority_input_fingerprint FROM cron_job_runtime_authorities WHERE job_id = ?",
+      )
+      .get(job.id) as { authority_json: string; authority_input_fingerprint: string };
+
+    // A downgraded writer does not know the sidecar column, so its recovery
+    // upsert can leave the old binding envelope attached to a recovery row.
+    database
+      .prepare(
+        "UPDATE cron_job_runtime_authorities SET authority_json = NULL, authority_input_fingerprint = NULL, recovery_required = 1 WHERE job_id = ?",
+      )
+      .run(job.id);
+
+    const readOnly = (await loadCronJobsStoreWithConfigJobsReadOnly(storePath)).store.jobs[0];
+    expect(readOnly?.runtimeAuthority).toBeUndefined();
+    expect(readOnly?.runtimeAuthorityRecoveryRequired).toBe(true);
+    expect(
+      database
+        .prepare(
+          "SELECT recovery_required, tool_bindings_json IS NOT NULL AS has_bindings FROM cron_job_runtime_authorities WHERE job_id = ?",
+        )
+        .get(job.id),
+    ).toEqual({ recovery_required: 1, has_bindings: 1 });
+
+    await loadCronStore(storePath);
+    expect(
+      database
+        .prepare("SELECT tool_bindings_json FROM cron_job_runtime_authorities WHERE job_id = ?")
+        .get(job.id),
+    ).toEqual({ tool_bindings_json: null });
+
+    // Even if the old writer later recaptures the same legacy authority fields,
+    // the retired shell binding cannot reappear after another upgrade.
+    database
+      .prepare(
+        "UPDATE cron_job_runtime_authorities SET authority_json = ?, authority_input_fingerprint = ?, recovery_required = 0 WHERE job_id = ?",
+      )
+      .run(original.authority_json, original.authority_input_fingerprint, job.id);
+
+    const recaptured = (await loadCronStore(storePath)).jobs[0];
+    expect(recaptured?.runtimeAuthority).toEqual({
+      version: 1,
+      runtimeId: "codex",
+      namespace: "codex.apps",
+      payload: { apps: [{ id: "calendar" }] },
+    });
+    expect(recaptured?.runtimeAuthorityRecoveryRequired).toBeUndefined();
   });
 
   it("stores authority outside job_json and restores it after reopen", async () => {
@@ -865,8 +972,10 @@ describe("cron store", () => {
     );
     expect(JSON.parse(child.authority_json)).toEqual(expectedPersistedAuthority);
     expect(JSON.parse(child.tool_bindings_json)).toEqual({
-      version: 1,
+      version: 2,
       authoritySha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      authorityInputFingerprint: child.authority_input_fingerprint,
+      bindingInputFingerprint: expect.stringMatching(/^v2:[a-f0-9]{64}$/u),
       bindings: expectedToolBindings,
     });
     expect(child.authority_input_fingerprint).toMatch(/^v1:[a-f0-9]{64}$/u);

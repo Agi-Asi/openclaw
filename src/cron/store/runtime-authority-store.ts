@@ -11,18 +11,19 @@ import {
 } from "../../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../../state/openclaw-state-db.generated.js";
 import {
+  cronRuntimeAuthorityBindingFingerprint,
+  cronRuntimeAuthorityRowFingerprint,
+} from "../runtime-authority-input.js";
+import {
   normalizeCronPersistedRuntimeAuthority,
   normalizeCronRuntimeAuthority,
   normalizeCronScheduledToolBindings,
   serializeCronRuntimeAuthority,
 } from "../runtime-authority.js";
-import { normalizeCronScheduledToolPolicy } from "../scheduled-tool-policy.js";
-import { cronJobUsesToolRuntime } from "../tools-allow.js";
-import type { CronStoredJob, CronToolsAllowProvenance } from "../types.js";
+import type { CronStoredJob } from "../types.js";
 
 const CRON_RUNTIME_AUTHORITY_TABLE = "cron_job_runtime_authorities";
-const CRON_RUNTIME_AUTHORITY_FINGERPRINT_VERSION = 1;
-const CRON_TOOL_BINDINGS_STORAGE_VERSION = 1;
+const CRON_TOOL_BINDINGS_STORAGE_VERSION = 2;
 
 const CRON_RUNTIME_AUTHORITY_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS cron_job_runtime_authorities (
@@ -60,35 +61,6 @@ function getCronAuthorityKysely(db: DatabaseSync) {
   return getNodeSqliteKysely<CronAuthorityDatabase>(db);
 }
 
-function normalizedToolsAllow(job: CronStoredJob): string[] | null {
-  const toolsAllow = job.payload.toolsAllow;
-  return toolsAllow === undefined ? null : [...toolsAllow].toSorted();
-}
-
-function normalizedToolsAllowProvenance(
-  value: CronToolsAllowProvenance | undefined,
-): CronToolsAllowProvenance | null {
-  return value?.version === 1 && value.source === "final-executable-surface"
-    ? { version: 1, source: "final-executable-surface" }
-    : null;
-}
-
-/** Binds authority to only the canonical inputs that can change its authorization meaning. */
-function cronRuntimeAuthorityInputFingerprint(job: CronStoredJob): string {
-  const scheduledToolPolicy = normalizeCronScheduledToolPolicy(job.scheduledToolPolicy) ?? null;
-  const canonical = {
-    version: CRON_RUNTIME_AUTHORITY_FINGERPRINT_VERSION,
-    usesToolRuntime: cronJobUsesToolRuntime(job),
-    toolsAllow: normalizedToolsAllow(job),
-    toolsAllowIsDefault: job.payload.toolsAllowIsDefault === true,
-    scheduledToolPolicy,
-    toolsAllowProvenance: normalizedToolsAllowProvenance(job.toolsAllowProvenance),
-  };
-  return `v${CRON_RUNTIME_AUTHORITY_FINGERPRINT_VERSION}:${createHash("sha256")
-    .update(JSON.stringify(canonical), "utf8")
-    .digest("hex")}`;
-}
-
 function authorityJsonSha256(authorityJson: string): string {
   return createHash("sha256").update(authorityJson, "utf8").digest("hex");
 }
@@ -96,19 +68,23 @@ function authorityJsonSha256(authorityJson: string): string {
 function serializeStoredToolBindings(
   bindings: ReturnType<typeof normalizeCronScheduledToolBindings>,
   authorityJson: string,
-): string | null {
-  return bindings
-    ? JSON.stringify({
-        version: CRON_TOOL_BINDINGS_STORAGE_VERSION,
-        authoritySha256: authorityJsonSha256(authorityJson),
-        bindings,
-      })
-    : null;
+  authorityInputFingerprint: string,
+  bindingInputFingerprint: string,
+): string {
+  return JSON.stringify({
+    version: CRON_TOOL_BINDINGS_STORAGE_VERSION,
+    authoritySha256: authorityJsonSha256(authorityJson),
+    authorityInputFingerprint,
+    bindingInputFingerprint,
+    bindings: bindings ?? [],
+  });
 }
 
 function parseStoredToolBindings(
   value: unknown,
   authorityJson: string,
+  authorityInputFingerprint: string,
+  bindingInputFingerprint: string,
 ): ReturnType<typeof normalizeCronScheduledToolBindings> {
   // Unshipped raw-array prototypes carry no authority association, so accepting
   // them after a downgrade could restore stale exec authority.
@@ -120,9 +96,18 @@ function parseStoredToolBindings(
     value.version !== CRON_TOOL_BINDINGS_STORAGE_VERSION ||
     !("authoritySha256" in value) ||
     value.authoritySha256 !== authorityJsonSha256(authorityJson) ||
+    !("authorityInputFingerprint" in value) ||
+    value.authorityInputFingerprint !== authorityInputFingerprint ||
+    !("bindingInputFingerprint" in value) ||
+    value.bindingInputFingerprint !== bindingInputFingerprint ||
     !("bindings" in value) ||
     Object.keys(value).some(
-      (key) => key !== "version" && key !== "authoritySha256" && key !== "bindings",
+      (key) =>
+        key !== "version" &&
+        key !== "authoritySha256" &&
+        key !== "authorityInputFingerprint" &&
+        key !== "bindingInputFingerprint" &&
+        key !== "bindings",
     )
   ) {
     return undefined;
@@ -177,24 +162,31 @@ function applyCronRuntimeAuthorityRow(
   delete job.runtimeAuthorityRecoveryRequired;
   if (row.recovery_required === 1) {
     job.runtimeAuthorityRecoveryRequired = true;
-    return "ok";
+    return row.tool_bindings_json == null ? "ok" : "repair";
   }
   const persistedAuthority = normalizeCronPersistedRuntimeAuthority(
     safeParseJson(row.authority_json ?? ""),
   );
   const authorityJson = row.authority_json ?? "";
+  const authorityInputFingerprint = cronRuntimeAuthorityRowFingerprint(job);
+  const bindingInputFingerprint = cronRuntimeAuthorityBindingFingerprint(job);
   const toolBindings =
     row.tool_bindings_json == null
       ? undefined
-      : parseStoredToolBindings(safeParseJson(row.tool_bindings_json), authorityJson);
+      : parseStoredToolBindings(
+          safeParseJson(row.tool_bindings_json),
+          authorityJson,
+          authorityInputFingerprint,
+          bindingInputFingerprint,
+        );
   const authority =
     persistedAuthority && (row.tool_bindings_json == null || toolBindings)
       ? normalizeCronRuntimeAuthority({
           ...persistedAuthority,
-          ...(toolBindings ? { toolBindings } : {}),
+          ...(toolBindings?.length ? { toolBindings } : {}),
         })
       : undefined;
-  if (!authority || row.authority_input_fingerprint !== cronRuntimeAuthorityInputFingerprint(job)) {
+  if (!authority || row.authority_input_fingerprint !== authorityInputFingerprint) {
     job.runtimeAuthorityRecoveryRequired = true;
     return "repair";
   }
@@ -303,8 +295,14 @@ export function replaceCronRuntimeAuthorityRows(params: {
         continue;
       }
       const authorityJson = JSON.stringify(persistedAuthority);
-      const toolBindingsJson = serializeStoredToolBindings(authority.toolBindings, authorityJson);
-      const authorityInputFingerprint = cronRuntimeAuthorityInputFingerprint(job);
+      const authorityInputFingerprint = cronRuntimeAuthorityRowFingerprint(job);
+      const bindingInputFingerprint = cronRuntimeAuthorityBindingFingerprint(job);
+      const toolBindingsJson = serializeStoredToolBindings(
+        authority.toolBindings,
+        authorityJson,
+        authorityInputFingerprint,
+        bindingInputFingerprint,
+      );
       executeSqliteQuerySync(
         params.db,
         database

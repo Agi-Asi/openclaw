@@ -47,6 +47,11 @@ export type AgentHarnessHostCapabilities = Readonly<{
     options: AgentHarnessToolSurfaceOptions,
     bindingOptions?: Readonly<{ cwd?: string }>,
   ) => AnyAgentTool[];
+  /** Seals an alias only when its source came from this exact host-created surface. */
+  sealScheduledToolProjection?: (
+    sourceTool: AnyAgentTool,
+    projectedTool: AnyAgentTool,
+  ) => AnyAgentTool;
   /** Core-owned byte binding for a native command approval, scoped to this admitted run. */
   prepareMutableFileApproval?: (request: { command: string; cwd?: string }) => Promise<
     | {

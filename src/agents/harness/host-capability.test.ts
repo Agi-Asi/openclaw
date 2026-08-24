@@ -22,6 +22,10 @@ import {
   runBeforeToolCallHook,
 } from "../agent-tools.before-tool-call.js";
 import {
+  captureCronScheduledToolAuthority,
+  redeemCronScheduledToolAuthority,
+} from "../exec-tool-target-pinning.js";
+import {
   attachInternalToolExecutionPreparer,
   getInternalToolExecutionPreparer,
   type InternalToolExecutionPreparer,
@@ -126,6 +130,75 @@ describe("agent harness host capability", () => {
     mockCallGatewayTool.mockReset();
   });
 
+  it("seals scheduled shell authority only from this host-created tool surface", async () => {
+    const { attempt } = await admittedAttempt("run-scheduled-tool-projection");
+    const host = createAgentHarnessHostCapabilities({ attempt, pluginId: "codex" });
+    const sourceTools = host.capabilities.createToolSurface?.({}) ?? [];
+    const execTool = sourceTools.find((tool) => tool.name === "exec");
+    if (!execTool || !host.capabilities.sealScheduledToolProjection) {
+      throw new Error("expected host-created exec projection test surface");
+    }
+    const alias = host.capabilities.sealScheduledToolProjection(execTool, {
+      ...execTool,
+      name: "gateway_exec",
+    });
+    const capture = captureCronScheduledToolAuthority([alias], {
+      version: 1,
+      runtimeId: "test",
+      namespace: "scheduled-tools",
+      payload: { version: 1 },
+    });
+    expect(redeemCronScheduledToolAuthority(capture, undefined)?.toolBindings).toEqual([
+      {
+        sourceTool: "gateway_exec",
+        targetTool: "exec",
+        execTarget: { host: "gateway" },
+      },
+    ]);
+
+    const collidingPluginTool = { ...alias };
+    expect(
+      captureCronScheduledToolAuthority([collidingPluginTool], {
+        version: 1,
+        runtimeId: "test",
+        namespace: "scheduled-tools",
+        payload: { version: 1 },
+      }),
+    ).toBeUndefined();
+    expect(() =>
+      redeemCronScheduledToolAuthority(
+        { kind: "cron-scheduled-tool-authority-capture" },
+        undefined,
+      ),
+    ).toThrow("is not host-issued");
+
+    const pluginExec = { ...execTool, name: "exec" };
+    const [boundPluginExec] = host.capabilities.bindToolSurface([pluginExec]);
+    expect(() =>
+      host.capabilities.sealScheduledToolProjection?.(boundPluginExec!, {
+        ...boundPluginExec!,
+        name: "colliding_gateway_exec",
+      }),
+    ).toThrow("was not created by this host capability");
+
+    const nonShellTool = sourceTools.find(
+      (tool) => tool.name !== "exec" && tool.name !== "process",
+    );
+    if (!nonShellTool) {
+      throw new Error("expected a non-shell host-created tool");
+    }
+    nonShellTool.name = "exec";
+    expect(() =>
+      host.capabilities.sealScheduledToolProjection?.(nonShellTool, {
+        ...nonShellTool,
+        name: "forged_gateway_exec",
+      }),
+    ).toThrow("was not created by this host capability");
+
+    host.close();
+    expect(() => redeemCronScheduledToolAuthority(capture, undefined)).toThrow("no longer active");
+  });
+
   it("overwrites plugin policy fields with the host snapshot and revokes lexically", async () => {
     const { attempt, admission } = await admittedAttempt();
     const authority = getAdmittedRunDelegatedAuthority(attempt.admittedRunContext);
@@ -171,7 +244,7 @@ describe("agent harness host capability", () => {
     host.close();
     expect(getAdmittedRunDelegatedAuthority(attempt.admittedRunContext)).toBe(authority);
     expect(() => host.capabilities.bindToolSurface([tool])).toThrow("no longer active");
-    expect(() => host.capabilities.createToolSurface?.({} as never)).toThrow("no longer active");
+    expect(() => host.capabilities.createToolSurface?.({})).toThrow("no longer active");
     expect(() => host.capabilities.assertActive()).toThrow("no longer active");
     await expect(bound.execute("call-1", {})).rejects.toThrow("no longer active");
     expect(execute).not.toHaveBeenCalled();

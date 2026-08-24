@@ -16,6 +16,7 @@ import {
 } from "../agent-tools.before-tool-call.js";
 import { createOpenClawCodingTools } from "../agent-tools.js";
 import type { EmbeddedRunAttemptParams } from "../embedded-agent-runner/run/types.js";
+import { sealCronScheduledToolProjection } from "../exec-tool-target-pinning.js";
 import { prepareGitHubToolEnvironment } from "../github-tool-identity.js";
 import {
   attachInternalToolExecutionPreparer,
@@ -291,6 +292,7 @@ export function createAgentHarnessHostCapabilities(params: {
   });
 
   const trajectoryRecorder = attempt.trajectoryRecorder;
+  const scheduledToolTargets = new WeakMap<AnyAgentTool, "exec" | "process">();
   const bindToolSurface: AgentHarnessHostCapabilities["bindToolSurface"] = (tools, options) => {
     assertActive();
     const boundAbortSignal = attempt.abortSignal
@@ -342,10 +344,24 @@ export function createAgentHarnessHostCapabilities(params: {
     bindToolSurface,
     createToolSurface: (options, bindingOptions) => {
       assertActive();
-      return bindToolSurface(
+      const tools = bindToolSurface(
         createOpenClawCodingTools({ ...options, operationalRunInstance }),
         bindingOptions,
       );
+      for (const tool of tools) {
+        if (tool.name === "exec" || tool.name === "process") {
+          scheduledToolTargets.set(tool, tool.name);
+        }
+      }
+      return tools;
+    },
+    sealScheduledToolProjection: (sourceTool, projectedTool) => {
+      assertActive();
+      const targetTool = scheduledToolTargets.get(sourceTool);
+      if (!targetTool) {
+        throw new Error("scheduled tool projection source was not created by this host capability");
+      }
+      return sealCronScheduledToolProjection(projectedTool, assertActive, targetTool);
     },
     prepareMutableFileApproval: async (request) => {
       assertActive();

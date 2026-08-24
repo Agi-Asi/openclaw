@@ -35,30 +35,11 @@ import {
 
 type CodexCronCreatorTool = Parameters<typeof captureFinalCodexCronCreatorToolAllowlist>[0][number];
 type CodexCronRuntimeAuthority = NonNullable<EmbeddedRunAttemptParams["scheduledRuntimeAuthority"]>;
-
+type CodexCronScheduledToolAuthority = NonNullable<
+  Awaited<ReturnType<typeof captureFinalCodexCronCreatorToolAllowlist>>
+>;
 function isAuthorityResolutionOperationAbort(error: unknown, signal: AbortSignal | undefined) {
   return signal?.aborted === true && error === signal.reason;
-}
-
-function bindCodexCronScheduledTools(
-  authority: CodexCronRuntimeAuthority | undefined,
-  tools: readonly CodexCronCreatorTool[],
-): CodexCronRuntimeAuthority | undefined {
-  const toolBindings = tools.flatMap((tool) =>
-    typeof tool === "string" || !tool.scheduledToolBinding ? [] : [tool.scheduledToolBinding],
-  );
-  if (toolBindings.length === 0) {
-    return authority;
-  }
-  return {
-    ...(authority ?? {
-      version: 1,
-      runtimeId: "codex",
-      namespace: "scheduled-tools",
-      payload: { version: 1 },
-    }),
-    toolBindings,
-  };
 }
 
 export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
@@ -207,6 +188,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         tools: readonly CodexCronCreatorTool[];
         provenance: { version: 1; source: "final-executable-surface" };
         runtimeAuthority?: CodexCronRuntimeAuthority;
+        scheduledToolAuthority?: CodexCronScheduledToolAuthority;
       }>
     | undefined;
   let resolveCreatorAuthorityImpl:
@@ -214,6 +196,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         tools: readonly CodexCronCreatorTool[];
         provenance: { version: 1; source: "final-executable-surface" };
         runtimeAuthority?: CodexCronRuntimeAuthority;
+        scheduledToolAuthority?: CodexCronScheduledToolAuthority;
       }>)
     | undefined;
   const runtimeYieldCompletionClaim: { current?: () => boolean } = {};
@@ -479,7 +462,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         const captureRef: {
           value?: { version: 1; source: "final-executable-surface" };
         } = {};
-        await captureFinalCodexCronCreatorToolAllowlist(
+        let scheduledToolAuthority = await captureFinalCodexCronCreatorToolAllowlist(
           authorityTools,
           captureRef,
           toolBridge.availableTools,
@@ -502,13 +485,13 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
                   );
                 })()
             : undefined;
-        const runtimeAuthority = bindCodexCronScheduledTools(appRuntimeAuthority, authorityTools);
         if (!canResolveScheduledConfiguredMcpCreatorAuthority) {
           options?.signal?.throwIfAborted();
           return Object.freeze({
             tools: Object.freeze(authorityTools.map((entry) => Object.freeze(entry))),
             provenance: Object.freeze(captureRef.value),
-            ...(runtimeAuthority ? { runtimeAuthority } : {}),
+            ...(appRuntimeAuthority ? { runtimeAuthority: appRuntimeAuthority } : {}),
+            ...(scheduledToolAuthority ? { scheduledToolAuthority } : {}),
           });
         }
         const authorityRuntimeId = `cron-authority:${params.runId}`;
@@ -552,10 +535,11 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
             tools: filterCodexDynamicTools(materialized.tools, pluginConfig),
             hookContext,
           });
-          await captureFinalCodexCronCreatorToolAllowlist(authorityTools, captureRef, [
-            ...toolBridge.availableTools,
-            ...projectedConfiguredMcp.availableTools,
-          ]);
+          scheduledToolAuthority = await captureFinalCodexCronCreatorToolAllowlist(
+            authorityTools,
+            captureRef,
+            [...toolBridge.availableTools, ...projectedConfiguredMcp.availableTools],
+          );
           if (!captureRef.value) {
             throw new Error("configured MCP authority snapshot did not produce provenance");
           }
@@ -563,7 +547,8 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
           return Object.freeze({
             tools: Object.freeze(authorityTools.map((entry) => Object.freeze(entry))),
             provenance: Object.freeze(captureRef.value),
-            ...(runtimeAuthority ? { runtimeAuthority } : {}),
+            ...(appRuntimeAuthority ? { runtimeAuthority: appRuntimeAuthority } : {}),
+            ...(scheduledToolAuthority ? { scheduledToolAuthority } : {}),
           });
         } finally {
           await materialized.dispose();

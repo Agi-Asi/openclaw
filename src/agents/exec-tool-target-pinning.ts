@@ -1,33 +1,134 @@
 import { asNonArrayRecord } from "@openclaw/normalization-core/record-coerce";
-import type { CronScheduledToolBinding } from "../cron/runtime-authority.js";
+import {
+  normalizeCronRuntimeAuthority,
+  normalizeCronScheduledToolBindings,
+  type CronRuntimeAuthority,
+  type CronScheduledToolBinding,
+} from "../cron/runtime-authority.js";
 import type { AnyAgentTool } from "./tools/common.js";
 
-const scheduledToolBindings = new WeakMap<AnyAgentTool, CronScheduledToolBinding>();
+type CronScheduledToolProjection = Readonly<{
+  assertActive: () => void;
+  binding: CronScheduledToolBinding;
+  execute: AnyAgentTool["execute"];
+}>;
+
+export type CronScheduledToolAuthorityCapture = Readonly<{
+  kind: "cron-scheduled-tool-authority-capture";
+}>;
+
+const scheduledToolProjections = new WeakMap<AnyAgentTool, CronScheduledToolProjection>();
+const scheduledToolAuthorityCaptures = new WeakMap<
+  CronScheduledToolAuthorityCapture,
+  Readonly<{
+    projections: readonly CronScheduledToolProjection[];
+    fallbackAuthority: CronRuntimeAuthority;
+  }>
+>();
 
 const EXEC_POLICY_PARAMETER_NAMES = new Set(["host", "security", "ask"]);
 const NODE_EXEC_PARAMETER_NAMES = new Set(["command", "workdir", "env", "timeoutSeconds", "node"]);
 
 type PinnedExecToolTarget = { host: "gateway"; ask?: "always" } | { host: "node"; node?: string };
 
-export function bindCronScheduledTool(
-  tool: AnyAgentTool,
-  binding: CronScheduledToolBinding,
+/** Core-only producer boundary for an alias of an exact host-created shell tool. */
+export function sealCronScheduledToolProjection(
+  projectedTool: AnyAgentTool,
+  assertActive: () => void,
+  targetTool: "exec" | "process",
 ): AnyAgentTool {
-  scheduledToolBindings.set(tool, binding);
-  return tool;
+  assertActive();
+  const binding: CronScheduledToolBinding =
+    targetTool === "exec"
+      ? {
+          sourceTool: projectedTool.name,
+          targetTool: "exec",
+          execTarget: { host: "gateway" },
+        }
+      : { sourceTool: projectedTool.name, targetTool: "process" };
+  scheduledToolProjections.set(
+    projectedTool,
+    Object.freeze({ assertActive, binding, execute: projectedTool.execute }),
+  );
+  return projectedTool;
 }
 
-export function getCronScheduledToolBinding(
-  tool: AnyAgentTool,
-): CronScheduledToolBinding | undefined {
-  return scheduledToolBindings.get(tool);
-}
-
-export function copyCronScheduledToolBinding(source: AnyAgentTool, target: AnyAgentTool): void {
-  const binding = scheduledToolBindings.get(source);
-  if (binding) {
-    scheduledToolBindings.set(target, binding);
+export function copyCronScheduledToolProjection(source: AnyAgentTool, target: AnyAgentTool): void {
+  const projection = scheduledToolProjections.get(source);
+  if (
+    projection &&
+    source.name === projection.binding.sourceTool &&
+    target.name === projection.binding.sourceTool &&
+    source.execute === projection.execute &&
+    target.execute === projection.execute
+  ) {
+    scheduledToolProjections.set(target, projection);
   }
+}
+
+/** Captures only host-sealed projections present on the final executable surface. */
+export function captureCronScheduledToolAuthority(
+  tools: readonly AnyAgentTool[],
+  fallbackAuthority: CronRuntimeAuthority,
+): CronScheduledToolAuthorityCapture | undefined {
+  const projections = tools.flatMap((tool) => {
+    const projection = scheduledToolProjections.get(tool);
+    if (!projection) {
+      return [];
+    }
+    projection.assertActive();
+    if (tool.name !== projection.binding.sourceTool || tool.execute !== projection.execute) {
+      throw new Error("scheduled tool projection executable changed after host sealing");
+    }
+    return [projection];
+  });
+  const bindings = normalizeCronScheduledToolBindings(
+    projections.map((projection) => projection.binding),
+  );
+  const normalizedFallback = normalizeCronRuntimeAuthority(fallbackAuthority);
+  if (projections.length === 0) {
+    return undefined;
+  }
+  if (!bindings || !normalizedFallback) {
+    throw new Error("scheduled tool projection capture is invalid");
+  }
+  const capture = Object.freeze({
+    kind: "cron-scheduled-tool-authority-capture" as const,
+  });
+  scheduledToolAuthorityCaptures.set(
+    capture,
+    Object.freeze({
+      projections: Object.freeze(projections),
+      fallbackAuthority: normalizedFallback,
+    }),
+  );
+  return capture;
+}
+
+/** Redeems host-owned evidence immediately before minting the one-shot cron grant. */
+export function redeemCronScheduledToolAuthority(
+  capture: CronScheduledToolAuthorityCapture | undefined,
+  authority: CronRuntimeAuthority | undefined,
+): CronRuntimeAuthority | undefined {
+  if (!capture) {
+    return authority;
+  }
+  const captured = scheduledToolAuthorityCaptures.get(capture);
+  if (!captured) {
+    throw new Error("scheduled tool authority capture is not host-issued");
+  }
+  for (const projection of captured.projections) {
+    projection.assertActive();
+  }
+  const runtimeAuthority = authority ?? captured.fallbackAuthority;
+  const normalized = normalizeCronRuntimeAuthority({
+    ...runtimeAuthority,
+    toolBindings: captured.projections.map((projection) => projection.binding),
+  });
+  if (!normalized) {
+    throw new Error("scheduled tool authority redemption is invalid");
+  }
+  return normalized;
 }
 
 /** Restricts an exec tool to one host target even when callers submit broader arguments. */

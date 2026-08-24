@@ -8,6 +8,7 @@ import {
   revokeCronCreatorAuthorityRunScope,
   type CronCreatorAuthorityRunScope,
 } from "../gateway/cron-creator-authority-grant.js";
+import { redeemCronScheduledToolAuthority } from "./exec-tool-target-pinning.js";
 import type {
   CronCreatorToolAuthorityMaterialization,
   CronToolOptions,
@@ -116,10 +117,14 @@ function bindCronCreatorAuthorityResolver(params: {
     if (!authority.active) {
       authority.signal.throwIfAborted();
     }
+    const runtimeAuthority = redeemCronScheduledToolAuthority(
+      snapshot.scheduledToolAuthority,
+      snapshot.runtimeAuthority,
+    );
     return Object.freeze({
       tools: snapshot.tools,
       provenance: snapshot.provenance,
-      grant: mintCronCreatorAuthorityGrant(authority, operationSignal, snapshot.runtimeAuthority),
+      grant: mintCronCreatorAuthorityGrant(authority, operationSignal, runtimeAuthority),
     });
   };
 }

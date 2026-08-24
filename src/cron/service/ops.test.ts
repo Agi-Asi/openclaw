@@ -399,6 +399,81 @@ describe("scheduled tool policy provenance", () => {
     }
   });
 
+  it("retires retained authority when its execution surface or target changes", async () => {
+    const { storePath } = await makeStorePath();
+    const state = createOkIsolatedCronState({
+      storePath,
+      now: Date.now(),
+      triggersEnabled: true,
+    });
+    const authority = {
+      version: 1 as const,
+      runtimeId: "codex",
+      namespace: "scheduled-tools",
+      payload: { version: 1 },
+      toolBindings: [
+        {
+          sourceTool: "gateway_exec",
+          targetTool: "exec" as const,
+          execTarget: { host: "gateway" as const },
+        },
+      ],
+    };
+    const created = await add(
+      state,
+      {
+        name: "surface-bound authority",
+        enabled: true,
+        agentId: "main",
+        schedule: { kind: "every", everyMs: 60_000 },
+        sessionTarget: "isolated",
+        wakeMode: "now",
+        trigger: { script: "return true" },
+        payload: { kind: "agentTurn", message: "run", toolsAllow: ["gateway_exec"] },
+      },
+      { captureRuntimeAuthority: () => authority },
+    );
+
+    const withoutTrigger = await update(state, created.id, { trigger: null });
+    expect(withoutTrigger.runtimeAuthority).toBeUndefined();
+    expect(withoutTrigger.runtimeAuthorityRecoveryRequired).toBe(true);
+
+    const restoredTrigger = await update(state, created.id, {
+      trigger: { script: "return true" },
+    });
+    expect(restoredTrigger.runtimeAuthority).toBeUndefined();
+    expect(restoredTrigger.runtimeAuthorityRecoveryRequired).toBe(true);
+
+    const recaptured = await update(
+      state,
+      created.id,
+      { description: "fresh authority" },
+      { captureRuntimeAuthority: () => authority },
+    );
+    expect(recaptured.runtimeAuthority).toEqual(authority);
+
+    const rewrittenTrigger = await update(state, created.id, {
+      trigger: { script: "return false" },
+    });
+    expect(rewrittenTrigger.runtimeAuthority).toBeUndefined();
+    expect(rewrittenTrigger.runtimeAuthorityRecoveryRequired).toBe(true);
+
+    const recapturedAfterRewrite = await update(
+      state,
+      created.id,
+      { description: "recaptured after trigger rewrite" },
+      { captureRuntimeAuthority: () => authority },
+    );
+    expect(recapturedAfterRewrite.runtimeAuthority).toEqual(authority);
+
+    const retargeted = await update(state, created.id, { agentId: "other" });
+    expect(retargeted.runtimeAuthority).toBeUndefined();
+    expect(retargeted.runtimeAuthorityRecoveryRequired).toBe(true);
+    if (state.timer) {
+      clearTimeout(state.timer);
+    }
+  });
+
   it("stamps trusted and authenticated-account creates", async () => {
     const { storePath } = await makeStorePath();
     const now = Date.parse("2026-07-23T12:00:00.000Z");

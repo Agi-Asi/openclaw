@@ -1,10 +1,14 @@
-import { bindCronScheduledTool, pinExecToolTarget } from "openclaw/plugin-sdk/codex-mcp-projection";
+import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { pinExecToolTarget } from "openclaw/plugin-sdk/codex-mcp-projection";
 import type { CodexPluginConfig } from "./config.js";
 import { normalizeCodexDynamicToolName } from "./dynamic-tool-profile.js";
 
 type OpenClawCodingToolsFactory =
   (typeof import("openclaw/plugin-sdk/agent-harness"))["createOpenClawCodingTools"];
 type OpenClawDynamicTool = ReturnType<OpenClawCodingToolsFactory>[number];
+type SealScheduledToolProjection = NonNullable<
+  EmbeddedRunAttemptParams["hostCapabilities"]["sealScheduledToolProjection"]
+>;
 type ExecAliasParams =
   | { host: "gateway"; processAliasAvailable: boolean; ask?: "always" }
   | { host: "node"; node?: string };
@@ -29,6 +33,7 @@ export function isCodexDynamicToolExcluded(
 export function createExecAliasDynamicTool(
   execTool: OpenClawDynamicTool,
   params: ExecAliasParams,
+  sealScheduledToolProjection?: SealScheduledToolProjection,
 ): OpenClawDynamicTool {
   const pinnedNode = params.host === "node" ? params.node?.trim() : undefined;
   const nodeAlias = params.host === "node";
@@ -69,28 +74,20 @@ export function createExecAliasDynamicTool(
     description,
     execute,
   };
-  return nodeAlias
+  return nodeAlias || !sealScheduledToolProjection
     ? alias
-    : bindCronScheduledTool(alias, {
-        sourceTool: CODEX_GATEWAY_EXEC_DYNAMIC_TOOL_NAME,
-        targetTool: "exec",
-        execTarget: { host: "gateway" },
-      });
+    : sealScheduledToolProjection(execTool, alias);
 }
 
 export function createGatewayProcessAliasDynamicTool(
   processTool: OpenClawDynamicTool,
+  sealScheduledToolProjection?: SealScheduledToolProjection,
 ): OpenClawDynamicTool {
-  return bindCronScheduledTool(
-    {
-      ...processTool,
-      name: CODEX_GATEWAY_PROCESS_DYNAMIC_TOOL_NAME,
-      description:
-        "Manage background shell sessions in the existing per-session OpenClaw process scope: list, poll, log, write, send-keys, submit, paste, kill, clear, or remove. Use for gateway_exec follow-up; use native Codex shell session handling for ordinary local work.",
-    },
-    {
-      sourceTool: CODEX_GATEWAY_PROCESS_DYNAMIC_TOOL_NAME,
-      targetTool: "process",
-    },
-  );
+  const alias = {
+    ...processTool,
+    name: CODEX_GATEWAY_PROCESS_DYNAMIC_TOOL_NAME,
+    description:
+      "Manage background shell sessions in the existing per-session OpenClaw process scope: list, poll, log, write, send-keys, submit, paste, kill, clear, or remove. Use for gateway_exec follow-up; use native Codex shell session handling for ordinary local work.",
+  };
+  return sealScheduledToolProjection ? sealScheduledToolProjection(processTool, alias) : alias;
 }

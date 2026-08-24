@@ -3,8 +3,7 @@
 // can attach the same user `mcp.servers` entries to its thread config without
 // deep-importing core helpers.
 import {
-  bindCronScheduledTool,
-  getCronScheduledToolBinding,
+  captureCronScheduledToolAuthority,
   pinExecToolTarget,
 } from "../agents/exec-tool-target-pinning.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
@@ -13,7 +12,7 @@ import type {
   CronToolsAllowCaptureRef,
 } from "../agents/tools/cron-tool.types.js";
 
-export { bindCronScheduledTool, getCronScheduledToolBinding, pinExecToolTarget };
+export { pinExecToolTarget };
 export {
   buildCodexUserMcpServersThreadConfigPatch,
   buildCodexUserMcpServersThreadConfigPatchForRuntime,
@@ -43,11 +42,11 @@ export async function captureFinalCodexCronCreatorToolAllowlist(
 ) {
   const [{ captureFinalEffectiveCronCreatorToolAllowlist: capture }, { getPluginToolMeta }] =
     await Promise.all([import("../agents/tools/cron-tool.js"), import("../plugins/tools.js")]);
-  return capture(target, captureRef, tools, (tool) => {
-    const scheduledToolBinding = getCronScheduledToolBinding(tool);
-    return {
-      ...getPluginToolMeta(tool),
-      ...(scheduledToolBinding ? { scheduledToolBinding } : {}),
-    };
+  capture(target, captureRef, tools, (tool) => getPluginToolMeta(tool));
+  return captureCronScheduledToolAuthority(tools, {
+    version: 1,
+    runtimeId: "codex",
+    namespace: "scheduled-tools",
+    payload: { version: 1 },
   });
 }

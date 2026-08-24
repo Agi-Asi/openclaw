@@ -615,14 +615,23 @@ function addGatewayShellDynamicToolsIfAvailable(
     processTool && !processExcluded && !existingNames.has(CODEX_GATEWAY_PROCESS_DYNAMIC_TOOL_NAME),
   );
   const toolsToAppend = [
-    createExecAliasDynamicTool(execTool, {
-      host: "gateway",
-      processAliasAvailable,
-      ...(input.sessionPermissionPolicy?.mode === "guarded" ? { ask: "always" } : {}),
-    }),
+    createExecAliasDynamicTool(
+      execTool,
+      {
+        host: "gateway",
+        processAliasAvailable,
+        ...(input.sessionPermissionPolicy?.mode === "guarded" ? { ask: "always" } : {}),
+      },
+      input.params.hostCapabilities.sealScheduledToolProjection,
+    ),
   ];
   if (processAliasAvailable && processTool) {
-    toolsToAppend.push(createGatewayProcessAliasDynamicTool(processTool));
+    toolsToAppend.push(
+      createGatewayProcessAliasDynamicTool(
+        processTool,
+        input.params.hostCapabilities.sealScheduledToolProjection,
+      ),
+    );
   }
   return [...filteredTools, ...toolsToAppend];
 }
