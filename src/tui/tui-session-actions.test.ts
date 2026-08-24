@@ -1436,26 +1436,122 @@ describe("tui session actions", () => {
     }
   });
 
-  it("preserves run ownership when reloading the same session selection", async () => {
+  it.each([
+    { name: "canonical key", selectedKey: "agent:main:main" },
+    { name: "request-key alias", selectedKey: "main" },
+  ])("preserves same-session run ownership while reloading its $name", async ({ selectedKey }) => {
     const sessionKey = "agent:main:main";
+    const history = createDeferred<unknown>();
     const invalidateRunOwnership = vi.fn();
-    const state = createBaseState({ currentSessionKey: sessionKey });
+    const clearLocalRunIds = vi.fn();
+    const btw = createBtwPresenter();
+    const chatLog = new ChatLog();
+    const state = createBaseState({
+      currentSessionKey: sessionKey,
+      currentSessionId: "session-main",
+      activeChatRunId: "active-run",
+      pendingSubmit: acceptedSubmit("queued-run", "queued user message"),
+      activityStatus: "streaming",
+      historyLoaded: true,
+      sessionInfo: { updatedAt: 200, model: "current-model", modelProvider: "current-provider" },
+    });
+    sendPendingUser(state, "queued-run", "queued user message");
+    chatLog.addPendingUser("queued-run", "queued user message");
     const { setSession } = createTestSessionActions({
       client: makeTuiBackend({
         listSessions: vi.fn(),
-        loadHistory: vi.fn().mockResolvedValue({
-          sessionId: "session-main",
-          sessionInfo: { key: sessionKey, sessionId: "session-main" },
-          messages: [],
-        }),
+        loadHistory: vi.fn(() => history.promise),
       }),
+      chatLog,
+      btw,
       state,
       invalidateRunOwnership,
+      clearLocalRunIds,
+      setActivityStatus: (status) => {
+        state.activityStatus = status;
+      },
+    });
+
+    const reloading = setSession(selectedKey);
+
+    expect(invalidateRunOwnership).not.toHaveBeenCalled();
+    expect(clearLocalRunIds).not.toHaveBeenCalled();
+    expect(btw.clear).not.toHaveBeenCalled();
+    expect(state.activeChatRunId).toBe("active-run");
+    expect(getPendingSubmitAcceptedRunId(state)).toBe("queued-run");
+    expect(state.activityStatus).toBe("streaming");
+    expect(state.historyLoaded).toBe(true);
+    expect(state.sessionInfo.updatedAt).toBe(200);
+    expect(chatLog.countPendingUsers()).toBe(1);
+
+    history.resolve({
+      sessionId: "session-main",
+      sessionInfo: {
+        key: sessionKey,
+        sessionId: "session-main",
+        updatedAt: 100,
+        model: "stale-model",
+        modelProvider: "stale-provider",
+      },
+      messages: [],
+      inFlightRun: { runId: "active-run", text: "active response" },
+    });
+    await reloading;
+
+    expect(state.currentSessionKey).toBe(sessionKey);
+    expect(state.activeChatRunId).toBe("active-run");
+    expect(getPendingSubmitAcceptedRunId(state)).toBe("queued-run");
+    expect(getPendingSubmitDraft(state)).toEqual({
+      runId: "queued-run",
+      text: "queued user message",
+    });
+    expect(state.sessionInfo).toMatchObject({
+      updatedAt: 200,
+      model: "current-model",
+      modelProvider: "current-provider",
+    });
+    expect(chatLog.countPendingUsers()).toBe(1);
+    expect(chatLog.render(120).join("\n")).toContain("queued user message");
+    expect(invalidateRunOwnership).not.toHaveBeenCalled();
+    expect(clearLocalRunIds).not.toHaveBeenCalled();
+    expect(btw.clear).toHaveBeenCalledOnce();
+  });
+
+  it("preserves same-session run ownership when its history reload fails", async () => {
+    const sessionKey = "agent:main:main";
+    const chatLog = new ChatLog();
+    const state = createBaseState({
+      currentSessionKey: sessionKey,
+      currentSessionId: "session-main",
+      activeChatRunId: "active-run",
+      pendingSubmit: acceptedSubmit("queued-run", "queued user message"),
+      activityStatus: "streaming",
+      historyLoaded: true,
+      sessionInfo: { updatedAt: 200, model: "current-model" },
+    });
+    sendPendingUser(state, "queued-run", "queued user message");
+    chatLog.addPendingUser("queued-run", "queued user message");
+    const { setSession } = createTestSessionActions({
+      client: makeTuiBackend({
+        listSessions: vi.fn(),
+        loadHistory: vi.fn().mockRejectedValue(new Error("gateway disconnected")),
+      }),
+      chatLog,
+      state,
+      setActivityStatus: (status) => {
+        state.activityStatus = status;
+      },
     });
 
     await setSession(sessionKey);
 
-    expect(invalidateRunOwnership).not.toHaveBeenCalled();
+    expect(state.activeChatRunId).toBe("active-run");
+    expect(getPendingSubmitAcceptedRunId(state)).toBe("queued-run");
+    expect(state.activityStatus).toBe("streaming");
+    expect(state.historyLoaded).toBe(true);
+    expect(state.sessionInfo.updatedAt).toBe(200);
+    expect(chatLog.countPendingUsers()).toBe(1);
+    expect(chatLog.render(120).join("\n")).toContain("gateway disconnected");
   });
 
   it("adopts an in-flight run with no buffered text (Codex) and shows streaming", async () => {

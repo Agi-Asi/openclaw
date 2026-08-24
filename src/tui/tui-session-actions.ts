@@ -105,25 +105,23 @@ export function createSessionActions(context: SessionActionContext) {
     }
     state.currentAgentId = nextSelection.agentId;
     state.currentSessionKey = nextSelection.key;
-    state.activeChatRunId = null;
-    submit.clearPendingSubmit(state);
-    setActivityStatus("idle");
     if (selectionChanged) {
+      state.activeChatRunId = null;
+      submit.clearPendingSubmit(state);
+      setActivityStatus("idle");
       state.currentSessionId = null;
       state.sessionInfo.displayName = undefined;
       clearTuiSessionModeOverrides(state.sessionInfo);
-    }
-    // Session keys can move backwards in updatedAt ordering; drop previous session freshness
-    // so refresh data for the newly selected session isn't rejected as stale.
-    state.sessionInfo.updatedAt = null;
-    state.historyLoaded = false;
-    if (selectionChanged) {
+      // Different sessions can move backwards in freshness; same-session
+      // reloads must retain their active runs and newer authoritative state.
+      state.sessionInfo.updatedAt = null;
+      state.historyLoaded = false;
       // Live prompt identities belong to the old selection, not its pending successor.
       chatLog.clearAll();
+      chatLog.clearPendingUsers();
+      clearLocalRunIds?.();
+      btw.clear();
     }
-    chatLog.clearPendingUsers();
-    clearLocalRunIds?.();
-    btw.clear();
     updateHeader();
     updateFooter();
   };
