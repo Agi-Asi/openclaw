@@ -18,7 +18,6 @@ import { createIdleImport } from "../lib/idle-import.ts";
 import "./theme-mode-toggle.ts";
 import "./tooltip.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
-import type { CatalogSessionKey } from "../lib/sessions/catalog-key.ts";
 import type { CatalogProjectGrouping } from "../lib/sessions/catalog-project-grouping.ts";
 import { showToast } from "../lib/toast.ts";
 import { SubscriptionsController } from "../lit/subscriptions-controller.ts";
@@ -454,10 +453,6 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
     trigger?: HTMLElement,
   ): void {
     this.sidebarMenus.catalogMenu.open(request, x, y, trigger);
-  }
-
-  retargetCatalogMenuTrigger(key: CatalogSessionKey, element: Element | undefined): void {
-    this.sidebarMenus.catalogMenu.retargetTrigger(key, element);
   }
 
   renderPinnedSidebarSession(session: SidebarRecentSession): TemplateResult {

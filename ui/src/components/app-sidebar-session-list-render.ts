@@ -352,7 +352,6 @@ function renderSessionCatalog(params: {
       terminalAvailable: snapshot.terminalAvailable,
       onOpenTerminal: openCatalogSessionInTerminal,
       onOpenMenu: (request, x, y, trigger) => host.openCatalogMenu(request, x, y, trigger),
-      onCatalogMenuTriggerRendered: (key, element) => host.retargetCatalogMenuTrigger(key, element),
       isMenuOpen: (key) => host.sidebarMenus.catalogMenu.isOpenFor(key),
     })}
   `;
