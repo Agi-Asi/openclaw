@@ -509,17 +509,13 @@ export class TerminalPanelSessionController
     }
   }
 
-  async openSession(catalog?: TerminalPanelCatalogReference): Promise<void> {
-    const sessionKey = catalog ? undefined : this.host.sessionKey?.trim() || undefined;
-    await terminalIntentQueue.queue(
-      catalog
-        ? { kind: "catalog", agentId: this.host.agentId?.trim() || null, catalog }
-        : {
-            kind: "open",
-            agentId: this.host.agentId?.trim() || null,
-            ...(sessionKey ? { sessionKey } : {}),
-          },
-    );
+  async openSession(): Promise<void> {
+    const sessionKey = this.host.sessionKey?.trim() || undefined;
+    await terminalIntentQueue.queue({
+      kind: "open",
+      agentId: this.host.agentId?.trim() || null,
+      ...(sessionKey ? { sessionKey } : {}),
+    });
   }
 
   private async openSessionNow(

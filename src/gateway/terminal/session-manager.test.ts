@@ -572,9 +572,8 @@ describe("TerminalSessionManager agent ownership", () => {
   const agentOwner = { kind: "agent", agentSessionKey: "agent:main:main" } as const;
 
   it("atomically opens an agent-owned session with its initiating viewer", async () => {
-    const emit = vi.fn();
     const fake = makeFakePty();
-    const manager = new TerminalSessionManager({ emit, spawn: async () => fake });
+    const manager = new TerminalSessionManager({ emit: vi.fn(), spawn: async () => fake });
     const outcome = await manager.open(
       baseRequest({ owner: agentOwner, initialViewerConnId: "viewer-1" }),
     );

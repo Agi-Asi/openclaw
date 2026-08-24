@@ -277,6 +277,13 @@ export async function openTerminalSession(
     respond(false, undefined, initialOwner.error);
     return;
   }
+  const closeOpenedSession = (sessionId: string): void => {
+    if (initialOwner.owner.kind === "agent") {
+      manager.closeAgent(initialOwner.owner.agentSessionKey, sessionId, initialOwner.owner.agentId);
+    } else {
+      manager.close(connId, sessionId);
+    }
+  };
   const launch = context.resolveTerminalLaunchPolicy(request.agentId);
   if (!launch.ok) {
     respondLaunchBlocked(respond, launch.block, request.failureHint);
@@ -426,11 +433,6 @@ export async function openTerminalSession(
     respondLaunchBlocked(respond, refreshedLaunch.block, request.failureHint);
     return;
   }
-  const refreshedOwner = resolveSharedTerminalOwner(context, request);
-  if (!refreshedOwner.ok) {
-    respond(false, undefined, refreshedOwner.error);
-    return;
-  }
   if (nodeRelay) {
     const relay = nodeRelay;
     const access = authorizeCatalogTerminalNode(context, relay.plan);
@@ -481,9 +483,8 @@ export async function openTerminalSession(
   try {
     outcome = await waitForTerminalOpenDeadline(() => {
       openingTerminal = manager.open({
-        owner:
-          refreshedOwner.owner.kind === "agent" ? refreshedOwner.owner : { kind: "conn", connId },
-        ...(refreshedOwner.owner.kind === "agent" ? { initialViewerConnId: connId } : {}),
+        owner: initialOwner.owner.kind === "agent" ? initialOwner.owner : { kind: "conn", connId },
+        ...(initialOwner.owner.kind === "agent" ? { initialViewerConnId: connId } : {}),
         agentId: spawnPlan.agentId,
         cwd: spawnPlan.cwd,
         shell: spawnPlan.shell,
@@ -505,15 +506,7 @@ export async function openTerminalSession(
         void openingTerminal.then(
           (lateOutcome) => {
             if (lateOutcome.ok) {
-              if (refreshedOwner.owner.kind === "agent") {
-                manager.closeAgent(
-                  refreshedOwner.owner.agentSessionKey,
-                  lateOutcome.sessionId,
-                  refreshedOwner.owner.agentId,
-                );
-              } else {
-                manager.close(connId, lateOutcome.sessionId);
-              }
+              closeOpenedSession(lateOutcome.sessionId);
             }
           },
           () => undefined,
@@ -536,15 +529,7 @@ export async function openTerminalSession(
   if (context.isConnectionActive?.(connId) === false) {
     // A browser deadline can close the socket while PTY creation is still
     // finishing. Release the raced session instead of leaving an orphan.
-    if (refreshedOwner.owner.kind === "agent") {
-      manager.closeAgent(
-        refreshedOwner.owner.agentSessionKey,
-        outcome.sessionId,
-        refreshedOwner.owner.agentId,
-      );
-    } else {
-      manager.close(connId, outcome.sessionId);
-    }
+    closeOpenedSession(outcome.sessionId);
     respond(
       false,
       undefined,

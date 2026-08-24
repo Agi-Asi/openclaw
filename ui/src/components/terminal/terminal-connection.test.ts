@@ -456,18 +456,7 @@ describe("TerminalConnection", () => {
     expect(conn.size).toBe(0);
   });
 
-  it("forwards the selected agent when opening a session", async () => {
-    const { client, conn } = makeHarness();
-    await openSession(conn, {}, { agentId: "ops", cols: 100, rows: 30 });
-
-    expect(client.requests[0]).toEqual({
-      method: "terminal.open",
-      params: { agentId: "ops", cols: 100, rows: 30 },
-      options: { timeoutMs: TERMINAL_OPEN_WATCHDOG_MS },
-    });
-  });
-
-  it("forwards exact chat session ownership only when supplied", async () => {
+  it("forwards the selected agent and exact chat ownership", async () => {
     const { client, conn } = makeHarness();
     await openSession(
       conn,
