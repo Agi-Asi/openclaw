@@ -7,6 +7,17 @@
       "table": "state_leases",
       "indexes": ["idx_agent_state_leases_expiry", "idx_agent_state_leases_owner"],
       "note": "Removed from the canonical per-agent schema in version 17."
+    },
+    {
+      "database": "state",
+      "status": "completed",
+      "targetVersion": 9,
+      "table": "command_log_entries",
+      "indexes": [
+        "idx_command_log_entries_timestamp",
+        "idx_command_log_entries_session"
+      ],
+      "note": "Removed with the bundled command-logger hook; released handlers never used this table."
     }
   ]
 }

@@ -1721,6 +1721,53 @@ describe("openclaw state database", () => {
   });
 
   it.each(["runtime open", "doctor repair"] as const)(
+    "retires inert command audit storage through %s",
+    (migrationPath) => {
+      const stateDir = createTempStateDir();
+      const options = { env: { OPENCLAW_STATE_DIR: stateDir } };
+      const databasePath = materializeCurrentStateDatabase(stateDir);
+      const { DatabaseSync } = requireNodeSqlite();
+      const legacy = new DatabaseSync(databasePath);
+      legacy.exec(`
+        CREATE TABLE command_log_entries (
+          id TEXT NOT NULL PRIMARY KEY,
+          timestamp_ms INTEGER NOT NULL,
+          action TEXT NOT NULL,
+          session_key TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          source TEXT NOT NULL,
+          entry_json TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX idx_command_log_entries_timestamp
+          ON command_log_entries(timestamp_ms DESC, id);
+        CREATE INDEX idx_command_log_entries_session
+          ON command_log_entries(session_key, timestamp_ms DESC, id);
+      `);
+      legacy
+        .prepare(
+          `INSERT INTO command_log_entries (
+             id, timestamp_ms, action, session_key, sender_id, source, entry_json
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("legacy-entry", 1, "new", "agent:main:main", "sender", "telegram", "{}");
+      legacy.exec("PRAGMA user_version = 8;");
+      legacy.prepare("UPDATE schema_meta SET schema_version = 8 WHERE meta_key = ?").run("primary");
+      legacy.close();
+
+      if (migrationPath === "doctor repair") {
+        repairOpenClawStateDatabaseSchema(options);
+      }
+      const migrated = openOpenClawStateDatabase(options);
+
+      expect(
+        migrated.db
+          .prepare("SELECT name FROM sqlite_schema WHERE name = 'command_log_entries'")
+          .get(),
+      ).toBeUndefined();
+    },
+  );
+
+  it.each(["runtime open", "doctor repair"] as const)(
     "retires v6 commitments through %s while preserving shared leases",
     (migrationPath) => {
       const stateDir = createTempStateDir();

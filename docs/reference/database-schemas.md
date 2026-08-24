@@ -98,13 +98,15 @@ Version 3 was an unshipped development step folded into version 4.
 | 4       | Session watch provenance replaces encoded sentinel rows                                                                                                                                                                                          | Unreleased          |
 | 5       | Durable cloud-worker result references on pending workspace fences ([`7a7d6bb`](https://github.com/openclaw/openclaw/commit/7a7d6bb51f42bd896de2b8a4df2ee66f3dce0a21), [#110952](https://github.com/openclaw/openclaw/pull/110952))              | `v2026.7.2-beta.4`  |
 | 6       | Every committed shared-state table becomes part of the canonical runtime schema ([`509a5f0`](https://github.com/openclaw/openclaw/commit/509a5f03737642fec4a940e6d605887f7957ddc8), [#113473](https://github.com/openclaw/openclaw/pull/113473)) | `v2026.7.2-beta.5`  |
-| 7       | Retired inferred-commitment storage removed                                                                                                                                                                                                      | Unreleased          |
-| 8       | Cloud-worker placement execution modes and mode-aware turn claims                                                                                                                                                                                | Unreleased          |
-| 9       | In-root agent database registry paths stored relative to the state directory                                                                                                                                                                     | Unreleased          |
+| 7       | Retired inferred-commitment storage removed                                                                                                                                                                                                      | `v2026.8.1-beta.2`  |
+| 8       | Cloud-worker placement execution modes and mode-aware turn claims                                                                                                                                                                                | `v2026.8.1-beta.2`  |
+| 9       | In-root agent database registry paths stored relative to the state directory; inert command audit storage retired                                                                                                                                | Unreleased          |
 
 ### State schema 9
 
 Schema 9 stores an `agent_databases.path` value relative to the state directory when the registered agent database is inside that directory. During migration, a foreign default-layout row is re-anchored to the in-root counterpart when that file exists. It is deleted only when the same agent already holds its in-root registration, because dual default-layout registrations cannot produce a valid combined session list. Otherwise, the absolute row is preserved, so genuine external registrations are never deleted. This keeps a copied state directory self-contained without dropping supported external database paths.
+
+Schema 9 also drops the inert `command_log_entries` table. Released command-logger builds wrote only `logs/commands.log`; no released runtime wrote or read this table.
 
 ## Integrity checks
 

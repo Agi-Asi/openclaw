@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { SqliteWalMaintenance } from "../infra/sqlite-wal.js";
 
-// v9 stores in-root agent database registry paths relative to the state dir.
+// v9 stores in-root agent database registry paths relative to the state dir and retires inert state.
 // v8 records cloud-placement execution mode and mode-aware turn claims.
 // v7 retires the inert shared commitments table.
 // v6 makes every committed shared-state table part of the canonical runtime schema.

@@ -80,8 +80,8 @@ metadata:
 
   it("parses multi-line metadata with complex nested structure", () => {
     const content = `---
-name: command-logger
-description: "Log all command events"
+name: audit-hook
+description: "Process audit events"
 metadata:
   {
     "openclaw":
@@ -95,9 +95,9 @@ metadata:
 ---
 `;
     const result = parseHookFrontmatter(content);
-    expect(result.name).toBe("command-logger");
+    expect(result.name).toBe("audit-hook");
 
-    const parsed = JSON.parse(requireString(result.metadata, "command-logger metadata"));
+    const parsed = JSON.parse(requireString(result.metadata, "audit-hook metadata"));
     expect(parsed.openclaw.emoji).toBe("📝");
     expect(parsed.openclaw.events).toEqual(["command"]);
     expect(parsed.openclaw.requires.config).toEqual(["workspace.dir"]);

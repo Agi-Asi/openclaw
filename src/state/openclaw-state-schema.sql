@@ -1655,22 +1655,6 @@ CREATE TABLE IF NOT EXISTS cron_job_scratch (
 CREATE INDEX IF NOT EXISTS idx_cron_job_scratch_store_updated
   ON cron_job_scratch(store_key, updated_at_ms DESC, job_id);
 
-CREATE TABLE IF NOT EXISTS command_log_entries (
-  id TEXT NOT NULL PRIMARY KEY,
-  timestamp_ms INTEGER NOT NULL,
-  action TEXT NOT NULL,
-  session_key TEXT NOT NULL,
-  sender_id TEXT NOT NULL,
-  source TEXT NOT NULL,
-  entry_json TEXT NOT NULL
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS idx_command_log_entries_timestamp
-  ON command_log_entries(timestamp_ms DESC, id);
-
-CREATE INDEX IF NOT EXISTS idx_command_log_entries_session
-  ON command_log_entries(session_key, timestamp_ms DESC, id);
-
 CREATE TABLE IF NOT EXISTS delivery_queue_entries (
   queue_name TEXT NOT NULL,
   id TEXT NOT NULL,

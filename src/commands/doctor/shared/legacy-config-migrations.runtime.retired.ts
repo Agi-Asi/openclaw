@@ -443,6 +443,42 @@ function migrateFinalLayoutKills(raw: Record<string, unknown>, changes: string[]
 export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_RETIRED: LegacyConfigMigrationSpec[] = [
   LEGACY_CONFIG_MIGRATION_RUNTIME_MEMORY_QMD,
   defineLegacyConfigMigration({
+    id: "runtime.retired-command-logger-hook",
+    describe: "Remove retired command-logger hook configuration",
+    legacyRules: [
+      {
+        path: ["hooks", "internal", "entries", "command-logger"],
+        message:
+          'The bundled command-logger hook was removed. Run "openclaw doctor --fix" to remove its retired configuration.',
+      },
+    ],
+    apply: (raw, changes) => {
+      const internal = getRecord(getRecord(raw.hooks)?.internal);
+      const entries = getRecord(internal?.entries);
+      if (!internal || !entries || !Object.hasOwn(entries, "command-logger")) {
+        return;
+      }
+
+      delete entries["command-logger"];
+      changes.push("Removed retired hooks.internal.entries.command-logger configuration.");
+
+      if (Object.keys(entries).length > 0) {
+        return;
+      }
+      delete internal.entries;
+      const extraDirs = getRecord(internal.load)?.extraDirs;
+      const hasExtraDirs =
+        Array.isArray(extraDirs) &&
+        extraDirs.some((dir) => typeof dir === "string" && dir.trim().length > 0);
+      if (internal.enabled === true && !hasExtraDirs) {
+        delete internal.enabled;
+        changes.push(
+          "Removed retired-hook-only hooks.internal.enabled to avoid enabling broad hook discovery.",
+        );
+      }
+    },
+  }),
+  defineLegacyConfigMigration({
     id: "runtime.retired-internal-hook-handlers",
     describe: "Remove retired internal hook handler registrations",
     legacyRules: [

@@ -1439,9 +1439,6 @@ create` validates the written archive by default; `--no-verify` is the
 - The bundled session-memory hook now resolves previous-session context from
   SQLite by `{agentId, sessionId}`. It no longer scans, stores, or synthesizes
   transcript paths or `workspace/sessions` directories.
-- The bundled command-logger hook now writes command audit rows to the shared
-  SQLite `command_log_entries` table instead of appending
-  `logs/commands.log`.
 - Channel pairing allowlists now expose only SQLite-backed read/write helpers at
   runtime. The deprecated plugin SDK path resolver remains for migration
   compatibility; file readers live only in doctor state migration code.

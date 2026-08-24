@@ -224,6 +224,10 @@ describe("check-database-first-legacy-stores", () => {
           await fs.writeFile(path.join(dir, "sessions.json"), "{}\\n", "utf8");
         }
       `("session-writer.ts", filesystemWriteViolations(5)),
+      "flags runtime writes to the retired command log": sourceCase`
+        import { appendRegularFile } from "../infra/fs-safe.js";
+        await appendRegularFile({ filePath: "logs/commands.log", content: "{}\\n" });
+      `("command-log-writer.ts", filesystemWriteViolations(3)),
     }),
   )("$name", ({ source, filename, expected }) => {
     const violations = collectDatabaseFirstLegacyStoreViolations(source, filename);

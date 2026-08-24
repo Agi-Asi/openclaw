@@ -32,20 +32,6 @@ Injects extra bootstrap files (for example monorepo `AGENTS.md`) during prompt a
 openclaw hooks enable bootstrap-extra-files
 ```
 
-### 📝 command-logger
-
-Logs all command events to a centralized audit file.
-
-**Events**: `command` (all commands)
-**What it does**: Appends JSONL entries to command log file.
-**Output**: `~/.openclaw/logs/commands.log`
-
-**Enable**:
-
-```bash
-openclaw hooks enable command-logger
-```
-
 ### 🚀 boot-md
 
 Runs `BOOT.md` whenever the gateway starts (after channels start).
@@ -135,7 +121,6 @@ Enable/disable:
 
 ```bash
 openclaw hooks enable session-memory
-openclaw hooks disable command-logger
 ```
 
 ## Configuration
@@ -150,9 +135,6 @@ Hooks can be configured in `~/.openclaw/openclaw.json`:
       "entries": {
         "session-memory": {
           "enabled": true
-        },
-        "command-logger": {
-          "enabled": false
         }
       }
     }

@@ -366,16 +366,6 @@ export interface ClawhubPromotionsFeedState {
   updated_at_ms: number;
 }
 
-export interface CommandLogEntries {
-  action: string;
-  entry_json: string;
-  id: string;
-  sender_id: string;
-  session_key: string;
-  source: string;
-  timestamp_ms: number;
-}
-
 export interface ConfigHealthEntries {
   config_path: string;
   last_known_good_json: string | null;
@@ -1843,7 +1833,6 @@ export interface DB {
   claw_workspace_files: ClawWorkspaceFiles;
   clawhub_promotion_claims: ClawhubPromotionClaims;
   clawhub_promotions_feed_state: ClawhubPromotionsFeedState;
-  command_log_entries: CommandLogEntries;
   config_health_entries: ConfigHealthEntries;
   config_machine_state: ConfigMachineState;
   config_revision_keys: ConfigRevisionKeys;

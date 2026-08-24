@@ -29,12 +29,11 @@ extra, and bundled directories.
 - `-v, --verbose`: include a Missing column with unmet requirements.
 
 ```
-Hooks (4/5 ready)
+Hooks (3/4 ready)
 
 Ready:
   🚀 boot-md ✓ - Run BOOT.md on gateway startup
   📎 bootstrap-extra-files ✓ - Inject additional workspace bootstrap files during agent bootstrap
-  📝 command-logger ✓ - Log all command events to a centralized audit file
   💾 session-memory ✓ - Save session context to memory when /new or /reset command is issued
 ```
 
@@ -108,19 +107,10 @@ Hook packs install through the unified plugins installer/updater; `openclaw hook
 | --------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | boot-md               | `gateway:startup`                                 | Runs `BOOT.md` at gateway startup for each configured agent scope                       |
 | bootstrap-extra-files | `agent:bootstrap`                                 | Injects extra bootstrap files (for example monorepo `AGENTS.md`) during agent bootstrap |
-| command-logger        | `command`                                         | Logs command events to `~/.openclaw/logs/commands.log`                                  |
 | compaction-notifier   | `session:compact:before`, `session:compact:after` | Sends visible chat notices when session compaction starts and finishes                  |
 | session-memory        | `command:new`, `command:reset`                    | Saves session context to memory on `/new` or `/reset`                                   |
 
 Enable any bundled hook with `openclaw hooks enable <hook-name>`. Full details, config keys, and defaults: [Bundled hooks](/automation/hooks#bundled-hooks).
-
-### command-logger log file
-
-```bash
-tail -n 20 ~/.openclaw/logs/commands.log        # recent commands
-cat ~/.openclaw/logs/commands.log | jq .          # pretty-print
-grep '"action":"new"' ~/.openclaw/logs/commands.log | jq .   # filter by action
-```
 
 ## Notes
 

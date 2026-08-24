@@ -229,7 +229,6 @@ Npm specs are registry-only (package name + optional exact version or dist-tag).
 | --------------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
 | session-memory        | `command:new`, `command:reset`, `session:auto-reset` | Saves session context to `<workspace>/memory/`                 |
 | bootstrap-extra-files | `agent:bootstrap`                                    | Injects additional bootstrap files from glob patterns          |
-| command-logger        | `command`                                            | Logs all commands to `~/.openclaw/logs/commands.log`           |
 | compaction-notifier   | `session:compact:before`, `session:compact:after`    | Sends visible chat notices when session compaction starts/ends |
 | boot-md               | `gateway:startup`                                    | Runs `BOOT.md` when the gateway starts                         |
 
@@ -280,12 +279,6 @@ when you intentionally want both representations.
 
 `TOOLS.md` is no longer a recognized bootstrap basename and is not loaded into runtime context. `openclaw doctor --fix` migrates the workspace-root `TOOLS.md` into the `## Tools` section of `AGENTS.md`; patterns that name other `TOOLS.md` files are not migrated and should be repointed at `AGENTS.md`.
 
-<a id="command-logger"></a>
-
-### command-logger details
-
-Logs every slash command as a JSON line (timestamp, action, session key, sender ID, source) to `~/.openclaw/logs/commands.log`.
-
 <a id="compaction-notifier"></a>
 
 ### compaction-notifier details
@@ -328,8 +321,7 @@ For the complete plugin hook reference, see [Plugin hooks](/plugins/hooks).
     "internal": {
       "enabled": true,
       "entries": {
-        "session-memory": { "enabled": true },
-        "command-logger": { "enabled": false }
+        "session-memory": { "enabled": true }
       }
     }
   }

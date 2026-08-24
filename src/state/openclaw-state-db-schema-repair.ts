@@ -42,6 +42,8 @@ export function dropLegacyStateTables(db: DatabaseSync): void {
   db.exec(`DROP TABLE IF EXISTS ${transientHistoryTable};`);
   // Retired node pairing tables never had a shipped writer.
   db.exec("DROP TABLE IF EXISTS node_pairing_pending; DROP TABLE IF EXISTS node_pairing_paired;");
+  // The shipped command logger wrote JSONL, never this inert table. Schema 9 retires both paths.
+  db.exec("DROP TABLE IF EXISTS command_log_entries;");
 }
 
 const RETIRED_COMMITMENTS_SCHEMA_SQL = `
