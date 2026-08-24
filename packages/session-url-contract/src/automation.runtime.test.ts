@@ -6,16 +6,11 @@ import {
 
 describe("buildControlUiAutomationPath", () => {
   it.each([
-    ["settings", undefined, "/automations/nightly%2Edigest"],
-    ["runs", "runs", "/automations/nightly%2Edigest/runs"],
-    ["nested base path", undefined, "/control/automations/nightly%2Edigest"],
-  ] as const)("builds the %s route", (_label, tab, expected) => {
-    expect(
-      buildControlUiAutomationPath("nightly.digest", {
-        ...(tab ? { tab } : {}),
-        ...(_label === "nested base path" ? { basePath: "/control/" } : {}),
-      }),
-    ).toBe(expected);
+    ["settings", {}, "/automations/nightly%2Edigest"],
+    ["runs", { tab: "runs" }, "/automations/nightly%2Edigest/runs"],
+    ["nested base path", { basePath: "/control/" }, "/control/automations/nightly%2Edigest"],
+  ] as const)("builds the %s route", (_label, params, expected) => {
+    expect(buildControlUiAutomationPath("nightly.digest", params)).toBe(expected);
   });
 
   it("encodes opaque job ids as one safe path segment", () => {

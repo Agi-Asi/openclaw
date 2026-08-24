@@ -9,19 +9,13 @@ export type CronRouteData = {
   detailTab: CronDetailTab;
 };
 
-function cronRouteLocation(location: RouteLocation): RouteLocation {
-  const params = new URLSearchParams(location.search);
-  const pathname = params.get(INTERNAL_ROUTE_PATH_PARAM) ?? location.pathname;
-  params.delete(INTERNAL_ROUTE_PATH_PARAM);
-  const search = params.toString();
-  return { pathname, search: search ? `?${search}` : "", hash: location.hash };
-}
-
 export function loadCronRouteData(
   context: ApplicationContext,
   { location }: { location: RouteLocation },
 ): CronRouteData {
-  const route = automationRouteFromPath(cronRouteLocation(location).pathname, context.basePath);
+  const pathname =
+    new URLSearchParams(location.search).get(INTERNAL_ROUTE_PATH_PARAM) ?? location.pathname;
+  const route = automationRouteFromPath(pathname, context.basePath);
   return {
     jobId: route?.jobId ?? null,
     detailTab: route?.tab === "runs" ? "history" : "settings",

@@ -8,11 +8,6 @@ export type ControlUiAutomationRoute = {
   tab: ControlUiAutomationTab;
 };
 
-type BuildControlUiAutomationPathParams = {
-  basePath?: string;
-  tab?: ControlUiAutomationTab;
-};
-
 export const CONTROL_UI_AUTOMATIONS_PATH = "/automations";
 export const CONTROL_UI_AUTOMATIONS_PATH_ALIAS = "/cron";
 
@@ -28,7 +23,7 @@ function decodePathSegment(segment: string): string | null {
 
 export function buildControlUiAutomationPath(
   jobId: string,
-  params: BuildControlUiAutomationPathParams = {},
+  params: { basePath?: string; tab?: ControlUiAutomationTab } = {},
 ): string | null {
   const normalizedJobId = normalizeNullableString(jobId);
   if (!normalizedJobId) {
@@ -44,7 +39,7 @@ export function parseControlUiAutomationPath(
   basePath = "",
 ): ControlUiAutomationRoute | null {
   const normalizedBasePath = normalizeControlUiBasePath(basePath);
-  const normalizedPath = pathname.trim().replace(/\/+$/u, "") || "/";
+  const normalizedPath = pathname.trim().replace(/\/+$/u, "");
   const roots = [CONTROL_UI_AUTOMATIONS_PATH, CONTROL_UI_AUTOMATIONS_PATH_ALIAS].map(
     (path) => `${normalizedBasePath}${path}`,
   );

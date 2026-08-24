@@ -349,11 +349,10 @@ class CronPage extends OpenClawLightDomElement {
   }
 
   private selectJob(job: CronJob) {
-    const detailTab: CronDetailTab = "settings";
-    this.routeSyncKey = this.routeKey(job.id, detailTab);
+    this.routeSyncKey = this.routeKey(job.id, "settings");
     this.routeSyncGeneration += 1;
     this.missingJobId = null;
-    this.detailTab = detailTab;
+    this.detailTab = "settings";
     this.cron.cronCreateOpen = false;
     startCronEdit(this.cron, job);
     this.requestCronUpdate();

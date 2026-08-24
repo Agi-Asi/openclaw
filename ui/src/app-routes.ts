@@ -122,30 +122,30 @@ export function createApplicationRouter(): ApplicationRouter {
   };
 }
 
-type DynamicRoute = readonly [routeId: RouteId, searchKey: string, searchValue: string];
+type DynamicRoute = readonly [routeId: RouteId, pathname: string];
 
 function dynamicRouteFromPath(pathname: string, basePath: string): DynamicRoute | null {
   const agentRoute = agentRouteFromPath(pathname, basePath);
   if (agentRoute) {
-    return ["agents", INTERNAL_ROUTE_PATH_PARAM, pathname];
+    return ["agents", pathname];
   }
   if (routeIdFromPath(pathname, basePath) === "cron") {
-    return ["cron", INTERNAL_ROUTE_PATH_PARAM, pathname];
+    return ["cron", pathname];
   }
   const boardId = workboardBoardIdFromPath(pathname, basePath);
   if (boardId) {
-    return ["workboard", INTERNAL_ROUTE_PATH_PARAM, pathname];
+    return ["workboard", pathname];
   }
   const memoryTab = memoryTabFromPath(pathname, basePath);
   if (memoryTab && memoryTab !== "overview") {
-    return ["memory", INTERNAL_ROUTE_PATH_PARAM, pathname];
+    return ["memory", pathname];
   }
   const pluginsTab = pluginsHubTabFromPath(pathname, basePath);
   if (pluginsTab === "discover") {
-    return ["plugins", INTERNAL_ROUTE_PATH_PARAM, pathname];
+    return ["plugins", pathname];
   }
   const sessionNamespace = sessionRouteNamespaceFromPath(pathname, basePath);
-  return sessionNamespace ? [sessionNamespace, INTERNAL_ROUTE_PATH_PARAM, pathname] : null;
+  return sessionNamespace ? [sessionNamespace, pathname] : null;
 }
 
 function routerHistoryLocation(location: ReturnType<RouterHistory["location"]>, basePath: string) {
@@ -153,9 +153,9 @@ function routerHistoryLocation(location: ReturnType<RouterHistory["location"]>, 
   if (!dynamicRoute) {
     return location;
   }
-  const [routeId, searchKey, searchValue] = dynamicRoute;
+  const [routeId, pathname] = dynamicRoute;
   const search = new URLSearchParams(location.search);
-  search.set(searchKey, searchValue);
+  search.set(INTERNAL_ROUTE_PATH_PARAM, pathname);
   return {
     ...location,
     pathname: pathForRoute(routeId, basePath),

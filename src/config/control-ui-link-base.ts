@@ -2,8 +2,10 @@ import {
   buildControlUiSessionPath,
   normalizeControlUiBasePath,
 } from "@openclaw/session-url-contract";
-import { buildControlUiAutomationPath } from "@openclaw/session-url-contract/automation.runtime";
-import type { ControlUiAutomationTab } from "@openclaw/session-url-contract/automation.runtime";
+import {
+  buildControlUiAutomationPath,
+  type ControlUiAutomationTab,
+} from "@openclaw/session-url-contract/automation.runtime";
 import { resolveGatewayPublicOrigin } from "./gateway-public-origin.js";
 import type { OpenClawConfig } from "./types.js";
 
