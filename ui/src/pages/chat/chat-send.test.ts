@@ -7787,8 +7787,16 @@ describe("handleSendChat", () => {
     ).toEqual([expect.objectContaining({ sendAttempts: 1, sendState: "waiting-reconnect" })]);
   });
 
-  it("projects every active queued send as waiting after a disconnect", () => {
-    const host = makeChatHost({ chatQueue: [] });
+  it("keeps a volatile in-flight send retryable across disconnect and reconnect", async () => {
+    const storage = createStorageMock();
+    vi.spyOn(storage, "setItem").mockImplementation(() => {
+      throw new DOMException("quota exceeded", "QuotaExceededError");
+    });
+    vi.stubGlobal("sessionStorage", storage);
+    const request = makeRequestMock({
+      "chat.send": () => Promise.resolve({ runId: "retried-volatile-run", status: "started" }),
+    });
+    const host = makeChatHost({ chatQueue: [], sessionKey: "agent:a" });
     const volatile = {
       id: "volatile-send",
       text: "in flight",
@@ -7813,12 +7821,24 @@ describe("handleSendChat", () => {
 
     expect(readQueuedMessageById(host, volatile.id)).toMatchObject({
       sendRunId: "run-volatile",
-      sendState: "waiting-reconnect",
+      sendState: "unconfirmed",
     });
     expect(readQueuedMessageById(host, "pending-send-a")).toMatchObject({
       sendRunId: "run-a",
       sendState: "waiting-reconnect",
     });
+
+    host.client = clientWithRequest(request);
+    host.connected = true;
+    await retryReconnectableQueuedChatSends(host);
+    expect(request).not.toHaveBeenCalledWith("chat.send", expect.anything());
+
+    await retryQueuedChatMessage(host, volatile.id);
+    expect(findRequestPayload(request, "chat.send", "volatile retry payload")).toMatchObject({
+      message: "in flight",
+      sessionKey: "agent:a",
+    });
+    expect(readQueuedMessageById(host, volatile.id)).toBeNull();
   });
 
   it("keeps the rendered-history leaf after a background branch refresh", async () => {
