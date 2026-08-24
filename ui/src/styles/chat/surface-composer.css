@@ -1,0 +1,90 @@
+/* Expanded operator surfaces keep the active session's canonical composer in
+   front without creating a second draft or send path. */
+.side-panel__composer-overlay {
+  position: absolute;
+  right: 16px;
+  bottom: max(14px, var(--safe-area-bottom));
+  left: 16px;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.side-panel__composer-overlay > * {
+  pointer-events: auto;
+}
+
+.side-panel__composer-overlay .agent-chat__composer-shell {
+  width: min(100%, var(--chat-thread-max-width, 48rem));
+  margin: 0 auto;
+}
+
+.agent-chat__surface-overlay {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px var(--chat-box-inset);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.2;
+}
+
+.side-panel__composer-overlay .agent-chat__surface-overlay {
+  display: flex;
+}
+
+.agent-chat__surface-overlay-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.agent-chat__surface-overlay-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.agent-chat__surface-overlay-label {
+  display: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+[data-surface-overlay="browser"] .agent-chat__surface-overlay-label--browser,
+[data-surface-overlay="terminal"] .agent-chat__surface-overlay-label--terminal,
+[data-surface-overlay="desktop"] .agent-chat__surface-overlay-label--desktop {
+  display: inline;
+}
+
+@media (max-width: 768px) {
+  .side-panel__composer-overlay {
+    right: 4px;
+    bottom: max(4px, var(--safe-area-bottom));
+    left: 4px;
+  }
+
+  .side-panel__composer-overlay .agent-chat__surface-overlay {
+    min-height: 24px;
+    padding-block: 3px;
+  }
+
+  .side-panel__composer-overlay
+    .agent-chat__composer-shell:not(:focus-within)
+    .agent-chat__composer-footer {
+    display: none;
+  }
+
+  .side-panel__composer-overlay
+    .agent-chat__composer-shell:not(:focus-within)
+    .agent-chat__composer-input-row {
+    padding-block: 2px;
+  }
+
+  .side-panel__composer-overlay
+    .agent-chat__composer-shell:not(:focus-within)
+    .agent-chat__composer-combobox
+    > :is(textarea, input) {
+    max-height: var(--chat-composer-control-height);
+  }
+}

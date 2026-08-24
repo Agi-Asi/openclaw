@@ -201,6 +201,23 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             @pointerdown=${(event: PointerEvent) => focusComposerFromChrome(event, canCompose)}
             ${ref(state.composerInputRef ?? undefined)}
           >
+            <div class="agent-chat__surface-overlay" role="status">
+              <span class="agent-chat__surface-overlay-icon" aria-hidden="true"
+                >${icons.monitor}</span
+              >
+              <span
+                class="agent-chat__surface-overlay-label agent-chat__surface-overlay-label--browser"
+                >${t("tabs.chat")} · ${t("browser.title")}</span
+              >
+              <span
+                class="agent-chat__surface-overlay-label agent-chat__surface-overlay-label--terminal"
+                >${t("tabs.chat")} · ${t("terminal.title")}</span
+              >
+              <span
+                class="agent-chat__surface-overlay-label agent-chat__surface-overlay-label--desktop"
+                >${t("tabs.chat")} · ${t("desktop.title")}</span
+              >
+            </div>
             ${props.offline
               ? html`<div class="agent-chat__offline-hint" role="status" aria-live="polite">
                   ${props.queuedOutboxCount

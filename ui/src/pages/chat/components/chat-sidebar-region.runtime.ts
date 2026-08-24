@@ -72,6 +72,8 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
   @property({ attribute: false }) callbacks: SidebarRegionCallbacks | null = null;
   @property({ type: Boolean }) narrow = false;
   @property({ type: Number }) availableWidth = 0;
+  @property({ attribute: false }) surfaceComposer: TemplateResult | typeof nothing = nothing;
+  @property({ attribute: false }) surfaceSlot: "browser" | "desktop" | "terminal" | null = null;
 
   deliverPanelEvent(slot: SidebarSlotId, event: Event): boolean {
     const panel = this.parentElement?.querySelector<HTMLElement>(
@@ -340,6 +342,15 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
     });
   }
 
+  private renderSurfaceComposer() {
+    if (this.layout.expanded !== true || !this.surfaceSlot || this.surfaceComposer === nothing) {
+      return nothing;
+    }
+    return html`<div class="side-panel__composer-overlay" data-surface-overlay=${this.surfaceSlot}>
+      ${this.surfaceComposer}
+    </div>`;
+  }
+
   private renderPanel() {
     if (this.layout.open !== true) {
       return nothing;
@@ -365,7 +376,7 @@ class ChatSidebarRegion extends OpenClawLightDomElement {
               <strong class="side-panel__empty-header-title">${t("chat.sidePanel.label")}</strong>
               ${this.renderHeaderActions(null)}
             </header>`}
-        ${this.renderBody(column)}
+        ${this.renderBody(column)} ${this.renderSurfaceComposer()}
       </section>`;
   }
 

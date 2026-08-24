@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { ensureCustomElementDefined } from "../../app/lazy-custom-element.ts";
 import {
@@ -148,6 +148,8 @@ export function renderSidebarRegion(params: {
   panelTemplates: SidebarPanelTemplates;
   primary: TemplateResult;
   requestUpdate: () => void;
+  surfaceComposer?: TemplateResult | typeof nothing;
+  surfaceSlot?: "browser" | "desktop" | "terminal";
 }): TemplateResult {
   const panelOpen = params.layout.open === true;
   const regionError = panelOpen ? ensureLazyElement("region", params.requestUpdate) : undefined;
@@ -179,6 +181,8 @@ export function renderSidebarRegion(params: {
           .callbacks=${params.callbacks}
           .narrow=${params.narrow}
           .availableWidth=${params.availableWidth}
+          .surfaceComposer=${params.surfaceComposer ?? nothing}
+          .surfaceSlot=${params.surfaceSlot ?? null}
         ></openclaw-chat-sidebar-region>`}
     <div class="sidebar-region__primary">${params.primary}</div>
     <div class="sidebar-region__right-runtime">${regionError ?? null}</div>

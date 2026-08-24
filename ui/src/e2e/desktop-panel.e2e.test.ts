@@ -115,6 +115,115 @@ suite.define(() => {
     });
   });
 
+  it.each([
+    { compact: false, height: 800, width: 1280 },
+    { compact: true, height: 844, width: 390 },
+  ])(
+    "keeps the active composer above an expanded desktop at $width×$height",
+    async ({ compact, height, width }) => {
+      await suite.withPage(
+        { serviceWorkers: "block", viewport: { width, height } },
+        async ({ page }) => {
+          const gateway = await installMockGateway(page, {
+            featureMethods: ["desktop.observe", "environments.list"],
+            methodResponses: {
+              "sessions.list": sessionsList("local"),
+              "environments.list": {
+                environments: [
+                  { id: "gateway", type: "local", status: "available", desktop: true },
+                ],
+              },
+              "desktop.observe": {
+                transport: "rfb",
+                wsPath: "/desktop/observe?token=expanded",
+                expiresAtMs: 60_000,
+                control: false,
+                auth: "none",
+                preauthenticated: true,
+              },
+            },
+          });
+          const panel = await openDesktopPanel(page);
+          await gateway.waitForRequest("environments.list");
+          await installDesktopClientFake(panel);
+          await panel.getByRole("button", { name: "Connect", exact: true }).click();
+          await gateway.waitForRequest("desktop.observe");
+          await panel.locator(".desktop-surface").evaluate((element) => {
+            element.setAttribute("data-retained-surface", "true");
+          });
+
+          const sidePanel = page.locator(".side-panel");
+          await sidePanel.getByRole("button", { name: "Expand side panel" }).click();
+          await page.locator(".sidebar-region--expanded").waitFor();
+
+          expect(await panel.locator('[data-retained-surface="true"]').count()).toBe(1);
+          expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
+          const composer = sidePanel.locator(
+            ".side-panel__composer-overlay .agent-chat__composer-shell",
+          );
+          const textarea = composer.locator("textarea");
+          await composer.getByText("Chat · Desktop", { exact: true }).waitFor();
+          const initialBox = await composer.boundingBox();
+          expect(initialBox).not.toBeNull();
+          if (!initialBox) {
+            throw new Error("Expected overlay composer geometry");
+          }
+          expect(height - (initialBox.y + initialBox.height)).toBeLessThanOrEqual(
+            compact ? 17 : 15,
+          );
+          const topmost = await page.evaluate(
+            ({ x, y }) => {
+              const element = document.elementFromPoint(x, y);
+              return element?.closest(".agent-chat__composer-shell") !== null;
+            },
+            { x: initialBox.x + initialBox.width / 2, y: initialBox.y + initialBox.height / 2 },
+          );
+          expect(topmost).toBe(true);
+
+          const footer = composer.locator(".agent-chat__composer-footer");
+          if (compact) {
+            expect(await footer.evaluate((element) => getComputedStyle(element).display)).toBe(
+              "none",
+            );
+            expect(initialBox.height).toBeLessThanOrEqual(90);
+          } else {
+            expect(await footer.evaluate((element) => getComputedStyle(element).display)).toBe(
+              "flex",
+            );
+          }
+          await page.keyboard.type("x");
+          await expect.poll(async () => await textarea.inputValue()).toBe("x");
+          if (compact) {
+            await expect
+              .poll(
+                async () => await footer.evaluate((element) => getComputedStyle(element).display),
+              )
+              .toBe("flex");
+            const focusedBox = await composer.boundingBox();
+            expect(focusedBox?.height ?? 0).toBeGreaterThan(initialBox.height + 30);
+          }
+
+          await composer.getByRole("button", { name: "Send message" }).click();
+          const sendRequest = await gateway.waitForRequest("chat.send");
+          expect(sendRequest.params).toMatchObject({ message: "x", sessionKey: "main" });
+          await expect.poll(() => page.locator(".sidebar-region--expanded").count()).toBe(1);
+          await expect.poll(() => composer.count()).toBe(1);
+          expect(await gateway.getRequests("desktop.observe")).toHaveLength(1);
+
+          await sidePanel.getByRole("button", { name: "Restore side panel" }).click();
+          await expect.poll(() => composer.count()).toBe(0);
+          expect(
+            await page
+              .locator(
+                "openclaw-chat-pane.chat-pane-cache__pane--active .agent-chat__composer-shell",
+              )
+              .count(),
+          ).toBe(1);
+        },
+      );
+    },
+  );
+
   it("refreshes direct-target inventory before observing the exact worker", async () => {
     await suite.withPage({ serviceWorkers: "block" }, async ({ page }) => {
       const gateway = await installMockGateway(page, {

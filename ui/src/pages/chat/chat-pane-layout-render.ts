@@ -1,4 +1,4 @@
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import type {
   ProgressCard,
   SessionObserverDigest,
@@ -81,10 +81,24 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       workspaceGit,
       sidebarLayout,
     );
-    const chat = renderChat({
-      ...chatProps,
-      header: board.face === "dashboard" ? nothing : header,
-    });
+    const surfaceSlot = (["terminal", "browser", "desktop"] as const).find((slot) =>
+      isSidebarSlotVisible(sidebarLayout, slot),
+    );
+    const surfaceOverlayActive =
+      this.active && this.presented && sidebarLayout.expanded === true && surfaceSlot !== undefined;
+    let surfaceComposer: TemplateResult | typeof nothing = nothing;
+    const chat = renderChat(
+      {
+        ...chatProps,
+        header: board.face === "dashboard" ? nothing : header,
+      },
+      {
+        placeComposer: (composer) => {
+          surfaceComposer = surfaceOverlayActive ? composer : nothing;
+          return !surfaceOverlayActive;
+        },
+      },
+    );
     // Keep this root stable across board face changes so the guarded board runtime
     // remains connected while Chat is active.
     const primary = html`<div class="chat-pane-primary-column">
@@ -162,6 +176,8 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       panelTemplates,
       primary,
       requestUpdate: state.requestUpdate!,
+      surfaceComposer,
+      surfaceSlot,
     });
     return html`${content}${renderChatImageLightbox(
       state.imageLightbox,
