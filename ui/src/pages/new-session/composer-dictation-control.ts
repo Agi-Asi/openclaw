@@ -16,7 +16,6 @@ type NewSessionDictationOptions = {
   canCommit: () => boolean;
   onMessage: (message: string) => void;
   onError: (message: string) => void;
-  onClearError: (message: string) => void;
   requestUpdate: () => void;
 };
 
@@ -33,6 +32,8 @@ export class NewSessionDictationControl {
   private readonly devicePicker: ComposerMicrophonePicker;
   private dictation: ComposerDictationController | null = null;
   private owner: { key: string } | null = null;
+  private hint: string | null = null;
+  private hintTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: NewSessionDictationOptions) {
     this.devicePicker = new ComposerMicrophonePicker(options.requestUpdate);
@@ -43,6 +44,30 @@ export class NewSessionDictationControl {
     this.dictation?.dispose();
     this.dictation = null;
     this.devicePicker.dispose();
+    this.clearHint();
+  }
+
+  currentHint(): string | undefined {
+    return this.hint ?? undefined;
+  }
+
+  private showHint(): void {
+    this.clearHint();
+    this.hint = t("newSession.dictationHoldToSpeak");
+    this.hintTimer = setTimeout(() => {
+      this.hint = null;
+      this.hintTimer = null;
+      this.options.requestUpdate();
+    }, 6_000);
+    this.options.requestUpdate();
+  }
+
+  private clearHint(): void {
+    if (this.hintTimer !== null) {
+      clearTimeout(this.hintTimer);
+      this.hintTimer = null;
+    }
+    this.hint = null;
   }
 
   render(ownerKey: string) {
@@ -50,6 +75,7 @@ export class NewSessionDictationControl {
       this.owner = { key: ownerKey };
       this.dictation?.dispose();
       this.dictation = null;
+      this.clearHint();
     }
     const owner = this.owner;
     const ownsDraft = () => this.owner === owner;
@@ -69,7 +95,7 @@ export class NewSessionDictationControl {
         if (!ownsDraft() || !this.options.canCommit()) {
           return;
         }
-        this.options.onClearError(t("newSession.dictationHoldToSpeak"));
+        this.clearHint();
         const next = this.options.textarea.insertTranscript(transcript);
         if (next !== null) {
           this.options.onMessage(next);
@@ -89,7 +115,7 @@ export class NewSessionDictationControl {
       onDictationUnavailable: this.devicePicker.handleOpen,
       onTap: () => {
         if (ownsDraft()) {
-          this.options.onError(t("newSession.dictationHoldToSpeak"));
+          this.showHint();
         }
       },
     };
