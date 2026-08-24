@@ -7534,9 +7534,19 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "Current CI target is missing scripts/dist-runtime-build-artifact.mjs",
     );
     expect(uploadStep.with.path).toBe("${{ runner.temp }}/dist-runtime-build.tar.zst");
+    const artifactBuilderEntrypoint = spawnSync(
+      process.execPath,
+      ["scripts/dist-runtime-build-artifact.mjs"],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+    expect(artifactBuilderEntrypoint.status).toBe(1);
+    expect(`${artifactBuilderEntrypoint.stdout}${artifactBuilderEntrypoint.stderr}`).toContain(
+      "Usage: node scripts/dist-runtime-build-artifact.mjs <archive-path>",
+    );
     const artifactBuilder = readFileSync("scripts/lib/workspace-bootstrap-smoke.mts", "utf8");
     for (const requiredPath of [
       '"openclaw.mjs"',
+      '"node-version.mjs"',
       '"package.json"',
       '"docs/reference/templates"',
       '"src/agents/templates"',
@@ -7562,11 +7572,15 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(artifactBuilder).toContain('"@agentclientprotocol/codex-acp"');
     expect(artifactBuilder).toContain('"@agentclientprotocol/claude-agent-acp"');
     expect(artifactBuilder).toContain("assertExtractedPluginRuntimeDependencies");
+    expect(artifactBuilder).toContain("probeExtractedAcpxRuntime");
+    expect(artifactBuilder).toContain("createAcpRuntime");
+    expect(artifactBuilder).toContain("runtime.probeAvailability()");
+    expect(artifactBuilder).toContain("runtime.isHealthy()");
     expect(artifactBuilder).toContain("waitForGatewayPluginLoaded");
     expect(artifactBuilder).toContain("plugin: ${BUNDLED_PLUGIN_SMOKE_ID}");
     expect(artifactBuilder).toContain('detached: process.platform !== "win32"');
     expect(artifactBuilder).toContain('process.kill(processGroupId, "SIGKILL")');
-    expect(artifactBuilder).toContain('"acp", "--help"');
+    expect(artifactBuilder).not.toContain('"acp", "--help"');
     expect(artifactBuilder).toContain("/readyz");
     expect(artifactBuilder).toContain("dist-runtime/extensions/");
     expect(restoreStep.with.path).toContain("extensions/*/src/host/**/.bundle.hash");

@@ -1,11 +1,20 @@
 // Verifies installed packages can bootstrap the default OpenClaw workspace files.
 import { execFileSync, spawn } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { TSDOWN_PACKAGE_OUTPUT_ROOTS } from "./tsdown-output-roots.mjs";
+import { TSDOWN_PACKAGE_OUTPUT_ROOTS } from "./tsdown-output-roots.mts";
 
 /**
  * Template pack files that must be present in installed packages.
@@ -21,6 +30,7 @@ export const WORKSPACE_TEMPLATE_PACK_PATHS: readonly string[] = [
 
 const DIST_RUNTIME_ARTIFACT_BASE_PATHS = [
   "openclaw.mjs",
+  "node-version.mjs",
   "package.json",
   "docs/reference/templates",
   "src/agents/templates",
@@ -50,10 +60,29 @@ function copyDistRuntimeArtifactPath(
   artifactRoot: string,
   sourcePath: string,
   destinationPath = sourcePath,
+  skipNodeBin = false,
 ): void {
+  const sourceNodeBin = join(rootDir, sourcePath, ".bin");
+  function copy(source: string, destination: string): void {
+    if (skipNodeBin && source === sourceNodeBin) {
+      return;
+    }
+    if (
+      existsSync(destination) &&
+      statSync(source).isDirectory() &&
+      statSync(destination).isDirectory()
+    ) {
+      for (const entry of readdirSync(source)) {
+        copy(join(source, entry), join(destination, entry));
+      }
+      return;
+    }
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(source, destination, { dereference: true, force: true, recursive: true });
+  }
+
   const destination = join(artifactRoot, destinationPath);
-  mkdirSync(dirname(destination), { recursive: true });
-  cpSync(join(rootDir, sourcePath), destination, { dereference: true, recursive: true });
+  copy(join(rootDir, sourcePath), destination);
 }
 
 function stageDistRuntimeArtifact(rootDir: string, artifactRoot: string): void {
@@ -91,7 +120,13 @@ function stageDistRuntimeArtifact(rootDir: string, artifactRoot: string): void {
     { cwd: rootDir, stdio: "inherit" },
   );
   // ACPX is bundled, but its adapters are plugin-owned and load on the first ACP session.
-  copyDistRuntimeArtifactPath(pluginDeploymentRoot, artifactRoot, "node_modules");
+  copyDistRuntimeArtifactPath(
+    pluginDeploymentRoot,
+    artifactRoot,
+    "node_modules",
+    "node_modules",
+    true,
+  );
   rmSync(pluginDeploymentRoot, { force: true, recursive: true });
 
   for (const sourcePath of DIST_RUNTIME_ARTIFACT_BASE_PATHS) {
@@ -118,6 +153,53 @@ function assertExtractedPluginRuntimeDependencies(packageRoot: string): void {
     if (!manifestPath.startsWith(join(packageRoot, "node_modules"))) {
       throw new Error(`extracted ACPX runtime resolved ${dependency} outside its artifact`);
     }
+  }
+}
+
+function probeExtractedAcpxRuntime(params: {
+  packageRoot: string;
+  cwd: string;
+  stateDir: string;
+  env: NodeJS.ProcessEnv;
+}): void {
+  const probe = `
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { createAcpRuntime, createAgentRegistry, createFileSessionStore } from "acpx/runtime";
+
+const require = createRequire(new URL("./package.json", import.meta.url));
+const adapterEntry = join(
+  dirname(require.resolve("@agentclientprotocol/codex-acp/package.json")),
+  "dist",
+  "index.js",
+);
+const runtime = createAcpRuntime({
+  cwd: process.env.OPENCLAW_ACPX_SMOKE_CWD,
+  sessionStore: createFileSessionStore({ stateDir: process.env.OPENCLAW_ACPX_SMOKE_STATE_DIR }),
+  agentRegistry: createAgentRegistry({ overrides: { codex: [process.execPath, adapterEntry] } }),
+  permissionMode: "approve-reads",
+  nonInteractivePermissions: "fail",
+  probeAgent: "codex",
+});
+await runtime.probeAvailability();
+if (!runtime.isHealthy()) {
+  throw new Error("extracted ACPX runtime probe did not report healthy");
+}
+console.log("extracted ACPX runtime probe passed");
+`;
+  const output = execFileSync(process.execPath, ["--input-type=module", "--eval", probe], {
+    cwd: params.packageRoot,
+    encoding: "utf8",
+    env: {
+      ...params.env,
+      OPENCLAW_ACPX_SMOKE_CWD: params.cwd,
+      OPENCLAW_ACPX_SMOKE_STATE_DIR: params.stateDir,
+    },
+    maxBuffer: DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES,
+    timeout: DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS,
+  });
+  if (!output.includes("extracted ACPX runtime probe passed")) {
+    throw new Error("extracted ACPX runtime probe did not complete");
   }
 }
 
@@ -241,14 +323,12 @@ export function runInstalledWorkspaceBootstrapSmoke(params: {
         [
           ...(params.nodeArgs ?? []),
           join(params.packageRoot, "openclaw.mjs"),
-          "agent",
-          "--message",
-          "workspace bootstrap smoke",
-          "--session-id",
+          "agents",
+          "add",
           "workspace-bootstrap-smoke",
-          "--local",
-          "--timeout",
-          "1",
+          "--workspace",
+          join(homeDir, "workspace"),
+          "--non-interactive",
           "--json",
         ],
         {
@@ -270,7 +350,7 @@ export function runInstalledWorkspaceBootstrapSmoke(params: {
       );
     }
 
-    const workspaceDir = join(homeDir, ".openclaw", "workspace");
+    const workspaceDir = join(homeDir, "workspace");
     const missingFiles = collectMissingBootstrapWorkspaceFiles(workspaceDir);
     if (missingFiles.length > 0) {
       const outputDetails = combinedOutput.length > 0 ? `\nCommand output:\n${combinedOutput}` : "";
@@ -331,7 +411,7 @@ function validateDistRuntimeArtifactEntries(entries: string[], expectedPaths: st
   }
 
   const unexpectedEntries = entries.filter((entry) => {
-    if (entry === "openclaw.mjs" || entry === "package.json") {
+    if (entry === "openclaw.mjs" || entry === "node-version.mjs" || entry === "package.json") {
       return false;
     }
     if (
@@ -547,21 +627,12 @@ export async function buildAndSmokeDistRuntimeArtifact(params: {
         envOverrides: artifactEnvOverrides,
       });
       assertExtractedPluginRuntimeDependencies(packageRoot);
-
-      const acpHelp = execFileSync(
-        process.execPath,
-        [join(packageRoot, "openclaw.mjs"), "acp", "--help"],
-        {
-          cwd,
-          encoding: "utf8",
-          env: smokeEnv,
-          maxBuffer: DIST_RUNTIME_ARTIFACT_MAX_OUTPUT_BYTES,
-          timeout: DIST_RUNTIME_ARTIFACT_SMOKE_TIMEOUT_MS,
-        },
-      );
-      if (!acpHelp.includes("Usage: openclaw acp")) {
-        throw new Error("extracted ACP startup did not return the expected help output");
-      }
+      probeExtractedAcpxRuntime({
+        packageRoot,
+        cwd,
+        stateDir: artifactEnvOverrides.OPENCLAW_STATE_DIR,
+        env: smokeEnv,
+      });
 
       const port = await reserveLoopbackPort();
       const gateway = spawn(
