@@ -362,7 +362,11 @@ export async function applySessionEntryLifecycleMutation(params: {
               : readExactSessionEntryRow(transactionDb, sessionKey)
             )?.entry;
         const expectedCurrentEntry = expectedEntry ?? sameKeyRemoval?.expectedEntry;
-        if (!sqliteLifecycleSessionEntriesEqual(currentEntry, expectedCurrentEntry)) {
+        const entriesEqual =
+          entry.sessionId === expectedCurrentEntry?.sessionId
+            ? sqliteLifecycleSessionEntriesEqual
+            : sqliteSessionEntriesEqual;
+        if (!entriesEqual(currentEntry, expectedCurrentEntry)) {
           if (sameKeyRemoval) {
             throw new Error(`SQLite session entry has stale lifecycle state for ${sessionKey}`);
           }
