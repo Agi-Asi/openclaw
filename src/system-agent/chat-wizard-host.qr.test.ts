@@ -5,6 +5,7 @@ import {
   fakeOverviewLoader,
   useTempStateDir,
   SystemAgentChatEngine,
+  mocks,
   type WizardPrompter,
 } from "./chat-engine.test-support.js";
 
@@ -69,8 +70,10 @@ describe("SystemAgentChatEngine QR wizard", () => {
       runChannelSetupWizard: async (
         _channel: string,
         prompter: WizardPrompter,
+        beforeExternalApply,
         beforePersistentApply,
       ) => {
+        await beforeExternalApply(createNonExitingRuntime());
         await beforePersistentApply(createNonExitingRuntime());
         await prompter.qrCode?.({
           title: "Link Signal",
@@ -90,6 +93,45 @@ describe("SystemAgentChatEngine QR wizard", () => {
     await new Promise<void>((resolve) => {
       setImmediate(resolve);
     });
+    await engine.dispose();
+  });
+
+  it("keeps cancellation open after a hosted channel external check", async () => {
+    useTempStateDir();
+    let release!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mocks.readSetupConfigFileSnapshot.mockResolvedValue({
+      exists: true,
+      valid: true,
+      hash: "qr-external-base",
+      config: {},
+      sourceConfig: {},
+    });
+    mocks.setupChannels.mockImplementation(async (config, _runtime, prompter, options) => {
+      await options.beforeExternalEffect?.();
+      await prompter.qrCode?.({
+        title: "Link Signal",
+        text: "sgnl://linkdevice?credential=secret",
+        settled,
+      });
+      return config;
+    });
+    const engine = new SystemAgentChatEngine({
+      surface: "gateway",
+      supportsQrCode: true,
+      runAgentTurn: async () => null,
+      planWithAssistant: async () => null,
+      deps: { loadOverview: fakeOverviewLoader() },
+    });
+
+    const presented = await engine.handle("connect signal");
+    expect(presented.step).toMatchObject({ type: "qr", canCancel: true });
+    const cancelled = await engine.cancelWizard({ stepId: presented.step?.id ?? "missing" });
+    expect(cancelled.text).toContain("setup cancelled");
+
+    release();
     await engine.dispose();
   });
 

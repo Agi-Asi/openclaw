@@ -45,6 +45,7 @@ export type ChatWizardHostDependencies = {
   runChannelSetupWizard?: (
     channel: string,
     prompter: WizardPrompter,
+    beforeExternalApply: (runtime: RuntimeEnv) => Promise<void>,
     beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>,
     signal: AbortSignal,
   ) => Promise<void | HostedSetupCompletion>;
@@ -391,12 +392,19 @@ export class ChatWizardHost {
       kind: "channel",
       label: channel,
       autoSelectChannel: channel,
-      run: async (prompter, signal, beforePersistentApply) =>
+      run: async (prompter, signal, beforeExternalApply, beforePersistentApply) =>
         run
-          ? await run(channel, prompter, beforePersistentApply, signal)
+          ? await run(channel, prompter, beforeExternalApply, beforePersistentApply, signal)
           : await (
               await loadHostedRuntime()
-            ).runHostedChannelSetup(channel, prompter, beforePersistentApply, undefined, signal),
+            ).runHostedChannelSetup(
+              channel,
+              prompter,
+              beforePersistentApply,
+              undefined,
+              signal,
+              beforeExternalApply,
+            ),
     });
   }
 
@@ -405,7 +413,7 @@ export class ChatWizardHost {
     return await this.start({
       kind: "skills",
       label: "skills",
-      run: async (prompter, _signal, beforePersistentApply) =>
+      run: async (prompter, _signal, _beforeExternalApply, beforePersistentApply) =>
         run
           ? await run(prompter, beforePersistentApply)
           : await (await loadHostedRuntime()).runHostedSkillsSetup(prompter, beforePersistentApply),
@@ -417,7 +425,7 @@ export class ChatWizardHost {
     return await this.start({
       kind: "search",
       label: "web search",
-      run: async (prompter, _signal, beforePersistentApply) =>
+      run: async (prompter, _signal, _beforeExternalApply, beforePersistentApply) =>
         run
           ? await run(prompter, beforePersistentApply)
           : await (await loadHostedRuntime()).runHostedSearchSetup(prompter, beforePersistentApply),
@@ -429,7 +437,7 @@ export class ChatWizardHost {
     const result = await this.start({
       kind: "gateway",
       label: "gateway",
-      run: async (prompter, _signal, beforePersistentApply) =>
+      run: async (prompter, _signal, _beforeExternalApply, beforePersistentApply) =>
         run
           ? await run(prompter, beforePersistentApply)
           : await (
@@ -453,7 +461,7 @@ export class ChatWizardHost {
       kind: "memory-import",
       label: "memory import",
       memoryImportProviders: providers,
-      run: async (prompter, _signal, beforePersistentApply) =>
+      run: async (prompter, _signal, _beforeExternalApply, beforePersistentApply) =>
         run
           ? await run(prompter, beforePersistentApply, (value) => providers.push(value))
           : await (
@@ -472,6 +480,7 @@ export class ChatWizardHost {
     run: (
       prompter: WizardPrompter,
       signal: AbortSignal,
+      beforeExternalApply: (runtime: RuntimeEnv) => Promise<void>,
       beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>,
     ) => Promise<HostedWizardRunResult>;
   }): Promise<ChatWizardResult> {
@@ -483,8 +492,11 @@ export class ChatWizardHost {
     };
     const session = new WizardSession(
       async (prompter, signal, owner) => {
-        const result = await params.run(prompter, signal, async (runtime) => {
+        const beforeExternalApply = async (runtime: RuntimeEnv) => {
           await this.options.beforePersistentApply(runtime);
+        };
+        const result = await params.run(prompter, signal, beforeExternalApply, async (runtime) => {
+          await beforeExternalApply(runtime);
           owner.lockCancellation();
         });
         if (typeof result === "string") {
