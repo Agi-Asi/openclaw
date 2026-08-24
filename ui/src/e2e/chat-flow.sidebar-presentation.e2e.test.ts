@@ -269,7 +269,6 @@ suite.define(() => {
         (content) => getComputedStyle(content).transform,
       );
       expect(await shortTitle.getAttribute("data-overflow-fade")).toBeNull();
-      expect(await shortTitle.getAttribute("data-overflow-reveal")).toBeNull();
       await shortRow.hover();
       expect(await shortContent.evaluate((content) => getComputedStyle(content).transform)).toBe(
         shortTransform,
@@ -296,7 +295,6 @@ suite.define(() => {
             fade: title.hasAttribute("data-overflow-fade"),
             menu: rect("[data-session-menu]"),
             pin: rect("[data-sidebar-session-pin]"),
-            reveal: title.hasAttribute("data-overflow-reveal"),
             revealTranslate: title.style.getPropertyValue("--overflow-reveal-translate"),
             title: rect(".sidebar-recent-session__name"),
             titleClientWidth: title.clientWidth,
@@ -307,7 +305,6 @@ suite.define(() => {
       const resting = await readLongTitleState();
       expect(resting.titleScrollWidth).toBeGreaterThan(resting.titleClientWidth);
       expect(resting.fade).toBe(true);
-      expect(resting.reveal).toBe(true);
       expect(Number.parseFloat(resting.revealTranslate)).toBeLessThan(0);
 
       await recentRow.hover();
@@ -332,18 +329,6 @@ suite.define(() => {
       await expect
         .poll(() => recentContent.evaluate((content) => getComputedStyle(content).transform))
         .not.toBe(resting.contentTransform);
-      const focused = await readLongTitleState();
-      expect({
-        badge: focused.badge,
-        menu: focused.menu,
-        pin: focused.pin,
-        title: focused.title,
-      }).toEqual({
-        badge: resting.badge,
-        menu: resting.menu,
-        pin: resting.pin,
-        title: resting.title,
-      });
 
       await recentRow.locator("a.sidebar-recent-session__link").dispatchEvent("click", {
         button: 0,

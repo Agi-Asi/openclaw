@@ -2313,19 +2313,19 @@ body.update-dialog-open .sidebar-update-card__status {
   mask-image: linear-gradient(to left, black 0, black calc(100% - 10px), transparent 100%);
 }
 
-.session-row-host:is(:hover, :focus-within) .sidebar-recent-session__name[data-overflow-reveal] {
+.session-row-host:is(:hover, :focus-within) .sidebar-recent-session__name[data-overflow-fade] {
   -webkit-mask-image: linear-gradient(to right, transparent 0, black 10px, black 100%);
   mask-image: linear-gradient(to right, transparent 0, black 10px, black 100%);
 }
 
 .session-row-host:is(:hover, :focus-within)
-  .sidebar-recent-session__name[data-overflow-reveal]:dir(rtl) {
+  .sidebar-recent-session__name[data-overflow-fade]:dir(rtl) {
   -webkit-mask-image: linear-gradient(to left, transparent 0, black 10px, black 100%);
   mask-image: linear-gradient(to left, transparent 0, black 10px, black 100%);
 }
 
 .session-row-host:is(:hover, :focus-within)
-  .sidebar-recent-session__name[data-overflow-reveal]
+  .sidebar-recent-session__name[data-overflow-fade]
   .sidebar-recent-session__name-content {
   transform: translateX(var(--overflow-reveal-translate, 0));
   transition: transform var(--overflow-reveal-duration, 900ms) linear 180ms;

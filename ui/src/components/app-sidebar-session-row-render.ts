@@ -447,7 +447,6 @@ export function renderRecentSession(params: {
       </span>
     </div>
   `;
-  // The overflow ref owns per-title measurement state, so DOM cannot be reused across sessions.
   return keyed(session.key, row);
 }
 

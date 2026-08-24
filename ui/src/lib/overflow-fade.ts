@@ -1,4 +1,3 @@
-/** Ref callback that marks single-line text only while it is genuinely clipped. */
 export function createOverflowFadeRef() {
   let target: HTMLElement | null = null;
   let observer: ResizeObserver | null = null;
@@ -11,7 +10,6 @@ export function createOverflowFadeRef() {
     const contentWidth = content?.scrollWidth ?? target.scrollWidth;
     const revealDistance = Math.max(0, contentWidth - target.clientWidth);
     target.toggleAttribute("data-overflow-fade", revealDistance > 1);
-    target.toggleAttribute("data-overflow-reveal", revealDistance > 1);
     if (revealDistance <= 1) {
       target.style.removeProperty("--overflow-reveal-translate");
       target.style.removeProperty("--overflow-reveal-duration");
