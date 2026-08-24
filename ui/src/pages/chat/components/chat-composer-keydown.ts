@@ -1,11 +1,7 @@
 import type { ChatSendShortcut } from "../../../app/settings.ts";
 import { steerableQueuedMessage } from "../chat-queue.ts";
 import { restoreHistoryCaret, scrollActiveMenuOptionIntoView } from "./chat-composer-dom.ts";
-import {
-  handleSkillMenuKeydown,
-  handleSkillTokenKeydown,
-  type SkillMenuHost,
-} from "./chat-composer-skill-menu.ts";
+import { handleSkillMenuKeydown, type SkillMenuHost } from "./chat-composer-skill-menu.ts";
 import {
   getActiveSlashMenuOptionId,
   resetSlashMenuState,
@@ -91,10 +87,6 @@ export function createComposerKeyDownHandler({
       return;
     }
     if (state.composerComposing || event.isComposing || event.keyCode === 229) {
-      return;
-    }
-
-    if (handleSkillTokenKeydown(event)) {
       return;
     }
 

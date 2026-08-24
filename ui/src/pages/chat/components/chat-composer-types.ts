@@ -170,7 +170,6 @@ export type ChatComposerState = SkillMenuState & {
   slashMenuArgItems: string[];
   slashCommandRefreshPending: boolean;
   composerComposing: boolean;
-  skillCaretOffset: number | null;
   composingDraft: ComposingDraft | null;
   composerInputIntentKey: string | null;
   pendingClearedSubmittedDraft: PendingClearedSubmittedDraft | null;

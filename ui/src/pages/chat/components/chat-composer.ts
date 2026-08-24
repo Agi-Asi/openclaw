@@ -23,9 +23,7 @@ import { createComposerKeyDownHandler } from "./chat-composer-keydown.ts";
 import {
   getActiveSkillMenuOptionId,
   getActiveSkillMenuOptionLabel,
-  hasSkillDraftTokens,
   isSkillMenuVisible,
-  normalizeSkillTokenSelection,
   resetSkillMenuState,
   type SkillMenuHost,
   updateSkillMenu,
@@ -283,13 +281,6 @@ export function renderChatComposer(props: ChatComposerProps) {
   });
 
   const syncComposerValue = (target: HTMLTextAreaElement) => {
-    normalizeSkillTokenSelection(target);
-    state.skillCaretOffset =
-      hasSkillDraftTokens(target.value) &&
-      document.activeElement === target &&
-      target.selectionStart === target.selectionEnd
-        ? target.selectionStart
-        : null;
     adjustTextareaHeight(target);
     commitComposerDraft(props, target.value);
     updateSlashMenu(target.value, requestUpdate, props, {}, () => target.value);
@@ -301,7 +292,6 @@ export function renderChatComposer(props: ChatComposerProps) {
     if (!(target instanceof HTMLTextAreaElement)) {
       return;
     }
-    normalizeSkillTokenSelection(target);
     if (!state.composerComposing && !event.isComposing) {
       markComposerInputIntent(state, composerDraftKey(props));
     }
@@ -333,19 +323,7 @@ export function renderChatComposer(props: ChatComposerProps) {
   };
   const handleSelect = (event: Event) => {
     const target = event.target as HTMLTextAreaElement;
-    normalizeSkillTokenSelection(target);
-    const nextCaretOffset =
-      hasSkillDraftTokens(target.value) &&
-      document.activeElement === target &&
-      target.selectionStart === target.selectionEnd
-        ? target.selectionStart
-        : null;
-    const caretChanged = state.skillCaretOffset !== nextCaretOffset;
-    state.skillCaretOffset = nextCaretOffset;
     updateSkillMenu(target.value, target.selectionStart, state, skillMenuHost, requestUpdate);
-    if (caretChanged) {
-      requestUpdate();
-    }
   };
   const handleCompositionEnd = (event: CompositionEvent) => {
     state.composerComposing = false;
@@ -358,8 +336,6 @@ export function renderChatComposer(props: ChatComposerProps) {
   };
   const handleBlur = (event: FocusEvent) => {
     const target = event.target as HTMLTextAreaElement;
-    const hadSkillCaret = state.skillCaretOffset !== null;
-    state.skillCaretOffset = null;
     // A dropped compositionend (detach/blur mid-IME) must not wedge the
     // composing flag: it persists across renders and kills Enter-send,
     // history keys, and command menus until the Send button resets it.
@@ -374,9 +350,6 @@ export function renderChatComposer(props: ChatComposerProps) {
     }
     commitComposerDraft(props, normalizedDraft);
     props.onTypingChange?.(false);
-    if (hadSkillCaret) {
-      requestUpdate();
-    }
   };
   const handleSend = (submissionAction?: Event) => {
     const draft = state.composerTextarea?.value ?? props.draft;
