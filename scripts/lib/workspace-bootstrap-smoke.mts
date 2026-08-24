@@ -36,6 +36,7 @@ const DIST_RUNTIME_ARTIFACT_BASE_PATHS = [
   "src/agents/templates",
   "dist",
   "dist-runtime",
+  "node_modules",
 ];
 
 const DIST_RUNTIME_ARTIFACT_PACKAGE_DIST_PATHS = [...TSDOWN_PACKAGE_OUTPUT_ROOTS].toSorted(
@@ -423,6 +424,8 @@ function validateDistRuntimeArtifactEntries(entries: string[], expectedPaths: st
       return false;
     }
     if (
+      entry === "node_modules" ||
+      entry.startsWith("node_modules/") ||
       entry === "dist" ||
       entry.startsWith("dist/") ||
       entry === "dist-runtime" ||
@@ -628,9 +631,6 @@ export async function buildAndSmokeDistRuntimeArtifact(params: {
         ["--use-compress-program", compressor, "-xf", archivePath, "-C", packageRoot],
         { stdio: "inherit" },
       );
-      // The shared artifact is platform-neutral; this producer-only smoke needs
-      // its host's deployed optional dependencies to exercise the ACPX adapters.
-      copyDistRuntimeArtifactPath(artifactRoot, packageRoot, "node_modules");
       runInstalledWorkspaceBootstrapSmoke({
         packageRoot,
         envOverrides: artifactEnvOverrides,
