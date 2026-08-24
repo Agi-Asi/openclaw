@@ -473,8 +473,8 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
           await executeSessionsPatchMany({
             raw: params,
             callGateway: gatewayRequest,
-            resolveTarget: async (sessionKey) =>
-              await resolvePatchTarget(
+            resolveTarget: (sessionKey) =>
+              resolvePatchTarget(
                 { ...opts, config: opts.config ?? getRuntimeConfig() },
                 sessionKey,
                 gatewayRequest,
@@ -510,9 +510,6 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
         key,
         ...lifecycleIdentity,
         ...(params.label !== undefined ? { label: readClearableString(params, "label") } : {}),
-        ...(params.category !== undefined
-          ? { category: readClearableString(params, "category") }
-          : {}),
         ...(params.unread !== undefined ? { unread: readBooleanParam(params, "unread") } : {}),
         ...(params.icon !== undefined ? { icon: readClearableString(params, "icon") } : {}),
         ...(params.category !== undefined

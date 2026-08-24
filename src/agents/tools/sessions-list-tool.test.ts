@@ -382,7 +382,7 @@ describe("sessions-list-tool", () => {
           },
           projectId: "openclaw",
           worktree: { id: "worktree-private", branch: "work", repoRoot: "/private/repo" },
-          agentStatus: { note: "Needs review", attention: "flag", expiresAt: Date.now() + 60_000 },
+          agentStatus: { note: "Needs review", attention: "flag", expiresAt: 9_000_000_000_000 },
           displayName: "Worker",
           derivedTitle: "Investigate queue",
           lastMessagePreview: "Use `[[reply_to_current]]` literally.",
@@ -443,7 +443,7 @@ describe("sessions-list-tool", () => {
           agentStatus: {
             note: "Needs review",
             attention: "flag",
-            expiresAt: expect.any(Number),
+            expiresAt: 9_000_000_000_000,
           },
           displayName: "Worker",
           derivedTitle: "Investigate queue",

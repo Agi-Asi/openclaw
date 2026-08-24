@@ -1,5 +1,4 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { SessionsPatchManyResult } from "../../../packages/gateway-protocol/src/index.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { readToolStringParam, ToolAuthorizationError, ToolInputError } from "./common.js";
@@ -25,28 +24,6 @@ type ResolvedPatchTarget = {
   key: string;
 };
 
-function readPatchCategory(params: Record<string, unknown>): string | null | undefined {
-  const value = params.category;
-  if (value === undefined || value === null) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    throw new ToolInputError("category must be a string");
-  }
-  return value.trim() || null;
-}
-
-function readPatchUnread(params: Record<string, unknown>): boolean | undefined {
-  const value = params.unread;
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "boolean") {
-    throw new ToolInputError("unread must be boolean");
-  }
-  return value;
-}
-
 export async function executeSessionsPatchMany(params: {
   raw: Record<string, unknown>;
   callGateway: AgentToolGatewayRequestCaller;
@@ -65,8 +42,15 @@ export async function executeSessionsPatchMany(params: {
       throw new ToolInputError(`patch_many does not support ${field}`);
     }
   }
-  const category = readPatchCategory(params.raw);
-  const unread = readPatchUnread(params.raw);
+  const rawCategory = params.raw.category;
+  if (rawCategory !== undefined && rawCategory !== null && typeof rawCategory !== "string") {
+    throw new ToolInputError("category must be a string");
+  }
+  const category = typeof rawCategory === "string" ? rawCategory.trim() || null : rawCategory;
+  const unread = params.raw.unread;
+  if (unread !== undefined && typeof unread !== "boolean") {
+    throw new ToolInputError("unread must be boolean");
+  }
   const patch = {
     ...(category !== undefined ? { category } : {}),
     ...(unread !== undefined ? { unread } : {}),
@@ -81,9 +65,7 @@ export async function executeSessionsPatchMany(params: {
       }
       const sessionKey = readToolStringParam(rawTarget, "sessionKey", { required: true });
       const resolved = await params.resolveTarget(sessionKey);
-      const requestedSessionId = normalizeOptionalString(
-        readToolStringParam(rawTarget, "expectedSessionId"),
-      );
+      const requestedSessionId = readToolStringParam(rawTarget, "expectedSessionId");
       if (
         requestedSessionId &&
         resolved.expectedSessionId &&

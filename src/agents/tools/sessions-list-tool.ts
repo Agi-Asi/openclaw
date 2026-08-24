@@ -413,8 +413,6 @@ export function createSessionsListTool(opts?: {
             }
           : undefined;
         const projectId = readStringValue(entry.projectId);
-        const hasWorktree = entry.worktree ? true : undefined;
-        const agentStatus = entry.agentStatus;
         const displayName = readStringValue(entry.displayName);
         const derivedTitle = readStringValue(entry.derivedTitle);
         const lastMessagePreview = readStringValue(entry.lastMessagePreview);
@@ -471,8 +469,8 @@ export function createSessionsListTool(opts?: {
           ...(entry.unread !== undefined ? { unread: entry.unread } : {}),
           ...(owner ? { owner } : {}),
           ...(projectId ? { projectId } : {}),
-          ...(hasWorktree ? { hasWorktree } : {}),
-          ...(agentStatus ? { agentStatus } : {}),
+          ...(entry.worktree ? { hasWorktree: true } : {}),
+          ...(entry.agentStatus ? { agentStatus: entry.agentStatus } : {}),
           ...(displayName ? { displayName } : {}),
           ...(derivedTitle ? { derivedTitle } : {}),
           ...(lastMessagePreview ? { lastMessagePreview } : {}),
