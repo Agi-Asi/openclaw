@@ -19,6 +19,7 @@ import {
 } from "./session-transcript-lock-runtime.js";
 import {
   publishSessionTranscriptUpdateByIdentity,
+  readSessionTranscriptBoundedActiveContext,
   readSessionTranscriptEvents,
   resolveSessionTranscriptIdentity,
   type SessionTranscriptTargetParams,
@@ -42,6 +43,26 @@ export async function readCodexSessionTranscriptEventsBeforeAdmission(
   return await runWithSessionTranscriptReadFence(
     admission,
     async () => await readSessionTranscriptEvents(params),
+  );
+}
+
+/** Reads one bounded Codex context strictly before the admitted current user message. */
+export async function readCodexSessionTranscriptBoundedContextBeforeAdmission(
+  params: SessionTranscriptTargetParams & { maxBytes: number; maxEvents: number },
+  admission: TranscriptTurnAdmission,
+) {
+  const target = await resolveSessionTranscriptIdentity(params);
+  if (
+    target.agentId !== admission.agentId ||
+    target.sessionId !== admission.sessionId ||
+    target.sessionKey !== admission.sessionKey
+  ) {
+    throw new SessionTranscriptReadFenceError(
+      "Current-turn transcript admission belongs to a different transcript target",
+    );
+  }
+  return runWithSessionTranscriptReadFence(admission, () =>
+    readSessionTranscriptBoundedActiveContext(params),
   );
 }
 

@@ -10,7 +10,7 @@ import {
   migrateSessionEntries,
   parseSessionEntries,
 } from "openclaw/plugin-sdk/agent-sessions";
-import { readCodexSessionTranscriptEventsBeforeAdmission } from "openclaw/plugin-sdk/codex-session-transcript-runtime";
+import { readCodexSessionTranscriptBoundedContextBeforeAdmission } from "openclaw/plugin-sdk/codex-session-transcript-runtime";
 import {
   getSessionEntry,
   parseSqliteSessionFileMarker,
@@ -18,7 +18,7 @@ import {
   type SqliteSessionFileMarker,
 } from "openclaw/plugin-sdk/session-store-runtime";
 import {
-  readSessionTranscriptEvents,
+  readSessionTranscriptBoundedActiveContext,
   type TranscriptTurnAdmission,
   type SessionTranscriptTargetParams,
 } from "openclaw/plugin-sdk/session-transcript-runtime";
@@ -30,11 +30,46 @@ function isMissingFileError(error: unknown): boolean {
 
 export type CodexMirroredSessionHistoryTarget = {
   agentId?: string;
+  contextTokenBudget?: number;
   sessionFile: string;
   sessionId: string;
   sessionKey?: string;
   sessionTarget?: Partial<SessionTranscriptTargetParams>;
 };
+
+const DEFAULT_CODEX_HISTORY_CONTEXT_TOKENS = 128_000;
+const MAX_CODEX_HISTORY_CONTEXT_BYTES = 64 * 1024 * 1024;
+const MAX_CODEX_HISTORY_CONTEXT_EVENTS = 10_000;
+
+function resolveCodexHistoryContextLimits(target: CodexMirroredSessionHistoryTarget): {
+  maxBytes: number;
+  maxEvents: number;
+} {
+  const tokenBudget =
+    typeof target.contextTokenBudget === "number" &&
+    Number.isFinite(target.contextTokenBudget) &&
+    target.contextTokenBudget > 0
+      ? Math.floor(target.contextTokenBudget)
+      : DEFAULT_CODEX_HISTORY_CONTEXT_TOKENS;
+  return {
+    maxBytes: Math.min(MAX_CODEX_HISTORY_CONTEXT_BYTES, Math.max(1024 * 1024, tokenBudget * 8)),
+    maxEvents: MAX_CODEX_HISTORY_CONTEXT_EVENTS,
+  };
+}
+
+async function readBoundedCodexSessionEntries(
+  target: SessionTranscriptTargetParams,
+  limits: { maxBytes: number; maxEvents: number },
+  admission?: TranscriptTurnAdmission,
+): Promise<unknown[]> {
+  const context = admission
+    ? await readCodexSessionTranscriptBoundedContextBeforeAdmission(
+        { ...target, ...limits },
+        admission,
+      )
+    : readSessionTranscriptBoundedActiveContext({ ...target, ...limits });
+  return context.events;
+}
 
 /** Returns sanitized session-context messages for a Codex mirrored session file. */
 export async function readCodexMirroredSessionHistoryMessages(
@@ -89,6 +124,7 @@ async function readCodexMirroredSessionEntries(
   target: CodexMirroredSessionHistoryTarget,
   admission?: TranscriptTurnAdmission,
 ): Promise<SessionEntry[]> {
+  const limits = resolveCodexHistoryContextLimits(target);
   if (target.sessionTarget) {
     const { agentId, sessionId, sessionKey, storePath } = target.sessionTarget;
     if (
@@ -108,9 +144,11 @@ async function readCodexMirroredSessionEntries(
       sessionKey,
       storePath,
     };
-    return (await (admission
-      ? readCodexSessionTranscriptEventsBeforeAdmission(transcriptTarget, admission)
-      : readSessionTranscriptEvents(transcriptTarget))) as SessionEntry[];
+    return (await readBoundedCodexSessionEntries(
+      transcriptTarget,
+      limits,
+      admission,
+    )) as SessionEntry[];
   }
   const sqliteMarker = parseSqliteSessionFileMarker(target.sessionFile);
   if (sqliteMarker) {
@@ -130,9 +168,11 @@ async function readCodexMirroredSessionEntries(
       sessionKey,
       storePath: sqliteMarker.storePath,
     };
-    return (await (admission
-      ? readCodexSessionTranscriptEventsBeforeAdmission(transcriptTarget, admission)
-      : readSessionTranscriptEvents(transcriptTarget))) as SessionEntry[];
+    return (await readBoundedCodexSessionEntries(
+      transcriptTarget,
+      limits,
+      admission,
+    )) as SessionEntry[];
   }
   if (admission) {
     if (
@@ -142,13 +182,14 @@ async function readCodexMirroredSessionEntries(
     ) {
       return [];
     }
-    return (await readCodexSessionTranscriptEventsBeforeAdmission(
+    return (await readBoundedCodexSessionEntries(
       {
         agentId: admission.agentId,
         sessionId: admission.sessionId,
         sessionKey: admission.sessionKey,
         storePath: admission.storePath,
       },
+      limits,
       admission,
     )) as SessionEntry[];
   }

@@ -83,6 +83,7 @@ type CodexWorkspaceBootstrapContext = CodexBootstrapContext & {
 /** Reads mirrored Codex session history for harness hooks. */
 export async function readMirroredSessionHistoryMessages(params: {
   agentId?: string;
+  contextTokenBudget?: number;
   sessionFile: string;
   sessionId: string;
   sessionKey?: string;

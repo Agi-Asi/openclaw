@@ -236,6 +236,39 @@ describe("readCodexMirroredSessionHistoryMessages", () => {
     ]);
   });
 
+  it("loads only the byte-bounded recent context from a large persisted SQLite transcript", async () => {
+    const { marker, sessionKey, sessionTarget } = await writeSqliteSession();
+    for (let index = 0; index < 8; index += 1) {
+      await appendSessionTranscriptMessageByIdentity({
+        ...sessionTarget,
+        message: {
+          role: "user",
+          content: `${index}:${"x".repeat(180_000)}`,
+          timestamp: index + 3,
+        },
+      });
+    }
+
+    const messages = await readCodexMirroredSessionHistoryMessages({
+      agentId: "main",
+      contextTokenBudget: 1,
+      sessionFile: marker,
+      sessionId: sessionTarget.sessionId,
+      sessionKey,
+      sessionTarget,
+    });
+
+    expect(messages).toBeDefined();
+    expect(messages?.length).toBeLessThan(8);
+    expect(messages?.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringMatching(/^7:/),
+    });
+    expect(messages).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ content: "sqlite prompt" })]),
+    );
+  });
+
   it.each([
     ["agent id", { agentId: "other" }],
     ["session id", { sessionId: "another-session" }],

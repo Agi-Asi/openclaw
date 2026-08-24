@@ -65,6 +65,9 @@ export async function prepareCodexAttemptContext(
   const { toolBridge } = attemptTools;
   const activeTranscriptTarget = {
     agentId: sessionAgentId,
+    ...(effectiveContextTokenBudget !== undefined
+      ? { contextTokenBudget: effectiveContextTokenBudget }
+      : {}),
     sessionFile: activeSessionFile,
     sessionId: activeSessionId,
     sessionKey: contextSessionKey,
