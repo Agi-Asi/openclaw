@@ -240,7 +240,6 @@ describe("session list replacement options", () => {
       assignedOwner,
     );
     await vi.waitFor(() => expect(primaryCalls).toBeGreaterThanOrEqual(1));
-    const queuedManagedRefresh = sessions.refreshList({ ...managedScope, force: true });
 
     staleManagedResponse.resolve({
       ...sessionsResult([{ key, kind: "direct", updatedAt: 10, owner: oldOwner }], 10),
@@ -254,7 +253,7 @@ describe("session list replacement options", () => {
       ...sessionsResult([{ key, kind: "direct", updatedAt: 20, owner: assignedOwner }], 20),
       owners: [ada],
     });
-    await Promise.all([staleRefresh, queuedManagedRefresh]);
+    await staleRefresh;
     expect(sessions.listSnapshot(managedScope).result?.sessions[0]?.owner).toEqual(assignedOwner);
     expect(sessions.listSnapshot(managedScope).result?.owners).toEqual([ada]);
     stop();

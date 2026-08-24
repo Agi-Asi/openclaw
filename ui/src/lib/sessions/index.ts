@@ -186,7 +186,10 @@ export function createSessionCapability(gateway: SessionGateway): SessionCapabil
     connection,
     readState: () => state,
     publish,
-    refreshReplacement: (agentId) => roster.refreshReplacement(agentId),
+    refreshReplacement: (agentId, ownerKey) =>
+      ownerKey
+        ? roster.refreshOwnerAssignmentScopes(ownerKey, agentId)
+        : roster.refreshReplacement(agentId),
     ownerAssignmentScopeRevisions: (key) => roster.ownerAssignmentScopeRevisions(key),
     publishedRow: (key) => roster.publishedRow(key),
     redecorateLists: () => roster.redecorateLists(),

@@ -46,6 +46,7 @@ const PRIMARY_LIST_SCOPE = "primary";
 type ManagedSessionListRefresh = {
   append: boolean;
   offset?: number;
+  invalidated?: true;
 };
 
 type ManagedSessionListQuery = Readonly<Record<string, unknown>> & { readonly limit: number };
@@ -132,7 +133,7 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
       listeners: new Set(),
       coordinator: createSessionEventRefreshCoordinator({
         active: pageActive,
-        refresh: () => refreshManagedList(entry, { append: false }),
+        refresh: () => refreshManagedList(entry, { append: false, invalidated: true }),
       }),
       pending: null,
       queued: null,
@@ -150,7 +151,7 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
       return Promise.resolve();
     }
     if (entry.pending) {
-      if (!refresh.append) {
+      if (refresh.invalidated) {
         entry.queued = refresh;
       }
       return entry.pending;
@@ -501,10 +502,21 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
       entry.listeners.add(listener);
       return () => {
         entry.listeners.delete(listener);
-        if (entry.listeners.size === 0 && managedLists.get(entry.key) === entry) {
-          entry.coordinator.dispose();
-          host.retireCanonicalScope(managedSessionListScope(entry));
-          managedLists.delete(entry.key);
+        if (entry.listeners.size > 0 || managedLists.get(entry.key) !== entry) {
+          return;
+        }
+        const release = () => {
+          if (entry.listeners.size === 0 && managedLists.get(entry.key) === entry) {
+            entry.coordinator.dispose();
+            host.retireCanonicalScope(managedSessionListScope(entry));
+            managedLists.delete(entry.key);
+          }
+        };
+        // Route replacement may briefly remove every subscriber while this query still owns a request.
+        if (entry.pending) {
+          void entry.pending.finally(release);
+        } else {
+          release();
         }
       };
     },
@@ -532,6 +544,15 @@ export function createSessionRosterRefresh(host: SessionRosterRefreshHost) {
     },
     refresh,
     refreshReplacement,
+    async refreshOwnerAssignmentScopes(key: string, agentId?: string | null): Promise<void> {
+      const refreshes = [refreshReplacement(agentId)];
+      for (const entry of managedLists.values()) {
+        if (entry.snapshot.result?.sessions.some((row) => row.key === key)) {
+          refreshes.push(refreshManagedList(entry, { append: false, invalidated: true }));
+        }
+      }
+      await Promise.all(refreshes);
+    },
     ownerAssignmentScopeRevisions(key: string): ReadonlyMap<string, number> {
       const scopes = [PRIMARY_LIST_SCOPE];
       for (const entry of managedLists.values()) {

@@ -46,7 +46,7 @@ type SessionMutationsHost = {
   connection: SessionConnectionOwner;
   readState: () => SessionState;
   publish: (state: SessionState, errorSource?: "session-observer" | "operation") => void;
-  refreshReplacement: (agentId?: string | null) => Promise<void>;
+  refreshReplacement: (agentId?: string | null, ownerKey?: string) => Promise<void>;
   ownerAssignmentScopeRevisions: (key: string) => ReadonlyMap<string, number>;
   publishedRow: (key: string) => GatewaySessionRow | undefined;
   redecorateLists: () => void;
@@ -620,7 +620,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
       );
       patchRowLocal(result.key, { owner: result.owner });
       host.redecorateLists();
-      void host.refreshReplacement(options.agentId);
+      void host.refreshReplacement(options.agentId, result.key);
       return result.owner;
     } catch (error) {
       if (host.connection.isCurrent(scope)) {
