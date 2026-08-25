@@ -480,12 +480,13 @@ describe("renderModelProviders", () => {
       }),
     );
 
-    expect(text(container.querySelector('[data-provider-id="openai"] [role="alert"]'))).toBe(
-      "Provider credential could not be saved.",
-    );
-    expect(text(container.querySelector('.model-providers__defaults [role="alert"]'))).toBe(
-      "Default models could not be saved.",
-    );
+    const providerAlert = container.querySelector('[data-provider-id="openai"] [role="alert"]');
+    const defaultsAlert = container.querySelector('.model-providers__defaults [role="alert"]');
+
+    expect(text(providerAlert)).toBe("Provider credential could not be saved.");
+    expect(text(defaultsAlert)).toBe("Default models could not be saved.");
+    expect(providerAlert?.classList.contains("danger")).toBe(true);
+    expect(defaultsAlert?.classList.contains("danger")).toBe(true);
   });
 
   it("keeps model behavior available while provider data loads", () => {

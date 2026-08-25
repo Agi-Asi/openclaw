@@ -116,7 +116,10 @@ function renderMutationMessage(message: ModelProviderRowMessage | undefined) {
     return nothing;
   }
   return html`
-    <div class="callout ${message.kind}" role=${message.kind === "error" ? "alert" : "status"}>
+    <div
+      class="callout ${message.kind === "error" ? "danger" : "success"}"
+      role=${message.kind === "error" ? "alert" : "status"}
+    >
       ${message.text}
     </div>
     ${message.warning

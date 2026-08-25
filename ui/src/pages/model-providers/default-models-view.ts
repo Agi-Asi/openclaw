@@ -184,7 +184,7 @@ export function renderDefaultModels(props: DefaultModelsViewProps) {
       </div>
       ${props.message
         ? html`<div
-            class="callout ${props.message.kind}"
+            class="callout ${props.message.kind === "error" ? "danger" : "success"}"
             role=${props.message.kind === "error" ? "alert" : "status"}
           >
             ${props.message.text}
