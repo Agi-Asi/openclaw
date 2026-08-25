@@ -38,6 +38,7 @@ import {
   type GatewayReloadHandlerParams,
   type GatewayRestartTransactionResult,
 } from "./server-reload-contracts.js";
+import { resolveModelRuntimeAgentIdsFromChangedPaths } from "./server-reload-model-runtime-scope.js";
 import { createGatewayRestartCoordinator } from "./server-reload-restart.js";
 import {
   assertIrreversibleReloadPlanHasRecoveryOwner,
@@ -101,6 +102,8 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
       !isRestartRetryStopped() && (publication?.isCurrent?.() ?? true);
     const state = params.getState();
     const nextState = { ...state };
+    const modelRuntimeAgentIds = resolveModelRuntimeAgentIdsFromChangedPaths(plan.changedPaths);
+    const modelRuntimeRefreshScope = modelRuntimeAgentIds ? { agentIds: modelRuntimeAgentIds } : {};
 
     resetPreparedModelRuntimeStateForHotReload();
 
@@ -186,7 +189,7 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
         // retire the prior stores at the commit edge so no request can mix generations.
         preparedModelRuntimeReplacementGateId = markPreparedModelRuntimeSnapshotsStale(
           "prepared model runtime owner is stale before config publication",
-          { waitForReplacement: true },
+          { waitForReplacement: true, ...modelRuntimeRefreshScope },
         );
         params.setState(nextState);
         // All rejecting work is complete. Publish pre-resolved lane limits at
@@ -599,6 +602,7 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
       await refreshPreparedModelRuntimeSnapshots(nextConfig, {
         catalogMode: "static",
         allowGatewaySubagentBinding: true,
+        ...modelRuntimeRefreshScope,
         ...(pluginMetadataSnapshot ? { pluginMetadataSnapshot } : {}),
       });
     } catch (err) {
