@@ -398,6 +398,15 @@ suite.define(() => {
       "aria-checked",
       "true",
     );
+
+    await currentPage.reload();
+    await currentPage.getByText("Ada research", { exact: true }).first().waitFor();
+    await expect
+      .poll(() => currentPage.locator('[data-session-key="agent:main:bob"]').count())
+      .toBe(0);
+    expect((await gateway.getRequests("sessions.list")).at(-1)?.params).toMatchObject({
+      ownerId: "profile-ada",
+    });
   });
 
   it("keeps unrelated active sessions out of the involving-me filter", async () => {
