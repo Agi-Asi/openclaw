@@ -75,6 +75,8 @@ Manage automations with the `openclaw automations` CLI; `openclaw cron` remains 
 | `on-exit` | `--on-exit`        | Fire once when a watched command exits (event trigger; survives turn teardown; optional `--on-exit-cwd`) |
 | `stream`  | `--stream-command` | Fire from batched lines produced by a supervised long-lived command                                      |
 
+These schedule flags work with both `openclaw automations add` and `openclaw automations edit <job-id>`. For example, `openclaw automations edit <job-id> --on-exit "./watch.sh" --on-exit-cwd /srv/app` converts an existing job to an exit-triggered schedule.
+
 Timestamps without a timezone are treated as UTC. Add `--tz America/New_York` to interpret an offset-less `--at` datetime, or to evaluate a cron expression, in that IANA timezone. Cron expressions without `--tz` use the Gateway host timezone. `--tz` is not valid with `--every` or `--on-exit`.
 
 Recurring top-of-hour expressions (minute `0` with a wildcard hour field) are automatically staggered by up to 5 minutes to reduce load spikes. Use `--exact` to force precise timing, or `--stagger 30s` for an explicit window (cron schedules only).
@@ -556,6 +558,14 @@ Model override note:
 ## Webhooks
 
 Gateway can expose HTTP webhook endpoints for external triggers. Enable in config:
+
+A configured mapping `id` is retained only as bounded ingress-source
+attribution when that mapping reaches agent admission. It is not an
+authenticated service principal or invoker. Direct `/hooks/agent` and requests
+authenticated only by the shared hook token stay unattributed unless another
+authoritative principal source exists. If a transform returns `null`, the
+request keeps its visible HTTP 204 outcome and stops before creating a run,
+task, execution identity, or audit receipt.
 
 ```json5
 {

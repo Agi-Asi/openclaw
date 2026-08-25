@@ -51,6 +51,7 @@ type CronCoreRunOptions = {
   streamScheduleKey?: string;
   streamSourceIdentity?: string;
   runReceipt?: import("../store/run-receipt-store.js").CronRunReceiptHandle;
+  executionIdentity?: import("./state.js").CronExecutionIdentityAdmission;
 };
 
 async function deliverPrimaryWebhook(
@@ -226,7 +227,13 @@ async function executeJobCoreWithTimeoutUnfinalized(
       error: `cron webhook delivery cancelled: ${error}`,
     });
   };
-  if (!isCronActiveJobMarkerCurrent(opts?.activeJobMarker)) {
+  const reservation = opts?.runReceipt ? state.queuedRunReservationsByJobId.get(job.id) : undefined;
+  if (
+    !isCronActiveJobMarkerCurrent(opts?.activeJobMarker) ||
+    (opts?.runReceipt &&
+      (reservation?.runReceipt.receiptId !== opts.runReceipt.receiptId ||
+        reservation.lifecycleGeneration !== state.lifecycleGeneration))
+  ) {
     runAbortController.abort("Gateway restarting.");
     return createOperatorCancellationOutcome();
   }
@@ -268,6 +275,7 @@ async function executeJobCoreWithTimeoutUnfinalized(
         onExecutionStarted: noteExecutionStarted,
         onExecutionPhase: accumulateExecution,
         assertRunCurrent,
+        executionIdentity: opts?.executionIdentity,
       };
       const corePromise = withCronTaskRunId(opts?.runId, () =>
         executeJobCore(state, job, runAbortController.signal, coreOptions),
@@ -355,6 +363,7 @@ async function executeJobCoreWithTimeoutUnfinalized(
       onExecutionPhase: deferTimeoutUntilExecutionStart ? watchdog.notePhase : undefined,
       onLaneWait: deferTimeoutUntilExecutionStart ? noteLaneState : undefined,
       assertRunCurrent,
+      executionIdentity: opts?.executionIdentity,
     };
     const corePromise = withCronTaskRunId(opts?.runId, () =>
       executeJobCore(state, job, runAbortController.signal, coreOptions),
