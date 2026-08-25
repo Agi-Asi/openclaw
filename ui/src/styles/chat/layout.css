@@ -2012,6 +2012,17 @@ button.chat-reply-preview--message:disabled {
   margin: var(--chat-composer-top-margin, 8px) auto var(--chat-composer-bottom-gap, 14px);
 }
 
+/* Fade transcript content before the highest composer-stack surface covers it.
+   The chat-surface endpoint stays invisible when there is no content behind. */
+.agent-chat__composer-shell::before {
+  position: absolute;
+  inset: -20px 0 auto;
+  height: 20px;
+  background: linear-gradient(to bottom, transparent, var(--chat-surface));
+  content: "";
+  pointer-events: none;
+}
+
 /* Floating tray pinned to the conversation's top-right (the positioned
    ancestor is .chat-main__conversation); content scrolls underneath it. */
 .task-suggestions {
