@@ -536,18 +536,31 @@ struct CommandCenterTab: View {
 
     private var defaultChatWorkItem: WorkItem {
         let isOpen = self.appModel.chatSessionKey == self.appModel.defaultChatSessionKey
-        return WorkItem(
+        return Self.defaultChatWorkItem(
+            session: self.effectiveDefaultChatSessionEntry,
+            agentName: self.appModel.activeAgentName,
+            activityText: self.defaultChatActivityText,
+            isOpen: isOpen)
+    }
+
+    static func defaultChatWorkItem(
+        session: OpenClawChatSessionEntry?,
+        agentName: String,
+        activityText: String,
+        isOpen: Bool) -> WorkItem
+    {
+        WorkItem(
             id: "default-chat",
             icon: isOpen ? "bubble.left.and.text.bubble.right.fill" : "bubble.left.fill",
-            title: self.appModel.activeAgentName,
-            detail: self.defaultChatActivityText,
+            title: agentName,
+            detail: activityText,
             state: isOpen ? "open" : "default",
             trailing: "chat",
             color: isOpen ? OpenClawBrand.accent : OpenClawBrand.ok,
             progress: nil,
             route: .chat(nil),
-            isUnread: self.effectiveDefaultChatSessionEntry?.unread == true,
-            isPinned: self.effectiveDefaultChatSessionEntry?.pinned == true)
+            isUnread: session?.unread == true,
+            isPinned: session?.isAnyPinned == true)
     }
 
     private var defaultChatActivityText: String {

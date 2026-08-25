@@ -60,6 +60,19 @@ struct RootTabsPresentationTests {
         #expect(visible.map(\.key) == ["main"])
     }
 
+    @Test func `default chat work item shows a group pin`() {
+        let item = CommandCenterTab.defaultChatWorkItem(
+            session: Self.sessionEntry(
+                key: "main",
+                category: "Projects",
+                categoryPinnedAt: 42),
+            agentName: "Main",
+            activityText: "just now",
+            isOpen: false)
+
+        #expect(item.isPinned)
+    }
+
     @Test func `overview token usage sums known totals and marks stale or missing rows partial`() {
         let summary = RootSidebarModel.tokenUsageSummary(for: [
             Self.sessionEntry(key: "fresh", totalTokens: 1200, totalTokensFresh: true, contextTokens: 200_000),
@@ -1078,6 +1091,8 @@ struct RootTabsPresentationTests {
         totalTokens: Int? = nil,
         totalTokensFresh: Bool? = nil,
         contextTokens: Int? = nil,
+        category: String? = nil,
+        categoryPinnedAt: Double? = nil,
         lastReadAt: Double? = nil,
         observerDigest: OpenClawChatSessionObserverDigest? = nil,
         worktree: OpenClawChatSessionWorktree? = nil) -> OpenClawChatSessionEntry
@@ -1103,6 +1118,8 @@ struct RootTabsPresentationTests {
             modelProvider: nil,
             model: nil,
             contextTokens: contextTokens,
+            category: category,
+            categoryPinnedAt: categoryPinnedAt,
             archived: archived,
             observerDigest: observerDigest,
             lastReadAt: lastReadAt,
