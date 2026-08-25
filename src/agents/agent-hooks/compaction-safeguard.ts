@@ -62,6 +62,7 @@ import {
   auditSummaryQuality,
   buildCompactionStructureInstructions,
   buildStructuredFallbackSummary,
+  createSummaryQualityRetentionPlan,
   extractOpaqueIdentifiers,
   wrapUntrustedInstructionBlock,
 } from "./compaction-safeguard-quality.js";
@@ -334,8 +335,16 @@ type CompactionSuffix = {
   contextRanges: Array<{ start: number; end: number; segmentStarts: number[] }>;
 };
 
+type SummaryQualityRetention = {
+  auditSummary: string;
+  identifiers: string[];
+  latestAsk: string | null;
+  identifierPolicy: "strict" | "off" | "custom";
+};
+
 function assembleSuffix(parts: {
   splitTurnSection?: ContextSection;
+  generatedSplitTurnSection?: string;
   preservedTurnsSection?: ContextSection;
   toolFailureSection?: string;
   fileOpsSummary?: string;
@@ -605,6 +614,7 @@ function budgetCompactionSummary(
   summaryBody: string,
   suffixInput: string | CompactionSuffix,
   maxChars: number,
+  qualityRetention?: SummaryQualityRetention,
 ) {
   const suffix = normalizeCompactionSuffix(suffixInput);
   const joined = `${summaryBody}${suffix.text}`;
@@ -618,10 +628,17 @@ function budgetCompactionSummary(
     };
   }
 
-  const bodyFloor = Math.min(summaryBody.length, Math.max(1, Math.ceil(maxChars / 2)));
+  const retentionPlan = qualityRetention
+    ? createSummaryQualityRetentionPlan(summaryBody, SUMMARY_TRUNCATED_MARKER, qualityRetention)
+    : null;
+  const bodyFloor = Math.min(
+    summaryBody.length,
+    maxChars,
+    Math.max(1, Math.ceil(maxChars / 2), retentionPlan?.minimumChars ?? 0),
+  );
   const suffixReservation = Math.min(suffix.text.length, maxChars);
   const bodySlot = Math.min(summaryBody.length, Math.max(bodyFloor, maxChars - suffixReservation));
-  const cappedBody = capCompactionSummary(summaryBody, bodySlot);
+  const cappedBody = retentionPlan?.render(bodySlot) ?? capCompactionSummary(summaryBody, bodySlot);
   const suffixBudget = Math.max(0, maxChars - cappedBody.length);
   const cappedSuffix = capCompactionSuffix(suffix, suffixBudget);
   return {
@@ -1061,6 +1078,7 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
       identifierInstructions: runtime?.identifierInstructions,
     };
     const identifierPolicy = runtime?.identifierPolicy ?? "strict";
+    const qualityGuardEnabled = runtime?.qualityGuardEnabled ?? false;
     const providerId = runtime?.provider;
     const turnPrefixMessages = baseTurnPrefixMessages;
     const recentTurnsPreserve = resolveRecentTurnsPreserve(runtime?.recentTurnsPreserve);
@@ -1071,23 +1089,35 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
     let workspaceContextPromise: Promise<string> | undefined;
     const finalizeSummaryText = async (
       body: string,
-      sections: { splitTurnSection?: ContextSection; preservedTurnsSection?: ContextSection },
+      sections: {
+        splitTurnSection?: ContextSection;
+        generatedSplitTurnSection?: string;
+        preservedTurnsSection?: ContextSection;
+      },
       producerLosses: ReadonlySet<CompactionLoss> = new Set(),
+      qualityRetention?: SummaryQualityRetention,
     ) => {
       workspaceContextPromise ??= readWorkspaceContextForSummary(
         runtime?.postCompactionSections,
         runtime?.workspaceDir,
       );
       const suffix = assembleSuffix({
-        ...sections,
+        splitTurnSection: sections.splitTurnSection,
+        generatedSplitTurnSection: sections.generatedSplitTurnSection,
+        preservedTurnsSection: sections.preservedTurnsSection,
         toolFailureSection,
         fileOpsSummary,
         workspaceContext: await workspaceContextPromise,
       });
-      const finalized = budgetCompactionSummary(body, suffix, MAX_COMPACTION_SUMMARY_CHARS);
+      const finalized = budgetCompactionSummary(
+        body,
+        suffix,
+        MAX_COMPACTION_SUMMARY_CHARS,
+        qualityRetention,
+      );
       const losses = new Set(producerLosses);
       for (const section of Object.values(sections)) {
-        if (section?.truncatedLoss) {
+        if (typeof section !== "string" && section?.truncatedLoss) {
           losses.add(section.truncatedLoss);
         }
       }
@@ -1205,7 +1235,6 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
         thinkingLevel,
         streamFn,
       };
-      const qualityGuardEnabled = runtime?.qualityGuardEnabled ?? false;
       const qualityGuardMaxRetries = resolveQualityGuardMaxRetries(runtime?.qualityGuardMaxRetries);
 
       const maxHistoryShare = runtime?.maxHistoryShare ?? 0.5;
@@ -1352,16 +1381,29 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
           }
           throw attemptError;
         }
-        const structuralSummary = appendSummarySection(
+        const unbudgetedSummary = appendSummarySection(
           historySummary,
           splitTurnSectionLocal ? `\n\n${splitTurnSectionLocal}` : "",
         );
+        const structuralSummary = qualityGuardEnabled ? historySummary : unbudgetedSummary;
         const finalized = await finalizeSummaryText(
           structuralSummary,
           {
+            generatedSplitTurnSection:
+              qualityGuardEnabled && splitTurnSectionLocal
+                ? `\n\n${splitTurnSectionLocal}`
+                : undefined,
             preservedTurnsSection: preservedTurnsSectionLocal,
           },
           producerLosses,
+          qualityGuardEnabled
+            ? {
+                auditSummary: unbudgetedSummary,
+                identifiers,
+                latestAsk: latestUserAsk,
+                identifierPolicy,
+              }
+            : undefined,
         );
 
         const canRegenerate =
