@@ -2156,6 +2156,7 @@ describeLive("gateway live (Codex harness)", () => {
           auth: { mode: "token", token },
           controlUiEnabled: false,
         });
+        await server.startupSettled;
         client = await connectTestGatewayClient({
           url: `ws://127.0.0.1:${port}`,
           token,
@@ -2480,6 +2481,7 @@ describeLive("gateway live (Codex harness)", () => {
               auth: { mode: "token", token },
               controlUiEnabled: false,
             });
+            await server.startupSettled;
             client = await connectTestGatewayClient({
               url: `ws://127.0.0.1:${port}`,
               token,
