@@ -65,8 +65,11 @@ export function formatBillingErrorMessage(
     providerName && modelName ? `${providerName} (${modelName})` : providerName || undefined;
   const isSubscriptionAuth = authMode === "oauth" || authMode === "token";
   if (isSubscriptionAuth) {
+    const accountHint = providerName
+      ? ` Run \`openclaw models auth list --provider ${normalizeLowercaseStringOrEmpty(providerName)}\` to verify the account OpenClaw selected.`
+      : "";
     return providerLabel
-      ? `⚠️ ${providerLabel} returned a billing error — check your account for subscription or usage limits, then try again.`
+      ? `⚠️ ${providerLabel} returned a billing error — check your account for subscription or usage limits, then try again.${accountHint}`
       : "⚠️ API provider returned a billing error — check your account for subscription or usage limits, then try again.";
   }
   return providerLabel

@@ -62,7 +62,7 @@ describe("failover user copy", () => {
         authMode: "oauth",
       }),
     ).toBe(
-      "⚠️ Anthropic (claude) returned a billing error — check your account for subscription or usage limits, then try again.",
+      "⚠️ Anthropic (claude) returned a billing error — check your account for subscription or usage limits, then try again. Run `openclaw models auth list --provider anthropic` to verify the account OpenClaw selected.",
     );
     expect(renderBillingReplyCopy({})).toBe(BILLING_ERROR_USER_MESSAGE);
   });
