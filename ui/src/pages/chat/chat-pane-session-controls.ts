@@ -119,6 +119,7 @@ export function renderChatPaneComposerControls(params: {
           modelOverrides: state.sessions.state.modelOverrides,
           modelSelectionLocked: selectedSession?.modelSelectionLocked === true,
           modelSelectionRuntimeId: selectedSession?.agentRuntime?.id,
+          modelPickerOpen: state.chatModelPickerOpenSessionKey === state.sessionKey,
           modelSwitching: Boolean(state.chatModelSwitchPromises[state.sessionKey]),
           modelsLoading: state.chatModelsLoading,
           modelMutationDisabledReason: modelAccess.allowed ? undefined : modelAccess.reason,
@@ -138,6 +139,9 @@ export function renderChatPaneComposerControls(params: {
               ? switchChatContextWindow(state, next, targetSessionKey)
               : Promise.resolve(false),
           onModelPickerOpen: () => refreshChatModelCatalogOnDemand(state),
+          onModelPickerOpenChange: (open) => {
+            state.chatModelPickerOpenSessionKey = open ? state.sessionKey : null;
+          },
           onModelSelect: (next, targetSessionKey) =>
             modelAccess.allowed
               ? switchChatModel(state, next, targetSessionKey)
