@@ -173,6 +173,7 @@ describe("NewSessionDictationControl", () => {
     expect(container.querySelector(".agent-chat__dictation-status")?.textContent).toContain(
       "Listening",
     );
+    expect(container.querySelector(".agent-chat__dictation-phase--listening")).not.toBeNull();
     container.querySelector<HTMLButtonElement>(".chat-send-btn--dictating")?.click();
     await vi.waitFor(() => expect(onMessage).toHaveBeenCalledWith("draft spoken task"));
     expect(onSubmit).not.toHaveBeenCalled();
@@ -180,6 +181,7 @@ describe("NewSessionDictationControl", () => {
     controller.active = true;
     controller.finalizing = true;
     render(html`${control.renderStatus()}${control.render("agent-a")}`, container);
+    expect(container.querySelector(".agent-chat__dictation-phase--listening")).toBeNull();
     const stop = container.querySelector<HTMLButtonElement>(".chat-send-btn--dictating");
     const send = container.querySelector<HTMLButtonElement>(".chat-send-btn--dictation-commit");
     expect(stop?.querySelector("rect")).not.toBeNull();
