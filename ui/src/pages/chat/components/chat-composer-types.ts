@@ -137,7 +137,6 @@ export type ChatComposerProps = ChatAttachmentControlsProps & {
   onToggleRealtimeCamera?: () => void;
   onSwitchRealtimeCamera?: () => void;
   onDismissRealtimeTalkError?: () => void;
-  onDictationError?: (message: string) => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
   onQueueRetry?: (id: string) => void;
@@ -189,5 +188,6 @@ export type ChatComposerState = SkillMenuState & {
   textareaRef: ((element?: Element) => void) | null;
   dictation: ComposerDictationController | null;
   dictationDraftKey: string | null;
+  dictationError: string | null;
   dictationSelection: { start: number; end: number } | null;
 };
