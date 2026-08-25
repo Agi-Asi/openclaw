@@ -625,6 +625,86 @@ describe("compaction-safeguard summary budgets", () => {
     expect(capped).toContain("<read-files>");
     expect(capped).toContain("## Session Startup");
   });
+
+  it("moves split-turn quality facts into a short body before suffix pressure", () => {
+    const latestAsk = "delete production only after verified backup";
+    const carriedIdentifier = "/tmp/carried-forward.log";
+    const identifier = "/tmp/split-turn-short-body.log";
+    const body = [
+      "## Decisions",
+      "Keep current flow.",
+      "## Open TODOs",
+      "None.",
+      "## Constraints/Rules",
+      "Preserve exact context.",
+      "## Pending user asks",
+      "Continue the active work.",
+      "## Exact identifiers",
+      carriedIdentifier,
+    ].join("\n");
+    const suffix = `\n\n**Turn Context (split turn):**\n${latestAsk}\n${identifier}\n${"z".repeat(
+      MAX_COMPACTION_SUMMARY_CHARS,
+    )}`;
+    const auditSummary = `${body}${suffix}`;
+    const finalized = requireRecord(
+      budgetCompactionSummary(body, suffix, MAX_COMPACTION_SUMMARY_CHARS, {
+        auditSummary,
+        identifiers: [identifier],
+        latestAsk,
+        requiredAskContext: latestAsk,
+        identifierPolicy: "strict",
+      }),
+    );
+    if (typeof finalized.summary !== "string" || typeof finalized.structuralSummary !== "string") {
+      throw new Error("expected finalized summary strings");
+    }
+    const summary = finalized.summary;
+    const structuralSummary = finalized.structuralSummary;
+
+    expect(summary.length).toBeLessThanOrEqual(MAX_COMPACTION_SUMMARY_CHARS);
+    expect(structuralSummary).toContain(latestAsk);
+    expect(structuralSummary).toContain(identifier);
+    expect(structuralSummary).toContain(carriedIdentifier);
+    expect(auditSummaryQuality({ summary, identifiers: [identifier], latestAsk }).ok).toBe(true);
+  });
+
+  it("moves a normal latest ask out of prose that final budgeting trims", () => {
+    const latestAsk = "delete production only after verified backup";
+    const identifier = "/tmp/normal-turn-retention.log";
+    const body = [
+      "## Decisions",
+      latestAsk,
+      "x".repeat(MAX_COMPACTION_SUMMARY_CHARS),
+      "## Open TODOs",
+      "None.",
+      "## Constraints/Rules",
+      "Preserve exact context.",
+      "## Pending user asks",
+      "Continue the active work.",
+      "## Exact identifiers",
+      identifier,
+    ].join("\n");
+    const finalized = requireRecord(
+      budgetCompactionSummary(body, "", MAX_COMPACTION_SUMMARY_CHARS, {
+        auditSummary: body,
+        identifiers: [identifier],
+        latestAsk,
+        requiredAskContext: latestAsk,
+        identifierPolicy: "strict",
+      }),
+    );
+    if (typeof finalized.summary !== "string" || typeof finalized.structuralSummary !== "string") {
+      throw new Error("expected finalized summary strings");
+    }
+
+    expect(finalized.summary.length).toBeLessThanOrEqual(MAX_COMPACTION_SUMMARY_CHARS);
+    expect(finalized.structuralSummary).toContain(
+      `## Pending user asks\nContinue the active work.\n${latestAsk}`,
+    );
+    expect(
+      auditSummaryQuality({ summary: finalized.summary, identifiers: [identifier], latestAsk }).ok,
+    ).toBe(true);
+  });
 });
 
 describe("computeAdaptiveChunkRatio", () => {
@@ -2108,7 +2188,7 @@ describe("compaction-safeguard recent-turn preservation", () => {
     expect(result).toEqual({ cancel: true });
     expect(mockSummarizeInStages).toHaveBeenCalledTimes(1);
     expect(consumeCompactionSafeguardCancelReason(sessionManager)).toBe(
-      "Compaction safeguard finalized summary failed quality checks.",
+      "Compaction safeguard required facts exceed the finalized summary budget.",
     );
   });
 

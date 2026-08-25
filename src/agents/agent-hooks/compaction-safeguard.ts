@@ -91,6 +91,8 @@ const DEFAULT_QUALITY_GUARD_MAX_RETRIES = 1;
 const MAX_RECENT_TURNS_PRESERVE = 12;
 const MAX_QUALITY_GUARD_MAX_RETRIES = 3;
 const MAX_RECENT_TURN_TEXT_CHARS = 600;
+const MAX_REQUIRED_ASK_CONTEXT_CHARS = 2_000;
+const REQUIRED_ASK_CONTEXT_TRUNCATED_MARKER = "\n[... split-turn ask context truncated ...]\n";
 const TOOL_CALL_BLOCK_TYPES = new Set(["toolCall", "toolUse", "functionCall"]);
 const PREVIOUS_SUMMARY_REDISTILL_PREFIX =
   "Previous compaction summary to re-distill with the current conversation. " +
@@ -339,6 +341,7 @@ type SummaryQualityRetention = {
   auditSummary: string;
   identifiers: string[];
   latestAsk: string | null;
+  requiredAskContext: string;
   identifierPolicy: "strict" | "off" | "custom";
 };
 
@@ -625,19 +628,21 @@ function budgetCompactionSummary(
       bodyBudget: maxChars,
       bodyTrimmed: false,
       suffixTrimmed: false,
+      qualityRetentionInfeasible: false,
     };
   }
 
   const retentionPlan = qualityRetention
     ? createSummaryQualityRetentionPlan(summaryBody, SUMMARY_TRUNCATED_MARKER, qualityRetention)
     : null;
+  const bodyCapacity = retentionPlan ? maxChars : summaryBody.length;
   const bodyFloor = Math.min(
-    summaryBody.length,
+    bodyCapacity,
     maxChars,
     Math.max(1, Math.ceil(maxChars / 2), retentionPlan?.minimumChars ?? 0),
   );
   const suffixReservation = Math.min(suffix.text.length, maxChars);
-  const bodySlot = Math.min(summaryBody.length, Math.max(bodyFloor, maxChars - suffixReservation));
+  const bodySlot = Math.min(bodyCapacity, Math.max(bodyFloor, maxChars - suffixReservation));
   const cappedBody = retentionPlan?.render(bodySlot) ?? capCompactionSummary(summaryBody, bodySlot);
   const suffixBudget = Math.max(0, maxChars - cappedBody.length);
   const cappedSuffix = capCompactionSuffix(suffix, suffixBudget);
@@ -647,6 +652,7 @@ function budgetCompactionSummary(
     bodyBudget: bodySlot,
     bodyTrimmed: cappedBody.length < summaryBody.length,
     suffixTrimmed: cappedSuffix.length < suffix.text.length,
+    qualityRetentionInfeasible: retentionPlan !== null && retentionPlan.minimumChars > maxChars,
   };
 }
 
@@ -919,6 +925,33 @@ function formatGeneratedSplitTurnSection(summary: string, onTruncated?: () => vo
     onTruncated?.();
   }
   return `${heading}${cappedSummary}`;
+}
+
+function formatRequiredAskContext(summary: string): string {
+  const originalRequestHeading = "## Original Request";
+  const earlyProgressHeading = "## Early Progress";
+  const originalRequestStart = summary.indexOf(originalRequestHeading);
+  const originalRequestEnd =
+    originalRequestStart >= 0
+      ? summary.indexOf(earlyProgressHeading, originalRequestStart + originalRequestHeading.length)
+      : -1;
+  const source =
+    originalRequestStart >= 0
+      ? summary
+          .slice(
+            originalRequestStart + originalRequestHeading.length,
+            originalRequestEnd >= 0 ? originalRequestEnd : undefined,
+          )
+          .trim()
+      : summary.trim();
+  if (source.length <= MAX_REQUIRED_ASK_CONTEXT_CHARS) {
+    return source;
+  }
+  const contentBudget =
+    MAX_REQUIRED_ASK_CONTEXT_CHARS - REQUIRED_ASK_CONTEXT_TRUNCATED_MARKER.length;
+  const headBudget = Math.floor(contentBudget / 2);
+  const tailBudget = contentBudget - headBudget;
+  return `${truncateUtf16Safe(source, headBudget)}${REQUIRED_ASK_CONTEXT_TRUNCATED_MARKER}${sliceUtf16Safe(source, -tailBudget)}`;
 }
 
 function extractLatestUserAsk(messages: AgentMessage[]): string | null {
@@ -1338,6 +1371,7 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
 
       for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
         let splitTurnSectionLocal = "";
+        let splitTurnAskContextLocal = "";
         let historySummary = "";
         const producerLosses = new Set<CompactionLoss>();
         try {
@@ -1363,6 +1397,7 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
             splitTurnSectionLocal = formatGeneratedSplitTurnSection(prefixSummary, () => {
               producerLosses.add("split-turn-tail");
             });
+            splitTurnAskContextLocal = formatRequiredAskContext(prefixSummary);
           }
         } catch (attemptError) {
           if (signal?.aborted) {
@@ -1401,6 +1436,8 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
                 auditSummary: unbudgetedSummary,
                 identifiers,
                 latestAsk: latestUserAsk,
+                requiredAskContext:
+                  splitTurnAskContextLocal || formatRequiredAskContext(latestUserAsk ?? ""),
                 identifierPolicy,
               }
             : undefined,
@@ -1411,6 +1448,17 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
           (preparation.isSplitTurn && turnPrefixMessages.length > 0);
         if (!qualityGuardEnabled) {
           return compactionResult(finalized.summary);
+        }
+        if (finalized.qualityRetentionInfeasible) {
+          log.warn(
+            "Compaction safeguard: required quality facts exceed finalized artifact budget; " +
+              `requiredChars>${MAX_COMPACTION_SUMMARY_CHARS} identifierCount=${identifiers.length}`,
+          );
+          setCompactionSafeguardCancelReason(
+            ctx.sessionManager,
+            "Compaction safeguard required facts exceed the finalized summary budget.",
+          );
+          return { cancel: true };
         }
         const quality = auditSummaryQuality({
           summary: finalized.summary,

@@ -128,6 +128,7 @@ export function createSummaryQualityRetentionPlan(
     auditSummary?: string;
     identifiers: string[];
     latestAsk: string | null;
+    requiredAskContext?: string;
     identifierPolicy?: CompactionSummarizationInstructions["identifierPolicy"];
   },
 ): SummaryQualityRetentionPlan | null {
@@ -147,16 +148,21 @@ export function createSummaryQualityRetentionPlan(
     return null;
   }
   const pendingAsk = contents[QUALITY_PROTECTED_SECTION_START] ?? "";
-  const askEvidence = hasAskOverlap(pendingAsk, params.latestAsk)
-    ? ""
-    : buildAskRetentionEvidence(params.latestAsk);
+  const requiredAskContext = params.requiredAskContext?.trim() ?? "";
+  const exactIdentifiers = contents[QUALITY_PROTECTED_SECTION_START + 1] ?? "";
+  const missingIdentifiers = enforceIdentifiers
+    ? params.identifiers.filter(
+        (identifier) => !summaryIncludesIdentifier(exactIdentifiers, identifier),
+      )
+    : [];
   const protectedContents = [
-    [pendingAsk, askEvidence].filter(Boolean).join("\n"),
-    enforceIdentifiers
-      ? params.identifiers.join("\n")
-      : params.identifierPolicy === "custom"
-        ? (contents[QUALITY_PROTECTED_SECTION_START + 1] ?? "")
-        : "",
+    [
+      pendingAsk,
+      requiredAskContext && !pendingAsk.includes(requiredAskContext) ? requiredAskContext : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    [exactIdentifiers, ...missingIdentifiers].filter(Boolean).join("\n"),
   ];
   const marker = truncatedMarker.trim();
   const protectedBlocks = REQUIRED_SUMMARY_SECTIONS.slice(QUALITY_PROTECTED_SECTION_START).map(
@@ -175,7 +181,11 @@ export function createSummaryQualityRetentionPlan(
   return {
     minimumChars: minimumSummary.length,
     render(maxChars) {
-      if (summary.length <= maxChars) {
+      const bodyHasRequiredAskContext = !requiredAskContext || summary.includes(requiredAskContext);
+      const bodyHasIdentifiers =
+        !enforceIdentifiers ||
+        params.identifiers.every((identifier) => summaryIncludesIdentifier(summary, identifier));
+      if (summary.length <= maxChars && bodyHasRequiredAskContext && bodyHasIdentifiers) {
         return summary;
       }
       if (maxChars < minimumSummary.length) {
@@ -308,11 +318,6 @@ function resolveAskOverlapRequirement(latestAsk: string | null): {
   const tokensToCheck = meaningfulAskTokens.length > 0 ? meaningfulAskTokens : askTokens;
   const requiredMatches = tokensToCheck.length >= MIN_ASK_OVERLAP_TOKENS_FOR_DOUBLE_MATCH ? 2 : 1;
   return { tokens: tokensToCheck, requiredMatches };
-}
-
-function buildAskRetentionEvidence(latestAsk: string | null): string {
-  const requirement = resolveAskOverlapRequirement(latestAsk);
-  return requirement ? requirement.tokens.slice(0, requirement.requiredMatches).join(" ") : "";
 }
 
 function hasAskOverlap(summary: string, latestAsk: string | null): boolean {
