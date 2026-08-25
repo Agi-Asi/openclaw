@@ -4,7 +4,6 @@ import path from "node:path";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import {
   asBoolean as readBoolean,
-  asFiniteNumber as readNumber,
   isRecord,
   normalizeOptionalString as readString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
@@ -594,20 +593,20 @@ function evaluateJsonlReplaySummary(payload: unknown): QaConfidenceLaneEvaluatio
     if (!isRecord(transcript)) {
       return unknownReplay("jsonl replay summary has an invalid transcript row");
     }
-    const userTurnCount = readNumber(transcript.userTurnCount);
-    if (userTurnCount !== undefined && userTurnCount > 0) {
-      replayedUserTurns += userTurnCount;
+    const userTurnCount = readCount(transcript.userTurnCount);
+    if (userTurnCount === undefined) {
+      return unknownReplay("jsonl replay transcript has invalid userTurnCount");
     }
+    replayedUserTurns += userTurnCount;
     const hasFirstDrift = transcript.firstDriftAtTurn !== undefined;
     if (!Array.isArray(transcript.drift)) {
       return unknownReplay("jsonl replay transcript missing drift array");
     }
-    if (userTurnCount !== undefined && transcript.drift.length !== userTurnCount) {
+    if (transcript.drift.length !== userTurnCount) {
       return unknownReplay("jsonl replay transcript drift count does not match userTurnCount");
     }
     const runtimeCells = isRecord(transcript.cells) ? transcript.cells : undefined;
     if (
-      userTurnCount &&
       [runtimeCells?.openclaw, runtimeCells?.codex].some(
         (cells) => !Array.isArray(cells) || cells.length !== userTurnCount,
       )
