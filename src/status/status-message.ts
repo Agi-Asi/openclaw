@@ -124,32 +124,17 @@ type StatusArgs = {
   now?: number;
 };
 
-type NormalizedAuthMode = "api-key" | "oauth" | "token" | "aws-sdk" | "mixed" | "unknown";
-
-function normalizeAuthMode(value?: string): NormalizedAuthMode | undefined {
+function normalizeAuthMode(value?: string) {
   const normalized = normalizeOptionalLowercaseString(value);
   if (!normalized) {
     return undefined;
   }
-  if (normalized === "api-key" || normalized.startsWith("api-key ")) {
-    return "api-key";
+  for (const mode of ["api-key", "oauth", "token", "aws-sdk", "mixed", "native"] as const) {
+    if (normalized === mode || normalized.startsWith(`${mode} `)) {
+      return mode;
+    }
   }
-  if (normalized === "oauth" || normalized.startsWith("oauth ")) {
-    return "oauth";
-  }
-  if (normalized === "token" || normalized.startsWith("token ")) {
-    return "token";
-  }
-  if (normalized === "aws-sdk" || normalized.startsWith("aws-sdk ")) {
-    return "aws-sdk";
-  }
-  if (normalized === "mixed" || normalized.startsWith("mixed ")) {
-    return "mixed";
-  }
-  if (normalized === "unknown") {
-    return "unknown";
-  }
-  return undefined;
+  return normalized === "unknown" ? "unknown" : undefined;
 }
 
 function resolveConfiguredTextVerbosity(params: {

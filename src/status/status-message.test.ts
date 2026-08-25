@@ -41,6 +41,30 @@ describe("buildStatusMessage current time", () => {
   });
 });
 
+describe("buildStatusMessage authentication", () => {
+  it.each([
+    { label: "api-key (profile)", visible: true },
+    { label: "oauth (profile)", visible: true },
+    { label: "token (profile)", visible: true },
+    { label: "aws-sdk (profile)", visible: true },
+    { label: "mixed (profile)", visible: true },
+    { label: "native (claude-cli)", visible: true },
+    { label: "unknown", visible: false },
+    { label: "unsupported (profile)", visible: false },
+  ])("renders only recognized authentication labels: $label", ({ label, visible }) => {
+    const text = buildStatusMessage({
+      config: {},
+      agent: { model: "anthropic/claude-opus-4-7" },
+      sessionKey: "agent:main:main",
+      sessionScope: "per-sender",
+      queue: { mode: "steer", depth: 0 },
+      modelAuth: label,
+    });
+
+    expect(text.includes(`Auth: ${label}`)).toBe(visible);
+  });
+});
+
 describe("buildStatusMessageParts presentation", () => {
   it("mirrors the text body as a titled status table with context lines", () => {
     const parts = buildStatusMessageParts({
