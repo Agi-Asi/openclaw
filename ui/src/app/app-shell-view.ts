@@ -8,7 +8,6 @@ import type {
 } from "../components/app-sidebar-workboard.ts";
 import { icons } from "../components/icons.ts";
 import { renderSettingsSidebar } from "../components/settings-sidebar.ts";
-import { hasActionableSidebarUpdate } from "../components/sidebar-update-card.ts";
 import type { ThemeModeChangeDetail } from "../components/theme-mode-toggle.ts";
 import { t } from "../i18n/index.ts";
 import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../lib/gateway-methods.ts";
@@ -323,13 +322,6 @@ export function renderApplicationShell(host: ShellViewHost) {
     navDrawerOpen,
     mobileNavLayout,
   });
-  const sidebarUpdateBadgeVisible =
-    navigationSurfaceHidden &&
-    hasActionableSidebarUpdate({
-      updateAvailable: overlaySnapshot.updateAvailable,
-      updateSchedule: overlaySnapshot.updateSchedule,
-      updateBusy,
-    });
   const shellWidth = Math.max(globalThis.innerWidth || 0, NAV_WIDTH_MAX);
   // A route query is navigation input, not an owner record. Let it override the
   // live selection only after the roster proves that agent exists.
@@ -484,7 +476,6 @@ export function renderApplicationShell(host: ShellViewHost) {
         : ""} ${navDrawerOpen ? "shell--nav-drawer-open" : ""} ${onboarding
         ? "shell--onboarding"
         : ""} ${settingsTakeover ? "shell--settings" : ""}"
-      ?data-sidebar-update=${sidebarUpdateBadgeVisible}
       style=${`--shell-nav-expanded-width: ${navigationSnapshot.navWidth}px`}
       @theme-change=${(event: CustomEvent<ThemeModeChangeDetail>) => host.handleThemeChange(event)}
     >

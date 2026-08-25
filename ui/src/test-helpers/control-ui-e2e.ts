@@ -10,7 +10,7 @@ import type { ConsoleMessage, Frame, Locator, Page, Request } from "playwright";
 import type { InlineConfig, Plugin, PreviewServer, ViteDevServer } from "vite";
 import { PROTOCOL_VERSION } from "../../../packages/gateway-protocol/src/version.js";
 import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../src/gateway/control-ui-contract.js";
-import type { ModelCatalogEntry, UpdateAvailable } from "../api/types.ts";
+import type { ModelCatalogEntry } from "../api/types.ts";
 import { normalizeControlUiBuildInfo } from "../build-info-normalizers.ts";
 import type { ControlUiBuildInfo } from "../build-info.ts";
 
@@ -319,7 +319,6 @@ export type ControlUiMockGatewayScenario = {
   sessionGroupDefaults?: Record<string, { cwd?: string; worktree?: boolean }>;
   terminalEnabled?: boolean;
   cliAgentsEnabled?: boolean;
-  updateAvailable?: UpdateAvailable | null;
   workspace?: string;
   workspaceGit?: boolean;
 };
@@ -880,7 +879,6 @@ function normalizeScenario(
     sessionGroupDefaults: scenario.sessionGroupDefaults ?? {},
     terminalEnabled: scenario.terminalEnabled ?? false,
     cliAgentsEnabled: scenario.cliAgentsEnabled ?? false,
-    updateAvailable: scenario.updateAvailable ?? null,
     workspace: scenario.workspace ?? "",
     workspaceGit: scenario.workspaceGit ?? false,
   };
@@ -1669,7 +1667,6 @@ function installControlUiMockGateway(
           },
           snapshot: {
             ...presenceSnapshot(params),
-            ...(scenario.updateAvailable ? { updateAvailable: scenario.updateAvailable } : {}),
             sessionDefaults: {
               defaultAgentId: scenario.defaultAgentId,
               mainKey: "main",
