@@ -410,7 +410,14 @@ describe("browser remote profile fallback and attachOnly behavior", () => {
       }
       requestStarted();
       return await new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            const reason = init.signal?.reason;
+            reject(reason instanceof Error ? reason : new Error(String(reason)));
+          },
+          { once: true },
+        );
       });
     });
     const { state, remote } = deps.createRemoteRouteHarness(fetchMock);
