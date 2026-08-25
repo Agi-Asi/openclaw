@@ -4,7 +4,7 @@ import {
   waitForControlUiGatewayReady,
   waitForControlUiGatewayReconnecting,
 } from "../test-helpers/control-ui-e2e-readiness.ts";
-import { expectRequestCountStable } from "./chat-flow.test-support.ts";
+import { defineSessionManagementReconnectCases } from "./session-management.reconnect.test-support.ts";
 import {
   actionOpacity,
   actionPointerEvents,
@@ -25,6 +25,7 @@ import {
 const suite = createSessionManagementE2eSuite();
 
 suite.define(() => {
+  defineSessionManagementReconnectCases(suite);
   it("keeps the browser-local draft pencil visible on active Home beside activity", async () => {
     const mainKey = "agent:main:main";
     const secondKey = "agent:main:draft-second";
@@ -482,78 +483,6 @@ suite.define(() => {
             .evaluate((element) => element === document.activeElement),
         )
         .toBe(true);
-    } finally {
-      await context.close();
-    }
-  });
-
-  it("keeps sidebar sessions visible through a same-client Gateway reconnect", async () => {
-    const context = await suite.browser.newContext({
-      locale: "en-US",
-      serviceWorkers: "block",
-      viewport: { height: 900, width: 1280 },
-    });
-    const page = await context.newPage();
-    const sessionKey = "agent:main:disconnect-proof";
-    const otherSessionKeys = ["agent:main:other-a", "agent:main:other-b"] as const;
-    const gateway = await installMockGateway(page, {
-      methodResponses: {
-        "sessions.list": sessionsListResponse([
-          sessionRow(sessionKey, "Disconnect proof", Date.parse("2026-07-01T16:00:00.000Z")),
-          sessionRow(otherSessionKeys[0], "Other A", Date.parse("2026-07-01T15:59:00.000Z")),
-          sessionRow(otherSessionKeys[1], "Other B", Date.parse("2026-07-01T15:58:00.000Z")),
-        ]),
-      },
-      sessionKey,
-    });
-
-    try {
-      await page.goto(`${suite.server.baseUrl}chat`);
-      const sidebarRow = page.locator(`.sidebar-recent-session[data-session-key="${sessionKey}"]`);
-      await sidebarRow.waitFor({ state: "visible", timeout: 10_000 });
-      const sidebarRows = page.locator(".sidebar-recent-session");
-      await expect.poll(() => sidebarRows.count()).toBe(3);
-      const initialListCount = (await gateway.getRequests("sessions.list")).length;
-
-      const socketsBefore = await gateway.getSocketCount();
-      await gateway.setOnline(false);
-      await waitForControlUiGatewayReconnecting(page);
-      await expect.poll(() => sidebarRow.textContent()).toContain("Disconnect proof");
-      await expect.poll(() => sidebarRows.count()).toBe(3);
-      for (const otherKey of otherSessionKeys) {
-        await page
-          .locator(`.sidebar-recent-session[data-session-key="${otherKey}"]`)
-          .waitFor({ state: "visible" });
-      }
-      await captureUiProof(page, "sidebar-sessions-during-reconnect.png");
-
-      await expect
-        .poll(() => gateway.getSocketCount(), { timeout: 15_000 })
-        .toBe(socketsBefore + 1);
-      await gateway.deferNext("sessions.list", { includeLastMessage: true });
-      await gateway.setOnline(true);
-      await waitForControlUiGatewayReady(page);
-      await expect
-        .poll(async () => (await gateway.getRequests("sessions.list")).length, { timeout: 15_000 })
-        .toBeGreaterThan(initialListCount);
-      await sidebarRow.waitFor({ state: "visible" });
-      expect(await sidebarRows.count()).toBe(3);
-      for (const otherKey of otherSessionKeys) {
-        await page
-          .locator(`.sidebar-recent-session[data-session-key="${otherKey}"]`)
-          .waitFor({ state: "visible" });
-      }
-
-      const firstReconnectListCount = (await gateway.getRequests("sessions.list")).length;
-      const refreshedResponse = sessionsListResponse([
-        sessionRow(sessionKey, "Reconnect refreshed", Date.parse("2026-07-01T16:01:00.000Z")),
-        sessionRow(otherSessionKeys[0], "Other A", Date.parse("2026-07-01T15:59:00.000Z")),
-        sessionRow(otherSessionKeys[1], "Other B", Date.parse("2026-07-01T15:58:00.000Z")),
-      ]);
-      await gateway.resolveDeferred("sessions.list", refreshedResponse);
-      await expect.poll(() => sidebarRow.textContent()).toContain("Reconnect refreshed");
-      await expect.poll(() => sidebarRows.count()).toBe(3);
-      await expectRequestCountStable(gateway, "sessions.list", firstReconnectListCount);
     } finally {
       await context.close();
     }

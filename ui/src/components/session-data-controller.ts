@@ -423,21 +423,20 @@ export class SessionDataController implements ReactiveController, SessionCatalog
       return;
     }
     const gateway = this.context?.gateway;
-    const sameClientDisconnected =
+    const sameCredentialDisconnected =
       gateway !== undefined &&
       gateway === this.gatewaySource &&
       gateway.snapshot.client !== null &&
-      gateway.snapshot.client === this.gatewayClient &&
+      gateway.snapshot.client.credentialGeneration === this.gatewayClient?.credentialGeneration &&
       gateway.snapshot.phase !== "connected";
-    if (sameClientDisconnected && this.reconnectListRevision === null) {
+    if (sameCredentialDisconnected && this.reconnectListRevision === null) {
       this.reconnectListRevision = sessions.canonicalListRevision + 1;
     }
     const waitingForReconnectList =
       this.reconnectListRevision !== null &&
       sessions.canonicalListRevision < this.reconnectListRevision;
-    if (!sameClientDisconnected && !waitingForReconnectList) {
-      // Keep the result and agent scope paired until the first canonical list
-      // after reconnect; chat startup may publish a partial reconciliation first.
+    if (!sameCredentialDisconnected && !waitingForReconnectList) {
+      // Preserve scope through same-Gateway replacement until its first canonical list.
       this.reconnectListRevision = null;
       publishSidebarSessionList(this, snapshot);
     }
@@ -468,11 +467,12 @@ export class SessionDataController implements ReactiveController, SessionCatalog
     const connected = gateway.snapshot.phase === "connected";
     const clientChanged = client !== this.gatewayClient;
     const connectedStarted = connected && !this.gatewayConnected;
-    const sourceOrClientChanged = gateway !== this.gatewaySource || client !== this.gatewayClient;
+    const sourceChanged = gateway !== this.gatewaySource;
+    const credentialChanged =
+      client?.credentialGeneration !== this.gatewayClient?.credentialGeneration;
     const connectionChanged = connected !== this.gatewayConnected;
-    // Presence and auth snapshots must not retire this client's in-flight
-    // native or catalog pages unless its connection phase actually changes.
-    if (!sourceOrClientChanged && !connectionChanged) {
+    // Presence/auth snapshots do not retire in-flight pages unless the connection phase changes.
+    if (!sourceChanged && !credentialChanged && !clientChanged && !connectionChanged) {
       return;
     }
     this.invalidateSessionMutations();
@@ -487,14 +487,16 @@ export class SessionDataController implements ReactiveController, SessionCatalog
       this.presencePayload = presence ? { presence } : undefined;
     }
     this.notify();
-    if (!sourceOrClientChanged) {
+    if (!sourceChanged && !credentialChanged && !clientChanged) {
       this.retireSessionCatalogData(!connected);
       if (connected && this.sessionsSource && this.host.sidebarSessionStatusFilter() !== "active") {
         void this.refreshSidebarSessions();
       }
       return;
     }
-    this.clearSessionCache();
+    if (sourceChanged || credentialChanged) {
+      this.clearSessionCache();
+    }
     this.resetSessionCatalogConnection();
     if (connected && this.sessionsSource && this.host.sidebarSessionStatusFilter() !== "active") {
       void this.refreshSidebarSessions();

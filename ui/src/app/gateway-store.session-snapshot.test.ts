@@ -38,16 +38,23 @@ describe("gateway credential snapshot invalidation", () => {
     });
     await snapshots.flush();
     const settings = { ...loadSettings(), gatewayUrl: "ws://control.test", token: "old-token" };
+    const clients: GatewayBrowserClientOptions[] = [];
     const gateway = createApplicationGateway(settings, "", "", (options) => {
+      clients.push(options);
       return new SnapshotTestGatewayClient(options) as unknown as GatewayBrowserClient;
     });
 
     gateway.connect();
+    expect(clients.at(-1)?.credentialGeneration).toBe(0);
     expect(await new SessionSnapshotStore().read(sessionKey)).not.toBeNull();
 
     gateway.connect({ token: "" });
+    expect(clients.at(-1)?.credentialGeneration).toBe(1);
     await vi.waitFor(async () => {
       expect(await new SessionSnapshotStore().read(sessionKey)).toBeNull();
     });
+
+    gateway.connect();
+    expect(clients.at(-1)?.credentialGeneration).toBe(1);
   });
 });

@@ -104,6 +104,7 @@ export function createApplicationGateway(
     selfUser: null,
   };
   let client: GatewayBrowserClient | null = null;
+  let credentialGeneration = 0;
   let canvasSurfaceLease: CanvasSurfaceLease | null = null;
   let canvasSurfaceLeaseLoad: Promise<CanvasSurfaceLease> | null = null;
   let canvasSurfaceLeaseClient: GatewayBrowserClient | null = null;
@@ -293,6 +294,7 @@ export function createApplicationGateway(
       nextConnection.bootstrapToken !== connection.bootstrapToken ||
       nextConnection.bootstrapProfile !== connection.bootstrapProfile;
     if (credentialsChanged) {
+      credentialGeneration += 1;
       void clearStoredChatSnapshots();
     }
     const hasRequestedSessionKey = requestedSessionKey !== undefined;
@@ -339,6 +341,7 @@ export function createApplicationGateway(
 
     const nextClient = createClient({
       url: nextConnection.gatewayUrl,
+      credentialGeneration,
       token: nextConnection.token.trim() ? nextConnection.token : undefined,
       bootstrapToken: nextConnection.bootstrapToken.trim()
         ? nextConnection.bootstrapToken

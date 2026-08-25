@@ -274,17 +274,24 @@ describe("AppSidebar session source lifecycle", () => {
     ]);
   });
 
-  it("preserves the scoped result through a disconnect on the same Gateway client", async () => {
-    const client = {} as GatewayBrowserClient;
+  it.each([
+    ["same-client reconnect", false],
+    ["replacement-client reconnect", true],
+  ] as const)("preserves the scoped result through a %s", async (_name, replaceClient) => {
+    const client = { credentialGeneration: 0 } as GatewayBrowserClient;
     const gateway = createGatewayHarness(client);
     const sessions = createSessionsHarness("main", ["main-a", "main-b"]);
     if (sessions.sessions.state.result) {
       sessions.sessions.state.result.owners = [{ type: "human", id: "profile-ada", label: "Ada" }];
+      sessions.sessions.state.result.sessions[0]!.pinned = true;
     }
     const { sidebar } = await mountSidebar(gateway.gateway, sessions.sessions);
     const cachedResult = sidebar.sessionData.sessionsResult;
 
-    gateway.publish({ phase: "reconnecting" });
+    gateway.publish({
+      ...(replaceClient ? { client: { credentialGeneration: 0 } as GatewayBrowserClient } : {}),
+      phase: "reconnecting",
+    });
     sessions.publish({ result: null, agentId: null, loading: false });
     await sidebar.updateComplete;
 
@@ -295,6 +302,7 @@ describe("AppSidebar session source lifecycle", () => {
       { type: "human", id: "profile-ada", label: "Ada" },
     ]);
     expect([...sidebar.sessionData.sessionCreatedOrder.keys()]).toEqual(["main-a", "main-b"]);
+    expect(sidebar.querySelector('[data-session-key="main-a"]')).not.toBeNull();
 
     gateway.publish({ phase: "connected" });
     const partial = createSessionState("main", ["main-a"]);
@@ -317,34 +325,28 @@ describe("AppSidebar session source lifecycle", () => {
 
     expect(sidebar.sessionData.sessionsResult?.sessions.map((row) => row.key)).toEqual(["main-c"]);
     expect(sidebar.sessionData.sessionsAgentId).toBe("main");
+    expect(sidebar.querySelector('[data-session-key="main-a"]')).toBeNull();
+    expect(sidebar.querySelector('[data-session-key="main-c"]')).not.toBeNull();
   });
 
-  it("clears every cached session view when the Gateway client is replaced", async () => {
-    const firstClient = {} as GatewayBrowserClient;
-    const gateway = createGatewayHarness(firstClient);
-    const sessions = createSessionsHarness("main", ["main-a"]);
-    const { sidebar } = await mountSidebar(gateway.gateway, sessions.sessions);
-
-    gateway.publish({
-      client: {} as GatewayBrowserClient,
-      phase: "reconnecting",
-    });
-    await sidebar.updateComplete;
-
-    expect(sidebar.sessionData.sessionsResult).toBeNull();
-    expect(sidebar.sessionData.sessionsAgentId).toBeNull();
-    expect(sidebar.sessionData.sessionResultsByAgent).toEqual({});
-    expect(sidebar.sessionData.sessionCreatedOrder.size).toBe(0);
-  });
-
-  it("clears every cached session view when the Gateway source is replaced", async () => {
-    const client = {} as GatewayBrowserClient;
+  it.each([
+    ["Gateway source", true],
+    ["credential generation", false],
+  ] as const)("clears every cached session view when the %s is replaced", async (_name, source) => {
+    const client = { credentialGeneration: 0 } as GatewayBrowserClient;
     const gateway = createGatewayHarness(client);
     const sessions = createSessionsHarness("main", ["main-a"]);
     const { provider, sidebar } = await mountSidebar(gateway.gateway, sessions.sessions);
 
-    const replacementGateway = createGatewayHarness(client);
-    provider.setContext(createContext(replacementGateway.gateway, sessions.sessions));
+    if (source) {
+      const replacementGateway = createGatewayHarness(client);
+      provider.setContext(createContext(replacementGateway.gateway, sessions.sessions));
+    } else {
+      gateway.publish({
+        client: { credentialGeneration: 1 } as GatewayBrowserClient,
+        phase: "reconnecting",
+      });
+    }
     await sidebar.updateComplete;
 
     expect(sidebar.sessionData.sessionsResult).toBeNull();

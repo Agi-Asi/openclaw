@@ -120,6 +120,7 @@ type ConnectPlan = {
 
 export type GatewayBrowserClientOptions = {
   url: string;
+  credentialGeneration?: number;
   token?: string;
   bootstrapToken?: string;
   bootstrapProfile?: ControlUiBootstrapProfileHint;
@@ -270,6 +271,7 @@ async function buildGatewayConnectDevice(params: {
 }
 
 export class GatewayBrowserClient {
+  readonly credentialGeneration = this.opts.credentialGeneration ?? 0;
   private readonly client: GatewayProtocolClient<ConnectPlan>;
   private maxPayloadBytes: number | undefined;
   private scopeUpgradeRuntime: Promise<GatewayScopeUpgrade> | null = null;
