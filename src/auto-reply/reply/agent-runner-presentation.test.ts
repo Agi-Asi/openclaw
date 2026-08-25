@@ -13,6 +13,7 @@ import {
 import type { ReplyPayload } from "../types.js";
 import type { AgentTurnParams } from "./agent-runner-execution.types.js";
 import { createAgentTurnPresentation } from "./agent-runner-presentation.js";
+import { createBlockReplyPipeline } from "./block-reply-pipeline.js";
 
 function normalizeStreamingTextReference(
   payload: ReplyPayload,
@@ -192,19 +193,24 @@ describe("agent runner streaming presentation", () => {
   ])("applies the final silent-turn policy to streamed $name", async (testCase) => {
     for (const usePipeline of [false, true]) {
       const delivered: ReplyPayload[] = [];
+      const blockReplyPipeline = usePipeline
+        ? createBlockReplyPipeline({
+            onBlockReply: async (payload) => {
+              delivered.push(payload);
+            },
+            timeoutMs: 0,
+          })
+        : null;
       const presentation = createPresentation({
         silentExpected: true,
         onBlockReply: async (payload) => {
           delivered.push(payload);
         },
-        blockReplyPipeline: usePipeline
-          ? ({ enqueue: (payload: ReplyPayload) => delivered.push(payload) } as NonNullable<
-              AgentTurnParams["blockReplyPipeline"]
-            >)
-          : null,
+        blockReplyPipeline,
       });
 
       await presentation.blockReplyHandler?.(testCase.payload);
+      await blockReplyPipeline?.flush({ force: true });
 
       expect(delivered, usePipeline ? "pipeline" : "direct").toHaveLength(
         testCase.delivered ? 1 : 0,
