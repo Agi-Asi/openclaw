@@ -43,6 +43,11 @@ import {
 import { commitPluginInstallRecordsWithConfig } from "./install-record-commit.js";
 import type { InstallSafetyOverrides } from "./install-security-scan.js";
 import type { InstallPolicyWarningDetails } from "./install-security-scan.types.js";
+import {
+  requestDeferredPluginInstall,
+  resolvePluginInstallTransaction,
+  type PluginInstallTransaction,
+} from "./install-transaction.js";
 import type { PluginInstallLogger } from "./install-types.js";
 import {
   installPluginFromNpmPackArchive,
@@ -58,6 +63,7 @@ import {
 import { resolveInstalledPluginPackageOwnership } from "./installed-plugin-package-ownership.js";
 import type { PluginManifestRecord } from "./manifest-registry.js";
 import type { PluginDiagnostic } from "./manifest-types.js";
+import { installPluginFromMarketplace } from "./marketplace.js";
 import {
   resolveTrustedOfficialClawHubPackageName,
   resolveTrustedSourceLinkedOfficialClawHubSpec,
@@ -158,6 +164,12 @@ export type ManagedPluginSourceInstallRequest =
       expectedIntegrity?: string;
       acknowledgeClawHubRisk?: boolean;
       onClawHubRisk?: NonNullable<Parameters<typeof installPluginFromClawHub>[0]["onClawHubRisk"]>;
+    }
+  | {
+      source: "marketplace";
+      marketplace: string;
+      plugin: string;
+      mode: "install" | "update";
     }
   | {
       source: "bundled";
@@ -1128,6 +1140,7 @@ async function persistManagedSourceInstall(params: {
   runtime?: RuntimeEnv;
   successMessage?: string;
   cleanupOnPersistenceFailure?: boolean;
+  transaction?: PluginInstallTransaction;
 }): Promise<{ config: OpenClawConfig; warnings: string[] }> {
   const warnings: string[] = [];
   const persist = () =>
@@ -1140,12 +1153,30 @@ async function persistManagedSourceInstall(params: {
       persistenceLogger: { warn: (message) => warnings.push(message) },
       ...(params.successMessage ? { successMessage: params.successMessage } : {}),
     });
-  if (!params.cleanupOnPersistenceFailure) {
-    return { config: await persist(), warnings };
-  }
   try {
-    return { config: await persist(), warnings };
+    const config = await persist();
+    await params.transaction
+      ?.commit()
+      .catch((error) =>
+        warnings.push(
+          `Plugin install committed, but backup cleanup failed: ${formatErrorMessage(error)}`,
+        ),
+      );
+    return { config, warnings };
   } catch (error) {
+    if (params.transaction) {
+      try {
+        await params.transaction.rollback();
+      } catch (rollbackError) {
+        warnings.push(
+          `Failed to restore the previous plugin payload: ${formatErrorMessage(rollbackError)}`,
+        );
+      }
+      return throwPersistenceFailureWithCleanupWarnings(error, warnings);
+    }
+    if (!params.cleanupOnPersistenceFailure) {
+      throw error;
+    }
     const cleanupWarnings = await cleanupFailedManagedPluginInstall(params);
     return throwPersistenceFailureWithCleanupWarnings(error, cleanupWarnings);
   }
@@ -1187,6 +1218,8 @@ export async function installManagedPluginSource(params: {
     extensionsDir,
     logger: params.logger,
   };
+  const deferInstall = <T extends object>(installParams: T): T =>
+    requestDeferredPluginInstall(installParams);
   const complete = async <T extends SourceInstallerResult>(
     installResult: Promise<T>,
     completed: {
@@ -1198,6 +1231,7 @@ export async function installManagedPluginSource(params: {
     },
   ): Promise<ManagedPluginSourceInstallResult> => {
     const result = await installResult;
+    const transaction = result.ok ? resolvePluginInstallTransaction(result) : undefined;
     if (!result.ok) {
       return result;
     }
@@ -1206,6 +1240,7 @@ export async function installManagedPluginSource(params: {
       targetDir: string;
     };
     if (completed.expectedPluginId && installed.pluginId !== completed.expectedPluginId) {
+      await transaction?.rollback();
       return {
         ok: false as const,
         error: `official catalog plugin id mismatch: expected ${completed.expectedPluginId}, got ${installed.pluginId}`,
@@ -1228,6 +1263,7 @@ export async function installManagedPluginSource(params: {
       targetDir,
       extensionsDir,
       successMessage: completed.successMessage,
+      transaction,
     });
     return {
       ...installed,
@@ -1257,12 +1293,14 @@ export async function installManagedPluginSource(params: {
         }
       : params.snapshot;
     return await complete(
-      installPluginFromPath({
-        ...common,
-        path: request.path,
-        mode: request.mode,
-        ...(request.link ? { dryRun: true, allowSourceTypeScriptEntries: true } : {}),
-      }),
+      installPluginFromPath(
+        deferInstall({
+          ...common,
+          path: request.path,
+          mode: request.mode,
+          ...(request.link ? { dryRun: true, allowSourceTypeScriptEntries: true } : {}),
+        }),
+      ),
       {
         snapshot: linkedSnapshot,
         targetDir: installPath,
@@ -1277,13 +1315,38 @@ export async function installManagedPluginSource(params: {
     );
   }
 
+  if (request.source === "marketplace") {
+    return await complete(
+      installPluginFromMarketplace(
+        deferInstall({
+          ...common,
+          marketplace: request.marketplace,
+          plugin: request.plugin,
+          mode: request.mode,
+        }),
+      ),
+      {
+        install: (result) => ({
+          source: "marketplace",
+          installPath: result.targetDir,
+          version: result.version,
+          marketplaceName: result.marketplaceName,
+          marketplaceSource: result.marketplaceSource,
+          marketplacePlugin: result.marketplacePlugin,
+        }),
+      },
+    );
+  }
+
   if (request.source === "npm-pack") {
     return await complete(
-      installPluginFromNpmPackArchive({
-        ...common,
-        archivePath: request.archivePath,
-        mode: request.mode,
-      }),
+      installPluginFromNpmPackArchive(
+        deferInstall({
+          ...common,
+          archivePath: request.archivePath,
+          mode: request.mode,
+        }),
+      ),
       {
         install: (result) => ({
           source: "npm",
@@ -1306,7 +1369,7 @@ export async function installManagedPluginSource(params: {
 
   if (request.source === "git") {
     return await complete(
-      installPluginFromGitSpec({ ...common, spec: request.spec, mode: request.mode }),
+      installPluginFromGitSpec(deferInstall({ ...common, spec: request.spec, mode: request.mode })),
       {
         install: (result) => ({
           source: "git",
@@ -1324,15 +1387,17 @@ export async function installManagedPluginSource(params: {
 
   if (request.source === "clawhub") {
     return await complete(
-      installPluginFromClawHub({
-        ...common,
-        spec: request.spec,
-        mode: request.mode,
-        ...(request.expectedPluginId ? { expectedPluginId: request.expectedPluginId } : {}),
-        ...(request.expectedIntegrity ? { expectedIntegrity: request.expectedIntegrity } : {}),
-        ...(request.acknowledgeClawHubRisk ? { acknowledgeClawHubRisk: true } : {}),
-        ...(request.onClawHubRisk ? { onClawHubRisk: request.onClawHubRisk } : {}),
-      }),
+      installPluginFromClawHub(
+        deferInstall({
+          ...common,
+          spec: request.spec,
+          mode: request.mode,
+          ...(request.expectedPluginId ? { expectedPluginId: request.expectedPluginId } : {}),
+          ...(request.expectedIntegrity ? { expectedIntegrity: request.expectedIntegrity } : {}),
+          ...(request.acknowledgeClawHubRisk ? { acknowledgeClawHubRisk: true } : {}),
+          ...(request.onClawHubRisk ? { onClawHubRisk: request.onClawHubRisk } : {}),
+        }),
+      ),
       {
         expectedPluginId: request.expectedPluginId,
         install: (result) => ({
@@ -1347,16 +1412,18 @@ export async function installManagedPluginSource(params: {
   const expectedPluginId =
     request.source === "official" ? request.pluginId : request.expectedPluginId;
   return await complete(
-    installPluginFromNpmSpec({
-      ...common,
-      spec: request.spec,
-      mode: request.mode,
-      ...(request.source === "official" || request.trustedSourceLinkedOfficialInstall
-        ? { trustedSourceLinkedOfficialInstall: true }
-        : {}),
-      ...(expectedPluginId ? { expectedPluginId } : {}),
-      ...(request.expectedIntegrity ? { expectedIntegrity: request.expectedIntegrity } : {}),
-    }),
+    installPluginFromNpmSpec(
+      deferInstall({
+        ...common,
+        spec: request.spec,
+        mode: request.mode,
+        ...(request.source === "official" || request.trustedSourceLinkedOfficialInstall
+          ? { trustedSourceLinkedOfficialInstall: true }
+          : {}),
+        ...(expectedPluginId ? { expectedPluginId } : {}),
+        ...(request.expectedIntegrity ? { expectedIntegrity: request.expectedIntegrity } : {}),
+      }),
+    ),
     {
       expectedPluginId,
       install: (result) => ({

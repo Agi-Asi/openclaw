@@ -47,6 +47,7 @@ vi.mock("./uninstall.js", async (importOriginal) => ({
 }));
 
 const { installManagedPluginSource } = await import("./management-service.js");
+const actualInstall = await vi.importActual<typeof import("./install.js")>("./install.js");
 const actualUninstall = await vi.importActual<typeof import("./uninstall.js")>("./uninstall.js");
 
 function installPersistSnapshot() {
@@ -75,6 +76,27 @@ function mockClawHubInstall(pluginId: string, packageName: string, targetDir: st
       clawhubFamily: "code-plugin",
     },
   });
+}
+
+async function writePluginFixture(root: string, version: string, generation: string) {
+  await fs.mkdir(root, { recursive: true });
+  await fs.writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      name: "@openclaw/demo",
+      version,
+      openclaw: { extensions: ["./index.js"] },
+    }),
+  );
+  await fs.writeFile(
+    path.join(root, "openclaw.plugin.json"),
+    JSON.stringify({ id: "demo", configSchema: { type: "object", properties: {} } }),
+  );
+  await fs.writeFile(path.join(root, "index.js"), `export const generation = "${generation}";\n`);
+}
+
+async function listInstallBackups(extensionsDir: string): Promise<string[]> {
+  return await fs.readdir(path.join(extensionsDir, ".openclaw-install-backups")).catch(() => []);
 }
 
 describe("managed plugin install compensation", () => {
@@ -108,6 +130,80 @@ describe("managed plugin install compensation", () => {
 
     expect(mocks.installRecords).toHaveBeenCalledWith({ env });
     expect(mocks.applyUninstall).toHaveBeenCalledWith({ target: targetDir });
+  });
+
+  it("restores the previous plugin payload when persistence rejects a forced replacement", async () => {
+    const root = compensationTempDirs.make("openclaw-managed-source-transaction-");
+    const stateRoot = path.join(root, "state");
+    const extensionsDir = path.join(stateRoot, "extensions");
+    const targetDir = path.join(extensionsDir, "demo");
+    const candidateDir = path.join(root, "candidate");
+    const conflict = new Error("config changed during plugin install");
+    await writePluginFixture(targetDir, "1.0.0", "A");
+    await writePluginFixture(candidateDir, "2.0.0", "B");
+    mocks.pathInstall.mockImplementation(actualInstall.installPluginFromPath);
+    mocks.installRecords.mockResolvedValue({
+      demo: { source: "path", installPath: targetDir, version: "1.0.0" },
+    });
+    mocks.persistInstall.mockImplementation(async () => {
+      await expect(fs.readFile(path.join(targetDir, "index.js"), "utf8")).resolves.toContain('"B"');
+      expect(await listInstallBackups(extensionsDir)).toHaveLength(1);
+      throw conflict;
+    });
+
+    await expect(
+      installManagedPluginSource({
+        request: {
+          source: "local",
+          path: candidateDir,
+          recordSource: "path",
+          mode: "update",
+        },
+        snapshot: installPersistSnapshot(),
+        env: { HOME: root, OPENCLAW_STATE_DIR: stateRoot },
+      }),
+    ).rejects.toBe(conflict);
+
+    await expect(fs.readFile(path.join(targetDir, "index.js"), "utf8")).resolves.toContain('"A"');
+    await expect(fs.readFile(path.join(targetDir, "package.json"), "utf8")).resolves.toContain(
+      '"1.0.0"',
+    );
+    expect(await listInstallBackups(extensionsDir)).toEqual([]);
+    expect(mocks.applyUninstall).not.toHaveBeenCalled();
+  });
+
+  it("commits a replacement payload only after persistence succeeds", async () => {
+    const root = compensationTempDirs.make("openclaw-managed-source-commit-");
+    const stateRoot = path.join(root, "state");
+    const extensionsDir = path.join(stateRoot, "extensions");
+    const targetDir = path.join(extensionsDir, "demo");
+    const candidateDir = path.join(root, "candidate");
+    await writePluginFixture(targetDir, "1.0.0", "A");
+    await writePluginFixture(candidateDir, "2.0.0", "B");
+    mocks.pathInstall.mockImplementation(actualInstall.installPluginFromPath);
+    mocks.persistInstall.mockImplementation(async () => {
+      await expect(fs.readFile(path.join(targetDir, "index.js"), "utf8")).resolves.toContain('"B"');
+      expect(await listInstallBackups(extensionsDir)).toHaveLength(1);
+      return {};
+    });
+
+    const result = await installManagedPluginSource({
+      request: {
+        source: "local",
+        path: candidateDir,
+        recordSource: "path",
+        mode: "update",
+      },
+      snapshot: installPersistSnapshot(),
+      env: { HOME: root, OPENCLAW_STATE_DIR: stateRoot },
+    });
+
+    expect(result.ok).toBe(true);
+    await expect(fs.readFile(path.join(targetDir, "index.js"), "utf8")).resolves.toContain('"B"');
+    await expect(fs.readFile(path.join(targetDir, "package.json"), "utf8")).resolves.toContain(
+      '"2.0.0"',
+    );
+    expect(await listInstallBackups(extensionsDir)).toEqual([]);
   });
 
   it.each([
