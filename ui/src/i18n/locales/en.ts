@@ -951,9 +951,7 @@ export const en: TranslationMap = {
     draft: "Draft",
     draftDescription: "Keep this session to yourself until you publish it",
     messagePlaceholder: "What should this session work on?",
-    dictate: "Hold to dictate",
-    dictationHoldToSpeak:
-      "Hold until dictation starts, then release. Tap Stop to insert what you said.",
+    dictate: "Dictate",
     readingAttachment: "Reading attachment",
     start: "Start session",
     startInTerminal: "Start in terminal",
@@ -6078,8 +6076,7 @@ export const en: TranslationMap = {
       dictationStartRecovery: "Check microphone access and transcription settings, then try again.",
       dictationFinalizing: "Finishing dictation…",
       dictationListening: "Listening…",
-      dictationInsert: "Stop and insert dictation",
-      dictationDiscard: "Cancel and discard dictation",
+      dictationStopAndKeep: "Stop and keep text",
       dictationFinalizationTimedOut:
         "Dictation stopped before the last partial transcript could be finalized.",
       dictationProviderUnavailable:
