@@ -163,16 +163,14 @@ class SidebarUpdateCard extends OpenClawLightDomContentsElement {
     const update = this.updateAvailable;
     const campaign = this.updateSchedule?.campaign;
     const busy = this.updateBusy || campaign?.state === "applying";
-    const actionable = hasActionableSidebarUpdate({
-      updateAvailable: update,
-      updateSchedule: this.updateSchedule,
-      updateBusy: busy,
-    });
+    const hasGitUpdate =
+      this.updateSchedule?.target?.kind === "git" && this.updateSchedule.target.commitsBehind > 0;
+    const hasVersionUpdate = Boolean(update && update.latestVersion !== update.currentVersion);
     // A running update outranks availability: the gateway drops its update
     // metadata while it restarts, and the card must not vanish or fall back to
     // the stale "update available" call to action mid-install.
     const statusBanner = this.statusBanner;
-    if (!actionable && !statusBanner) {
+    if (!campaign && !busy && !statusBanner && (!update || (!hasVersionUpdate && !hasGitUpdate))) {
       return nothing;
     }
     const title = this.nativeUpdateAvailable
@@ -207,6 +205,11 @@ class SidebarUpdateCard extends OpenClawLightDomContentsElement {
     );
     // An outcome with nothing left to act on is the whole card: re-offering an
     // update the operator just ran would bury the reason it failed.
+    const actionable = hasActionableSidebarUpdate({
+      updateAvailable: update,
+      updateSchedule: this.updateSchedule,
+      updateBusy: busy,
+    });
     return html`
       <div
         class="sidebar-update-card"
