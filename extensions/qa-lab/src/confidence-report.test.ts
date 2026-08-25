@@ -884,6 +884,7 @@ describe("qa confidence report", () => {
   });
 
   it("requires JSONL replay summaries to contain replayed user turns", async () => {
+    const transcriptPath = "runtime-cells.jsonl";
     for (const [artifact, expectedDetail] of [
       [{ transcripts: [] }, "no transcripts"],
       [
@@ -894,6 +895,19 @@ describe("qa confidence report", () => {
         { transcripts: [{ transcriptPath: "missing-drift.jsonl", userTurnCount: 1 }] },
         "missing drift array",
       ],
+      ...[
+        undefined,
+        { openclaw: [], codex: [] },
+        { openclaw: [], codex: [{}] },
+        { openclaw: [{}], codex: [] },
+        { openclaw: [{}], codex: [{}, {}] },
+      ].map(
+        (cells) =>
+          [
+            { transcripts: [{ transcriptPath, userTurnCount: 1, drift: ["none"], cells }] },
+            "runtime cell counts do not match userTurnCount",
+          ] as const,
+      ),
     ] as const) {
       await writeJson("jsonl/qa-jsonl-replay-summary.json", artifact);
 
@@ -997,6 +1011,7 @@ describe("qa confidence report", () => {
         {
           transcriptPath: "curated.jsonl",
           userTurnCount: 2,
+          cells: { openclaw: [{}, {}], codex: [{}, {}] },
           drift: ["none", "tool-result-shape"],
           firstDriftAtTurn: 2,
         },

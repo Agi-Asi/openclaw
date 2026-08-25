@@ -577,29 +577,22 @@ function evaluateTokenEfficiencySummary(
 }
 
 function evaluateJsonlReplaySummary(payload: unknown): QaConfidenceLaneEvaluation {
+  const unknownReplay = (details: string): QaConfidenceLaneEvaluation => ({
+    passed: false,
+    status: "unknown",
+    details,
+  });
   if (!isRecord(payload) || !Array.isArray(payload.transcripts)) {
-    return {
-      passed: false,
-      status: "unknown",
-      details: "jsonl replay summary missing transcripts array",
-    };
+    return unknownReplay("jsonl replay summary missing transcripts array");
   }
   if (payload.transcripts.length === 0) {
-    return {
-      passed: false,
-      status: "unknown",
-      details: "jsonl replay summary has no transcripts",
-    };
+    return unknownReplay("jsonl replay summary has no transcripts");
   }
   let drifted = 0;
   let replayedUserTurns = 0;
   for (const transcript of payload.transcripts) {
     if (!isRecord(transcript)) {
-      return {
-        passed: false,
-        status: "unknown",
-        details: "jsonl replay summary has an invalid transcript row",
-      };
+      return unknownReplay("jsonl replay summary has an invalid transcript row");
     }
     const userTurnCount = readNumber(transcript.userTurnCount);
     if (userTurnCount !== undefined && userTurnCount > 0) {
@@ -607,18 +600,21 @@ function evaluateJsonlReplaySummary(payload: unknown): QaConfidenceLaneEvaluatio
     }
     const hasFirstDrift = transcript.firstDriftAtTurn !== undefined;
     if (!Array.isArray(transcript.drift)) {
-      return {
-        passed: false,
-        status: "unknown",
-        details: "jsonl replay transcript missing drift array",
-      };
+      return unknownReplay("jsonl replay transcript missing drift array");
     }
     if (userTurnCount !== undefined && transcript.drift.length !== userTurnCount) {
-      return {
-        passed: false,
-        status: "unknown",
-        details: "jsonl replay transcript drift count does not match userTurnCount",
-      };
+      return unknownReplay("jsonl replay transcript drift count does not match userTurnCount");
+    }
+    const runtimeCells = isRecord(transcript.cells) ? transcript.cells : undefined;
+    if (
+      userTurnCount &&
+      [runtimeCells?.openclaw, runtimeCells?.codex].some(
+        (cells) => !Array.isArray(cells) || cells.length !== userTurnCount,
+      )
+    ) {
+      return unknownReplay(
+        "jsonl replay transcript runtime cell counts do not match userTurnCount",
+      );
     }
     const drift = transcript.drift;
     const hasDrift = drift.some((entry) => entry !== "none");
@@ -627,11 +623,7 @@ function evaluateJsonlReplaySummary(payload: unknown): QaConfidenceLaneEvaluatio
     }
   }
   if (replayedUserTurns === 0) {
-    return {
-      passed: false,
-      status: "unknown",
-      details: "jsonl replay summary has no replayed user turns",
-    };
+    return unknownReplay("jsonl replay summary has no replayed user turns");
   }
   return {
     passed: drifted === 0,
