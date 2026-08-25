@@ -709,7 +709,6 @@ async function writeLiveGatewayConfig(params: {
       },
       entries: {
         dev: {
-          default: true,
           workspace: params.workspace,
           thinkingDefault: CODEX_HARNESS_THINKING,
           model: { primary: params.modelKey },
@@ -1989,13 +1988,14 @@ async function verifyCodexSubagentProbe(params: {
 
 async function verifyCodexNativeSubagentBridgeProbe(params: {
   client: GatewayClient;
+  configPath: string;
   sessionKey: string;
 }): Promise<void> {
   const runId = randomUUID();
   const childToken = `CODEX-NATIVE-CHILD-${runId.slice(0, 6).toUpperCase()}`;
   const parentToken = `CODEX-NATIVE-PARENT-${runId.slice(0, 6).toUpperCase()}`;
   const { listTaskRecords } = await import("../tasks/runtime-internal.js");
-  const { text, events } = await requestAgentTextWithEvents({
+  const request = requestAgentTextWithEvents({
     // Native Codex waiting pauses this parent turn; task delivery resumes it separately.
     acceptYieldedTimeout: true,
     client: params.client,
@@ -2005,11 +2005,20 @@ async function verifyCodexNativeSubagentBridgeProbe(params: {
     message: [
       "Bridge probe.",
       "You must use the Codex native spawn_agent tool exactly once before replying.",
-      `Give the subagent this exact instruction: Reply exactly ${childToken} and nothing else.`,
+      `Give the subagent this exact instruction: Use the exec tool to run sleep 5, then reply exactly ${childToken} and nothing else.`,
       "Wait for the subagent result. Do not answer from your own knowledge.",
       `After the subagent result returns, reply exactly ${parentToken} ${childToken} and nothing else.`,
     ].join("\n"),
   });
+  const childDeadline = Date.now() + 60_000;
+  let childTask = listCodexNativeTasks().find((entry) => entry.status === "running");
+  while (!childTask && Date.now() < childDeadline) {
+    await delay(100);
+    childTask = listCodexNativeTasks().find((entry) => entry.status === "running");
+  }
+  expect(childTask, "expected a running Codex-native child before config refresh").toBeDefined();
+  await refreshGatewayConfigDuringNativeChild(params.configPath);
+  const { text, events } = await request;
   logCodexLiveStep("native-subagent-bridge-probe:initial-reply", { text });
   expect(
     events.some((event) => event.stream === "codex_app_server.lifecycle"),
@@ -2043,6 +2052,39 @@ async function verifyCodexNativeSubagentBridgeProbe(params: {
         entry.deliveryStatus === "delivered" &&
         entry.terminalSummary?.includes(childToken),
     );
+  }
+}
+
+async function refreshGatewayConfigDuringNativeChild(configPath: string): Promise<void> {
+  const { registerPreparedModelRuntimePublicationListener } =
+    await import("../agents/prepared-model-runtime.js");
+  let invalidated = false;
+  let unsubscribe = () => {};
+  const published = new Promise<void>((resolve, reject) => {
+    unsubscribe = registerPreparedModelRuntimePublicationListener((event) => {
+      if (event.phase === "invalidated") {
+        invalidated = true;
+      } else if (invalidated && event.phase === "published") {
+        resolve();
+      } else if (invalidated && event.phase === "failed") {
+        reject(event.error);
+      }
+    });
+  });
+  try {
+    const config = JSON.parse(await fs.readFile(configPath, "utf8")) as OpenClawConfig;
+    config.agents ??= {};
+    config.agents.defaults ??= {};
+    config.agents.defaults.userTimezone = "UTC";
+    await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    await Promise.race([
+      published,
+      delay(60_000).then(() => {
+        throw new Error("timed out waiting for prepared runtime publication after config refresh");
+      }),
+    ]);
+  } finally {
+    unsubscribe();
   }
 }
 
@@ -2156,6 +2198,7 @@ describeLive("gateway live (Codex harness)", () => {
           auth: { mode: "token", token },
           controlUiEnabled: false,
         });
+        await server.startupSettled;
         client = await connectTestGatewayClient({
           url: `ws://127.0.0.1:${port}`,
           token,
@@ -2216,7 +2259,11 @@ describeLive("gateway live (Codex harness)", () => {
               logCodexLiveStep("subagent-probe:start", { sessionKey });
               await verifyCodexSubagentProbe({ client: activeClient, sessionKey });
               logCodexLiveStep("native-subagent-bridge-probe:start", { sessionKey });
-              await verifyCodexNativeSubagentBridgeProbe({ client: activeClient, sessionKey });
+              await verifyCodexNativeSubagentBridgeProbe({
+                client: activeClient,
+                configPath,
+                sessionKey,
+              });
               logCodexLiveStep("subagent-probe:done");
               if (CODEX_HARNESS_SUBAGENT_ONLY) {
                 return;

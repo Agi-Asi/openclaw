@@ -4522,7 +4522,6 @@ function buildLiveGatewayConfig(params: {
   const providers = Object.keys(nextProviders).length > 0 ? nextProviders : baseProviders;
   const configuredAgents = {
     [GATEWAY_LIVE_AGENT_ID]: {
-      default: true,
       agentDir: params.liveAgentDir,
       workspace: params.liveAgentWorkspaceDir,
       sandbox: { mode: "off" },
@@ -4779,6 +4778,10 @@ async function runGatewayModelSuite(params: GatewayModelSuiteParams) {
           controlUiEnabled: false,
         }),
         `${params.label}: gateway-start`,
+      );
+      await withGatewayLiveProbeTimeout(
+        server.startupSettled,
+        `${params.label}: gateway-startup-settled`,
       );
 
       client = await withGatewayLiveProbeTimeout(
@@ -5922,6 +5925,10 @@ describeLive("gateway live (dev agent, profile keys)", () => {
             controlUiEnabled: false,
           }),
           "zai-fallback: gateway-start",
+        );
+        await withGatewayLiveProbeTimeout(
+          server.startupSettled,
+          "zai-fallback: gateway-startup-settled",
         );
 
         client = await withGatewayLiveProbeTimeout(
