@@ -3123,7 +3123,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
     }
   });
 
-  it("keeps the expanded mobile composer tight, scrollable, and separated from the thread", async () => {
+  it("keeps the expanded mobile composer tight, scrollable, and flush with the thread", async () => {
     const page = await openFixture(393, 852);
     try {
       const textarea = page.locator(".agent-chat__composer-combobox > textarea");
@@ -3211,9 +3211,9 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       // inside it, so a long draft can never push the thread off the page.
       expect(textareaRect.height).toBeLessThanOrEqual(layout.viewportHeight * 0.25 + 1);
       expect(textareaMetrics.scrollHeight).toBeGreaterThan(textareaMetrics.clientHeight);
-      expect(input.y - (thread.y + thread.height)).toBeGreaterThanOrEqual(5.5);
-      expect(shell.x).toBeLessThanOrEqual(8);
-      expect(layout.viewportWidth - (shell.x + shell.width)).toBeLessThanOrEqual(8);
+      expect(input.y - (thread.y + thread.height)).toBeCloseTo(0, 0);
+      expect(shell.x).toBeLessThanOrEqual(12);
+      expect(layout.viewportWidth - (shell.x + shell.width)).toBeLessThanOrEqual(12);
       expect(attach.x - input.x).toBeLessThanOrEqual(10);
       expect(model.x).toBeGreaterThanOrEqual(context.x + context.width - 1);
       expect(input.x + input.width - (send.x + send.width)).toBeLessThanOrEqual(8);
@@ -3343,6 +3343,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           meta: rectFor(".agent-chat__composer-meta"),
           model: rectFor(".chat-controls__model-trigger"),
           modelLabel: rectFor(".chat-controls__model-trigger .chat-controls__inline-select-label"),
+          permission: rectFor(".chat-controls__permission-trigger"),
           status: rectFor(".agent-chat__composer-run-status"),
           typing: rectFor(".agent-chat__typing-indicator--outside"),
         };
@@ -3368,9 +3369,9 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       expect(layout.modelLabel.overflow).toBe("hidden");
       expect(layout.modelLabel.textOverflow).toBe("ellipsis");
       for (const [left, right] of [
-        [layout.overrides, layout.model],
         [layout.model, layout.effort],
-        [layout.effort, layout.meta],
+        [layout.effort, layout.permission],
+        [layout.permission, layout.meta],
       ] as const) {
         expect(rectsOverlap(left, right)).toBe(false);
       }
@@ -3512,8 +3513,15 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           .locator(".agent-chat__composer-combobox > textarea")
           .evaluate((textareaNode) => Number.parseFloat(getComputedStyle(textareaNode).fontSize));
         if (width <= 768) {
-          expect(controls.modelTriggerPadding).toEqual({ end: 10, start: 10 });
-          expect(controls.effortTriggerPadding).toEqual({ end: 10, start: 10 });
+          const modelTriggerPadding = width <= 480 ? 0 : 4;
+          expect(controls.modelTriggerPadding).toEqual({
+            end: modelTriggerPadding,
+            start: modelTriggerPadding,
+          });
+          expect(controls.effortTriggerPadding).toEqual({
+            end: 4,
+            start: 4,
+          });
           expect(composerFontSize).toBe(16);
           expect(model.width).toBeGreaterThanOrEqual(40);
           expect(model.width).toBeLessThanOrEqual(footer.width);
@@ -3562,7 +3570,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
     },
   );
 
-  it("preserves the mobile composer bottom spacing when its textarea is focused", async () => {
+  it("keeps the compact mobile composer bottom edge stable when its textarea is focused", async () => {
     const page = await openFixture(390, 844);
     try {
       const shell = page.locator(".agent-chat__composer-shell");
@@ -3573,7 +3581,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       const focused = await readPosition();
 
       expect(focused).toBe(unfocused);
-      expect(focused).toBe("14px");
+      expect(focused).toBe("0px");
     } finally {
       await closeBrowserPage(page);
     }

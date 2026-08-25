@@ -28,6 +28,7 @@ export type ChatModelCatalogState = {
 
 type ChatModelPickerParams = {
   contextWindow?: ChatContextWindowControlParams;
+  defaultModelLabel: string;
   disabled: boolean;
   disabledReason?: string;
   modelCatalogState?: ChatModelCatalogState;
@@ -671,9 +672,12 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
                                     return;
                                   }
                                   commitModel("");
-                                  const details = (
-                                    event.currentTarget as HTMLElement
-                                  ).closest<HTMLDetailsElement>("details");
+                                  const currentTarget = event.currentTarget;
+                                  if (!(currentTarget instanceof HTMLElement)) {
+                                    return;
+                                  }
+                                  const details =
+                                    currentTarget.closest<HTMLDetailsElement>("details");
                                   if (details) {
                                     details.open = false;
                                     if (event.detail === 0) {

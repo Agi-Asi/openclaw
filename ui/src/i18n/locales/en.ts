@@ -5765,6 +5765,8 @@ export const en: TranslationMap = {
       searchModels: "Search models",
       noMatchingModels: "No models match your search",
       sessionOverride: "Session override",
+      useDefault: "Use default",
+      resetToDefault: "Reset to default ({model})",
       defaultWithModel: "Default ({model})",
       defaultWithLevel: "Default ({level})",
       fastHelp: "Faster responses, higher usage of limits.",
@@ -5781,6 +5783,7 @@ export const en: TranslationMap = {
       noModelsAvailable: "No models available",
       emptyModelsAction: "Manage models",
       providerModels: "{provider} models",
+      useDefaultReasoning: "Use default reasoning ({level})",
       fastResponsesAria: "Fast responses: {state}",
     },
     permissionControls: {

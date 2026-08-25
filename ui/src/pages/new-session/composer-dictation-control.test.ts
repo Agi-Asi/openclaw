@@ -10,6 +10,7 @@ const dictationHarness = vi.hoisted(() => ({
   },
   controllers: [] as Array<{
     active: boolean;
+    finalizing: boolean;
     partial: string;
     finishActive: ReturnType<typeof vi.fn>;
     handleClick: ReturnType<typeof vi.fn>;

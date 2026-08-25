@@ -618,6 +618,10 @@ function getThinkingReasoningValueLabel(container: Element): string {
   return preview?.textContent?.trim() ?? "";
 }
 
+function getThinkingResetButton(container: Element): HTMLButtonElement | null {
+  return container.querySelector<HTMLButtonElement>('[data-chat-thinking-option=""]');
+}
+
 function requireElement(container: Element, selector: string, label: string): Element {
   const element = container.querySelector(selector);
   if (element === null) {
@@ -6053,7 +6057,7 @@ describe("chat model controls", () => {
     expect(onThinkingSelect).not.toHaveBeenCalled();
   });
 
-  it("shows override provenance without a separate reset action", () => {
+  it("omits inherited provenance and resets an override from the provenance row", () => {
     const { state } = createChatHeaderState({
       model: null,
       models: createOpenAiModelCatalog(),
@@ -6063,12 +6067,29 @@ describe("chat model controls", () => {
     expect(container.querySelector(".chat-controls__model-provenance")).toBeNull();
     expect(container.querySelector("[data-chat-model-reset]")).toBeNull();
 
-    renderModelControls(state, { modelOverrides: { main: "openai/gpt-5.4" } }, container);
-
-    expect(container.querySelector(".chat-controls__model-provenance")?.textContent?.trim()).toBe(
-      "Session override",
+    const onModelSelect = vi.fn(async () => true);
+    renderModelControls(
+      state,
+      { modelOverrides: { main: "openai/gpt-5.4" }, onModelSelect },
+      container,
     );
-    expect(container.querySelector("[data-chat-model-reset]")).toBeNull();
+
+    expect(container.querySelector(".chat-controls__model-provenance")).not.toBeNull();
+    const reset = container.querySelector<HTMLButtonElement>("[data-chat-model-reset]");
+    const modelSelect = getChatModelSelect(container);
+    const details = modelSelect.closest<HTMLDetailsElement>("details");
+    document.body.append(container);
+    if (details) {
+      details.open = true;
+    }
+    expect(reset).toBeInstanceOf(HTMLButtonElement);
+    expect(reset?.textContent?.trim()).toBe("Use default");
+    reset?.focus();
+    reset?.click();
+    expect(onModelSelect).toHaveBeenCalledWith("", "main");
+    expect(details?.open).toBe(false);
+    expect(document.activeElement).toBe(modelSelect);
+    container.remove();
   });
 
   it("hides model choices for locked sessions while preserving reasoning and speed", () => {
@@ -7324,10 +7345,11 @@ describe("chat model controls", () => {
     const container = renderModelControls(state);
 
     expect(getThinkingSliderValues(container)).toEqual(["off", "adaptive", "xhigh", "max"]);
+    expect(getThinkingResetButton(container)).toBeNull();
   });
 
-  it("shows a reasoning override without a separate reset action", () => {
-    const { state } = createReasoningHeaderState();
+  it("clears a reasoning override from the icon reset", async () => {
+    const { state, request } = createReasoningHeaderState();
     const sessionsResult = expectDefined(state.sessionsResult, "reasoning sessions");
     sessionsResult.sessions[0] = {
       ...sessionsResult.sessions[0]!,
@@ -7336,7 +7358,17 @@ describe("chat model controls", () => {
     const container = renderModelControls(state);
 
     expect(getThinkingReasoningValueLabel(container)).toBe("Low");
-    expect(container.querySelector('[data-chat-thinking-option=""]')).toBeNull();
+    const reset = getThinkingResetButton(container);
+    expect(reset).toBeInstanceOf(HTMLButtonElement);
+    expect(reset?.disabled).toBe(false);
+    reset?.click();
+
+    await waitForFast(() => {
+      expect(request).toHaveBeenCalledWith("sessions.patch", {
+        key: "main",
+        thinkingLevel: null,
+      });
+    });
   });
 
   it("lets an unanchored slider select its first stop directly", async () => {
