@@ -263,11 +263,13 @@ struct ChatSessionSidebar: View {
             self.actionLabel(String(localized: "Rename…"), systemImage: "pencil")
         }
         Button {
-            self.viewModel.setSessionPinned(key: session.key, pinned: session.pinned != true)
+            self.viewModel.setSessionPinned(
+                key: session.key,
+                pinned: session.globalPinActionPins)
         } label: {
             self.actionLabel(
-                session.pinned == true ? String(localized: "Unpin") : String(localized: "Pin"),
-                systemImage: session.pinned == true ? "pin.slash" : "pin")
+                session.globalPinActionTitle,
+                systemImage: session.globalPinActionPins ? "pin" : "pin.slash")
         }
         Button {
             Task {

@@ -281,12 +281,14 @@ public struct ChatSessionsSheet: View {
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if !session.isArchived {
                     Button {
-                        self.viewModel.setSessionPinned(key: session.key, pinned: !session.isPinned)
+                        self.viewModel.setSessionPinned(
+                            key: session.key,
+                            pinned: session.globalPinActionPins)
                         self.refreshScopedSessionsSoon()
                     } label: {
-                        self.actionLabel(
-                            session.isPinned ? "Unpin" : "Pin",
-                            systemImage: session.isPinned ? "pin.slash" : "pin")
+                        self.actionVerbatimLabel(
+                            session.globalPinActionTitle,
+                            systemImage: session.globalPinActionPins ? "pin" : "pin.slash")
                     }
                     .tint(OpenClawChatTheme.accent)
                 }
@@ -322,12 +324,14 @@ public struct ChatSessionsSheet: View {
                 }
                 if !session.isArchived {
                     Button {
-                        self.viewModel.setSessionPinned(key: session.key, pinned: !session.isPinned)
+                        self.viewModel.setSessionPinned(
+                            key: session.key,
+                            pinned: session.globalPinActionPins)
                         self.refreshScopedSessionsSoon()
                     } label: {
-                        self.actionLabel(
-                            session.isPinned ? "Unpin" : "Pin",
-                            systemImage: session.isPinned ? "pin.slash" : "pin")
+                        self.actionVerbatimLabel(
+                            session.globalPinActionTitle,
+                            systemImage: session.globalPinActionPins ? "pin" : "pin.slash")
                     }
                 }
                 if ChatSessionSidebarModel.canArchiveSession(
@@ -391,7 +395,7 @@ public struct ChatSessionsSheet: View {
                 }
             }
             Spacer(minLength: 0)
-            if session.isPinned {
+            if session.isAnyPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -435,6 +439,15 @@ public struct ChatSessionsSheet: View {
     private func actionLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
         Label {
             Text(title)
+                .font(OpenClawChatTypography.body)
+        } icon: {
+            Image(systemName: systemImage)
+        }
+    }
+
+    private func actionVerbatimLabel(_ title: String, systemImage: String) -> some View {
+        Label {
+            Text(verbatim: title)
                 .font(OpenClawChatTypography.body)
         } icon: {
             Image(systemName: systemImage)

@@ -199,7 +199,7 @@ struct ChatSessionInspectorSheet: View {
                         }
                     }
                     .disabled(self.isMutatingGroup)
-                    Toggle("Pinned", isOn: self.pinnedBinding)
+                    Toggle("Pinned globally", isOn: self.pinnedBinding)
                         .font(OpenClawChatTypography.body)
                     Toggle("Archived", isOn: self.archivedBinding)
                         .font(OpenClawChatTypography.body)
@@ -276,8 +276,12 @@ struct ChatSessionInspectorSheet: View {
             get: { self.displayedSession.category ?? "" },
             set: { next in
                 let previous = self.displayedSession.category
+                let previousCategoryPinnedAt = self.displayedSession.categoryPinnedAt
                 let nextGroup = next.isEmpty ? nil : next
                 self.displayedSession.category = nextGroup
+                if nextGroup == nil {
+                    self.displayedSession.categoryPinnedAt = nil
+                }
                 self.isMutatingGroup = true
                 Task {
                     defer { self.isMutatingGroup = false }
@@ -288,6 +292,7 @@ struct ChatSessionInspectorSheet: View {
                         self.errorText = nil
                     } catch {
                         self.displayedSession.category = previous
+                        self.displayedSession.categoryPinnedAt = previousCategoryPinnedAt
                         self.errorText = error.localizedDescription
                     }
                 }
@@ -296,9 +301,11 @@ struct ChatSessionInspectorSheet: View {
 
     private var pinnedBinding: Binding<Bool> {
         Binding(
-            get: { self.displayedSession.isPinned },
+            get: { self.displayedSession.pinScope == .global },
             set: { pinned in
                 self.displayedSession.pinned = pinned
+                self.displayedSession.pinnedAt = pinned ? Date().timeIntervalSince1970 * 1000 : nil
+                self.displayedSession.categoryPinnedAt = nil
                 self.viewModel.setSessionPinned(key: self.displayedSession.key, pinned: pinned)
             })
     }

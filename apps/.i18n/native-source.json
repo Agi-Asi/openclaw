@@ -33870,6 +33870,17 @@
       ]
     },
     {
+      "id": "native.apple.b0269531967d0bb2",
+      "source": "Move pin globally",
+      "surface": "apple",
+      "sites": [
+        {
+          "kind": "ui-localized-call",
+          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessions.swift"
+        }
+      ]
+    },
+    {
       "id": "native.apple.0b3388c6aecedaf2",
       "source": "Move to %@",
       "surface": "apple",
@@ -38415,20 +38426,19 @@
       "surface": "apple",
       "sites": [
         {
-          "kind": "ui-localized-call",
-          "path": "apps/ios/Sources/Design/CommandCenterSupport.swift"
-        },
-        {
-          "kind": "ui-localized-call",
-          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessionSidebar.swift"
-        },
-        {
-          "kind": "conditional-branch",
-          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSheets.swift"
-        },
-        {
           "kind": "ui-call",
           "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSheets.swift"
+        }
+      ]
+    },
+    {
+      "id": "native.apple.927207cd0187fc7f",
+      "source": "Pin globally",
+      "surface": "apple",
+      "sites": [
+        {
+          "kind": "ui-localized-call",
+          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessions.swift"
         },
         {
           "kind": "ui-localized-call",
@@ -38476,10 +38486,6 @@
           "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatComposer.swift"
         },
         {
-          "kind": "ui-call",
-          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessionManagementViews.swift"
-        },
-        {
           "kind": "ui-named-argument",
           "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessionSidebarModel.swift"
         },
@@ -38490,6 +38496,17 @@
         {
           "kind": "ui-call",
           "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatWindowShell.swift"
+        }
+      ]
+    },
+    {
+      "id": "native.apple.1fe3978fc8650da2",
+      "source": "Pinned globally",
+      "surface": "apple",
+      "sites": [
+        {
+          "kind": "ui-call",
+          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessionManagementViews.swift"
         }
       ]
     },
@@ -48029,24 +48046,19 @@
       "surface": "apple",
       "sites": [
         {
-          "kind": "ui-localized-call",
-          "path": "apps/ios/Sources/Design/CommandCenterSupport.swift"
-        },
-        {
-          "kind": "ui-localized-call",
-          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessionSidebar.swift"
-        },
-        {
-          "kind": "conditional-branch",
-          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSheets.swift"
-        },
-        {
           "kind": "ui-call",
           "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSheets.swift"
-        },
+        }
+      ]
+    },
+    {
+      "id": "native.apple.31e516edf138db2e",
+      "source": "Unpin globally",
+      "surface": "apple",
+      "sites": [
         {
           "kind": "ui-localized-call",
-          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatWindowShell.swift"
+          "path": "apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatSessions.swift"
         }
       ]
     },

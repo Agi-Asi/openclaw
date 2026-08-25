@@ -749,7 +749,7 @@ struct CommandCenterTab: View {
             progress: nil,
             route: .chat(session.key),
             isUnread: session.unread == true,
-            isPinned: session.pinned == true)
+            isPinned: session.isAnyPinned)
     }
 
     static func sessionTitle(_ session: OpenClawChatSessionEntry) -> String {

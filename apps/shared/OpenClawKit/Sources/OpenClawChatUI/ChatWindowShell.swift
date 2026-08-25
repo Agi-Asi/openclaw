@@ -400,13 +400,11 @@ public struct OpenClawChatWindowShell: View {
             Button {
                 self.viewModel.setSessionPinned(
                     key: self.activeSessionKey,
-                    pinned: self.activeSessionEntry?.pinned != true)
+                    pinned: self.activeSessionEntry?.globalPinActionPins ?? true)
             } label: {
-                chatWindowActionLabel(
-                    LocalizedStringKey(self.activeSessionEntry?.pinned == true
-                        ? String(localized: "Unpin")
-                        : String(localized: "Pin")),
-                    systemImage: self.activeSessionEntry?.pinned == true ? "pin.slash" : "pin")
+                chatWindowVerbatimActionLabel(
+                    self.activeSessionEntry?.globalPinActionTitle ?? String(localized: "Pin globally"),
+                    systemImage: self.activeSessionEntry?.globalPinActionPins == false ? "pin.slash" : "pin")
             }
 
             Button {
@@ -568,6 +566,15 @@ private struct ChatContextUsageMenu: View {
 func chatWindowActionLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
     Label {
         Text(title)
+            .font(OpenClawChatTypography.body(size: 13, weight: .regular, relativeTo: .body))
+    } icon: {
+        Image(systemName: systemImage)
+    }
+}
+
+func chatWindowVerbatimActionLabel(_ title: String, systemImage: String) -> some View {
+    Label {
+        Text(verbatim: title)
             .font(OpenClawChatTypography.body(size: 13, weight: .regular, relativeTo: .body))
     } icon: {
         Image(systemName: systemImage)

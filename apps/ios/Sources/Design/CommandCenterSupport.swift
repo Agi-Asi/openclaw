@@ -165,10 +165,8 @@ struct CommandSessionActionsModifier: ViewModifier {
                     }
                 } else {
                     self.actionButton(
-                        self.session.pinned == true
-                            ? OpenClawTextValue.localized("Unpin")
-                            : OpenClawTextValue.localized("Pin"),
-                        systemImage: self.session.pinned == true ? "pin.slash" : "pin")
+                        .verbatim(self.session.globalPinActionTitle),
+                        systemImage: self.session.globalPinActionPins ? "pin" : "pin.slash")
                     {
                         self.actions.togglePinned()
                     }

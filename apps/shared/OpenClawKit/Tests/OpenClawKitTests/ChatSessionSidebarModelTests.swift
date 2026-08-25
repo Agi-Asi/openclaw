@@ -143,13 +143,13 @@ struct ChatSessionSidebarModelTests {
                 self.entry(
                     key: "group-new",
                     updatedAt: 10,
-                    category: "Projects",
-                    categoryPinnedAt: 300),
+                    categoryPinnedAt: 300,
+                    category: "Projects"),
                 self.entry(
                     key: "group-old",
                     updatedAt: 200,
-                    category: "Projects",
-                    categoryPinnedAt: 100),
+                    categoryPinnedAt: 100,
+                    category: "Projects"),
                 self.entry(key: "ordinary", updatedAt: 500, category: "Projects"),
             ],
             currentSessionKey: "ordinary",

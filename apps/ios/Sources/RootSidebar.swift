@@ -650,7 +650,7 @@ struct RootSidebar: View {
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
                 }
-                if session.pinned == true {
+                if session.isAnyPinned {
                     Image(systemName: "pin.fill")
                         .font(OpenClawType.caption2Medium)
                         .foregroundStyle(OpenClawSidebarPalette.accent)
