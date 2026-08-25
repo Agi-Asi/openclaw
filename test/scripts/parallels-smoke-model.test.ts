@@ -63,6 +63,10 @@ import {
   windowsProviderOnlyPluginIsolationScript,
   windowsCodexPlatformPackageRepairFunction,
 } from "../../scripts/e2e/parallels/plugin-isolation.ts";
+import {
+  resolveParallelsProviderAuth,
+  runParallelsPrerequisiteEval,
+} from "../../scripts/e2e/parallels/provider-auth-prerequisite.mjs";
 import { parseArgs as parseWindowsSmokeArgs } from "../../scripts/e2e/parallels/windows-smoke.ts";
 import { withEnv } from "../../src/test-utils/env.js";
 import { spawnNodeEvalSync } from "../../src/test-utils/node-process.js";
@@ -75,6 +79,8 @@ const WRAPPERS = {
   windows: "scripts/e2e/parallels-windows-smoke.sh",
 };
 const WINDOWS_PREPARE_WRAPPER = "scripts/e2e/parallels-windows-prepare.sh";
+const PROVIDER_AUTH_PREREQUISITE_PATH = "scripts/e2e/parallels/provider-auth-prerequisite.mjs";
+const PROVIDER_AUTH_PREREQUISITE_SOURCE = readFileSync(PROVIDER_AUTH_PREREQUISITE_PATH, "utf8");
 
 const TS_PATHS = {
   agentWorkspace: "scripts/e2e/parallels/agent-workspace.ts",
@@ -642,14 +648,13 @@ describe("Parallels smoke model selection", () => {
     }
   });
 
-  it("keeps provider auth and model defaults in the shared TypeScript helper", () => {
-    expect(providerAuth).toContain("OPENCLAW_PARALLELS_OPENAI_MODEL");
+  it("keeps provider auth and model defaults in the shared helper", () => {
+    expect(PROVIDER_AUTH_PREREQUISITE_SOURCE).toContain("OPENCLAW_PARALLELS_OPENAI_MODEL");
     expect(providerAuth).toContain("OPENCLAW_PARALLELS_WINDOWS_OPENAI_MODEL");
-    expect(providerAuth).toContain("openai/gpt-5.6-luna");
-    expect(providerAuth).toContain('authChoice: "apiKey"');
-    expect(providerAuth).toContain('authChoice: "minimax-global-api"');
-    expect(providerAuth).toContain('tokenProvider: "openai"');
-    expect(providerAuth).toContain('tokenProvider: "anthropic"');
+    expect(PROVIDER_AUTH_PREREQUISITE_SOURCE).toContain("openai/gpt-5.6-luna");
+    expect(PROVIDER_AUTH_PREREQUISITE_SOURCE).toContain('authChoice: "apiKey"');
+    expect(PROVIDER_AUTH_PREREQUISITE_SOURCE).toContain('authChoice: "minimax-global-api"');
+    expect(PROVIDER_AUTH_PREREQUISITE_SOURCE).toContain("tokenProvider: input.provider");
 
     for (const scriptPath of [...OS_TS_PATHS, TS_PATHS.npmUpdate]) {
       const script = readFileSync(scriptPath, "utf8");
@@ -1101,6 +1106,41 @@ kill -TERM "$$"`,
 
   it("resolves provider defaults and explicit model overrides", () => {
     expect(
+      resolveParallelsProviderAuth({ provider: "openai" }, { OPENAI_API_KEY: "sk-openai" }),
+    ).toMatchObject({
+      auth: { apiKeyEnv: "OPENAI_API_KEY", modelId: "openai/gpt-5.6-luna" },
+      reason: null,
+      status: "ready",
+    });
+    expect(
+      resolveParallelsProviderAuth(
+        {
+          apiKeyEnv: "CUSTOM_ANTHROPIC_KEY",
+          modelId: "anthropic/custom",
+          provider: "anthropic",
+        },
+        { CUSTOM_ANTHROPIC_KEY: "sk-anthropic" },
+      ),
+    ).toMatchObject({
+      auth: { apiKeyEnv: "CUSTOM_ANTHROPIC_KEY", modelId: "anthropic/custom" },
+      reason: null,
+      status: "ready",
+    });
+    const inheritedCredentials = Object.create(null) as Record<string, string>;
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      Object.defineProperty(inheritedCredentials, name, { value: "inherited-secret" });
+    }
+    const inheritedEnv = Object.create(inheritedCredentials) as Record<string, string>;
+    for (const apiKeyEnv of ["constructor", "toString", "__proto__"]) {
+      expect(
+        resolveParallelsProviderAuth({ apiKeyEnv, provider: "openai" }, inheritedEnv),
+      ).toMatchObject({
+        auth: { apiKeyValue: "" },
+        reason: "credential_missing",
+        status: "blocked",
+      });
+    }
+    expect(
       withEnv({ OPENAI_API_KEY: "sk-openai" }, () =>
         resolveProviderAuthDirect({ provider: "openai" }),
       ),
@@ -1129,6 +1169,62 @@ kill -TERM "$$"`,
       modelId: "anthropic/custom",
       tokenProvider: "anthropic",
     });
+  });
+
+  it("keeps prerequisite adapter failures sanitized and closed", () => {
+    const cases = [
+      ["--prerequisite-check", "--json", "--provider", "openai", "--provider", "anthropic"],
+      ["--prerequisite-check", "--json", "--unknown"],
+      ["--prerequisite-check", "--json", "--provider"],
+      ["--prerequisite-check", "--json", "--provider", "unsupported-secret"],
+      ["--prerequisite-check", "--json", "--provider", "constructor"],
+      ["--prerequisite-check"],
+    ];
+    for (const args of cases) {
+      const output: string[] = [];
+      expect(runParallelsPrerequisiteEval(args, {}, { write: (value) => output.push(value) })).toBe(
+        1,
+      );
+      expect(output).toEqual([
+        '{"schema":"openclaw.parallels-prerequisite.v1","status":"blocked","reason":"invalid_arguments"}\n',
+      ]);
+      expect(output[0]).not.toContain("unsupported-secret");
+    }
+
+    const inheritedCredentials = Object.create(null) as Record<string, string>;
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      Object.defineProperty(inheritedCredentials, name, { value: "inherited-secret" });
+    }
+    for (const apiKeyEnv of ["constructor", "toString", "__proto__"]) {
+      const output: string[] = [];
+      expect(
+        runParallelsPrerequisiteEval(
+          ["--prerequisite-check", "--json", "--api-key-env", apiKeyEnv],
+          Object.create(inheritedCredentials) as Record<string, string>,
+          { write: (value) => output.push(value) },
+        ),
+      ).toBe(1);
+      expect(output).toEqual([
+        '{"schema":"openclaw.parallels-prerequisite.v1","status":"blocked","reason":"credential_missing"}\n',
+      ]);
+    }
+
+    const output: string[] = [];
+    const env = Object.create(null) as Record<string, string>;
+    Object.defineProperty(env, "OPENAI_API_KEY", {
+      get: () => {
+        throw new Error("sentinel-secret");
+      },
+    });
+    expect(
+      runParallelsPrerequisiteEval(["--prerequisite-check", "--json"], env, {
+        write: (value) => output.push(value),
+      }),
+    ).toBe(1);
+    expect(output).toEqual([
+      '{"schema":"openclaw.parallels-prerequisite.v1","status":"blocked","reason":"internal_error"}\n',
+    ]);
+    expect(output[0]).not.toContain("sentinel-secret");
   });
 
   it("uses the shared GPT-5.6 Luna model for Windows smoke unless overridden", () => {

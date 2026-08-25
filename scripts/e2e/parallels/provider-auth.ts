@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parsePositiveInt, readPositiveIntEnv } from "./env-limits.ts";
 import { die, run } from "./host-command.ts";
+import { resolveParallelsProviderAuth } from "./provider-auth-prerequisite.mjs";
 import type { Mode, Platform, Provider, ProviderAuth } from "./types.ts";
 
 type ResolveLatestVersionDeps = {
@@ -31,39 +32,11 @@ export function resolveProviderAuth(input: {
   apiKeyEnv?: string;
   modelId?: string;
 }): ProviderAuth {
-  const providerDefaults: Record<Provider, Omit<ProviderAuth, "apiKeyValue">> = {
-    anthropic: {
-      apiKeyEnv: input.apiKeyEnv || "ANTHROPIC_API_KEY",
-      authChoice: "apiKey",
-      authKeyFlag: "anthropic-api-key",
-      modelId:
-        input.modelId ||
-        process.env.OPENCLAW_PARALLELS_ANTHROPIC_MODEL ||
-        "anthropic/claude-sonnet-4-6",
-      tokenProvider: "anthropic",
-    },
-    minimax: {
-      apiKeyEnv: input.apiKeyEnv || "MINIMAX_API_KEY",
-      authChoice: "minimax-global-api",
-      authKeyFlag: "minimax-api-key",
-      modelId:
-        input.modelId || process.env.OPENCLAW_PARALLELS_MINIMAX_MODEL || "minimax/MiniMax-M2.7",
-    },
-    openai: {
-      apiKeyEnv: input.apiKeyEnv || "OPENAI_API_KEY",
-      authChoice: "apiKey",
-      authKeyFlag: "openai-api-key",
-      modelId:
-        input.modelId || process.env.OPENCLAW_PARALLELS_OPENAI_MODEL || "openai/gpt-5.6-luna",
-      tokenProvider: "openai",
-    },
-  };
-  const resolved = providerDefaults[input.provider];
-  const apiKeyValue = process.env[resolved.apiKeyEnv] ?? "";
-  if (!apiKeyValue) {
-    die(`${resolved.apiKeyEnv} is required`);
+  const result = resolveParallelsProviderAuth(input, process.env);
+  if (result.status === "blocked") {
+    die(`${result.auth.apiKeyEnv} is required`);
   }
-  return { ...resolved, apiKeyValue };
+  return result.auth;
 }
 
 export function resolveWindowsProviderAuth(input: {
