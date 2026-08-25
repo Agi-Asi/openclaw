@@ -6109,6 +6109,8 @@ export const en: TranslationMap = {
       summary: "Summary",
       toolInput: "Tool input",
       toolOutput: "Tool output",
+      codeSource: "{language} source",
+      codeWorkflow: "{language} workflow",
       toolError: "Tool error",
       rawDetails: "Raw details",
       showRawDetails: "Show raw details",
@@ -6150,6 +6152,9 @@ export const en: TranslationMap = {
         noRationale: "No rationale was provided.",
       },
       verbs: {
+        run: "Run",
+        running: "Running",
+        ran: "Ran",
         read: "Read",
         edit: "Edit",
         editing: "Editing",
@@ -6170,6 +6175,8 @@ export const en: TranslationMap = {
         fetched: "Fetched",
       },
       group: {
+        codeOne: "ran a code workflow",
+        codeMany: "ran {count} code workflows",
         commandsOne: "ran a command",
         commandsMany: "ran {count} commands",
         readsOne: "read a file",
@@ -6193,6 +6200,7 @@ export const en: TranslationMap = {
       },
     },
     workRun: {
+      summaryFor: "{summary} · {duration}",
       workedFor: "Worked for {duration}",
       worked: "Worked",
     },

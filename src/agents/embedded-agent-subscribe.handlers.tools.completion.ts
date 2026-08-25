@@ -11,7 +11,6 @@ import {
   type AgentPatchSummaryEventData,
 } from "../infra/agent-activity-events.js";
 import { emitAgentEvent, type AgentApprovalEventData } from "../infra/agent-events.js";
-import type { PluginHookAfterToolCallEvent } from "../plugins/types.js";
 import { normalizeAcceptedSessionSpawnResult } from "./accepted-session-spawn.js";
 import {
   consumeAdjustedParamsForToolCall,
@@ -44,6 +43,7 @@ import {
 } from "./embedded-agent-messaging.js";
 import { mergeEmbeddedRunReplayState } from "./embedded-agent-runner/replay-state.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
+import { runEmbeddedAfterToolCallHook } from "./embedded-agent-subscribe.handlers.tools.hooks.js";
 import {
   applyCurrentMessageProvider,
   applyToolSendReceiptForExtraction,
@@ -58,7 +58,6 @@ import {
   isAsyncStartedToolResult,
   isCronAddAction,
   isMiddlewareToolResultError,
-  loadHookRunnerGlobal,
   readApplyPatchSummary,
   readAsyncStartedTaskIds,
   readExecToolDetails,
@@ -111,23 +110,22 @@ export async function handleToolExecutionEnd(
   ctx: ToolHandlerContext,
   evt: Extract<AgentEvent, { type: "tool_execution_end" }>,
 ) {
-  const rawToolName = evt.toolName;
-  const toolName = normalizeToolPolicyName(rawToolName);
+  const toolName = normalizeToolPolicyName(evt.toolName);
+  const isExecTool = isExecToolName(toolName);
   const hideFromChannelProgress = evt.hideFromChannelProgress === true;
   const toolCallId = evt.toolCallId;
+  const parentToolCallId = evt.parentToolCallId;
   ctx.state.liveEditDiffStateById.delete(toolCallId);
   if (toolName === "ask_user") {
     cancelAskUserPromptDelivery(toolCallId, ctx.params.sessionKey, ctx.params.runId);
   }
   const runId = ctx.params.runId;
-  const isError = evt.isError;
   const result = evt.result;
   const toolSendReceiptResult = ctx.consumeToolSendReceipt?.(toolCallId);
-  const observerIsError = isError || isToolResultError(result);
+  const observerIsError = evt.isError || isToolResultError(result);
   const sanitizedResult = sanitizeToolResult(result);
   const approvalUnavailable =
-    isExecToolName(toolName) &&
-    readExecToolDetails(sanitizedResult)?.status === "approval-unavailable";
+    isExecTool && readExecToolDetails(sanitizedResult)?.status === "approval-unavailable";
   const isToolError = observerIsError && !approvalUnavailable;
   if (!isToolError) {
     const channelView = readMcpAppChannelView(result);
@@ -149,9 +147,7 @@ export async function handleToolExecutionEnd(
   } catch (error) {
     ctx.log.warn(`onAgentToolResult handler failed: tool=${toolName} error=${String(error)}`);
   }
-  const eventResult = isExecToolName(toolName)
-    ? capLiveExecResult(sanitizedResult)
-    : sanitizedResult;
+  const eventResult = isExecTool ? capLiveExecResult(sanitizedResult) : sanitizedResult;
   const toolStartKey = buildToolStartKey(runId, toolCallId);
   const startData = toolStartData.get(toolStartKey);
   toolStartData.delete(toolStartKey);
@@ -176,6 +172,7 @@ export async function handleToolExecutionEnd(
     initialCallSummary?.instanceReplaySafe === true,
     initialCallSummary?.ownerKey,
     structuredReplaySafe,
+    initialCallSummary?.codeModeControl ?? evt.codeModeControl,
   );
   // A racing observer can consume the active wrapper boundary. Settled and
   // custom producers use their terminal fact, while policy blocks override it.
@@ -433,6 +430,8 @@ export async function handleToolExecutionEnd(
       phase: "result",
       name: toolName,
       toolCallId,
+      ...(parentToolCallId ? { parentToolCallId } : {}),
+      ...(callSummary.codeModeControl ? { codeModeControl: callSummary.codeModeControl } : {}),
       meta,
       isError: isToolError,
       commandBearing: callSummary.commandBearing,
@@ -453,6 +452,8 @@ export async function handleToolExecutionEnd(
     meta,
     commandBearing: callSummary.commandBearing,
     toolCallId,
+    ...(parentToolCallId ? { parentToolCallId } : {}),
+    ...(callSummary.codeModeControl ? { codeModeControl: callSummary.codeModeControl } : {}),
     startedAt: startData?.startTime,
     endedAt,
     ...(hideFromChannelProgress ? { hideFromChannelProgress: true } : {}),
@@ -470,6 +471,8 @@ export async function handleToolExecutionEnd(
       phase: "result",
       name: toolName,
       toolCallId,
+      ...(parentToolCallId ? { parentToolCallId } : {}),
+      ...(callSummary.codeModeControl ? { codeModeControl: callSummary.codeModeControl } : {}),
       meta,
       isError: isToolError,
       commandBearing: callSummary.commandBearing,
@@ -478,7 +481,7 @@ export async function handleToolExecutionEnd(
     },
   });
 
-  if (isExecToolName(toolName)) {
+  if (isExecTool && callSummary.commandBearing) {
     // Use sanitizedResult so `aggregated` is redacted before reaching command_output.
     const execDetails = readExecToolDetails(sanitizedResult);
     const commandItemId = buildCommandItemId(toolCallId);
@@ -527,6 +530,7 @@ export async function handleToolExecutionEnd(
         name: toolName,
         meta,
         toolCallId,
+        ...(parentToolCallId ? { parentToolCallId } : {}),
         startedAt: startData?.startTime,
         endedAt,
         ...(execDetails.status === "approval-pending"
@@ -553,6 +557,7 @@ export async function handleToolExecutionEnd(
         name: toolName,
         meta,
         toolCallId,
+        ...(parentToolCallId ? { parentToolCallId } : {}),
         startedAt: startData?.startTime,
         endedAt,
         ...(output ? { summary: output } : {}),
@@ -565,6 +570,7 @@ export async function handleToolExecutionEnd(
         phase: "end",
         title: buildCommandItemTitle(toolName, meta),
         toolCallId,
+        ...(parentToolCallId ? { parentToolCallId } : {}),
         name: toolName,
         ...(output ? { output } : {}),
         status: commandStatus,
@@ -635,6 +641,7 @@ export async function handleToolExecutionEnd(
       name: toolName,
       meta,
       toolCallId,
+      ...(parentToolCallId ? { parentToolCallId } : {}),
       startedAt: startData?.startTime,
       endedAt,
       ...(summaryText ? { summary: summaryText } : {}),
@@ -648,6 +655,7 @@ export async function handleToolExecutionEnd(
         phase: "end",
         title: buildPatchItemTitle(meta),
         toolCallId,
+        ...(parentToolCallId ? { parentToolCallId } : {}),
         name: toolName,
         added: patchSummary.added,
         modified: patchSummary.modified,
@@ -674,7 +682,7 @@ export async function handleToolExecutionEnd(
   await emitToolResultOutput({
     ctx,
     toolName,
-    rawToolName,
+    rawToolName: evt.toolName,
     meta,
     isToolError,
     result,
@@ -684,31 +692,15 @@ export async function handleToolExecutionEnd(
     ctx.log.debug(`embedded run tool stream boundary callback failed: ${String(error)}`);
   });
 
-  // Run after_tool_call plugin hook (fire-and-forget)
-  const hookRunnerAfter = ctx.hookRunner ?? (await loadHookRunnerGlobal()).getGlobalHookRunner();
-  if (hookRunnerAfter?.hasHooks("after_tool_call")) {
-    const durationMs = startData?.startTime != null ? Date.now() - startData.startTime : undefined;
-    const hookEvent: PluginHookAfterToolCallEvent = {
-      toolName,
-      params: startArgs,
-      runId,
-      toolCallId,
-      result: sanitizedResult,
-      error: isToolError ? extractToolErrorMessage(sanitizedResult) : undefined,
-      durationMs,
-    };
-    void hookRunnerAfter
-      .runAfterToolCall(hookEvent, {
-        toolName,
-        agentId: ctx.params.agentId,
-        sessionKey: ctx.params.sessionKey,
-        sessionId: ctx.params.sessionId,
-        runId,
-        toolCallId,
-      })
-      .catch((err: unknown) => {
-        ctx.log.warn(`after_tool_call hook failed: tool=${toolName} error=${String(err)}`);
-      });
-  }
+  await runEmbeddedAfterToolCallHook({
+    ctx,
+    toolName,
+    startArgs,
+    runId,
+    toolCallId,
+    result: sanitizedResult,
+    error: isToolError ? extractToolErrorMessage(sanitizedResult) : undefined,
+    startedAt: startData?.startTime,
+  });
   return { executionStarted: terminal.executionStarted };
 }
