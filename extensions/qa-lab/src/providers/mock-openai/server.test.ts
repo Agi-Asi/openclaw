@@ -731,6 +731,30 @@ describe("qa mock openai server", () => {
     expect(outputItems(finalBody).some((item) => item.type === "function_call")).toBe(false);
   });
 
+  it("returns a distinct final after the ambiguous Teams message-tool send", async () => {
+    const server = await startMockServer();
+    const prompt = "qa msteams ambiguous gateway timeout. exact marker: `QA-MSTEAMS-AMBIGUOUS-504`";
+
+    const initialBody = await expectOpenAiNonStreamingResponsesJson(server, {
+      tools: [MESSAGE_TOOL],
+      input: [makeUserInput(prompt)],
+    });
+    const toolCall = outputToolCall(initialBody, "message");
+    expect(outputToolArgsFromItem(toolCall)).toEqual({
+      action: "send",
+      message: "QA-MSTEAMS-AMBIGUOUS-504",
+    });
+
+    const finalBody = await expectOpenAiNonStreamingResponsesJson(server, {
+      tools: [MESSAGE_TOOL],
+      input: [
+        makeUserInput(prompt),
+        makeToolOutputWithCallId(outputToolCallId(toolCall, "call_msteams_timeout"), "failed"),
+      ],
+    });
+    expect(outputText(finalBody)).toBe("QA-MSTEAMS-AMBIGUOUS-FINAL");
+  });
+
   it("keeps the retry-failure stranded-final fixture as text without a message tool call", async () => {
     const server = await startMockServer();
 
@@ -6869,7 +6893,9 @@ Update and merge these partial structured summaries.`,
     const readAgent = readToolUse(await request());
     expect(readAgent.name).toBe("exec");
     const readAgentCode = String(requireRecord(readAgent.input, "exec input").code);
-    expect(readAgentCode).toContain("tools.callValue(target.id, targetArgs)");
+    expect(readAgentCode).toContain("await catalog.search(targetName)");
+    expect(readAgentCode).toContain("await target(targetArgs)");
+    expect(readAgentCode).not.toContain("ALL_TOOLS");
     expect(readAgentCode).toContain("value.content.slice(0, 2048)");
     await expectPlan("read", { path: "AGENT.md" }, String(readAgent.id));
 
@@ -7118,6 +7144,74 @@ Update and merge these partial structured summaries.`,
 
     expect(outputItems(payload).some((item) => item.type === "function_call")).toBe(false);
     expect(outputText(payload)).not.toBe("Protocol note: replay unsafe after write.");
+  });
+
+  it("derives three restart checkpoints from request history without server counters", async () => {
+    const server = await startMockServer();
+    const prompt =
+      "Code Mode restart wait QA check. Original prompt marker: RESTART-CODE-MODE-PROMPT.";
+    const recoveryPrompt =
+      "Your previous turn was interrupted by a gateway restart. Continue from the existing transcript.";
+    const tools = [
+      {
+        type: "function",
+        name: "exec",
+        parameters: {
+          type: "object",
+          properties: {
+            language: { type: "string" },
+            code: { type: "string" },
+            restartSafe: { type: "boolean" },
+          },
+          required: ["code"],
+        },
+      },
+      {
+        type: "function",
+        name: "wait",
+        parameters: {
+          type: "object",
+          properties: { runId: { type: "string" } },
+          required: ["runId"],
+        },
+      },
+    ];
+    const input: Array<Record<string, unknown>> = [makeUserInput(prompt)];
+
+    for (const checkpoint of [1, 2, 3]) {
+      const execPayload = await expectOpenAiNonStreamingResponsesJson(server, { tools, input });
+      const execCall = outputToolCall(execPayload, "exec");
+      const execArgs = outputToolArgsFromItem(execCall);
+      expect(execArgs).toMatchObject({ language: "javascript", restartSafe: true });
+      expect(execArgs.code).toContain("qa_restart_wait");
+      expect(execArgs.code).toContain('catalog.search("qa_restart_wait")');
+      expect(execArgs.code).toContain("await target({})");
+      expect(execArgs.code).toContain(`CHECKPOINT-${checkpoint}`);
+
+      const runId = `restart-checkpoint-${checkpoint}`;
+      input.push(
+        execCall,
+        makeToolOutputWithCallId(
+          outputToolCallId(execCall, `checkpoint-exec-${checkpoint}`),
+          JSON.stringify({ status: "waiting", runId }),
+        ),
+      );
+      const waitPayload = await expectOpenAiNonStreamingResponsesJson(server, { tools, input });
+      const waitCall = outputToolCall(waitPayload, "wait");
+      expect(outputToolArgsFromItem(waitCall)).toEqual({ runId });
+      input.push(waitCall, makeUserInput(recoveryPrompt));
+    }
+
+    const finalPayload = await expectOpenAiNonStreamingResponsesJson(server, { tools, input });
+    expect(outputText(finalPayload)).toBe("unsafeVisible=false\nRESTART-CODE-MODE-WAIT-OK");
+
+    const freshPayload = await expectOpenAiNonStreamingResponsesJson(server, {
+      tools,
+      input: [makeUserInput(prompt)],
+    });
+    expect(outputToolArgsFromItem(outputToolCall(freshPayload, "exec")).code).toContain(
+      "CHECKPOINT-1",
+    );
   });
 
   it("routes Anthropic image generation through Code Mode when only exec and wait are visible", async () => {
@@ -8390,7 +8484,7 @@ Update and merge these partial structured summaries.`,
       input: [
         makeUserInput(prompt),
         makeUserInput(
-          `${QA_SETTLED_TOOL_TERMINAL_CONTINUATION_INSTRUCTION} If any tool failed, state that failure plainly and do not claim it succeeded.`,
+          `${QA_SETTLED_TOOL_TERMINAL_CONTINUATION_INSTRUCTION} If a tool failed, say so; never claim completion or success.`,
         ),
         failedToolOutput,
       ],

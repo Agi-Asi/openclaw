@@ -14,7 +14,6 @@ import {
   type TelegramMentionCaseForTest,
   type TelegramMentionPolicyForTest,
 } from "./bot.create-telegram-bot.test-support.js";
-import { resetTelegramForumFlagCacheForTest } from "./bot/helpers.js";
 import { setTelegramRuntime } from "./runtime.js";
 import type { TelegramRuntime } from "./runtime.types.js";
 
@@ -271,7 +270,7 @@ async function dispatchTelegramGroupPhoto(params: {
         id: -100456,
         type: "supergroup",
         title: "Ops Chat",
-        ...(params.topicId ? { is_forum: true } : {}),
+        is_forum: params.topicId !== undefined,
       },
       message_id: params.messageId,
       date: 1736380800,
@@ -397,7 +396,6 @@ describe("createTelegramBot channel_post media", () => {
   });
 
   beforeEach(() => {
-    resetTelegramForumFlagCacheForTest();
     setTelegramRuntime({
       state: {
         openKeyedStore: ((options) =>
@@ -1006,6 +1004,10 @@ describe("createTelegramBot channel_post media", () => {
   it("drops the media group when a non-recoverable media error occurs", async () => {
     replySpy.mockReset();
     setOpenChannelPostConfig();
+    saveRemoteMedia.mockResolvedValueOnce({
+      path: "/tmp/fatal-album-first.jpg",
+      contentType: "image/jpeg",
+    });
 
     const runtimeError = vi.fn();
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
@@ -1033,6 +1035,10 @@ describe("createTelegramBot channel_post media", () => {
           expect.stringContaining("media group handler failed"),
         ),
       );
+      expect(runtimeError).toHaveBeenCalledWith(
+        expect.stringContaining("Telegram getFile returned no file_path"),
+      );
+      expect(saveRemoteMedia).toHaveBeenCalledTimes(1);
       expect(replySpy).not.toHaveBeenCalled();
     } finally {
       setTimeoutSpy.mockRestore();

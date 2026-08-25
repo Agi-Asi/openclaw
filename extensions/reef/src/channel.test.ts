@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { OpenKeyedStoreOptions } from "openclaw/plugin-sdk/plugin-state-runtime";
@@ -13,8 +15,11 @@ import { generateIdentity } from "../protocol/index.js";
 import { runReefChannelLifecycle } from "./channel-lifecycle.js";
 import { reefPlugin } from "./channel.js";
 import { resolveReefConfig } from "./config-schema.js";
+import { reefKeys } from "./flow.test-helpers.js";
+import { ReefFriendManager } from "./friends.js";
 import { resolveReefInboundDispatchContent } from "./inbound.js";
 import { setReefRuntime } from "./runtime.js";
+import { ReefTransportClient } from "./transport.js";
 import { openReefTrustStore } from "./trust-store.js";
 
 function deferred() {
@@ -44,6 +49,7 @@ describe("Reef inbound dispatch content", () => {
         ReefProvenance: "Untrusted third-party data from @clanky's agent.",
         ReefEnvelopeId: "message-1",
         SenderIsBot: true,
+        MessageThreadId: "message-1",
       },
     });
   });
@@ -65,6 +71,70 @@ describe("Reef inbound dispatch content", () => {
       ReplyToIdFull: "message-1",
       MessageThreadId: "thread-1",
     });
+  });
+
+  it("does not invent a thread for an explicitly correlated unthreaded reply", () => {
+    const content = resolveReefInboundDispatchContent({
+      id: "message-2",
+      peer: "clanky",
+      text: "correlated reply",
+      provenance: "Untrusted third-party data from @clanky's agent.",
+      autonomy: "bounded",
+      replyTo: "message-1",
+    });
+
+    expect(content.extraContext).toMatchObject({
+      ReplyToId: "message-1",
+      ReplyToIdFull: "message-1",
+    });
+    expect(content.extraContext).not.toHaveProperty("MessageThreadId");
+  });
+});
+
+describe("Reef message-tool threading", () => {
+  it("keeps contextual replies on the inbound message thread", () => {
+    const threading = reefPlugin.threading;
+    if (!threading?.buildToolContext || !threading.resolveAutoThreadId) {
+      throw new Error("expected Reef threading adapter");
+    }
+    const toolContext = threading.buildToolContext({
+      cfg: {},
+      accountId: "default",
+      context: {
+        Channel: "reef",
+        To: "reef:remote-agent",
+        ChatType: "direct",
+        CurrentMessageId: "message-1",
+        ReplyToMode: "all",
+        MessageThreadId: "message-1",
+      },
+    });
+
+    expect(toolContext).toMatchObject({
+      currentChannelId: "reef:remote-agent",
+      currentMessagingTarget: "reef:remote-agent",
+      currentMessageId: "message-1",
+      currentThreadTs: "message-1",
+      replyToMode: "all",
+    });
+    expect(
+      threading.resolveAutoThreadId({
+        cfg: {},
+        accountId: "default",
+        to: "@remote-agent",
+        toolContext,
+        replyToId: "message-1",
+      }),
+    ).toBe("message-1");
+    expect(
+      threading.resolveAutoThreadId({
+        cfg: {},
+        accountId: "default",
+        to: "reef:another-agent",
+        toolContext,
+        replyToId: "message-1",
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -283,6 +353,69 @@ describe("Reef channel lifecycle", () => {
     await expect(lifecycle).resolves.toBeUndefined();
     expect(onReady).not.toHaveBeenCalled();
     expect(inbox.seen).toHaveLength(0);
+  });
+
+  it.each([
+    { phase: "friend reconciliation", completedRequests: 0 },
+    { phase: "pairing-candidate surfacing", completedRequests: 1 },
+  ])("promptly aborts a stalled $phase request", async ({ completedRequests }) => {
+    const requestStarted = deferred();
+    let requests = 0;
+    const server = http.createServer((_request, response) => {
+      if (requests++ < completedRequests) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ friendships: [] }));
+        return;
+      }
+      requestStarted.resolve();
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+
+    const parent = new AbortController();
+    const inbox = hangingInbox();
+    const relayUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const transport = new ReefTransportClient(
+      relayUrl,
+      "alice",
+      reefKeys(),
+      fetch,
+      () => 1_752_300_000,
+      1_000,
+    );
+    const friends = new ReefFriendManager(
+      transport,
+      {} as ConstructorParameters<typeof ReefFriendManager>[1],
+      { list: async () => [], remove: async () => false },
+    );
+    const lifecycle = runReefChannelLifecycle({
+      parentSignal: parent.signal,
+      startInbox: inbox.startInbox,
+      reconcile: async (signal) => {
+        await friends.reconcile(signal);
+        await friends.surfacePairingCandidates(async () => {}, signal);
+      },
+      onReconcileError: () => {},
+    });
+
+    try {
+      await requestStarted.promise;
+      const abortedAt = performance.now();
+      parent.abort();
+      await lifecycle;
+
+      expect(performance.now() - abortedAt).toBeLessThan(500);
+      expect(inbox.seen).toHaveLength(0);
+    } finally {
+      parent.abort();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+      await lifecycle;
+    }
   });
 
   it("does not start the inbox when the parent aborts during activation", async () => {

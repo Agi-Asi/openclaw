@@ -21,7 +21,10 @@ import {
   type AuthProfileStore,
   type OAuthCredential,
 } from "openclaw/plugin-sdk/agent-runtime";
-import { hasUsableOAuthCredential } from "openclaw/plugin-sdk/provider-auth";
+import {
+  hasUsableOAuthCredential,
+  resolveOpenAICodexAuthIdentity,
+} from "openclaw/plugin-sdk/provider-auth";
 import { readSecretFile } from "openclaw/plugin-sdk/secret-file";
 import {
   resolveCodexAppServerHomeDir,
@@ -306,7 +309,8 @@ export async function resolveCodexAppServerPreparedAuthProfileSnapshot(params: {
           (credential.type === "token" || !stableChatgptAccountId)
         ? `${accountId}:${fingerprintTokenAuthProfileCacheKey(loginParams.accessToken)}`
         : accountId;
-  const chatgptAccountId = resolveExplicitChatgptAccountId(credential);
+  const chatgptAccountId =
+    loginParams.type === "chatgptAuthTokens" ? loginParams.chatgptAccountId : undefined;
   return {
     loginParams,
     secretFreeCacheKey,
@@ -339,7 +343,10 @@ export async function resolveCodexAppServerPreparedAuthHandoff(params: {
       'Codex remote-exec cloud placement requires prepared OpenAI auth. Configure an OpenAI API-key, OAuth, or token profile and use appServer.homeScope="agent"; ambient credentials and native Codex auth are not allowed.',
     );
   }
-  if (params.authRequirement === "api-key" && !usesNativeHome) {
+  if (usesNativeHome) {
+    return { nativeAuthProfile: true };
+  }
+  if (params.authRequirement === "api-key") {
     const apiKey = params.resolvedApiKey?.trim();
     if (!apiKey) {
       throw new Error("Prepared Codex API-key route is missing its resolved API key.");
@@ -357,10 +364,7 @@ export async function resolveCodexAppServerPreparedAuthHandoff(params: {
     agentDir: params.agentDir,
     config: params.config,
   });
-  if (
-    usesNativeHome ||
-    (params.authRequirement !== "subscription" && !params.requirePreparedAuth)
-  ) {
+  if (params.authRequirement !== "subscription" && !params.requirePreparedAuth) {
     return { authProfileId, nativeAuthProfile };
   }
   if (!authProfileId || (params.authRequirement === "subscription" && !nativeAuthProfile)) {
@@ -527,10 +531,13 @@ async function withCodexHomeEnvironment(
     codexHome,
     config: computerUseConfig,
   });
-  if (computerUseConfig.enabled && computerUseConfig.autoInstall) {
+  const ownsIsolatedCodexHome =
+    startOptions.homeScope !== "user" && !startOptions.env?.[CODEX_HOME_ENV_VAR]?.trim();
+  if (computerUseConfig.enabled && computerUseConfig.autoInstall && ownsIsolatedCodexHome) {
     try {
       await ensureCodexComputerUseServiceApp({
         codexHome,
+        ownershipRoot: agentDir,
         appServerCommand: startOptions.command,
       });
     } catch (error) {
@@ -717,14 +724,37 @@ export async function refreshCodexAppServerAuthTokens(params: {
   agentDir: string;
   authProfileId?: string;
   authProfileStore?: AuthProfileStore;
+  previousAccountId?: string | null;
   config?: AuthProfileOrderConfig;
 }): Promise<CodexChatgptAuthTokensRefreshResponse> {
+  const previousAccountId = params.previousAccountId?.trim();
+  if (previousAccountId) {
+    const store = resolveCodexAppServerAuthProfileStore(params);
+    const profileId = resolveCodexAppServerAuthProfileId({
+      authProfileId: params.authProfileId,
+      store,
+      config: params.config,
+    });
+    const credential = profileId ? store.profiles[profileId] : undefined;
+    const selectedAccountId = credential
+      ? (resolveExplicitChatgptAccountId(credential) ??
+        (credential.type === "oauth"
+          ? resolveOpenAICodexAuthIdentity({ access: credential.access }).accountId
+          : undefined))
+      : undefined;
+    if (selectedAccountId && selectedAccountId !== previousAccountId) {
+      throw new Error("ChatGPT workspace changed before Codex token refresh.");
+    }
+  }
   const loginParams = await resolveCodexAppServerAuthProfileLoginParamsInternal({
     ...params,
     forceOAuthRefresh: true,
   });
   if (!loginParams || loginParams.type !== "chatgptAuthTokens") {
     throw new Error("Codex app-server ChatGPT token refresh requires an OAuth auth profile.");
+  }
+  if (previousAccountId && loginParams.chatgptAccountId !== previousAccountId) {
+    throw new Error("ChatGPT workspace changed during Codex token refresh.");
   }
   return {
     accessToken: loginParams.accessToken,
@@ -1142,10 +1172,23 @@ function buildChatgptAuthTokensParams(
   credential: AuthProfileCredential,
   accessToken: string,
 ): CodexLoginAccountParams {
+  const storedAccountId = resolveExplicitChatgptAccountId(credential);
+  const tokenAccountId = resolveOpenAICodexAuthIdentity({ access: accessToken }).accountId;
+  if (storedAccountId && tokenAccountId && storedAccountId !== tokenAccountId) {
+    throw new CodexAppServerAuthProfileUnavailableError(
+      `Codex app-server auth profile "${profileId}" has a different ChatGPT account ID than its access token. Sign in again before retrying.`,
+    );
+  }
+  const chatgptAccountId = storedAccountId ?? tokenAccountId;
+  if (!chatgptAccountId) {
+    throw new CodexAppServerAuthProfileUnavailableError(
+      `Codex app-server auth profile "${profileId}" is missing its ChatGPT account ID. Sign in again before retrying.`,
+    );
+  }
   return {
     type: "chatgptAuthTokens",
     accessToken,
-    chatgptAccountId: resolveChatgptAccountId(profileId, credential),
+    chatgptAccountId,
     chatgptPlanType: resolveChatgptPlanType(credential),
   };
 }

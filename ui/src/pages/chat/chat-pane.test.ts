@@ -3,7 +3,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import { createChatAttachmentHandoff } from "../../app/chat-attachment-handoff.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { createInitialUserMessageHandoff } from "../../app/initial-user-message-handoff.ts";
 import { t } from "../../i18n/index.ts";
@@ -12,11 +11,15 @@ import {
   installDialogPolyfill,
   waitForConfirmDialogActions,
 } from "../../test-helpers/modal-dialog.ts";
+import { loadChatHistory } from "./chat-history.ts";
+import { subscribeChatPaneSnapshotInvalidation } from "./chat-pane-startup-subscriptions.ts";
 import {
   createGatewayBrowserClientFixture,
+  createInitializationContext,
   createSessionCapabilityFixture,
   createSessionContext,
   createTestChatPane,
+  nativeHistoryMessage,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
@@ -40,57 +43,6 @@ function dispatchSidebarShortcut(pane: TestChatPane, shiftKey = true) {
   });
   pane.handleDocumentKeydown(event);
   return event;
-}
-
-function createInitializationContext(): ApplicationContext {
-  return {
-    basePath: "",
-    gateway: {
-      snapshot: {
-        client: null,
-        phase: "stopped",
-        offlineStable: false,
-        hello: null,
-        canvasPluginSurfaceUrl: null,
-        assistantAgentId: null,
-        sessionKey: "",
-        lastError: null,
-        lastErrorCode: null,
-      },
-      subscribe: () => () => {},
-      subscribeEvents: () => () => {},
-    },
-    config: {
-      current: {
-        assistantIdentity: {
-          agentId: null,
-          name: "Assistant",
-          avatar: null,
-          avatarSource: null,
-          avatarStatus: null,
-          avatarReason: null,
-        },
-        serverVersion: null,
-        localMediaPreviewRoots: [],
-        embedSandboxMode: "strict",
-        allowExternalEmbedUrls: false,
-        terminalEnabled: false,
-      },
-    },
-    agentSelection: { state: { selectedId: "main" } },
-    agents: { state: { agentsList: null } },
-    initialUserMessage: createInitialUserMessageHandoff(),
-    chatAttachmentHandoff: createChatAttachmentHandoff(),
-    sessions: {},
-  } as unknown as ApplicationContext;
-}
-
-function nativeHistoryMessage(seq: number, text = `message ${seq}`) {
-  return {
-    role: seq % 2 === 0 ? "assistant" : "user",
-    content: [{ type: "text", text }],
-    __openclaw: { seq },
-  };
 }
 
 describe("chat pane header state", () => {
@@ -549,6 +501,38 @@ describe("chat pane initialization", () => {
     }
   });
 
+  it("clears a mounted transcript and fences delayed history after cross-tab invalidation", async () => {
+    const response = createDeferred<Record<string, unknown>>();
+    const request = vi.fn(() => response.promise);
+    const client = createGatewayBrowserClientFixture({ request });
+    const sessions = createSessionCapabilityFixture();
+    const { state } = createTestChatPane({ client, sessions });
+    state.chatMessagesBySession = new Map();
+    state.chatMessages = [nativeHistoryMessage(1, "prior account transcript")];
+    const stop = subscribeChatPaneSnapshotInvalidation(() => state);
+    const loading = loadChatHistory(state);
+
+    try {
+      await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "openclaw.control.chatSnapshots.invalidate.v1",
+          newValue: "other-tab",
+        }),
+      );
+      expect(state.chatMessages).toEqual([]);
+
+      response.resolve({
+        messages: [nativeHistoryMessage(2, "stale delayed transcript")],
+        sessionId: "stale-session",
+      });
+      await loading;
+      expect(state.chatMessages).toEqual([]);
+    } finally {
+      stop();
+    }
+  });
+
   it("starts the connected client when a route alias is already selected canonically", () => {
     const request = vi.fn(() => new Promise<never>(() => {}));
     const client = createGatewayBrowserClientFixture({
@@ -686,7 +670,14 @@ describe("chat pane keyboard shortcuts", () => {
     ]);
     expect(state.sidebarContent).toBe(canvasContent);
 
-    const collapseEvent = dispatchSidebarShortcut(pane);
+    const collapseEvent = new KeyboardEvent("keydown", {
+      cancelable: true,
+      key: "b",
+      code: "KeyB",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    pane.handleDocumentKeydown(collapseEvent);
 
     expect(collapseEvent.defaultPrevented).toBe(true);
     expect(hasWorkspace()).toBe(false);
