@@ -49,11 +49,23 @@ function normalizeStreamingTextReference(
   return sanitized.trim() ? { text: sanitized, skip: false } : { skip: true };
 }
 
-function createPresentation(options: { isHeartbeat?: boolean; silentExpected?: boolean } = {}) {
+function createPresentation(
+  options: {
+    isHeartbeat?: boolean;
+    silentExpected?: boolean;
+    onBlockReply?: (payload: ReplyPayload) => Promise<void>;
+    blockReplyPipeline?: AgentTurnParams["blockReplyPipeline"];
+  } = {},
+) {
   const turn = {
     followupRun: { run: { silentExpected: options.silentExpected === true } },
     isHeartbeat: options.isHeartbeat === true,
-    opts: undefined,
+    opts: options.onBlockReply ? { onBlockReply: options.onBlockReply } : undefined,
+    sessionCtx: {},
+    applyReplyToMode: (payload: ReplyPayload) => payload,
+    typingSignals: { signalTextDelta: async () => {} },
+    blockStreamingEnabled: true,
+    blockReplyPipeline: options.blockReplyPipeline ?? null,
   } as unknown as AgentTurnParams;
   return createAgentTurnPresentation({
     turn,
@@ -121,5 +133,85 @@ describe("agent runner streaming presentation", () => {
       text: "HEARTBEAT_OK details",
       skip: false,
     });
+  });
+
+  it.each<{
+    name: string;
+    payload: ReplyPayload;
+    delivered: boolean;
+  }>([
+    { name: "ordinary text", payload: { text: "private maintenance" }, delivered: false },
+    {
+      name: "orphaned tool image",
+      payload: { mediaUrls: ["file:///tmp/private.png"] },
+      delivered: false,
+    },
+    {
+      name: "portable presentation",
+      payload: {
+        presentation: {
+          blocks: [{ type: "buttons", buttons: [{ label: "Open", value: "open" }] }],
+        },
+      },
+      delivered: false,
+    },
+    {
+      name: "legacy interactive controls",
+      payload: {
+        interactive: {
+          blocks: [{ type: "buttons", buttons: [{ label: "Retry", value: "retry" }] }],
+        },
+      },
+      delivered: false,
+    },
+    {
+      name: "channel-specific action",
+      payload: { channelData: { telegram: { buttons: [{ text: "Open" }] } } },
+      delivered: false,
+    },
+    {
+      name: "portable location",
+      payload: { location: { latitude: 1, longitude: 2 } },
+      delivered: false,
+    },
+    {
+      name: "voice media exception",
+      payload: { mediaUrls: ["file:///tmp/voice.opus"], audioAsVoice: true },
+      delivered: true,
+    },
+    {
+      name: "empty voice marker",
+      payload: { audioAsVoice: true },
+      delivered: false,
+    },
+    {
+      name: "error exception",
+      payload: { text: "maintenance failed", isError: true },
+      delivered: true,
+    },
+  ])("applies the final silent-turn policy to streamed $name", async (testCase) => {
+    for (const usePipeline of [false, true]) {
+      const delivered: ReplyPayload[] = [];
+      const presentation = createPresentation({
+        silentExpected: true,
+        onBlockReply: async (payload) => {
+          delivered.push(payload);
+        },
+        blockReplyPipeline: usePipeline
+          ? ({ enqueue: (payload: ReplyPayload) => delivered.push(payload) } as NonNullable<
+              AgentTurnParams["blockReplyPipeline"]
+            >)
+          : null,
+      });
+
+      await presentation.blockReplyHandler?.(testCase.payload);
+
+      expect(delivered, usePipeline ? "pipeline" : "direct").toHaveLength(
+        testCase.delivered ? 1 : 0,
+      );
+      if (testCase.delivered) {
+        expect(delivered[0]).toMatchObject(testCase.payload);
+      }
+    }
   });
 });
