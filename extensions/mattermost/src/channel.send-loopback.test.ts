@@ -174,7 +174,7 @@ describe("Mattermost send action loopback", () => {
         for (const attachment of [
           { buffer: Buffer.from("binary attachment"), filename: "proof.bin" },
           {
-            buffer: JSON.parse(JSON.stringify(Buffer.from("serialized attachment"))) as unknown,
+            buffer: { type: "Buffer", data: [...Buffer.from("serialized attachment")] },
             filename: "serialized.bin",
           },
         ]) {
