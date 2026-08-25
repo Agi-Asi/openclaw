@@ -1084,16 +1084,18 @@ function detectTokenEfficiencyRegression(): boolean {
 }
 
 function detectJsonlReplayDrift(): boolean {
-  return !evaluateJsonlReplaySummary({
+  const evaluation = evaluateJsonlReplaySummary({
     transcripts: [
       {
         transcriptPath: "synthetic.jsonl",
         userTurnCount: 2,
+        cells: { openclaw: [{}, {}], codex: [{}, {}] },
         drift: ["none", "tool-result-shape"],
         firstDriftAtTurn: 2,
       },
     ],
-  }).passed;
+  });
+  return !evaluation.passed && evaluation.status !== "unknown";
 }
 
 async function buildQaConfidenceSelfTestSummary(
