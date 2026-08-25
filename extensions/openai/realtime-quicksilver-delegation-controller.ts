@@ -198,11 +198,11 @@ export class OpenAIQuicksilverDelegationController {
     if (this.consultController) {
       this.pendingDelegation = delegation;
       const runner = this.options.runAgentConsult;
-      this.revokeRequesterFinal();
       if (runner.steer) {
         this.schedulePendingSteering(this.consultController, runner.steer);
       } else {
         // Preserve the generic runner fallback; the Gateway runner always steers.
+        this.revokeRequesterFinal();
         this.consultController.abort(new Error("GPT-Live delegation superseded"));
       }
       return;
@@ -255,6 +255,7 @@ export class OpenAIQuicksilverDelegationController {
         try {
           await steer({ prompt: delegation.prompt, signal: controller.signal });
         } catch (error) {
+          this.revokeRequesterFinal();
           if (this.stopped || controller.signal.aborted || this.options.isCanceledError?.(error)) {
             return;
           }
@@ -267,6 +268,14 @@ export class OpenAIQuicksilverDelegationController {
           return;
         }
         this.activeDelegationId = delegation.id;
+        // Steering preserves the active host run; only its provider presentation target moves.
+        const requesterFinalOwner = this.requesterFinalOwner;
+        if (requesterFinalOwner) {
+          this.requesterFinalOwner = {
+            delegationId: delegation.id,
+            generation: requesterFinalOwner.generation,
+          };
+        }
       }
     })();
     const completion = steering.finally(() => {
@@ -302,7 +311,7 @@ export class OpenAIQuicksilverDelegationController {
         prompt: delegation.prompt,
         signal,
         requesterFinal: {
-          append: (finalText) => this.appendRequesterFinal(delegation.id, generation, finalText),
+          append: (finalText) => this.appendRequesterFinal(generation, finalText),
         },
       });
       text = boundOpenAIQuicksilverDelegationResult(result.text);
@@ -333,18 +342,17 @@ export class OpenAIQuicksilverDelegationController {
     }
   }
 
-  private appendRequesterFinal(delegationId: string, generation: number, text: string): boolean {
+  private appendRequesterFinal(generation: number, text: string): boolean {
     const owner = this.requesterFinalOwner;
-    if (
-      this.stopped ||
-      !owner ||
-      owner.delegationId !== delegationId ||
-      owner.generation !== generation
-    ) {
+    if (this.stopped || !owner || owner.generation !== generation) {
       return false;
     }
     this.requesterFinalOwner = undefined;
-    return this.sendAppend(delegationId, boundOpenAIQuicksilverDelegationResult(text), "speakable");
+    return this.sendAppend(
+      owner.delegationId,
+      boundOpenAIQuicksilverDelegationResult(text),
+      "speakable",
+    );
   }
 
   private revokeRequesterFinal(): void {
