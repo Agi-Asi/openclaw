@@ -38,7 +38,7 @@ export function renderSessionRowBadges(params: {
   return html`<span class="session-row-badges">
     ${worktreeId
       ? html`<span
-          class="session-row-badge"
+          class="session-row-badge session-row-badge--worktree"
           role="img"
           aria-label=${t("sessionsView.worktreeSession")}
           title=${t("sessionsView.worktreeSession")}

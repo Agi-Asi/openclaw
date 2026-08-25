@@ -67,6 +67,7 @@ describe("session row placement badges", () => {
     );
 
     expect(container.querySelectorAll(".session-row-badge")).toHaveLength(2);
+    expect(container.querySelector(".session-row-badge--worktree")).not.toBeNull();
     expect(container.querySelector(".session-row-badge--cloud")).toBeNull();
   });
 

@@ -45,7 +45,7 @@ function sessionRow(
     endedAt?: number;
     childSessions?: string[];
     execNode?: string;
-    worktree?: { branch?: string; repoRoot?: string };
+    worktree?: { id?: string; branch?: string; repoRoot?: string };
   } = {},
 ) {
   return {
@@ -1432,15 +1432,31 @@ describeControlUiE2e("Control UI session management mocked Gateway E2E", () => {
               }
             : {},
         ),
-        sessionRow("agent:main:node-mcp-debug-4de003fbff138fcb9239c9378b2e", "", ts - 180_000),
+        sessionRow(
+          "agent:main:node-mcp-debug-4de003fbff138fcb9239c9378b2e",
+          "Add disk space monitoring and cleanup",
+          ts - 180_000,
+          {
+            execNode: nodeHash,
+            worktree: {
+              id: "wt-proof",
+              branch: "openclaw/disk-monitoring",
+              repoRoot: "/Users/dev/Projects/clawdbot",
+            },
+          },
+        ),
       ];
     };
     const context = await browser.newContext({
       locale: "en-US",
       serviceWorkers: "block",
       viewport: { height: 900, width: 1280 },
+      recordVideo: captureUiProofEnabled
+        ? { dir: uiProofArtifactDir, size: { height: 900, width: 1280 } }
+        : undefined,
     });
     const page = await context.newPage();
+    const proofVideo = page.video();
     const gateway = await installMockGateway(page, {
       methodResponses: {
         "sessions.list": sessionsListResponse(rows(false)),
@@ -1449,7 +1465,7 @@ describeControlUiE2e("Control UI session management mocked Gateway E2E", () => {
     });
 
     try {
-      await page.goto(`${server.baseUrl}chat`);
+      await page.goto(`${server.baseUrl}chat?mockBoard=1`);
       await expect
         .poll(() => page.locator(".sidebar-recent-session").count(), { timeout: 15_000 })
         .toBeGreaterThan(0);
@@ -1479,7 +1495,7 @@ describeControlUiE2e("Control UI session management mocked Gateway E2E", () => {
       const names = await trimmedTextContents(page.locator(".sidebar-recent-session__name"));
       expect(names).toContain("New thread");
       expect(names).toContain("clawdbot ⎇ wt-1 · …0357");
-      expect(names).toContain("node-mcp-debug-…8b2e");
+      expect(names).toContain("Add disk space monitoring and cleanup");
       const subtitles = await trimmedTextContents(
         page.locator(".sidebar-recent-session__subtitle"),
       );
@@ -1488,6 +1504,52 @@ describeControlUiE2e("Control UI session management mocked Gateway E2E", () => {
         expect(text).not.toContain(nodeHash);
         expect(text).not.toContain("agent:main:");
       }
+
+      const proofRow = page.locator(
+        '[data-session-key="agent:main:node-mcp-debug-4de003fbff138fcb9239c9378b2e"]',
+      );
+      const worktreeBadge = proofRow.locator(".session-row-badge--worktree");
+      const boardBadge = proofRow.locator('.sidebar-board-glyph[aria-label="Dashboard available"]');
+      await expect
+        .poll(() => proofRow.locator(".sidebar-recent-session__subtitle").textContent())
+        .toContain("clawdbot ⎇ disk-monitoring · …0357");
+      await captureUiProof(page, "sidebar-session-single-line-badges.png");
+      expect(await worktreeBadge.count()).toBe(1);
+      expect(await boardBadge.count()).toBe(1);
+      expect(await worktreeBadge.locator("svg circle").count()).toBeGreaterThan(0);
+      expect(await boardBadge.locator("svg rect").count()).toBe(4);
+      const badgeSizes = await Promise.all(
+        [worktreeBadge, boardBadge].map((badge) =>
+          badge.locator("svg").evaluate((icon) => {
+            const rect = icon.getBoundingClientRect();
+            return { height: rect.height, width: rect.width };
+          }),
+        ),
+      );
+      expect(badgeSizes).toEqual([
+        { height: 12, width: 12 },
+        { height: 12, width: 12 },
+      ]);
+      const textLayout = await proofRow
+        .locator(".sidebar-recent-session__text")
+        .evaluate((text) => {
+          const name = text.querySelector(".sidebar-recent-session__name")?.getBoundingClientRect();
+          const subtitle = text
+            .querySelector(".sidebar-recent-session__subtitle")
+            ?.getBoundingClientRect();
+          const rect = text.getBoundingClientRect();
+          return {
+            height: rect.height,
+            nameCenter: name ? name.top + name.height / 2 : null,
+            subtitleCenter: subtitle ? subtitle.top + subtitle.height / 2 : null,
+            whiteSpace: getComputedStyle(text).whiteSpace,
+          };
+        });
+      expect(textLayout.whiteSpace).toBe("nowrap");
+      expect(textLayout.height).toBeLessThanOrEqual(22);
+      expect(textLayout.nameCenter).not.toBeNull();
+      expect(textLayout.subtitleCenter).not.toBeNull();
+      expect(Math.abs(textLayout.nameCenter! - textLayout.subtitleCenter!)).toBeLessThanOrEqual(2);
 
       // Sections must lay out below the rows above them, not paint over them.
       const overlaps = await page.evaluate(() => {
@@ -1513,6 +1575,9 @@ describeControlUiE2e("Control UI session management mocked Gateway E2E", () => {
       expect(overlaps).toBe(0);
     } finally {
       await context.close();
+      if (proofVideo) {
+        await proofVideo.saveAs(path.join(uiProofArtifactDir, "sidebar-session-single-line.webm"));
+      }
     }
   });
 

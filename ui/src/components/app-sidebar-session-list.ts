@@ -158,7 +158,7 @@ export abstract class AppSidebarSessionListElement extends AppSidebarSessionNarr
                 role="img"
                 aria-label=${t("sessionsView.dashboardAvailable")}
                 title=${t("sessionsView.dashboardAvailable")}
-                >${icons.barChart}</span
+                >${icons.layoutGrid}</span
               >`
             : nothing}
           <openclaw-viewer-facepile

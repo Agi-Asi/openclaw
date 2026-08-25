@@ -1877,8 +1877,8 @@ html.openclaw-native-macos
 }
 
 .sidebar-board-glyph svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7px;
@@ -3724,20 +3724,23 @@ wa-dropdown.sidebar-session-sort-menu::part(menu) {
   background: var(--bg);
 }
 
-/* Sidebar sessions redesign: work-session subtitles, agent sections, draft row. */
+/* Sidebar sessions redesign: inline work/status detail, agent sections, draft row. */
 .sidebar-recent-session__text {
-  display: flex;
+  display: block;
   flex: 1 1 auto;
-  flex-direction: column;
   min-width: 0;
-}
-
-.sidebar-recent-session__subtitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-recent-session__subtitle {
   font-size: 11px;
   color: var(--muted);
+}
+
+.sidebar-recent-session__subtitle::before {
+  content: " · ";
 }
 
 .sidebar-session-attention__icon {
