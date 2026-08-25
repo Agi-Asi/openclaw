@@ -5,6 +5,7 @@ export TERM=xterm-256color
 export NO_COLOR=1
 
 source scripts/lib/openclaw-e2e-instance.sh
+source scripts/e2e/lib/onboard/interactive-driver.sh
 
 openclaw_e2e_eval_test_state_from_b64 "${OPENCLAW_TEST_STATE_SCRIPT_B64:?missing OPENCLAW_TEST_STATE_SCRIPT_B64}"
 openclaw_e2e_install_trash_shim
@@ -24,6 +25,7 @@ LOG_DIR="$scenario_tmp/logs"
 mkdir -p "$LOG_DIR"
 INSTALL_LOG="$LOG_DIR/install.log"
 ONBOARD_LOG="$LOG_DIR/onboard.log"
+WIZARD_LOG_PATH="$ONBOARD_LOG"
 OPENAI_LOG="$LOG_DIR/openai.log"
 AGENT_LOG="$LOG_DIR/agent.log"
 MOCK_REQUEST_LOG="$scenario_tmp/openai-requests.jsonl"
@@ -55,36 +57,6 @@ dump_debug_logs() {
 }
 trap 'status=$?; dump_debug_logs "$status"; exit "$status"' ERR
 
-send() {
-  local payload="$1"
-  local delay="${2:-0.4}"
-  sleep "$delay"
-  printf "%b" "$payload" >&3 2>/dev/null || true
-}
-
-wait_for_log() {
-  local needle="$1"
-  local timeout_s="${2:-60}"
-  local start_s
-  start_s="$(date +%s)"
-  while true; do
-    if [ -f "$ONBOARD_LOG" ]; then
-      if grep -a -F -q "$needle" "$ONBOARD_LOG"; then
-        return 0
-      fi
-      if node scripts/e2e/lib/onboard/log-contains.mjs "$ONBOARD_LOG" "$needle"; then
-        return 0
-      fi
-    fi
-    if [ $(($(date +%s) - start_s)) -ge "$timeout_s" ]; then
-      echo "Timeout waiting for log: $needle" >&2
-      tail -n 120 "$ONBOARD_LOG" 2>/dev/null || true
-      return 1
-    fi
-    sleep 0.2
-  done
-}
-
 openclaw_e2e_install_package "$INSTALL_LOG"
 echo "Installed the OpenClaw package."
 command -v openclaw >/dev/null
@@ -105,7 +77,7 @@ exec 3>"$input_fifo"
 
 wait_for_log "Continue?" 60
 send $'y\r' 0.4
-wait_for_log "What should we call your first agent?" 60
+decline_telemetry_and_wait_for_agent_name 60
 send $'\r' 0.4
 wait_for_log "to search" 60
 send $'ollama\r' 0.4

@@ -3,6 +3,7 @@ set -euo pipefail
 trap "" PIPE
 export TERM=xterm-256color
 source scripts/lib/openclaw-e2e-instance.sh
+source scripts/e2e/lib/onboard/interactive-driver.sh
 OPENCLAW_ONBOARD_SCENARIO_SOURCE_ONLY="${OPENCLAW_ONBOARD_SCENARIO_SOURCE_ONLY:-0}"
 if [ "$OPENCLAW_ONBOARD_SCENARIO_SOURCE_ONLY" != "1" ]; then
   openclaw_e2e_eval_test_state_from_b64 "${OPENCLAW_TEST_STATE_FUNCTION_B64:?missing OPENCLAW_TEST_STATE_FUNCTION_B64}"
@@ -35,49 +36,6 @@ fi
 if [ "$OPENCLAW_ONBOARD_SCENARIO_SOURCE_ONLY" != "1" ]; then
   openclaw_e2e_install_trash_shim
 fi
-
-send() {
-  local payload="$1"
-  local delay="${2:-0.4}"
-  # Let prompts render before sending keystrokes.
-  sleep "$delay"
-  printf "%b" "$payload" >&3 2>/dev/null || true
-}
-
-log_contains() {
-  local needle="$1"
-  if [ -z "${WIZARD_LOG_PATH:-}" ] || [ ! -f "$WIZARD_LOG_PATH" ]; then
-    return 1
-  fi
-  if grep -a -F -q "$needle" "$WIZARD_LOG_PATH"; then
-    return 0
-  fi
-  node scripts/e2e/lib/onboard/log-contains.mjs "$WIZARD_LOG_PATH" "$needle"
-}
-
-wait_for_log() {
-  local needle="$1"
-  local timeout_s="${2:-45}"
-  local quiet_on_timeout="${3:-false}"
-  local start_s
-  start_s="$(date +%s)"
-  while true; do
-    if log_contains "$needle"; then
-      return 0
-    fi
-    if [ $(($(date +%s) - start_s)) -ge "$timeout_s" ]; then
-      if [ "$quiet_on_timeout" = "true" ]; then
-        return 1
-      fi
-      echo "Timeout waiting for log: $needle"
-      if [ -n "${WIZARD_LOG_PATH:-}" ] && [ -f "$WIZARD_LOG_PATH" ]; then
-        tail -n 140 "$WIZARD_LOG_PATH" || true
-      fi
-      return 1
-    fi
-    sleep 0.2
-  done
-}
 
 wait_for_skills_prompt_or_ready() {
   local timeout_s="${1:-45}"
@@ -243,7 +201,7 @@ send_skills_flow() {
 }
 
 send_guided_skip_ui_flow() {
-  wait_for_log "What should we call your first agent?" 120 || return $?
+  decline_telemetry_and_wait_for_agent_name 120 || return $?
   send $'\r' 0.8
   wait_for_log "How should I set things up?" 120 || return $?
   send $'\r' 0.8

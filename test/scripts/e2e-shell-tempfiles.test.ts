@@ -130,6 +130,44 @@ test ! -s ${JSON.stringify(sentPath)}
     expect(`${result.stdout}\n${result.stderr}`).not.toContain("Timeout waiting");
   });
 
+  it("declines telemetry before waiting for the first agent name", async () => {
+    const tempRoot = tempDirs.make("openclaw-onboard-telemetry-prompt-");
+    const fixturePath = path.join(tempRoot, "telemetry-prompt.sh");
+    const sentPath = path.join(tempRoot, "sent.txt");
+    const wizardLogPath = path.join(tempRoot, "onboard.log");
+    await writeFile(
+      fixturePath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+export OPENCLAW_ONBOARD_SCENARIO_SOURCE_ONLY=1
+export OPENCLAW_ONBOARD_E2E_TMPDIR=${JSON.stringify(tempRoot)}
+OPENCLAW_ENTRY=node
+source scripts/e2e/lib/onboard/scenario.sh
+
+sleep() { :; }
+WIZARD_LOG_PATH=${JSON.stringify(wizardLogPath)}
+printf '%s\\n' \\
+  'No thanks' \\
+  'What should we call your first agent?' \\
+  'How should I set things up?' \\
+  'Use Current model?' >"$WIZARD_LOG_PATH"
+exec 3>${JSON.stringify(sentPath)}
+send_guided_skip_ui_flow
+exec 3>&-
+cleanup_onboard_artifacts
+`,
+    );
+
+    const result = spawnSync("bash", [fixturePath], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    await expect(readFile(sentPath, "utf8")).resolves.toBe("\r\r\r\r");
+  });
+
   it("checks local onboarding logs for systemd noise", async () => {
     const contents = await readFile("scripts/e2e/lib/onboard/scenario.sh", "utf8");
 
