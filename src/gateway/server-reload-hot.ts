@@ -175,12 +175,14 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
       }
       const commit = async () => {
         if (plan.restartHeartbeat) {
+          // Runtime publication promises that the durable monitor row reflects this config.
+          // A retrying or superseded pass leaves the previous generation authoritative.
+          const heartbeatReconciliation =
+            await nextState.cronState.reconcileHeartbeatJobs(nextConfig);
+          if (heartbeatReconciliation !== "converged") {
+            throw new GatewayHotReloadRecoveryError("heartbeat monitor");
+          }
           nextState.heartbeatRunner.updateConfig(nextConfig);
-          // Heartbeat cadence lives in system-owned cron monitor jobs;
-          // reconverge them against the new config in the background.
-          void nextState.cronState.reconcileHeartbeatJobs(nextConfig).catch((error: unknown) => {
-            params.logReload.warn(`heartbeat monitor reconvergence failed: ${String(error)}`);
-          });
         }
         // Config, plugin hooks, and prepared stores publish as one generation. Synchronously
         // retire the prior stores at the commit edge so no request can mix generations.

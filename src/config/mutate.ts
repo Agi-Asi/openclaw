@@ -62,6 +62,10 @@ import {
   type ConfigWriteFollowUp,
   type RuntimeConfigWritePreparedCandidate,
 } from "./runtime-snapshot.js";
+import {
+  attachRuntimeConfigWriteApplication,
+  getRuntimeConfigWriteApplication,
+} from "./runtime-write-application.js";
 import type { ConfigFileSnapshot, OpenClawConfig } from "./types.js";
 import { validateConfigObjectWithPlugins } from "./validation.js";
 
@@ -909,17 +913,20 @@ async function tryWriteSingleTopLevelIncludeMutation(params: {
         ]),
       );
       notifyRuntimeConfigWriteListeners(
-        createRuntimeConfigWriteNotification({
-          configPath: params.snapshot.path,
-          sourceConfig: refreshedSnapshot.sourceConfig,
-          runtimeConfig: notificationRuntimeConfig,
-          persistedHash,
-          afterWrite: params.afterWrite ?? params.writeOptions?.afterWrite,
-          runtimeRefresh: params.writeOptions?.runtimeRefresh,
-          ...(notificationPreparedCandidates.size > 0
-            ? { preparedCandidatesByOwner: notificationPreparedCandidates }
-            : {}),
-        }),
+        attachRuntimeConfigWriteApplication(
+          createRuntimeConfigWriteNotification({
+            configPath: params.snapshot.path,
+            sourceConfig: refreshedSnapshot.sourceConfig,
+            runtimeConfig: notificationRuntimeConfig,
+            persistedHash,
+            afterWrite: params.afterWrite ?? params.writeOptions?.afterWrite,
+            runtimeRefresh: params.writeOptions?.runtimeRefresh,
+            ...(notificationPreparedCandidates.size > 0
+              ? { preparedCandidatesByOwner: notificationPreparedCandidates }
+              : {}),
+          }),
+          getRuntimeConfigWriteApplication(params.writeOptions ?? {}),
+        ),
       );
     };
     await finalizeRuntimeSnapshotWrite({

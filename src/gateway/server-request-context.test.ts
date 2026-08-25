@@ -30,7 +30,7 @@ function makeCronState(overrides: Partial<TestCronState> = {}): TestCronState {
     stopExitWatchers: vi.fn(),
     reconcileStreamWatchers: vi.fn(async () => {}),
     stopStreamWatchers: vi.fn(async () => {}),
-    reconcileHeartbeatJobs: vi.fn(async () => {}),
+    reconcileHeartbeatJobs: vi.fn(async () => "converged" as const),
     ...overrides,
   };
 }
