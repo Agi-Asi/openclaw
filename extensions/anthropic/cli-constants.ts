@@ -4,6 +4,13 @@
  */
 /** Synthetic provider/backend id for Claude Code CLI-backed Anthropic models. */
 export const CLAUDE_CLI_BACKEND_ID = "claude-cli";
+/** Legacy auth profile id retained for native Claude CLI compatibility. */
+export const CLAUDE_CLI_PROFILE_ID = "anthropic:claude-cli";
+/** Explicit thinking opt-out for Claude CLI routes unsupported by Claude Code. */
+export const CLAUDE_CLI_OFF_THINKING_PROFILE = {
+  levels: [{ id: "off" }],
+  defaultLevel: "off",
+} as const;
 /** Non-secret marker telling OpenClaw that the installed Claude CLI owns auth. */
 export const CLAUDE_CLI_NATIVE_AUTH_MARKER = ["openclaw", "claude-cli-native-auth"].join(":");
 /** Default Claude CLI model ref for agent defaults and live tests. */
