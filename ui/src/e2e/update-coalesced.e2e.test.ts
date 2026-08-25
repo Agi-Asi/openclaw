@@ -23,7 +23,7 @@ async function openUpdateConfirmation(page: Page): Promise<void> {
     'openclaw-sidebar-update-card[data-attention-kind="updateAvailable"]',
   );
   await updateIssue.locator("summary").click();
-  await updateIssue.locator(".sidebar-update-card__action").click();
+  await updateIssue.locator(".sidebar-update-card__cta").click();
 }
 
 suite.define(() => {
@@ -60,7 +60,7 @@ suite.define(() => {
           'openclaw-sidebar-update-card[data-attention-kind="updateAvailable"]',
         );
         await updateIssue.locator("summary").click();
-        const action = updateIssue.locator(".sidebar-update-card__action");
+        const action = updateIssue.locator(".sidebar-update-card__cta");
         await expect.poll(() => action.getAttribute("aria-disabled")).toBe("true");
         expect(await action.evaluate((element) => (element as HTMLButtonElement).disabled)).toBe(
           false,
