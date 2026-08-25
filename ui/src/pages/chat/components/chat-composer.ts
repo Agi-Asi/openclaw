@@ -386,11 +386,6 @@ export function renderChatComposer(props: ChatComposerProps) {
     startRealtimeTalk();
   };
   const selectedMicrophoneId = loadSettings().realtimeTalkInputDeviceId?.trim() ?? "";
-  const microphoneAlert = devicePicker.microphonePermissionBlocked
-    ? t("chat.composer.microphonePermissionBlocked")
-    : devicePicker.dictationStatus === "unavailable"
-      ? t("chat.composer.dictationProviderUnavailable")
-      : null;
   const microphonePicker = props.onToggleRealtimeTalk
     ? renderMicrophonePicker({
         devices: devicePicker.devices,
@@ -520,7 +515,6 @@ export function renderChatComposer(props: ChatComposerProps) {
     onToggleVoice: props.onToggleRealtimeTalk ? handleVoicePrimaryAction : undefined,
     onToggleCamera: props.onToggleRealtimeCamera,
     microphonePicker,
-    microphoneAlert,
     dictation,
     onDictationPointerDown: handleDictationPointerDown,
     onPrimaryActionPointerDown: (event) =>
