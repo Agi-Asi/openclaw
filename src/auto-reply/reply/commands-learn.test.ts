@@ -2,8 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { migratePersistedImplicitMainRoster } from "../../config/legacy.roster.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { DEFAULT_LEARN_REQUEST } from "../../skills/workshop/learn-prompt.js";
-import { SKILL_AUTHORING_STANDARDS_PROMPT } from "../../skills/workshop/skill-authoring-standards.js";
+import { buildLearnPrompt, DEFAULT_LEARN_REQUEST } from "../../skills/workshop/learn-prompt.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import { handleLearnCommand } from "./commands-learn.js";
 import type { HandleCommandsParams } from "./commands-types.js";
@@ -94,17 +93,18 @@ describe("learn command", () => {
     expect((params.ctx as { BodyForAgent?: string }).BodyForAgent).toContain(DEFAULT_LEARN_REQUEST);
   });
 
-  it("includes the load-bearing skill authoring standards", async () => {
-    const params = buildLearnParams("/learn what we just did");
+  // Asserts the wiring this lane owns: the command hands the agent the workshop
+  // learn prompt verbatim. The prompt's wording is asserted where it is authored
+  // (src/skills/workshop/*.test.ts); duplicating it here made a skills-lane edit
+  // land green on its own PR and break this lane on the next full main run.
+  it("hands the agent the workshop learn prompt", async () => {
+    const request = "what we just did";
+    const params = buildLearnParams(`/learn ${request}`);
 
     await handleLearnCommand(params, true);
     const instruction = (params.ctx as { BodyForAgent?: string }).BodyForAgent ?? "";
 
-    expect(instruction).toContain(
-      "Revise the best pending proposal or update the best Workshop-owned skill before creating anything new.",
-    );
-    expect(instruction).toContain("Make at most one proposal mutation.");
-    expect(instruction).toContain(SKILL_AUTHORING_STANDARDS_PROMPT);
+    expect(instruction).toContain(buildLearnPrompt(request));
   });
 
   it("replies without continuing when the workshop is unavailable", async () => {
