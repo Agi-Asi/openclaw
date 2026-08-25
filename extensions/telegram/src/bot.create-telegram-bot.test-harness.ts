@@ -23,6 +23,8 @@ type SessionEntry = import("openclaw/plugin-sdk/session-store-runtime").SessionE
 type SessionStore = Record<string, SessionEntry>;
 type LoadSessionStoreFn = (storePath?: string, opts?: unknown) => SessionStore;
 type ResolveTelegramApprovalForTest = NonNullable<TelegramBotDeps["resolveApproval"]>;
+type EnqueueSystemEventForTest =
+  typeof import("openclaw/plugin-sdk/system-event-runtime").enqueueSystemEvent;
 type DispatchReplyWithBufferedBlockDispatcherFn =
   typeof import("openclaw/plugin-sdk/reply-dispatch-runtime").dispatchReplyWithBufferedBlockDispatcher;
 type DispatchReplyWithBufferedBlockDispatcherResult = Awaited<
@@ -285,9 +287,9 @@ function createModelsProviderDataFromConfig(cfg: OpenClawConfig): {
 }
 
 const systemEventsHoisted = vi.hoisted(() => ({
-  enqueueSystemEventSpy: vi.fn<TelegramBotDeps["enqueueSystemEvent"]>(() => false),
+  enqueueSystemEventSpy: vi.fn<EnqueueSystemEventForTest>(() => false),
 }));
-export const enqueueSystemEventSpy: MockFn<TelegramBotDeps["enqueueSystemEvent"]> =
+export const enqueueSystemEventSpy: MockFn<EnqueueSystemEventForTest> =
   systemEventsHoisted.enqueueSystemEventSpy;
 const execApprovalHoisted = vi.hoisted(
   (): { resolveExecApprovalSpy: MockFn<ResolveTelegramApprovalForTest> } => ({
@@ -513,7 +515,8 @@ export const telegramBotDepsForTest: TelegramBotDeps = {
     readChannelAllowFromStore as TelegramBotDeps["readChannelAllowFromStore"],
   upsertChannelPairingRequest:
     upsertChannelPairingRequest as TelegramBotDeps["upsertChannelPairingRequest"],
-  enqueueSystemEvent: enqueueSystemEventSpy as TelegramBotDeps["enqueueSystemEvent"],
+  enqueueRoutedSystemEvent: (text, route, options) =>
+    enqueueSystemEventSpy(text, { ...options, sessionKey: route.sessionKey }),
   dispatchReplyWithBufferedBlockDispatcher,
   loadWebMedia: loadWebMedia as TelegramBotDeps["loadWebMedia"],
   buildModelsProviderData: buildModelsProviderData as TelegramBotDeps["buildModelsProviderData"],
