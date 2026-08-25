@@ -138,6 +138,7 @@ function findUrlRanges(
   let match: RegExpExecArray | null;
 
   while ((match = urlRe.exec(visibleText)) !== null) {
+    const matchedUrl = match[0];
     const start = match.index;
     const nextToken =
       nextVisibleText
@@ -145,18 +146,20 @@ function findUrlRanges(
         .match(/^[^\s\]>\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/)?.[0] ?? "";
     const nextFragment = trimUrlTrailingPunctuation(nextToken);
     const continuationUrl =
-      visibleText.slice(start + match[0].length).trim().length === 0 && nextFragment.length > 0
+      visibleText.slice(start + matchedUrl.length).trim().length === 0 && nextFragment.length > 0
         ? knownUrls.reduce(
             (longest, known) =>
               known.length > longest.length &&
-              known.startsWith(match[0]) &&
-              known.slice(match[0].length).startsWith(nextFragment)
+              known.startsWith(matchedUrl) &&
+              known.slice(matchedUrl.length).startsWith(nextFragment)
                 ? known
                 : longest,
             "",
           )
         : "";
-    const fragment = continuationUrl ? match[0] : trimUrlTrailingPunctuation(match[0], knownUrls);
+    const fragment = continuationUrl
+      ? matchedUrl
+      : trimUrlTrailingPunctuation(matchedUrl, knownUrls);
 
     // Resolve fragment to a known URL (exact > prefix > superstring)
     let resolvedUrl = continuationUrl || fragment;
@@ -166,7 +169,7 @@ function findUrlRanges(
     // when the next line actually continues a known URL; otherwise a stray
     // `https://` could inherit an unrelated target from the URL list.
     if (!hasUrlContent(fragment)) {
-      if (!continuationUrl || fragment !== match[0]) {
+      if (!continuationUrl || fragment !== matchedUrl) {
         continue;
       }
     }
