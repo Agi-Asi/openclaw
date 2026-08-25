@@ -303,6 +303,8 @@ describe("chat pane composer controls", () => {
     picker!.open = true;
     picker!.dispatchEvent(new Event("toggle"));
 
+    expect(state.chatModelPickerOpenSessionKey).toBe("main");
+
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
     expect(request).toHaveBeenCalledWith("models.list", {
       view: "configured",
