@@ -28,16 +28,36 @@ const scheduledToolAuthorityCaptures = new WeakMap<
 
 const EXEC_POLICY_PARAMETER_NAMES = new Set(["host", "security", "ask"]);
 const NODE_EXEC_PARAMETER_NAMES = new Set(["command", "workdir", "env", "timeoutSeconds", "node"]);
+const PROCESS_FOLLOWUP_TEXT =
+  "Use process (list/poll/log/write/send-keys/submit/paste/kill/clear/remove) for follow-up.";
 
 type PinnedExecToolTarget = { host: "gateway"; ask?: "always" } | { host: "node"; node?: string };
 
-/** Core-only producer boundary for an alias of an exact host-created shell tool. */
-export function sealCronScheduledToolProjection(
-  projectedTool: AnyAgentTool,
+export type CronScheduledToolProjectionRequest =
+  | Readonly<{
+      kind: "exec";
+      name: string;
+      description: string;
+      followupText: string;
+      ask?: "always";
+    }>
+  | Readonly<{ kind: "process"; name: string; description: string }>;
+
+/** Constructs and seals an alias from an exact host-owned shell source. */
+export function createCronScheduledToolProjection(
+  sourceTool: AnyAgentTool,
   assertActive: () => void,
   targetTool: "exec" | "process",
+  projection: CronScheduledToolProjectionRequest,
 ): AnyAgentTool {
   assertActive();
+  if (projection.kind !== targetTool) {
+    throw new Error("scheduled tool projection does not match its host-created source");
+  }
+  const projectedTool =
+    projection.kind === "exec"
+      ? createScheduledExecProjection(sourceTool, projection)
+      : { ...sourceTool, name: projection.name, description: projection.description };
   const binding: CronScheduledToolBinding =
     targetTool === "exec"
       ? {
@@ -51,6 +71,39 @@ export function sealCronScheduledToolProjection(
     Object.freeze({ assertActive, binding, execute: projectedTool.execute }),
   );
   return projectedTool;
+}
+
+function createScheduledExecProjection(
+  sourceTool: AnyAgentTool,
+  projection: Readonly<{
+    name: string;
+    description: string;
+    followupText: string;
+    ask?: "always";
+  }>,
+): AnyAgentTool {
+  const pinnedTool = pinExecToolTarget(sourceTool, {
+    host: "gateway",
+    ...(projection.ask ? { ask: projection.ask } : {}),
+  });
+  return {
+    ...pinnedTool,
+    name: projection.name,
+    description: projection.description,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const result = await pinnedTool.execute(toolCallId, args, signal, onUpdate);
+      return {
+        ...result,
+        content: result.content.map((item) =>
+          item.type === "text"
+            ? Object.assign({}, item, {
+                text: item.text.replace(PROCESS_FOLLOWUP_TEXT, projection.followupText),
+              })
+            : item,
+        ),
+      };
+    },
+  };
 }
 
 export function copyCronScheduledToolProjection(source: AnyAgentTool, target: AnyAgentTool): void {

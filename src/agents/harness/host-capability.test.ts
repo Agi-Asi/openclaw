@@ -23,6 +23,7 @@ import {
 } from "../agent-tools.before-tool-call.js";
 import {
   captureCronScheduledToolAuthority,
+  createCronScheduledToolProjection,
   redeemCronScheduledToolAuthority,
 } from "../exec-tool-target-pinning.js";
 import {
@@ -37,6 +38,7 @@ import {
   createAgentHarnessHostCapabilities,
   retainBeforeToolCallForNativeHookRelay,
 } from "./host-capability.js";
+import { resolveAgentHarnessScheduledToolProjectionCapability } from "./host-private-capabilities.js";
 
 vi.mock("../agent-tools.before-tool-call.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../agent-tools.before-tool-call.js")>()),
@@ -135,13 +137,40 @@ describe("agent harness host capability", () => {
     const host = createAgentHarnessHostCapabilities({ attempt, pluginId: "codex" });
     const sourceTools = host.capabilities.createToolSurface?.({}) ?? [];
     const execTool = sourceTools.find((tool) => tool.name === "exec");
-    if (!execTool || !host.capabilities.sealScheduledToolProjection) {
+    const createProjection = resolveAgentHarnessScheduledToolProjectionCapability({
+      hostCapabilities: host.capabilities,
+      ownerPluginId: "codex",
+    });
+    if (!execTool || !createProjection) {
       throw new Error("expected host-created exec projection test surface");
     }
-    const alias = host.capabilities.sealScheduledToolProjection(execTool, {
-      ...execTool,
+    const alias = createProjection(execTool, {
+      kind: "exec",
       name: "gateway_exec",
+      description: "Gateway exec",
+      followupText: "Use gateway_process for follow-up.",
     });
+    const forgedExecute = vi.fn(async () => ({ content: [], details: {} }));
+    const forgedRequest = {
+      kind: "exec",
+      name: "forged_gateway_exec",
+      description: "Forged Gateway exec",
+      followupText: "none",
+      execute: forgedExecute,
+    } as const;
+    const forgedAlias = createProjection(execTool, forgedRequest);
+    expect(forgedAlias.execute).not.toBe(forgedExecute);
+    const sourceExecute = execTool.execute;
+    execTool.execute = forgedExecute;
+    expect(() =>
+      createProjection(execTool, {
+        kind: "exec",
+        name: "mutated_gateway_exec",
+        description: "Mutated Gateway exec",
+        followupText: "none",
+      }),
+    ).toThrow("was not created by this host capability");
+    execTool.execute = sourceExecute;
     const capture = captureCronScheduledToolAuthority([alias], {
       version: 1,
       runtimeId: "test",
@@ -175,9 +204,11 @@ describe("agent harness host capability", () => {
     const pluginExec = { ...execTool, name: "exec" };
     const [boundPluginExec] = host.capabilities.bindToolSurface([pluginExec]);
     expect(() =>
-      host.capabilities.sealScheduledToolProjection?.(boundPluginExec!, {
-        ...boundPluginExec!,
+      createProjection(boundPluginExec!, {
+        kind: "exec",
         name: "colliding_gateway_exec",
+        description: "Colliding Gateway exec",
+        followupText: "none",
       }),
     ).toThrow("was not created by this host capability");
 
@@ -189,14 +220,73 @@ describe("agent harness host capability", () => {
     }
     nonShellTool.name = "exec";
     expect(() =>
-      host.capabilities.sealScheduledToolProjection?.(nonShellTool, {
-        ...nonShellTool,
+      createProjection(nonShellTool, {
+        kind: "exec",
         name: "forged_gateway_exec",
+        description: "Forged Gateway exec",
+        followupText: "none",
       }),
     ).toThrow("was not created by this host capability");
 
     host.close();
     expect(() => redeemCronScheduledToolAuthority(capture, undefined)).toThrow("no longer active");
+  });
+
+  it("keeps scheduled shell issuance private to the registered Codex owner", async () => {
+    const { attempt } = await admittedAttempt("run-non-codex-projection");
+    const host = createAgentHarnessHostCapabilities({ attempt, pluginId: "other-harness" });
+
+    expect(host.capabilities).not.toHaveProperty("createScheduledToolProjection");
+    expect(
+      resolveAgentHarnessScheduledToolProjectionCapability({
+        hostCapabilities: host.capabilities,
+        ownerPluginId: "codex",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("constructs scheduled exec projections with host-owned policy", async () => {
+    const execute = vi.fn(async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: "Command still running. Use process (list/poll/log/write/send-keys/submit/paste/kill/clear/remove) for follow-up.",
+        },
+      ],
+      details: {},
+    }));
+    const source = {
+      name: "exec",
+      label: "Exec",
+      description: "exec",
+      parameters: Type.Object({}),
+      execute,
+    } satisfies AnyAgentTool;
+    const alias = createCronScheduledToolProjection(source, () => {}, "exec", {
+      kind: "exec",
+      name: "gateway_exec",
+      description: "Gateway exec",
+      followupText: "Use gateway_process for follow-up.",
+      ask: "always",
+    });
+
+    const result = await alias.execute("call-1", {
+      command: "echo safe",
+      host: "node",
+      node: "remote",
+      security: "full",
+      ask: "off",
+    });
+
+    expect(execute).toHaveBeenCalledWith(
+      "call-1",
+      { command: "echo safe", host: "gateway", ask: "always" },
+      undefined,
+      undefined,
+    );
+    expect(result.content).toEqual([
+      { type: "text", text: "Command still running. Use gateway_process for follow-up." },
+    ]);
   });
 
   it("overwrites plugin policy fields with the host snapshot and revokes lexically", async () => {

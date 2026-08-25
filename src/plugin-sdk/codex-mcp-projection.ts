@@ -6,6 +6,11 @@ import {
   captureCronScheduledToolAuthority,
   pinExecToolTarget,
 } from "../agents/exec-tool-target-pinning.js";
+import type { AgentHarnessHostCapabilities } from "../agents/harness/host-capability-types.js";
+import {
+  resolveAgentHarnessScheduledToolProjectionCapability,
+  type AgentHarnessScheduledToolProjectionFactory,
+} from "../agents/harness/host-private-capabilities.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type {
   CronCreatorToolAllowlistEntry,
@@ -13,6 +18,7 @@ import type {
 } from "../agents/tools/cron-tool.types.js";
 
 export { pinExecToolTarget };
+export type CodexScheduledToolProjectionFactory = AgentHarnessScheduledToolProjectionFactory;
 export {
   buildCodexUserMcpServersThreadConfigPatch,
   buildCodexUserMcpServersThreadConfigPatchForRuntime,
@@ -22,6 +28,16 @@ export {
   runWithCronCreatorAuthorityCapabilityResolver,
   runWithCronCreatorAuthorityResolver,
 } from "../agents/cron-creator-authority-context.js";
+
+/** Resolve the private scheduled-tool issuer for the registered Codex harness owner. */
+export function resolveCodexScheduledToolProjectionFactory(
+  hostCapabilities: AgentHarnessHostCapabilities,
+): CodexScheduledToolProjectionFactory | undefined {
+  return resolveAgentHarnessScheduledToolProjectionCapability({
+    hostCapabilities,
+    ownerPluginId: "codex",
+  });
+}
 
 /** Materialize static configured MCP under a scheduled Codex authority envelope. */
 export async function materializeStaticMcpToolsForScheduledHarnessRun(

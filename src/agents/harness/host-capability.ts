@@ -16,7 +16,7 @@ import {
 } from "../agent-tools.before-tool-call.js";
 import { createOpenClawCodingTools } from "../agent-tools.js";
 import type { EmbeddedRunAttemptParams } from "../embedded-agent-runner/run/types.js";
-import { sealCronScheduledToolProjection } from "../exec-tool-target-pinning.js";
+import { createCronScheduledToolProjection } from "../exec-tool-target-pinning.js";
 import { prepareGitHubToolEnvironment } from "../github-tool-identity.js";
 import {
   attachInternalToolExecutionPreparer,
@@ -32,6 +32,7 @@ import {
 } from "../tools/gateway-caller-context.js";
 import { callGatewayTool } from "../tools/gateway.js";
 import type { AgentHarnessHostCapabilities } from "./host-capability-types.js";
+import { registerAgentHarnessScheduledToolProjectionCapability } from "./host-private-capabilities.js";
 
 type AgentHarnessHostAttempt = Partial<EmbeddedRunAttemptParams> &
   Pick<EmbeddedRunAttemptParams, "admittedRunContext" | "runId">;
@@ -292,7 +293,10 @@ export function createAgentHarnessHostCapabilities(params: {
   });
 
   const trajectoryRecorder = attempt.trajectoryRecorder;
-  const scheduledToolTargets = new WeakMap<AnyAgentTool, "exec" | "process">();
+  const scheduledToolSources = new WeakMap<
+    AnyAgentTool,
+    Readonly<{ targetTool: "exec" | "process"; execute: AnyAgentTool["execute"] }>
+  >();
   const bindToolSurface: AgentHarnessHostCapabilities["bindToolSurface"] = (tools, options) => {
     assertActive();
     const boundAbortSignal = attempt.abortSignal
@@ -350,18 +354,13 @@ export function createAgentHarnessHostCapabilities(params: {
       );
       for (const tool of tools) {
         if (tool.name === "exec" || tool.name === "process") {
-          scheduledToolTargets.set(tool, tool.name);
+          scheduledToolSources.set(
+            tool,
+            Object.freeze({ targetTool: tool.name, execute: tool.execute }),
+          );
         }
       }
       return tools;
-    },
-    sealScheduledToolProjection: (sourceTool, projectedTool) => {
-      assertActive();
-      const targetTool = scheduledToolTargets.get(sourceTool);
-      if (!targetTool) {
-        throw new Error("scheduled tool projection source was not created by this host capability");
-      }
-      return sealCronScheduledToolProjection(projectedTool, assertActive, targetTool);
     },
     prepareMutableFileApproval: async (request) => {
       assertActive();
@@ -434,6 +433,27 @@ export function createAgentHarnessHostCapabilities(params: {
         decision: result.decision,
         terminalReason: result.terminalReason,
       };
+    },
+  });
+  registerAgentHarnessScheduledToolProjectionCapability({
+    hostCapabilities: capabilities,
+    ownerPluginId: params.pluginId,
+    create: (sourceTool, projection) => {
+      assertActive();
+      const source = scheduledToolSources.get(sourceTool);
+      if (
+        !source ||
+        sourceTool.name !== source.targetTool ||
+        sourceTool.execute !== source.execute
+      ) {
+        throw new Error("scheduled tool projection source was not created by this host capability");
+      }
+      return createCronScheduledToolProjection(
+        sourceTool,
+        assertActive,
+        source.targetTool,
+        projection,
+      );
     },
   });
   return {

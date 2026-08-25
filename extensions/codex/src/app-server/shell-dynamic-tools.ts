@@ -1,17 +1,13 @@
-import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
-import { pinExecToolTarget } from "openclaw/plugin-sdk/codex-mcp-projection";
+import {
+  pinExecToolTarget,
+  type CodexScheduledToolProjectionFactory,
+} from "openclaw/plugin-sdk/codex-mcp-projection";
 import type { CodexPluginConfig } from "./config.js";
 import { normalizeCodexDynamicToolName } from "./dynamic-tool-profile.js";
 
 type OpenClawCodingToolsFactory =
   (typeof import("openclaw/plugin-sdk/agent-harness"))["createOpenClawCodingTools"];
 type OpenClawDynamicTool = ReturnType<OpenClawCodingToolsFactory>[number];
-type SealScheduledToolProjection = NonNullable<
-  EmbeddedRunAttemptParams["hostCapabilities"]["sealScheduledToolProjection"]
->;
-type ExecAliasParams =
-  | { host: "gateway"; processAliasAvailable: boolean; ask?: "always" }
-  | { host: "node"; node?: string };
 
 export const CODEX_NODE_EXEC_DYNAMIC_TOOL_NAME = "node_exec";
 export const CODEX_GATEWAY_EXEC_DYNAMIC_TOOL_NAME = "gateway_exec";
@@ -30,31 +26,15 @@ export function isCodexDynamicToolExcluded(
   );
 }
 
-export function createExecAliasDynamicTool(
+export function createNodeExecAliasDynamicTool(
   execTool: OpenClawDynamicTool,
-  params: ExecAliasParams,
-  sealScheduledToolProjection?: SealScheduledToolProjection,
+  node?: string,
 ): OpenClawDynamicTool {
-  const pinnedNode = params.host === "node" ? params.node?.trim() : undefined;
-  const nodeAlias = params.host === "node";
-  const gatewayProcessAliasAvailable = params.host === "gateway" && params.processAliasAvailable;
-  const name = nodeAlias ? CODEX_NODE_EXEC_DYNAMIC_TOOL_NAME : CODEX_GATEWAY_EXEC_DYNAMIC_TOOL_NAME;
-  const description = nodeAlias
-    ? pinnedNode
-      ? "Run a shell command to completion on the OpenClaw configured remote node for this session. This tool always uses OpenClaw host=node internally and follows the existing node exec approval and allowlist policy. Remote-node background follow-up is unavailable. Use Codex's native shell for local app-server work."
-      : "Run a shell command to completion on an OpenClaw remote node. Select the node by name or id when multiple nodes are available. This tool always uses OpenClaw host=node internally and follows the existing node exec approval and allowlist policy. Remote-node background follow-up is unavailable. Use Codex's native shell for local app-server work."
-    : "Run a shell command through OpenClaw on the Gateway host for OpenClaw-managed Gateway environment access, including Secret Store agent-readable environment values and protected egress sentinels. Native Codex shell remains preferred for ordinary local work. This tool always uses OpenClaw host=gateway internally and follows Gateway exec approval and allowlist policy.";
-  const followupText = nodeAlias
-    ? "Remote-node background follow-up is unavailable. Wait for the command to complete."
-    : gatewayProcessAliasAvailable
-      ? "Use gateway_process (list/poll/log/write/send-keys/submit/paste/kill/clear/remove) for follow-up."
-      : "Background session follow-up is unavailable because gateway_process is not exposed. Rerun without background=true and set yieldMs high enough to wait for completion.";
-  const pinnedTool = pinExecToolTarget(
-    execTool,
-    nodeAlias
-      ? { host: "node", ...(pinnedNode ? { node: pinnedNode } : {}) }
-      : { host: "gateway", ...(params.ask ? { ask: params.ask } : {}) },
-  );
+  const pinnedNode = node?.trim();
+  const pinnedTool = pinExecToolTarget(execTool, {
+    host: "node",
+    ...(pinnedNode ? { node: pinnedNode } : {}),
+  });
   const execute: OpenClawDynamicTool["execute"] = async (toolCallId, args, signal, onUpdate) => {
     const result = await pinnedTool.execute(toolCallId, args, signal, onUpdate);
     return {
@@ -62,32 +42,50 @@ export function createExecAliasDynamicTool(
       content: result.content.map((item) =>
         item.type === "text"
           ? Object.assign({}, item, {
-              text: item.text.replace(PROCESS_FOLLOWUP_TEXT, followupText),
+              text: item.text.replace(
+                PROCESS_FOLLOWUP_TEXT,
+                "Remote-node background follow-up is unavailable. Wait for the command to complete.",
+              ),
             })
           : item,
       ),
     };
   };
-  const alias = {
+  return {
     ...pinnedTool,
-    name,
-    description,
+    name: CODEX_NODE_EXEC_DYNAMIC_TOOL_NAME,
+    description: pinnedNode
+      ? "Run a shell command to completion on the OpenClaw configured remote node for this session. This tool always uses OpenClaw host=node internally and follows the existing node exec approval and allowlist policy. Remote-node background follow-up is unavailable. Use Codex's native shell for local app-server work."
+      : "Run a shell command to completion on an OpenClaw remote node. Select the node by name or id when multiple nodes are available. This tool always uses OpenClaw host=node internally and follows the existing node exec approval and allowlist policy. Remote-node background follow-up is unavailable. Use Codex's native shell for local app-server work.",
     execute,
   };
-  return nodeAlias || !sealScheduledToolProjection
-    ? alias
-    : sealScheduledToolProjection(execTool, alias);
 }
 
-export function createGatewayProcessAliasDynamicTool(
-  processTool: OpenClawDynamicTool,
-  sealScheduledToolProjection?: SealScheduledToolProjection,
+export function createGatewayExecProjection(
+  createProjection: CodexScheduledToolProjectionFactory,
+  execTool: OpenClawDynamicTool,
+  params: { processAliasAvailable: boolean; ask?: "always" },
 ): OpenClawDynamicTool {
-  const alias = {
-    ...processTool,
+  return createProjection(execTool, {
+    kind: "exec",
+    name: CODEX_GATEWAY_EXEC_DYNAMIC_TOOL_NAME,
+    description:
+      "Run a shell command through OpenClaw on the Gateway host for OpenClaw-managed Gateway environment access, including Secret Store agent-readable environment values and protected egress sentinels. Native Codex shell remains preferred for ordinary local work. This tool always uses OpenClaw host=gateway internally and follows Gateway exec approval and allowlist policy.",
+    followupText: params.processAliasAvailable
+      ? "Use gateway_process (list/poll/log/write/send-keys/submit/paste/kill/clear/remove) for follow-up."
+      : "Background session follow-up is unavailable because gateway_process is not exposed. Rerun without background=true and set yieldMs high enough to wait for completion.",
+    ...(params.ask ? { ask: params.ask } : {}),
+  });
+}
+
+export function createGatewayProcessProjection(
+  createProjection: CodexScheduledToolProjectionFactory,
+  processTool: OpenClawDynamicTool,
+): OpenClawDynamicTool {
+  return createProjection(processTool, {
+    kind: "process",
     name: CODEX_GATEWAY_PROCESS_DYNAMIC_TOOL_NAME,
     description:
       "Manage background shell sessions in the existing per-session OpenClaw process scope: list, poll, log, write, send-keys, submit, paste, kill, clear, or remove. Use for gateway_exec follow-up; use native Codex shell session handling for ordinary local work.",
-  };
-  return sealScheduledToolProjection ? sealScheduledToolProjection(processTool, alias) : alias;
+  });
 }
