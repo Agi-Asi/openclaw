@@ -138,39 +138,35 @@ function findUrlRanges(
   let match: RegExpExecArray | null;
 
   while ((match = urlRe.exec(visibleText)) !== null) {
-    const fragment = trimUrlTrailingPunctuation(match[0], knownUrls);
     const start = match.index;
+    const nextToken =
+      nextVisibleText
+        ?.trimStart()
+        .match(/^[^\s\]>\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/)?.[0] ?? "";
+    const nextFragment = trimUrlTrailingPunctuation(nextToken);
+    const continuationUrl =
+      visibleText.slice(start + match[0].length).trim().length === 0 && nextFragment.length > 0
+        ? knownUrls.reduce(
+            (longest, known) =>
+              known.length > longest.length &&
+              known.startsWith(match[0]) &&
+              known.slice(match[0].length).startsWith(nextFragment)
+                ? known
+                : longest,
+            "",
+          )
+        : "";
+    const fragment = continuationUrl ? match[0] : trimUrlTrailingPunctuation(match[0], knownUrls);
 
     // Resolve fragment to a known URL (exact > prefix > superstring)
-    let resolvedUrl = fragment;
-    let found = false;
+    let resolvedUrl = continuationUrl || fragment;
+    let found = Boolean(continuationUrl);
 
     // A wrap may split immediately after the scheme. Only accept that fragment
     // when the next line actually continues a known URL; otherwise a stray
     // `https://` could inherit an unrelated target from the URL list.
     if (!hasUrlContent(fragment)) {
-      const hasUnpunctuatedSchemeAtLineEnd =
-        fragment === match[0] && visibleText.slice(start + match[0].length).trim().length === 0;
-      if (!hasUnpunctuatedSchemeAtLineEnd) {
-        continue;
-      }
-      const nextToken =
-        nextVisibleText
-          ?.trimStart()
-          .match(/^[^\s\]>\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/)?.[0] ?? "";
-      const nextFragment = trimUrlTrailingPunctuation(nextToken);
-      for (const known of knownUrls) {
-        if (!known.startsWith(fragment)) {
-          continue;
-        }
-        const remaining = known.slice(fragment.length);
-        const continuesKnownUrl = nextFragment.length > 0 && remaining.startsWith(nextFragment);
-        if (continuesKnownUrl && known.length > resolvedUrl.length) {
-          resolvedUrl = known;
-          found = true;
-        }
-      }
-      if (!found) {
+      if (!continuationUrl || fragment !== match[0]) {
         continue;
       }
     }

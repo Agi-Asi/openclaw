@@ -175,6 +175,68 @@ describe("addOsc8Hyperlinks", () => {
     expect(result[1]).toContain(`\x1b]8;;${fullUrl}\x07`);
   });
 
+  it.each([
+    { punctuation: ".", first: "https://example.", second: "test/path" },
+    { punctuation: "?", first: "https://example.test/path?", second: "query=1" },
+    { punctuation: "_", first: "https://example.test/path_", second: "value" },
+    { punctuation: ",", first: "https://example.test/path,", second: "value" },
+    { punctuation: ";", first: "https://example.test/path;", second: "value" },
+    { punctuation: "!", first: "https://example.test/path!", second: "value" },
+    { punctuation: ":", first: "https://example.test/path:", second: "value" },
+    { punctuation: "*", first: "https://example.test/path*", second: "value" },
+    { punctuation: "~", first: "https://example.test/path~", second: "value" },
+    { punctuation: "Unicode .", first: "https://例子.", second: "测试/路径" },
+  ])("keeps internal $punctuation clickable when a URL wraps after it", ({ first, second }) => {
+    const url = `${first}${second}`;
+
+    expect(addOsc8Hyperlinks([first, second], [url])).toEqual([
+      `\x1b]8;;${url}\x07${first}\x1b]8;;\x07`,
+      `\x1b]8;;${url}\x07${second}\x1b]8;;\x07`,
+    ]);
+  });
+
+  it("keeps sentence punctuation unlinked before an unrelated following line", () => {
+    const url = "https://example.test/path";
+
+    expect(addOsc8Hyperlinks([`${url}.`, "unrelated text"], [url])).toEqual([
+      `\x1b]8;;${url}\x07${url}\x1b]8;;\x07.`,
+      "unrelated text",
+    ]);
+  });
+
+  it.each([
+    { label: "shorter", alternate: "https://example.test/a" },
+    { label: "authored dotted", alternate: "https://example.test/a." },
+  ])("prefers the actual wrapped URL over a $label known URL", ({ alternate }) => {
+    const url = "https://example.test/a.b";
+
+    expect(addOsc8Hyperlinks(["https://example.test/a.", "b"], [alternate, url])).toEqual([
+      `\x1b]8;;${url}\x07https://example.test/a.\x1b]8;;\x07`,
+      `\x1b]8;;${url}\x07b\x1b]8;;\x07`,
+    ]);
+  });
+
+  it("preserves separate authored and wrapped bare URLs in the same rendered message", () => {
+    const authored = "https://example.test/a.";
+    const wrapped = "https://example.test/a.b";
+    const first = `Docs (${authored}) and https://example.test/a.`;
+    const urls = extractUrls(`[Docs](${authored}) and ${wrapped}`);
+
+    expect(addOsc8Hyperlinks([first, "b"], urls)).toEqual([
+      `Docs (\x1b]8;;${authored}\x07${authored}\x1b]8;;\x07) and \x1b]8;;${wrapped}\x07https://example.test/a.\x1b]8;;\x07`,
+      `\x1b]8;;${wrapped}\x07b\x1b]8;;\x07`,
+    ]);
+  });
+
+  it("preserves internal punctuation across three wrapped URL lines", () => {
+    const url = "https://example.test/path_value";
+    const fragments = ["https://example.", "test/path_", "value"];
+
+    expect(addOsc8Hyperlinks(fragments, [url])).toEqual(
+      fragments.map((fragment) => `\x1b]8;;${url}\x07${fragment}\x1b]8;;\x07`),
+    );
+  });
+
   it("wraps a URL with a bracketed IPv6 authority", () => {
     const url = "http://[::1]:8080/path";
     expect(addOsc8Hyperlinks([url], [url])).toEqual([`\x1b]8;;${url}\x07${url}\x1b]8;;\x07`]);
