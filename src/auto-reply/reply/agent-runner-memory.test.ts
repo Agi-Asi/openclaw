@@ -2076,7 +2076,9 @@ describe("runMemoryFlushIfNeeded", () => {
   });
 
   it("reuses the transcript tail scan stat when memory flush needs usage and byte size", async () => {
-    const sessionFile = path.join(rootDir, "memory-flush-usage-and-size.jsonl");
+    const transcriptDir = path.join(rootDir, "transcript-fixtures");
+    await fs.mkdir(transcriptDir);
+    const sessionFile = path.join(transcriptDir, "memory-flush-usage-and-size.jsonl");
     await fs.writeFile(
       sessionFile,
       `${JSON.stringify({
