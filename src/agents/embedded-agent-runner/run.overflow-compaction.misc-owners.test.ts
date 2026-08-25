@@ -176,7 +176,10 @@ describe("reportEmbeddedRunSuccessfulAuthBinding", () => {
     ]);
   });
 
-  it.each([
+  const nativeAuthDenialCases: Array<{
+    label: string;
+    overrides: Partial<Parameters<typeof reportEmbeddedRunSuccessfulAuthBinding>[0]>;
+  }> = [
     {
       label: "transport ownership",
       overrides: { pluginHarnessOwnsTransport: false },
@@ -227,10 +230,9 @@ describe("reportEmbeddedRunSuccessfulAuthBinding", () => {
         apiKeyInfo: { apiKey: "forwarded-test-key", mode: "api-key", source: "test" },
       },
     },
-  ] satisfies Array<{
-    label: string;
-    overrides: Partial<Parameters<typeof reportEmbeddedRunSuccessfulAuthBinding>[0]>;
-  }>)("does not record native auth without $label", ({ overrides }) => {
+  ];
+
+  it.each(nativeAuthDenialCases)("does not record native auth without $label", ({ overrides }) => {
     const agentDir = `/tmp/openclaw-unowned-native-auth-${overrides.profileId ?? "owner"}`;
     reportEmbeddedRunSuccessfulAuthBinding({
       profileStore: { version: 1, profiles: {} },

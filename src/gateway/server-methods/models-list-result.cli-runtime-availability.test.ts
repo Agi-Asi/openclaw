@@ -22,18 +22,18 @@ import type { GatewayRequestContext } from "./types.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
+const mainAgent = {
+  id: "main",
+  default: true,
+  models: {
+    "anthropic/claude-opus-5": { agentRuntime: { id: "claude-cli" } },
+  },
+};
+
 const config = {
   agents: {
     defaults: { model: { primary: "anthropic/claude-opus-5" } },
-    list: [
-      {
-        id: "main",
-        default: true,
-        models: {
-          "anthropic/claude-opus-5": { agentRuntime: { id: "claude-cli" } },
-        },
-      },
-    ],
+    list: [mainAgent],
   },
 } satisfies OpenClawConfig;
 
@@ -135,7 +135,7 @@ describe("models.list CLI runtime availability", () => {
       ...config,
       agents: {
         ...config.agents,
-        list: [{ ...config.agents.list[0], agentDir }],
+        list: [{ ...mainAgent, agentDir }],
       },
     } satisfies OpenClawConfig;
     const catalogEntry = {
