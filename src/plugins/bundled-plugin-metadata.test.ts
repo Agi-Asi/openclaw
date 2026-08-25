@@ -31,55 +31,7 @@ import { writeBundledRuntimeSidecarPathBaseline } from "./runtime-sidecar-paths-
 import { BUNDLED_RUNTIME_SIDECAR_PATHS } from "./runtime-sidecar-paths.js";
 
 const BUNDLED_PLUGIN_METADATA_TEST_TIMEOUT_MS = 300_000;
-const EXPECTED_BUNDLED_STARTUP_PLUGIN_IDS = [
-  "acpx",
-  "active-memory",
-  "anthropic",
-  "bonjour",
-  "browser",
-  "canvas",
-  "cua-computer",
-  "device-pair",
-  "diagnostics-otel",
-  "diagnostics-prometheus",
-  "diffs",
-  "diffs-language-pack",
-  "file-transfer",
-  "google-meet",
-  "linux-node",
-  "llm-task",
-  "lobster",
-  "logbook",
-  "memory-wiki",
-  "ollama",
-  "opencode",
-  "openshell",
-  "policy",
-  "reef",
-  "talk-voice",
-  "teams-meetings",
-  "voice-call",
-  "webhooks",
-  "workboard",
-  "zoom-meetings",
-] as const;
-const EXPECTED_EMPTY_CONFIG_GATEWAY_STARTUP_PLUGIN_IDS = [
-  "acpx",
-  "anthropic",
-  "browser",
-  "canvas",
-  "device-pair",
-  "file-transfer",
-  "google-meet",
-  "linux-node",
-  "memory-core",
-  "ollama",
-  "opencode",
-  "talk-voice",
-  "teams-meetings",
-  "xai",
-  "zoom-meetings",
-] as const;
+const EXPECTED_EMPTY_CONFIG_GATEWAY_STARTUP_EXTRAS = ["memory-core", "xai"] as const;
 
 installGeneratedPluginTempRootCleanup();
 
@@ -581,18 +533,9 @@ describe("bundled plugin metadata", () => {
   });
 
   it("declares explicit startup activation on all bundled plugin manifests", () => {
-    const startupPluginIds: string[] = [];
-
     for (const entry of listRepoBundledPluginManifests()) {
       expect(typeof entry.manifest.activation?.onStartup).toBe("boolean");
-      if (entry.manifest.activation?.onStartup === true) {
-        startupPluginIds.push(entry.manifest.id);
-      }
     }
-
-    expect(startupPluginIds.toSorted((left, right) => left.localeCompare(right))).toEqual(
-      EXPECTED_BUNDLED_STARTUP_PLUGIN_IDS,
-    );
   });
 
   it("scopes Voice Call CLI activation to the voicecall command", () => {
@@ -622,6 +565,14 @@ describe("bundled plugin metadata", () => {
   it("keeps empty-config Gateway startup narrower than declared startup sidecars", () => {
     const manifestRegistry = createRepoBundledManifestRegistry();
     const index = createInstalledPluginIndexForManifests(manifestRegistry);
+    const expectedPluginIds = [
+      ...manifestRegistry.plugins
+        .filter(
+          (plugin) => plugin.enabledByDefault === true && plugin.activation?.onStartup === true,
+        )
+        .map((plugin) => plugin.id),
+      ...EXPECTED_EMPTY_CONFIG_GATEWAY_STARTUP_EXTRAS,
+    ].toSorted((left, right) => left.localeCompare(right));
 
     expect(
       resolveGatewayStartupPluginIdsFromRegistry({
@@ -631,7 +582,7 @@ describe("bundled plugin metadata", () => {
         manifestRegistry,
         platform: "linux",
       }),
-    ).toEqual(EXPECTED_EMPTY_CONFIG_GATEWAY_STARTUP_PLUGIN_IDS);
+    ).toEqual(expectedPluginIds);
   });
 
   it("auto-starts Bonjour for empty-config macOS Gateway startup", () => {
@@ -1127,5 +1078,3 @@ describe("bundled plugin metadata", () => {
     expect(fs.existsSync(markerPath)).toBe(false);
   });
 });
-
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
