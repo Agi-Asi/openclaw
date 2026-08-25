@@ -218,6 +218,7 @@ async function runPluginInstallCommandUnlocked(
       return runtime.exit(1);
     }
 
+    case "marketplace":
     case "npm-pack":
     case "git": {
       const result = await installManagedPluginSource({

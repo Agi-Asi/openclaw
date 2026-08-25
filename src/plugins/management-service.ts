@@ -1157,7 +1157,7 @@ async function persistManagedSourceInstall(params: {
     const config = await persist();
     await params.transaction
       ?.commit()
-      .catch((error) =>
+      .catch((error: unknown) =>
         warnings.push(
           `Plugin install committed, but backup cleanup failed: ${formatErrorMessage(error)}`,
         ),
