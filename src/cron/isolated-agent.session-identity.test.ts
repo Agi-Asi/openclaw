@@ -2,7 +2,7 @@
 import "./isolated-agent.mocks.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as modelThinkingDefault from "../agents/model-thinking-default.js";
 import { SessionManager } from "../agents/sessions/index.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
@@ -26,10 +26,8 @@ import { setupRunCronIsolatedAgentTurnSuite } from "./isolated-agent/run.suite-h
 import {
   dispatchCronDeliveryMock,
   loadSessionEntryMock,
-  makeCronSession,
   mockRunCronFallbackPassthrough,
   patchSessionEntryMock,
-  resetRunCronIsolatedAgentTurnHarness,
   resolveCronSessionMock,
   runEmbeddedAgentMock,
 } from "./isolated-agent/run.test-harness.js";
@@ -132,16 +130,6 @@ function mockEmbeddedTranscriptWrite(
 }
 
 describe("runCronIsolatedAgentTurn session identity", () => {
-  beforeAll(async () => {
-    resetRunCronIsolatedAgentTurnHarness();
-    resolveCronSessionMock.mockReturnValue(makeCronSession());
-    vi.spyOn(modelThinkingDefault, "resolveThinkingDefault").mockReturnValue("off");
-    mockRunCronFallbackPassthrough();
-    await withTempHome(async (home) => {
-      await runCronTurn(home, { jobPayload: DEFAULT_AGENT_TURN_PAYLOAD });
-    });
-  });
-
   beforeEach(() => {
     vi.spyOn(modelThinkingDefault, "resolveThinkingDefault").mockReturnValue("off");
     runEmbeddedAgentMock.mockClear();

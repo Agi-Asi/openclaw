@@ -65,6 +65,12 @@ vi.mock("../agents/runtime-plugins.js", () => ({
   loadAgentRuntimePluginRegistryHandle: vi.fn(),
 }));
 
+// Provider-policy loading is covered at its plugin boundary; these orchestration fixtures use the
+// generic thinking profile and must not JIT-load bundled provider surfaces during a cron turn.
+vi.mock("../plugins/provider-thinking.js", () => ({
+  resolveEffectiveThinkingProfile: vi.fn(),
+}));
+
 vi.mock("../agents/subagents/announce/subagent-announce.js", () => ({
   runSubagentAnnounceFlow: vi.fn(),
 }));
