@@ -129,6 +129,16 @@ describe("Gateway and node-host MCP live process parity", () => {
             return {
               ...withoutPlugins,
               mcp: { servers: sessionMcpServers },
+              agents: {
+                ...cfg.agents,
+                entries: {
+                  ...cfg.agents?.entries,
+                  qa: {
+                    ...cfg.agents?.entries?.qa,
+                    tools: { ...cfg.agents?.entries?.qa?.tools, profile: "full" },
+                  },
+                },
+              },
               tools: { ...cfg.tools, profile: "full" },
               gateway: {
                 ...cfg.gateway,
@@ -366,7 +376,7 @@ describe("Gateway and node-host MCP live process parity", () => {
 
         phase = "reading effective MCP inventory";
         const created = (await gateway.call("sessions.create", {
-          agentId: "main",
+          agentId: "qa",
           label: "QA MCP parity inventory",
         })) as { key?: string };
         if (!created.key) {
