@@ -368,6 +368,7 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
     public var category: String?
     public var pinned: Bool?
     public var pinnedAt: Double?
+    public var categoryPinnedAt: Double?
     public var archived: Bool?
     public var archivedAt: Double?
     public var unread: Bool?
@@ -455,6 +456,7 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         category: String? = nil,
         pinned: Bool? = nil,
         pinnedAt: Double? = nil,
+        categoryPinnedAt: Double? = nil,
         archived: Bool? = nil,
         archivedAt: Double? = nil,
         unread: Bool? = nil,
@@ -499,6 +501,7 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         self.category = category
         self.pinned = pinned
         self.pinnedAt = pinnedAt
+        self.categoryPinnedAt = categoryPinnedAt
         self.archived = archived
         self.archivedAt = archivedAt
         self.unread = unread
@@ -553,9 +556,45 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         self.pinned == true
     }
 
+    public var isCategoryPinned: Bool {
+        guard let categoryPinnedAt = self.categoryPinnedAt,
+              categoryPinnedAt.isFinite,
+              categoryPinnedAt >= 0,
+              let category = self.category?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !category.isEmpty
+        else { return false }
+        return true
+    }
+
+    public var pinScope: OpenClawChatSessionPinScope? {
+        if self.isPinned { return .global }
+        return self.isCategoryPinned ? .group : nil
+    }
+
+    public var isAnyPinned: Bool {
+        self.pinScope != nil
+    }
+
+    public var globalPinActionTitle: String {
+        switch self.pinScope {
+        case .global: String(localized: "Unpin globally")
+        case .group: String(localized: "Move pin globally")
+        case nil: String(localized: "Pin globally")
+        }
+    }
+
+    public var globalPinActionPins: Bool {
+        self.pinScope != .global
+    }
+
     public var isArchived: Bool {
         self.archived == true
     }
+}
+
+public enum OpenClawChatSessionPinScope: String, Codable, Sendable {
+    case global
+    case group
 }
 
 /// Client-side session list policy shared by every session list surface.

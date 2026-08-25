@@ -189,8 +189,10 @@ private func sessionEntry(
     sessionId: String? = nil,
     displayName: String? = nil,
     label: String? = nil,
+    category: String? = nil,
     pinned: Bool = false,
     pinnedAt: Double? = nil,
+    categoryPinnedAt: Double? = nil,
     archived: Bool = false,
     model: String? = nil,
     modelProvider: String? = nil,
@@ -230,8 +232,10 @@ private func sessionEntry(
         thinkingOptions: thinkingOptions,
         thinkingDefault: thinkingDefault,
         label: label,
+        category: category,
         pinned: pinned ? true : nil,
         pinnedAt: pinnedAt ?? (pinned ? updatedAt : nil),
+        categoryPinnedAt: categoryPinnedAt,
         archived: archived ? true : nil,
         archivedAt: archived ? updatedAt : nil,
         fastMode: fastMode,
@@ -6899,6 +6903,29 @@ struct ChatViewModelTests {
         #expect(keys == ["main", "recent-1", "recent-2"])
     }
 
+    @Test func `session choices keep stale group pins reachable`() async throws {
+        let now = Date().timeIntervalSince1970 * 1000
+        let stale = now - (26 * 60 * 60 * 1000)
+        let sessions = sessionsResponse([
+            sessionEntry(key: "main", updatedAt: stale),
+            sessionEntry(
+                key: "group-pin",
+                updatedAt: stale,
+                category: "Projects",
+                categoryPinnedAt: stale + 1),
+            sessionEntry(key: "ordinary", updatedAt: stale),
+        ], ts: now)
+        let (_, vm) = await makeViewModel(
+            historyResponses: [historyPayload()],
+            sessionsResponses: [sessions])
+
+        await MainActor.run { vm.load() }
+        try await waitUntil("sessions loaded") { await MainActor.run { !vm.sessions.isEmpty } }
+
+        let keys = await MainActor.run { vm.sessionChoices.map(\.key) }
+        #expect(keys == ["main", "group-pin"])
+    }
+
     @Test func `context usage follows active session switches`() async throws {
         let sessions = sessionsResponse([
             sessionEntry(
@@ -11855,6 +11882,34 @@ struct ChatViewModelSessionManagementTests {
         }
         try await waitUntil("refresh keeps pinned order") {
             await MainActor.run { vm.sessions.first?.isPinned == true }
+        }
+    }
+
+    @Test func `global pin action converts group scope optimistically`() async throws {
+        let grouped = sessionsResponse([
+            sessionEntry(
+                key: "grouped",
+                updatedAt: 100,
+                category: "Projects",
+                categoryPinnedAt: 200),
+        ])
+        let global = sessionsResponse([
+            sessionEntry(key: "grouped", updatedAt: 100, category: "Projects", pinned: true),
+        ])
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [historyPayload()],
+            sessionsResponses: [grouped, global])
+
+        await MainActor.run { vm.refreshSessions() }
+        try await waitUntil("group pin applied") {
+            await MainActor.run { vm.sessions.first?.pinScope == .group }
+        }
+
+        await MainActor.run { vm.setSessionPinned(key: "grouped", pinned: true) }
+        #expect(await MainActor.run { vm.sessions.first?.pinScope } == .global)
+        #expect(await MainActor.run { vm.sessions.first?.categoryPinnedAt } == nil)
+        try await waitUntil("global pin patch sent") {
+            await transport.pinnedChanges().first?.pinned == true
         }
     }
 

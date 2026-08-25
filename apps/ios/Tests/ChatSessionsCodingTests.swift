@@ -9,7 +9,8 @@ struct ChatSessionsCodingTests {
             "key":"agent:main:telegram:group:1",
             "label":"Release room",
             "category":"Operations",
-            "pinned":true,
+            "pinned":false,
+            "categoryPinnedAt":1720000002500,
             "archived":false,
             "unread":true,
             "lastReadAt":1720000000000,
@@ -21,7 +22,9 @@ struct ChatSessionsCodingTests {
 
         #expect(entry.label == "Release room")
         #expect(entry.category == "Operations")
-        #expect(entry.pinned == true)
+        #expect(entry.pinned == false)
+        #expect(entry.categoryPinnedAt == 1_720_000_002_500)
+        #expect(entry.pinScope == .group)
         #expect(entry.archived == false)
         #expect(entry.unread == true)
         #expect(entry.lastReadAt == 1_720_000_000_000)

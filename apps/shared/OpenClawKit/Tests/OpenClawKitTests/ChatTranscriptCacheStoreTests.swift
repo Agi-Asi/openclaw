@@ -32,7 +32,12 @@ func cacheMessage(
         idempotencyKey: idempotencyKey)
 }
 
-func cacheSessionEntry(key: String, updatedAt: Double) -> OpenClawChatSessionEntry {
+func cacheSessionEntry(
+    key: String,
+    updatedAt: Double,
+    category: String? = nil,
+    categoryPinnedAt: Double? = nil) -> OpenClawChatSessionEntry
+{
     OpenClawChatSessionEntry(
         key: key,
         kind: nil,
@@ -52,7 +57,9 @@ func cacheSessionEntry(key: String, updatedAt: Double) -> OpenClawChatSessionEnt
         totalTokens: nil,
         modelProvider: nil,
         model: nil,
-        contextTokens: nil)
+        contextTokens: nil,
+        category: category,
+        categoryPinnedAt: categoryPinnedAt)
 }
 
 private func messageTexts(_ messages: [OpenClawChatMessage]) -> [String] {
@@ -255,10 +262,19 @@ final class ChatTranscriptCacheStoreTests: ClientDatabaseTestSuite, @unchecked S
         ]
 
         await store.storeTestTranscript(sessionKey: "main", messages: messages)
-        await store.storeSessions([cacheSessionEntry(key: "main", updatedAt: 2000)])
+        await store.storeSessions([
+            cacheSessionEntry(
+                key: "main",
+                updatedAt: 2000,
+                category: "Projects",
+                categoryPinnedAt: 1500),
+        ])
 
         #expect(await messageTexts(store.loadTranscript(sessionKey: "main")) == ["hello", "hi"])
-        #expect(await store.loadSessions().map(\.key) == ["main"])
+        let cachedSessions = await store.loadSessions()
+        #expect(cachedSessions.map(\.key) == ["main"])
+        #expect(cachedSessions.first?.categoryPinnedAt == 1500)
+        #expect(cachedSessions.first?.pinScope == .group)
         let messageRows = try await databases.cacheQueue.read { db in
             try Row.fetchAll(db, sql: """
             SELECT position, timestamp_ms, idempotency_key, payload_json
@@ -350,6 +366,14 @@ final class ChatTranscriptCacheStoreTests: ClientDatabaseTestSuite, @unchecked S
         await store.storeSessions(sessions)
         #expect(await store.loadSessions().count == OpenClawChatSQLiteTranscriptCache.maxCachedSessions)
         #expect(await store.loadSessions().contains(where: { $0.key == "s0" }) == false)
+
+        let oldGroupPin = cacheSessionEntry(
+            key: "old-group-pin",
+            updatedAt: -1,
+            category: "Projects",
+            categoryPinnedAt: 1)
+        await store.storeSessions(sessions + [oldGroupPin])
+        #expect(await store.loadSessions().contains(where: { $0.key == "old-group-pin" }))
 
         let messages = (0..<(OpenClawChatSQLiteTranscriptCache.maxCachedMessagesPerSession + 20)).map {
             cacheMessage(role: "user", text: "m\($0)", timestamp: Double($0))

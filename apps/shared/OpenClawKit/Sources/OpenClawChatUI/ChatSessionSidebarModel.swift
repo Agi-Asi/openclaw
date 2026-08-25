@@ -70,7 +70,9 @@ public enum ChatSessionSidebarModel {
             result.append(Section(id: "pinned", title: "Pinned", nodes: pinned))
         }
         for group in orderedGroups {
-            let nodes = self.tree(from: unpinned.filter { $0.category == group.name })
+            let groupSessions = self.orderGroupPins(
+                unpinned.filter { $0.category == group.name })
+            let nodes = self.tree(from: groupSessions)
             if !nodes.isEmpty {
                 result.append(Section(id: "group:\(group.name)", title: group.name, nodes: nodes))
             }
@@ -82,6 +84,21 @@ public enum ChatSessionSidebarModel {
                 nodes: recent))
         }
         return result
+    }
+
+    private static func orderGroupPins(
+        _ sessions: [OpenClawChatSessionEntry]) -> [OpenClawChatSessionEntry]
+    {
+        sessions.sorted { lhs, rhs in
+            let lhsPinnedAt = lhs.isCategoryPinned ? lhs.categoryPinnedAt ?? 0 : 0
+            let rhsPinnedAt = rhs.isCategoryPinned ? rhs.categoryPinnedAt ?? 0 : 0
+            if lhsPinnedAt != rhsPinnedAt {
+                return lhsPinnedAt > rhsPinnedAt
+            }
+            let lhsUpdatedAt = lhs.updatedAt ?? 0
+            let rhsUpdatedAt = rhs.updatedAt ?? 0
+            return lhsUpdatedAt == rhsUpdatedAt ? lhs.key < rhs.key : lhsUpdatedAt > rhsUpdatedAt
+        }
     }
 
     static func tree(from sessions: [OpenClawChatSessionEntry]) -> [Node] {

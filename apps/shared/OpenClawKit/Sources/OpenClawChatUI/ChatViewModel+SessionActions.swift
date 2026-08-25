@@ -220,6 +220,9 @@ extension OpenClawChatViewModel {
             unread: nil)
         if let index = self.sessions.firstIndex(where: { $0.key == key }) {
             self.sessions[index].category = nextGroup
+            if nextGroup == nil {
+                self.sessions[index].categoryPinnedAt = nil
+            }
         }
         self.refreshSessions(limit: Self.sessionListFetchLimit)
     }
@@ -305,6 +308,7 @@ extension OpenClawChatViewModel {
             for index in self.sessions.indices where succeeded.contains(self.sessions[index].key) {
                 self.sessions[index].pinned = pinned
                 self.sessions[index].pinnedAt = pinned ? Date().timeIntervalSince1970 * 1000 : nil
+                self.sessions[index].categoryPinnedAt = nil
             }
             self.sessions = OpenClawChatSessionListOrganizer.organize(self.sessions)
         case .archive, .delete:
@@ -731,6 +735,7 @@ extension OpenClawChatViewModel {
         if let index = self.sessions.firstIndex(where: { $0.key == key }) {
             self.sessions[index].pinned = pinned
             self.sessions[index].pinnedAt = pinned ? Date().timeIntervalSince1970 * 1000 : nil
+            self.sessions[index].categoryPinnedAt = nil
             self.sessions = OpenClawChatSessionListOrganizer.organize(self.sessions)
         }
         Task {

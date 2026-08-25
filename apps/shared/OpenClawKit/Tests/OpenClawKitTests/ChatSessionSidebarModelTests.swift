@@ -14,6 +14,7 @@ struct ChatSessionSidebarModelTests {
         updatedAt: Double? = nil,
         pinned: Bool? = nil,
         pinnedAt: Double? = nil,
+        categoryPinnedAt: Double? = nil,
         archived: Bool? = nil,
         unread: Bool? = nil,
         lastReadAt: Double? = nil,
@@ -54,6 +55,7 @@ struct ChatSessionSidebarModelTests {
             category: category,
             pinned: pinned,
             pinnedAt: pinnedAt,
+            categoryPinnedAt: categoryPinnedAt,
             archived: archived,
             unread: unread,
             agentStatus: agentStatus,
@@ -127,6 +129,39 @@ struct ChatSessionSidebarModelTests {
 
         #expect(sections.map(\.id) == ["group:Projects", "recent"])
         #expect(sections[0].nodes.map(\.session.key) == ["project-a", "project-z"])
+    }
+
+    @Test func `group pins stay in their category and follow local pin chronology`() {
+        let sections = ChatSessionSidebarModel.sections(
+            sessions: [
+                self.entry(
+                    key: "global",
+                    updatedAt: 50,
+                    pinned: true,
+                    pinnedAt: 400,
+                    category: "Projects"),
+                self.entry(
+                    key: "group-new",
+                    updatedAt: 10,
+                    category: "Projects",
+                    categoryPinnedAt: 300),
+                self.entry(
+                    key: "group-old",
+                    updatedAt: 200,
+                    category: "Projects",
+                    categoryPinnedAt: 100),
+                self.entry(key: "ordinary", updatedAt: 500, category: "Projects"),
+            ],
+            currentSessionKey: "ordinary",
+            groups: [OpenClawChatSessionGroup(name: "Projects", position: 0)],
+            query: "")
+
+        #expect(sections.map(\.id) == ["pinned", "group:Projects"])
+        #expect(sections[0].nodes.map(\.session.key) == ["global"])
+        #expect(sections[1].nodes.map(\.session.key) == ["group-new", "group-old", "ordinary"])
+        #expect(!sections[0].nodes[0].session.globalPinActionPins)
+        #expect(sections[1].nodes[0].session.globalPinActionPins)
+        #expect(sections[1].nodes[0].session.globalPinActionTitle == "Move pin globally")
     }
 
     @Test func `single unpinned section carries no title`() {

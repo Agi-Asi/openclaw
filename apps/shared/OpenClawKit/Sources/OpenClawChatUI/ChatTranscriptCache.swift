@@ -1485,7 +1485,25 @@ extension OpenClawChatSQLiteTranscriptCache {
         guard sessions.count > self.maxCachedSessions else { return sessions }
         return Array(
             sessions
-                .sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
+                .sorted { lhs, rhs in
+                    let lhsPinRank = lhs.isPinned ? 2 : lhs.isCategoryPinned ? 1 : 0
+                    let rhsPinRank = rhs.isPinned ? 2 : rhs.isCategoryPinned ? 1 : 0
+                    if lhsPinRank != rhsPinRank {
+                        return lhsPinRank > rhsPinRank
+                    }
+                    let lhsPinnedAt = lhs.isPinned
+                        ? lhs.pinnedAt ?? 0
+                        : lhs.isCategoryPinned ? lhs.categoryPinnedAt ?? 0 : 0
+                    let rhsPinnedAt = rhs.isPinned
+                        ? rhs.pinnedAt ?? 0
+                        : rhs.isCategoryPinned ? rhs.categoryPinnedAt ?? 0 : 0
+                    if lhsPinnedAt != rhsPinnedAt {
+                        return lhsPinnedAt > rhsPinnedAt
+                    }
+                    let lhsUpdatedAt = lhs.updatedAt ?? 0
+                    let rhsUpdatedAt = rhs.updatedAt ?? 0
+                    return lhsUpdatedAt == rhsUpdatedAt ? lhs.key < rhs.key : lhsUpdatedAt > rhsUpdatedAt
+                }
                 .prefix(self.maxCachedSessions))
     }
 

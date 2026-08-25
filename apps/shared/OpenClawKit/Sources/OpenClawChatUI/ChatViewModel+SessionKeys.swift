@@ -386,7 +386,7 @@ extension OpenClawChatViewModel {
             guard entry.key == sessionKey || !ChatSessionSidebarModel.isHiddenInternalSession(entry.key)
             else { continue }
             // Pinned sessions stay reachable regardless of recency.
-            guard (entry.updatedAt ?? 0) >= cutoff || entry.isPinned else { continue }
+            guard (entry.updatedAt ?? 0) >= cutoff || entry.isAnyPinned else { continue }
             result.append(entry)
             included.insert(entry.key)
         }

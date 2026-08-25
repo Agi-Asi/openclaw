@@ -41,7 +41,7 @@ enum CommandSessionGrouping {
             sections.append(CommandSessionSection(
                 id: .category(category),
                 title: category,
-                entries: self.sortedByActivity(categoryEntries),
+                entries: self.sortedCategory(categoryEntries),
                 showsHeader: true))
         }
 
@@ -116,6 +116,21 @@ enum CommandSessionGrouping {
         _ entries: [OpenClawChatSessionEntry]) -> [OpenClawChatSessionEntry]
     {
         entries.sorted { lhs, rhs in
+            let left = self.activityTimestamp(lhs)
+            let right = self.activityTimestamp(rhs)
+            return left == right ? lhs.key < rhs.key : left > right
+        }
+    }
+
+    private static func sortedCategory(
+        _ entries: [OpenClawChatSessionEntry]) -> [OpenClawChatSessionEntry]
+    {
+        entries.sorted { lhs, rhs in
+            let leftPin = lhs.isCategoryPinned ? lhs.categoryPinnedAt ?? 0 : 0
+            let rightPin = rhs.isCategoryPinned ? rhs.categoryPinnedAt ?? 0 : 0
+            if leftPin != rightPin {
+                return leftPin > rightPin
+            }
             let left = self.activityTimestamp(lhs)
             let right = self.activityTimestamp(rhs)
             return left == right ? lhs.key < rhs.key : left > right

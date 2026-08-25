@@ -44,6 +44,19 @@ struct CommandSessionGroupingTests {
         #expect(sections[3].showsHeader)
     }
 
+    @Test func `group pins sort locally without entering the global pinned section`() {
+        let sections = CommandSessionGrouping.sections(from: [
+            self.entry("global", pinned: true, activity: 1),
+            self.entry("group-new", category: "Ops", categoryPinnedAt: 300, activity: 2),
+            self.entry("group-old", category: "Ops", categoryPinnedAt: 100, activity: 20),
+            self.entry("ordinary", category: "Ops", activity: 30),
+        ])
+
+        #expect(sections.map(\.id) == [.pinned, .category("Ops")])
+        #expect(sections[0].entries.map(\.key) == ["global"])
+        #expect(sections[1].entries.map(\.key) == ["group-new", "group-old", "ordinary"])
+    }
+
     @Test func `known groups ignore blanks and duplicates`() {
         let sections = CommandSessionGrouping.sections(
             from: [self.entry("beta", category: "Beta", activity: 1)],
@@ -118,6 +131,7 @@ struct CommandSessionGroupingTests {
         _ key: String,
         category: String? = nil,
         pinned: Bool = false,
+        categoryPinnedAt: Double? = nil,
         activity: Double) -> OpenClawChatSessionEntry
     {
         OpenClawChatSessionEntry(
@@ -142,6 +156,7 @@ struct CommandSessionGroupingTests {
             contextTokens: nil,
             category: category,
             pinned: pinned,
+            categoryPinnedAt: categoryPinnedAt,
             lastActivityAt: activity)
     }
 }
