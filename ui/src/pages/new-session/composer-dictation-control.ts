@@ -83,6 +83,11 @@ export class NewSessionDictationControl {
     const connected = this.options.isConnected() && client !== null;
     this.devicePicker.syncCatalog(client, connected);
     const enabled = this.options.canCommit();
+    const microphoneAlert = this.devicePicker.microphonePermissionBlocked
+      ? t("chat.composer.microphonePermissionBlocked")
+      : this.devicePicker.dictationStatus === "unavailable"
+        ? t("chat.composer.dictationProviderUnavailable")
+        : null;
     const dictationOptions = {
       client,
       connected,
@@ -129,6 +134,7 @@ export class NewSessionDictationControl {
       isBusy: !enabled,
       dictation,
       idleLabel: t("newSession.dictate"),
+      microphoneAlert,
       microphonePicker: renderMicrophonePicker({
         devices: this.devicePicker.devices,
         loading: this.devicePicker.loading,

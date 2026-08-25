@@ -6073,6 +6073,9 @@ export const en: TranslationMap = {
       dictationConnecting: "Starting dictation…",
       dictationDisconnected: "Dictation stopped because the Gateway disconnected.",
       dictationFailed: "Dictation failed.",
+      dictationInterruptedRecovery:
+        "Captured text was inserted. Check your connection and try again.",
+      dictationStartRecovery: "Check microphone access and transcription settings, then try again.",
       dictationFinalizing: "Finishing dictation…",
       dictationListening: "Listening…",
       dictationInsert: "Stop and insert dictation",
