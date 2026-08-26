@@ -288,7 +288,7 @@ export async function openPluginTalkSession(
         audioBase64: Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength).toString("base64"),
         timestamp: options?.timestamp,
       });
-      void delivery?.catch((error) => {
+      void delivery?.catch((error: unknown) => {
         context.logGateway.warn(`plugin Talk audio delivery failed: ${formatErrorMessage(error)}`);
       });
     },
@@ -301,7 +301,7 @@ export async function openPluginTalkSession(
         connId: ownerId,
         reason: reason?.trim() || "plugin-cancelled",
       });
-      void cancellation?.catch((error) => {
+      void cancellation?.catch((error: unknown) => {
         context.logGateway.warn(`plugin Talk cancellation failed: ${formatErrorMessage(error)}`);
       });
     },
