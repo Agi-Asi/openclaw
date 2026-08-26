@@ -1,6 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createExecTool } from "./bash-tools.exec-run.js";
+import { consumeRepairableCodeModeFailure } from "./code-mode-repair-provenance.js";
 import { applyCodeModeCatalog } from "./code-mode.js";
 import {
   createCodeModeHarness,
@@ -9,6 +10,7 @@ import {
   resultDetails,
 } from "./code-mode.test-support.js";
 import { jsonResult, ToolInputError, type AnyAgentTool } from "./tools/common.js";
+import { createSkillWorkshopTool } from "./tools/skill-workshop-tool.js";
 
 async function runCode(code: string, targets: AnyAgentTool[]) {
   const { config, catalogRef, tools } = createCodeModeHarness();
@@ -44,6 +46,25 @@ describe("Code Mode preflight repair", () => {
       bridgeDispatchStarted: true,
     });
     expect(details.error).toContain("timeout");
+  });
+
+  it("keeps invalid Skill Workshop action input retryable", async () => {
+    const workshop = createSkillWorkshopTool({ workspaceDir: "/tmp/code-mode-workshop-test" });
+    const execute = vi.spyOn(workshop, "execute");
+
+    const details = await runCode(
+      'await skill_workshop({ action: "create", name: "test", description: "test" });',
+      [workshop],
+    );
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(details).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("proposal_content required"),
+      failurePhase: "bridge",
+      bridgeDispatchStarted: true,
+    });
+    expect(consumeRepairableCodeModeFailure(details)).toBe(true);
   });
 
   it("keeps mixed bridge settlements non-retryable", async () => {

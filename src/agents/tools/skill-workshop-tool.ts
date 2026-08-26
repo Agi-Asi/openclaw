@@ -80,6 +80,24 @@ import {
 } from "./skill-workshop-tool-schema.js";
 
 const SKILL_WORKSHOP_MUTATION_ACTIONS = new Set(["create", "patch", "update", "revise"]);
+
+function prepareSkillWorkshopParams(args: unknown): Record<string, unknown> {
+  const params = asToolParamsRecord(args);
+  const action = readToolStringParam(params, "action", { required: true });
+  if (action === "create") {
+    readToolStringParam(params, "name", { required: true });
+    readToolStringParam(params, "description", { required: true });
+    readToolStringParam(params, "proposal_content", {
+      required: true,
+      label: "proposal_content",
+      trim: false,
+    });
+  } else if (action === "read" || action === "patch" || action === "update") {
+    readToolStringParam(params, "skill_name", { required: true, label: "skill_name" });
+  }
+  return params;
+}
+
 function requireProposalContent(content: string | undefined): string {
   if (content === undefined) {
     throw new ToolInputError("proposal_content required");
@@ -190,6 +208,7 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
       options.collectionReconcile !== undefined,
       options.proposalRevision !== undefined,
     ),
+    prepareBeforeToolCallParams: prepareSkillWorkshopParams,
     execute: async (_toolCallId, args) => {
       const rawParams = asToolParamsRecord(args);
       const action = readToolStringParam(rawParams, "action", { required: true });
