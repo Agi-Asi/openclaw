@@ -2283,7 +2283,7 @@ jobs:
             local validation_file workflow_ref
             local -a verify_args
 
-            skip_clawhub="${1:-${force_skip_clawhub}}"
+            skip_clawhub="$1"
 
             release_version="${RELEASE_TAG#v}"
             evidence_path="${POSTPUBLISH_EVIDENCE_DIR}/release-postpublish-evidence.json"
