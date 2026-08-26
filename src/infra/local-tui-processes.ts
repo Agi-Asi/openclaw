@@ -1,7 +1,6 @@
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
-import { createHash } from "node:crypto";
-import os from "node:os";
 import path from "node:path";
+import { resolveStateDir } from "../config/paths.js";
 import { parseCmdScriptCommandLine } from "../daemon/cmd-argv.js";
 import { sleep } from "../utils/sleep.js";
 import { getCommandPositionalsWithRootOptions } from "./cli-root-options.js";
@@ -30,12 +29,7 @@ type PsResult = {
 
 const LOCAL_TUI_SUBCOMMANDS = new Set(["chat", "terminal", "tui"]);
 const LOCAL_TUI_PROCESS_PROBE_TIMEOUT_MS = 1_000;
-function resolveLocalTuiUpdateLockPath(userHome = os.homedir()): string {
-  const ownerScope = createHash("sha256").update(userHome).digest("hex").slice(0, 16);
-  return path.join(os.tmpdir(), `openclaw-local-tui-update-${ownerScope}`);
-}
-
-const LOCAL_TUI_UPDATE_LOCK_PATH = resolveLocalTuiUpdateLockPath();
+const LOCAL_TUI_UPDATE_LOCK_PATH = path.join(resolveStateDir(), "__locks", "local-tui-update");
 const LOCAL_TUI_UPDATE_LOCK_OPTIONS = {
   stale: 30_000,
   retries: { retries: 100, factor: 1, minTimeout: 50, maxTimeout: 250 },
