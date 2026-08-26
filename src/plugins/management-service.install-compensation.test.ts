@@ -7,6 +7,7 @@ import {
   resolvePluginNpmGenerationProjectDir,
   resolvePluginNpmProjectDir,
 } from "./install-paths.js";
+import { createColdPluginFixture } from "./test-helpers/cold-plugin-fixtures.js";
 
 const compensationTempDirs = useAutoCleanupTempDirTracker(afterEach);
 
@@ -61,19 +62,45 @@ function installPersistSnapshot() {
   };
 }
 
-function mockClawHubInstall(pluginId: string, packageName: string, targetDir: string) {
-  mocks.clawhubInstall.mockResolvedValue({
-    ok: true,
+async function reviewMockInstalledArtifact(
+  params: {
+    onBeforePluginArtifactCommit?: (request: {
+      pluginId: string;
+      stagedArtifactDir: string;
+      mode: "install";
+    }) => Promise<void>;
+  },
+  pluginId: string,
+  rootDir = compensationTempDirs.make("managed-plugin-consent-"),
+) {
+  createColdPluginFixture({
+    rootDir,
     pluginId,
-    targetDir,
-    extensions: ["index.js"],
-    packageName,
-    clawhub: {
-      source: "clawhub",
-      clawhubUrl: "https://clawhub.ai",
-      clawhubPackage: packageName,
-      clawhubFamily: "code-plugin",
-    },
+    manifest: { providers: [], channels: [], channelConfigs: {}, providerAuthChoices: [] },
+  });
+  await params.onBeforePluginArtifactCommit?.({
+    pluginId,
+    stagedArtifactDir: rootDir,
+    mode: "install",
+  });
+}
+
+function mockClawHubInstall(pluginId: string, packageName: string, targetDir: string) {
+  mocks.clawhubInstall.mockImplementation(async (params) => {
+    await reviewMockInstalledArtifact(params, pluginId);
+    return {
+      ok: true,
+      pluginId,
+      targetDir,
+      extensions: ["index.js"],
+      packageName,
+      clawhub: {
+        source: "clawhub",
+        clawhubUrl: "https://clawhub.ai",
+        clawhubPackage: packageName,
+        clawhubFamily: "code-plugin",
+      },
+    };
   });
 }
 
@@ -103,6 +130,7 @@ describe("managed plugin install compensation", () => {
         request: { source: "clawhub", spec: "clawhub:community/demo" },
         snapshot: installPersistSnapshot(),
         env,
+        acknowledgeCapabilities: true,
       }),
     ).rejects.toBe(conflict);
 
@@ -134,12 +162,15 @@ describe("managed plugin install compensation", () => {
       await fs.mkdir(targetDir, { recursive: true });
       await fs.mkdir(path.dirname(packArchive), { recursive: true });
       await fs.writeFile(packArchive, "packed plugin");
-      mocks.npmInstall.mockResolvedValue({
-        ok: true,
-        pluginId: "demo",
-        targetDir,
-        extensions: ["index.js"],
-        manifestName: packageName,
+      mocks.npmInstall.mockImplementation(async (params) => {
+        await reviewMockInstalledArtifact(params, "demo", targetDir);
+        return {
+          ok: true,
+          pluginId: "demo",
+          targetDir,
+          extensions: ["index.js"],
+          manifestName: packageName,
+        };
       });
       mocks.persistInstall.mockRejectedValue(conflict);
       mocks.planUninstall.mockImplementation((params) =>
@@ -157,6 +188,7 @@ describe("managed plugin install compensation", () => {
           request: { source: "npm", spec: packageName, mode: "install" },
           snapshot: installPersistSnapshot(),
           env,
+          acknowledgeCapabilities: true,
         }),
       ).rejects.toBe(conflict);
 
@@ -172,11 +204,14 @@ describe("managed plugin install compensation", () => {
     const env = { HOME: "/tmp/openclaw-managed-link-conflict-home" };
     const sourcePath = "/tmp/operator-owned-plugin-source";
     const conflict = new Error("config changed during plugin link");
-    mocks.pathInstall.mockResolvedValue({
-      ok: true,
-      pluginId: "demo",
-      targetDir: sourcePath,
-      version: "1.0.0",
+    mocks.pathInstall.mockImplementation(async (params) => {
+      await reviewMockInstalledArtifact(params, "demo");
+      return {
+        ok: true,
+        pluginId: "demo",
+        targetDir: sourcePath,
+        version: "1.0.0",
+      };
     });
     mocks.persistInstall.mockRejectedValue(conflict);
 
@@ -192,6 +227,7 @@ describe("managed plugin install compensation", () => {
         snapshot: installPersistSnapshot(),
         env,
         cleanupOnPersistenceFailure: true,
+        acknowledgeCapabilities: true,
       }),
     ).rejects.toBe(conflict);
 

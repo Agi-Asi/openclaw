@@ -73,6 +73,17 @@ export type PluginInstallPolicyRequest = {
   source?: InstallPolicySource;
 };
 
+export type PluginInstallArtifactConsentRequest = {
+  pluginId: string;
+  currentArtifactDir?: string;
+  stagedArtifactDir: string;
+  mode: "install" | "update";
+};
+
+export type PluginInstallArtifactConsentHandler = (
+  request: PluginInstallArtifactConsentRequest,
+) => Promise<void>;
+
 export type PackageInstallCommonParams = InstallSafetyOverrides & {
   extensionsDir?: string;
   npmDir?: string;
@@ -84,6 +95,7 @@ export type PackageInstallCommonParams = InstallSafetyOverrides & {
   requirePluginManifest?: boolean;
   allowSourceTypeScriptEntries?: boolean;
   installPolicyRequest?: PluginInstallPolicyRequest;
+  onBeforePluginArtifactCommit?: PluginInstallArtifactConsentHandler;
 };
 
 export type InternalPackageInstallCommonParams = PackageInstallCommonParams & {
