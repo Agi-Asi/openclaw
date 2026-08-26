@@ -410,11 +410,6 @@ jobs:
               echo "Prerelease plugin registry requires an artifact-backed Telegram package candidate." >&2
               exit 1
             fi
-            if [[ "$PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_RUN_ID" != "$PACKAGE_ARTIFACT_RUN_ID" ||
-                  "$PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_RUN_ATTEMPT" != "$PACKAGE_ARTIFACT_RUN_ATTEMPT" ]]; then
-              echo "Prerelease plugin registry and package artifact must come from the same producer run attempt." >&2
-              exit 1
-            fi
           fi
           case "${PROVIDER_MODE}" in
             mock-openai | live-frontier) ;;

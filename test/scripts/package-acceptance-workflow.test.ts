@@ -2672,6 +2672,12 @@ describe("package acceptance workflow", () => {
     expect(workflow).toContain(
       "prepublish_plugin_registry_manifest_sha256: ${{ fromJSON(inputs.candidate_artifact_json || '{}').prepublishPluginRegistryManifestSha256 || '' }}",
     );
+    expect(packageTelegram.with?.prepublish_plugin_registry_artifact_run_id).toBe(
+      "${{ fromJSON(inputs.candidate_artifact_json || '{}').prepublishPluginRegistryArtifactRunId || '' }}",
+    );
+    expect(packageTelegram.with?.prepublish_plugin_registry_artifact_run_id).not.toBe(
+      packageTelegram.with?.package_artifact_run_id,
+    );
     expect(workflow).toContain("telegram_scenarios:");
     expect(packageTelegram.with?.scenario).toBe(
       "${{ needs.resolve_package.outputs.telegram_scenarios }}",
@@ -5720,9 +5726,14 @@ describe("package artifact reuse", () => {
       "Artifact-backed Telegram E2E requires the complete immutable artifact and package identity tuple.",
       "Prerelease plugin registry requires the complete immutable artifact and manifest identity tuple.",
       "Prerelease plugin registry requires an artifact-backed Telegram package candidate.",
-      "Prerelease plugin registry and package artifact must come from the same producer run attempt.",
       "PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256",
     ]);
+    expect(validateStep.run).not.toContain(
+      "Prerelease plugin registry and package artifact must come from the same producer run attempt.",
+    );
+    expect(validateStep.run).not.toContain(
+      'PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_RUN_ID" != "$PACKAGE_ARTIFACT_RUN_ID',
+    );
     expect(identityStep.env).toMatchObject({
       ARTIFACT_DIGEST: "${{ inputs.package_artifact_digest }}",
       ARTIFACT_ID: "${{ inputs.package_artifact_id }}",
@@ -5884,6 +5895,28 @@ describe("package artifact reuse", () => {
     expect(result.stderr).toContain(
       "Artifact-backed Telegram E2E requires all artifact identity fields or none.",
     );
+  });
+
+  it("accepts upstream prerelease registry provenance with a downstream package re-upload", () => {
+    const result = runNpmTelegramInputValidation({
+      PACKAGE_ARTIFACT_DIGEST: "a".repeat(64),
+      PACKAGE_ARTIFACT_ID: "4567",
+      PACKAGE_ARTIFACT_NAME: "package-under-test-456-2",
+      PACKAGE_ARTIFACT_RUN_ATTEMPT: "2",
+      PACKAGE_ARTIFACT_RUN_ID: "456",
+      PACKAGE_FILE_NAME: "openclaw-2026.8.26-1.tgz",
+      PACKAGE_SHA256: "b".repeat(64),
+      PACKAGE_SOURCE_SHA: "c".repeat(40),
+      PACKAGE_VERSION: "2026.8.26-1",
+      PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_DIGEST: "d".repeat(64),
+      PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_ID: "1234",
+      PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_NAME: "prepublish-plugin-registry-123-1",
+      PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_RUN_ATTEMPT: "1",
+      PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_RUN_ID: "123",
+      PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256: "e".repeat(64),
+    });
+
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it("uses bounded Convex lease waits instead of GitHub concurrency for CI Telegram consumers", () => {
