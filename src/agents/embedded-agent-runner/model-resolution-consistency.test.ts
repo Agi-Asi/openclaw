@@ -4,6 +4,7 @@ import {
   resolvePreparedModelThinkingCompat,
 } from "../model-catalog-lookup.js";
 import type { ModelCatalogEntry } from "../model-catalog.types.js";
+import { resolveModelCandidateChain } from "../model-fallback-candidates.js";
 import { resolveInitialEmbeddedRunModel } from "./run/runtime-resolution.js";
 
 // Self-defense against isolate:false shard composition: sibling test files
@@ -22,6 +23,7 @@ const resolveHookModelSelectionMock = vi.hoisted(() =>
     modelId,
   })),
 );
+const normalizeProviderModelIdWithRuntimeMock = vi.hoisted(() => vi.fn(() => undefined));
 
 const emptyModelRegistry = {
   find: vi.fn((_provider: string, _modelId: string) => null),
@@ -77,7 +79,7 @@ vi.mock("./model.js", () => ({
 }));
 
 vi.mock("../provider-model-normalization.runtime.js", () => ({
-  normalizeProviderModelIdWithRuntime: () => undefined,
+  normalizeProviderModelIdWithRuntime: normalizeProviderModelIdWithRuntimeMock,
 }));
 
 vi.mock("../harness/runtime-plugin.js", () => ({
@@ -192,6 +194,7 @@ describe("embedded model resolution consistency", () => {
       provider,
       modelId,
     }));
+    normalizeProviderModelIdWithRuntimeMock.mockReset().mockReturnValue(undefined);
   });
 
   it("resolves an explicit alias configured only on the selected agent", () => {
@@ -216,6 +219,77 @@ describe("embedded model resolution consistency", () => {
         model: "worker-haiku",
       }),
     ).toEqual({ provider: "anthropic", modelId: "claude-haiku-4-5" });
+  });
+
+  it("defers custom-provider normalization until prepared manifest policy is available", () => {
+    const config = {
+      agents: {
+        entries: {
+          worker: {
+            models: {
+              "custom-provider/legacy-model": { alias: "worker-custom" },
+            },
+          },
+        },
+      },
+    };
+    normalizeProviderModelIdWithRuntimeMock.mockImplementation(
+      ({
+        provider,
+        context,
+        plugins,
+      }: {
+        provider: string;
+        context: { modelId: string };
+        plugins?: unknown;
+      }) =>
+        provider === "custom-provider" &&
+        context.modelId === "legacy-model" &&
+        plugins === undefined
+          ? "unexpected-prepared-model"
+          : undefined,
+    );
+    const initial = resolveInitialEmbeddedRunModel({
+      config,
+      agentId: "worker",
+      model: "worker-custom",
+    });
+
+    expect(initial).toEqual({
+      provider: "custom-provider",
+      modelId: "legacy-model",
+    });
+    expect(normalizeProviderModelIdWithRuntimeMock).not.toHaveBeenCalled();
+
+    const manifestPlugins = [
+      {
+        modelIdNormalization: {
+          providers: {
+            "custom-provider": {
+              aliases: { "legacy-model": "modern-model" },
+            },
+          },
+        },
+      },
+    ];
+    expect(
+      resolveModelCandidateChain({
+        cfg: config,
+        agentId: "worker",
+        provider: initial.provider,
+        model: initial.modelId,
+        requestedRouteResolution: "resolved",
+        fallbacksOverride: [],
+        manifestPlugins,
+      }),
+    ).toEqual([
+      {
+        provider: "custom-provider",
+        model: "modern-model",
+        routeOrigin: "requested",
+        routeResolution: "resolved",
+      },
+    ]);
   });
 
   it("resolves the same undated configured model for chat and manual compaction", async () => {
