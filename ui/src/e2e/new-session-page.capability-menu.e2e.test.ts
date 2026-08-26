@@ -43,6 +43,9 @@ suite.define(() => {
         const incognito = page.getByRole("switch", { name: "Incognito" });
         const model = page.locator(".new-session-page__composer .chat-composer-model-control");
         const effort = page.locator('[data-chat-thinking-select="true"]');
+        const microphone = page.locator(".chat-send-btn--voice");
+        const microphonePicker = page.locator(".chat-talk-input-picker__trigger");
+        const start = page.locator(".new-session-page__start-submit");
         await Promise.all([
           footer.waitFor(),
           attach.waitFor(),
@@ -51,6 +54,9 @@ suite.define(() => {
           incognito.waitFor(),
           model.waitFor(),
           effort.waitFor(),
+          microphone.waitFor(),
+          microphonePicker.waitFor(),
+          start.waitFor(),
         ]);
 
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -67,40 +73,59 @@ suite.define(() => {
           ),
         ).toBe(true);
 
-        const [footerBox, attachBox, permissionBox, draftBox, modelBox] = await Promise.all([
+        const [
+          footerBox,
+          attachBox,
+          permissionBox,
+          draftBox,
+          modelBox,
+          microphoneBox,
+          microphonePickerBox,
+          startBox,
+        ] = await Promise.all([
           footer.boundingBox(),
           attach.boundingBox(),
           permission.boundingBox(),
           draft.boundingBox(),
           model.boundingBox(),
+          microphone.boundingBox(),
+          microphonePicker.boundingBox(),
+          start.boundingBox(),
         ]);
         expect(footerBox).not.toBeNull();
         expect(attachBox).not.toBeNull();
         expect(permissionBox).not.toBeNull();
         expect(draftBox).not.toBeNull();
         expect(modelBox).not.toBeNull();
-        const followsInReadingOrder = (
-          previous: { x: number; y: number; height: number } | null,
-          next: { x: number; y: number; height: number } | null,
-        ) => {
-          if (!previous || !next) {
-            return false;
-          }
-          const previousCenter = previous.y + previous.height / 2;
-          const nextCenter = next.y + next.height / 2;
-          const sameLine = Math.abs(nextCenter - previousCenter) <= previous.height / 2;
-          return sameLine ? next.x > previous.x : nextCenter > previousCenter;
-        };
-        const sequence = [attachBox, permissionBox, draftBox, modelBox];
+        expect(microphoneBox).not.toBeNull();
+        expect(microphonePickerBox).not.toBeNull();
+        expect(startBox).not.toBeNull();
+        const sequence = [attachBox, permissionBox, draftBox, modelBox, microphoneBox, startBox];
         for (let index = 1; index < sequence.length; index += 1) {
-          expect(followsInReadingOrder(sequence[index - 1] ?? null, sequence[index] ?? null)).toBe(
-            true,
+          const previous = sequence[index - 1];
+          const next = sequence[index];
+          expect(next?.x ?? 0).toBeGreaterThanOrEqual(
+            (previous?.x ?? 0) + (previous?.width ?? 0) - 2,
           );
+          expect(
+            Math.abs(
+              (next?.y ?? 0) +
+                (next?.height ?? 0) / 2 -
+                ((attachBox?.y ?? 0) + (attachBox?.height ?? 0) / 2),
+            ),
+          ).toBeLessThanOrEqual(2);
         }
         expect(
           (draftBox?.x ?? 0) - ((permissionBox?.x ?? 0) + (permissionBox?.width ?? 0)),
         ).toBeLessThanOrEqual(2);
-        for (const control of [attachBox, permissionBox, draftBox, modelBox]) {
+        for (const control of [
+          attachBox,
+          permissionBox,
+          draftBox,
+          modelBox,
+          microphoneBox,
+          startBox,
+        ]) {
           expect(control?.x ?? 0).toBeGreaterThanOrEqual(footerBox?.x ?? 0);
           expect((control?.x ?? 0) + (control?.width ?? 0)).toBeLessThanOrEqual(
             (footerBox?.x ?? 0) + (footerBox?.width ?? 0),
@@ -109,6 +134,15 @@ suite.define(() => {
         expect(await footer.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(
           0,
         );
+        expect(microphonePickerBox?.x ?? 0).toBeGreaterThanOrEqual(
+          (microphoneBox?.x ?? 0) +
+            (microphoneBox?.width ?? 0) -
+            (microphonePickerBox?.width ?? 0) -
+            4,
+        );
+        expect(
+          (microphonePickerBox?.x ?? 0) + (microphonePickerBox?.width ?? 0),
+        ).toBeLessThanOrEqual((microphoneBox?.x ?? 0) + (microphoneBox?.width ?? 0) + 4);
 
         expect(await effort.locator(".chat-controls__effort-icon svg").count()).toBe(1);
         await expect

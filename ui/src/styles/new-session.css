@@ -1097,7 +1097,7 @@ wa-popover.new-session-page__project-popover::part(body) {
 
 @container chat-composer (max-width: 480px) {
   .new-session-page__composer .agent-chat__composer-footer {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .new-session-page__composer .agent-chat__input .chat-composer-model-control {

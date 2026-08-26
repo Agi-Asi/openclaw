@@ -36,20 +36,110 @@ suite.define(() => {
   });
 
   it("keeps mobile picker panels above an attachment-expanded composer", async () => {
-    await suite.withPage({ viewport: { width: 393, height: 852 } }, async ({ page }) => {
-      const gateway = await installMockGateway(page);
+    const mobilePage = { hasTouch: true, viewport: { width: 393, height: 852 } };
+    await suite.withPage(mobilePage, async ({ page }) => {
+      const gateway = await installMockGateway(page, {
+        methodResponses: {
+          "sessions.list": {
+            count: 1,
+            defaults: { contextTokens: 200_000 },
+            path: "",
+            sessions: [
+              {
+                contextTokens: 200_000,
+                displayName: "Main",
+                key: "main",
+                kind: "direct",
+                label: "Main",
+                status: "done",
+                totalTokens: 46_000,
+                totalTokensFresh: true,
+                updatedAt: Date.now(),
+              },
+            ],
+            ts: Date.now(),
+          },
+        },
+      });
       await page.goto(`${suite.server.baseUrl}chat`);
       await gateway.waitForRequest("chat.startup");
 
       const composer = page.locator(".agent-chat__input");
       await composer.waitFor({ state: "visible" });
+      const footer = composer.locator(".agent-chat__composer-footer");
+      const attach = composer.getByRole("button", { name: "Add attachment" });
+      const permission = composer.locator(".chat-controls__permission-trigger");
+      const context = composer.locator(".context-ring");
+      const modelControl = composer.locator(".chat-composer-model-control");
+      const microphone = composer.locator(".chat-send-btn--voice");
+      const microphonePicker = composer.locator(".chat-talk-input-picker__trigger");
+      const send = composer.locator(".chat-send-btn--send");
+      await Promise.all([
+        footer.waitFor(),
+        attach.waitFor(),
+        permission.waitFor(),
+        context.waitFor(),
+        modelControl.waitFor(),
+        microphone.waitFor(),
+        microphonePicker.waitFor(),
+        send.waitFor(),
+      ]);
+      const [
+        attachBox,
+        permissionBox,
+        contextBox,
+        modelControlBox,
+        microphoneBox,
+        microphonePickerBox,
+        sendBox,
+      ] = await Promise.all([
+        attach.boundingBox(),
+        permission.boundingBox(),
+        context.boundingBox(),
+        modelControl.boundingBox(),
+        microphone.boundingBox(),
+        microphonePicker.boundingBox(),
+        send.boundingBox(),
+      ]);
+      const sequence = [
+        attachBox,
+        permissionBox,
+        contextBox,
+        modelControlBox,
+        microphoneBox,
+        sendBox,
+      ];
+      expect(sequence.every((box) => box !== null)).toBe(true);
+      for (let index = 1; index < sequence.length; index += 1) {
+        const previous = sequence[index - 1];
+        const next = sequence[index];
+        expect(next?.x ?? 0).toBeGreaterThanOrEqual(
+          (previous?.x ?? 0) + (previous?.width ?? 0) - 2,
+        );
+        expect(
+          Math.abs(
+            (next?.y ?? 0) +
+              (next?.height ?? 0) / 2 -
+              ((attachBox?.y ?? 0) + (attachBox?.height ?? 0) / 2),
+          ),
+        ).toBeLessThanOrEqual(2);
+      }
+      expect(await footer.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+      expect(microphonePickerBox?.x ?? 0).toBeGreaterThanOrEqual(
+        (microphoneBox?.x ?? 0) +
+          (microphoneBox?.width ?? 0) -
+          (microphonePickerBox?.width ?? 0) -
+          4,
+      );
+      expect((microphonePickerBox?.x ?? 0) + (microphonePickerBox?.width ?? 0)).toBeLessThanOrEqual(
+        (microphoneBox?.x ?? 0) + (microphoneBox?.width ?? 0) + 4,
+      );
       await composer.locator(".agent-chat__file-input").setInputFiles({
         name: "mobile-composer-proof.txt",
         mimeType: "text/plain",
         buffer: Buffer.from("mobile composer attachment"),
       });
       await composer.locator(".chat-attachments-preview").waitFor({ state: "visible" });
-      const mobileModelSettings = composer.locator('[data-chat-model-settings="true"]');
 
       for (const picker of [
         {
@@ -61,22 +151,14 @@ suite.define(() => {
           trigger: '[data-chat-thinking-select="true"]',
         },
       ]) {
-        if (picker.menu === ".chat-controls__effort-menu") {
-          await mobileModelSettings.click();
-          await composer.locator(".chat-controls__mobile-effort-option").click();
-        } else {
-          await composer.locator(picker.trigger).click();
-        }
+        const pickerTrigger = composer.locator(picker.trigger);
+        await pickerTrigger.click();
         await page.waitForTimeout(100);
-        const visibleTrigger =
-          picker.menu === ".chat-controls__effort-menu"
-            ? mobileModelSettings
-            : composer.locator(picker.trigger);
         const [composerBox, footerBox, menuBox, triggerBox] = await Promise.all([
           composer.boundingBox(),
           composer.locator(".agent-chat__composer-footer").boundingBox(),
           page.locator(picker.menu).boundingBox(),
-          visibleTrigger.boundingBox(),
+          pickerTrigger.boundingBox(),
         ]);
         expect(composerBox).not.toBeNull();
         expect(footerBox).not.toBeNull();
@@ -94,21 +176,17 @@ suite.define(() => {
         expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(853);
         await page.keyboard.press("Escape");
       }
-      await mobileModelSettings.press("Enter");
-      const mobileEffortOption = composer.locator(".chat-controls__mobile-effort-option");
-      await expect.poll(() => mobileEffortOption.isVisible()).toBe(true);
-      await mobileEffortOption.press("Enter");
-      const focusedEffortControl = composer.locator(
-        "[data-chat-thinking-slider]:not([disabled]), [data-chat-speed-toggle]:not([disabled])",
-      );
+      const mobileEffortTrigger = composer.locator('[data-chat-thinking-select="true"]');
+      await mobileEffortTrigger.press("Enter");
       await expect
-        .poll(() =>
-          focusedEffortControl.first().evaluate((node) => node === document.activeElement),
-        )
+        .poll(() => composer.locator(".chat-controls__effort-menu").isVisible())
+        .toBe(true);
+      await expect
+        .poll(() => mobileEffortTrigger.evaluate((node) => node === document.activeElement))
         .toBe(true);
       await page.keyboard.press("Escape");
       await expect
-        .poll(() => mobileModelSettings.evaluate((node) => node === document.activeElement))
+        .poll(() => mobileEffortTrigger.evaluate((node) => node === document.activeElement))
         .toBe(true);
     });
   });
@@ -665,7 +743,7 @@ suite.define(() => {
         })
         .toBeLessThanOrEqual(393);
       await expect.poll(() => mobileModelSettings.isVisible()).toBe(true);
-      await expect.poll(() => effort.isVisible()).toBe(false);
+      await expect.poll(() => effort.isVisible()).toBe(true);
       await permission.click();
       await expect
         .poll(() => composer.locator(".chat-controls__permission-option").first().isVisible())
@@ -675,24 +753,28 @@ suite.define(() => {
       const [
         mobileAttachBox,
         mobileModelSettingsBox,
+        mobileEffortBox,
         mobileSettingsBox,
         mobileContextBox,
         mobileVoiceBox,
       ] = await Promise.all([
         attach.boundingBox(),
         mobileModelSettings.boundingBox(),
+        effort.boundingBox(),
         settings.boundingBox(),
         contextUsage.boundingBox(),
         voice.boundingBox(),
       ]);
       expect(mobileAttachBox).not.toBeNull();
       expect(mobileModelSettingsBox).not.toBeNull();
+      expect(mobileEffortBox).not.toBeNull();
       expect(mobileSettingsBox).not.toBeNull();
       expect(mobileContextBox).not.toBeNull();
       expect(mobileVoiceBox).not.toBeNull();
       if (
         !mobileAttachBox ||
         !mobileModelSettingsBox ||
+        !mobileEffortBox ||
         !mobileSettingsBox ||
         !mobileContextBox ||
         !mobileVoiceBox
@@ -705,7 +787,10 @@ suite.define(() => {
       expect(mobileModelSettingsBox.x).toBeGreaterThanOrEqual(
         mobileContextBox.x + mobileContextBox.width - 1,
       );
-      for (const control of [mobileModelSettingsBox, mobileContextBox]) {
+      expect(mobileEffortBox.x).toBeGreaterThanOrEqual(
+        mobileModelSettingsBox.x + mobileModelSettingsBox.width - 1,
+      );
+      for (const control of [mobileModelSettingsBox, mobileEffortBox, mobileContextBox]) {
         expect(
           Math.abs(
             control.y +
@@ -765,7 +850,8 @@ suite.define(() => {
       }
       expect(mobilePickerBox.x).toBeGreaterThanOrEqual(0);
       expect(mobilePickerBox.x + mobilePickerBox.width).toBeLessThanOrEqual(393);
-      await composer.locator(".chat-controls__mobile-effort-option").click();
+      await page.keyboard.press("Escape");
+      await effort.click();
       await expect
         .poll(() => composer.locator(".chat-controls__effort-menu").isVisible())
         .toBe(true);

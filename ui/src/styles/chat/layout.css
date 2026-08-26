@@ -7520,38 +7520,40 @@ button.chat-pr__diff {
   }
 
   .agent-chat__input--chat .agent-chat__composer-trail {
-    display: contents;
+    display: flex;
+    flex: 1 1 auto;
+    gap: 2px;
+    min-width: 0;
+    order: 2;
   }
 
   .agent-chat__input--chat .agent-chat__composer-meta {
     flex: 0 0 auto;
-    order: 3;
+    order: 1;
   }
 
   .agent-chat__input--chat .agent-chat__composer-controls {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     min-width: 0;
     order: 2;
-    overflow: hidden;
   }
 
   .agent-chat__input--chat .agent-chat__composer-actions {
     flex: 0 0 auto;
     gap: 8px;
-    order: 4;
+    order: 3;
   }
 
   @media (hover: none) {
-    /* Touch has no hover reveal, so the microphone picker stays reachable as a
-       compact split-button segment without occupying the space between Mic and
-       Send. The outer actions retain the same 8px rhythm as desktop. */
-    .agent-chat__input--chat .chat-talk-control {
+    /* Touch has no hover reveal, so every composer folds the input-device
+       picker into the microphone instead of spending a separate footer slot. */
+    .agent-chat__input .chat-talk-control {
       --chat-microphone-picker-width: 18px;
       position: relative;
       gap: 0;
     }
 
-    .agent-chat__input--chat .chat-talk-input-picker {
+    .agent-chat__input .chat-talk-input-picker {
       position: absolute;
       inset-inline-end: -2px;
       inset-block-end: -2px;
@@ -7559,7 +7561,7 @@ button.chat-pr__diff {
       width: var(--chat-microphone-picker-width);
     }
 
-    .agent-chat__input--chat .chat-talk-input-picker__trigger {
+    .agent-chat__input .chat-talk-input-picker__trigger {
       width: var(--chat-microphone-picker-width);
       min-width: var(--chat-microphone-picker-width);
       height: var(--chat-microphone-picker-width);
@@ -7567,7 +7569,7 @@ button.chat-pr__diff {
       background: var(--chat-composer-popover-background);
     }
 
-    .agent-chat__input--chat .chat-talk-input-picker__trigger svg {
+    .agent-chat__input .chat-talk-input-picker__trigger svg {
       width: 10px;
       height: 10px;
     }
@@ -7654,19 +7656,23 @@ button.chat-pr__diff {
   }
 
   .new-session-page__composer .agent-chat__composer-trail {
-    display: contents;
-  }
-
-  .new-session-page__composer .agent-chat__composer-controls {
-    flex: 1 1 0;
+    display: flex;
+    flex: 1 1 auto;
+    gap: 2px;
     min-width: 0;
     order: 2;
   }
 
+  .new-session-page__composer .agent-chat__composer-controls {
+    flex: 0 0 auto;
+    min-width: 0;
+    order: 1;
+  }
+
   .new-session-page__composer .agent-chat__composer-actions {
     flex: 0 0 auto;
-    gap: 2px;
-    order: 3;
+    gap: 8px;
+    order: 2;
   }
 
   .new-session-page__composer .chat-controls__trigger-provider-icon {
