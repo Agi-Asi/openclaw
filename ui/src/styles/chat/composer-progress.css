@@ -308,10 +308,7 @@
   }
 
   .session-progress-card__summary:hover
-    .session-progress-card__summary-count:is(
-      [data-outcome="failed"],
-      [data-outcome="timeout"]
-    ) {
+    .session-progress-card__summary-count:is([data-outcome="failed"], [data-outcome="timeout"]) {
     color: var(--danger);
   }
 }
