@@ -180,13 +180,13 @@ describe("formatDocumentTitle", () => {
   it("names the disconnected gateway without implying internet loss", () => {
     expect(
       formatDocumentTitle({ context: "Usage", gatewayDisconnected: true, queuedCount: 0 }),
-    ).toBe("(Gateway disconnected) Usage — OpenClaw");
+    ).toBe("(Disconnected) Usage — OpenClaw");
   });
 
   it("includes the queued outbox count in the disconnected marker", () => {
     expect(
       formatDocumentTitle({ context: "Usage", gatewayDisconnected: true, queuedCount: 3 }),
-    ).toBe("(Gateway disconnected · 3 queued) Usage — OpenClaw");
+    ).toBe("(Disconnected · 3 queued) Usage — OpenClaw");
   });
 
   it("ignores a queued count while online", () => {
@@ -196,7 +196,7 @@ describe("formatDocumentTitle", () => {
   it("suppresses the attention count while disconnected", () => {
     expect(
       formatDocumentTitle({ context: "Usage", attentionCount: 2, gatewayDisconnected: true }),
-    ).toBe("(Gateway disconnected) Usage — OpenClaw");
+    ).toBe("(Disconnected) Usage — OpenClaw");
   });
 });
 

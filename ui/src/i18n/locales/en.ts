@@ -4276,7 +4276,7 @@ export const en: TranslationMap = {
     eventStale: "Stale session",
   },
   connection: {
-    disconnectedTitle: "Gateway disconnected",
+    disconnectedTitle: "Disconnected",
     queuedCount: "{count} queued",
     reconnecting: "Reconnecting…",
     restarting: "Restarting…",
