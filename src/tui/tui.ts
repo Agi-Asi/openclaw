@@ -17,6 +17,7 @@ import {
   resolveSessionAgentId,
   tryResolveDefaultAgentId,
 } from "../agents/agent-scope.js";
+import { reloadSharedAuthStoreOwnership } from "../agents/auth-profiles/path-resolve.js";
 import { normalizeThinkLevel } from "../auto-reply/thinking.shared.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { getRuntimeConfig, type OpenClawConfig } from "../config/config.js";
@@ -1382,7 +1383,7 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
           }
 
           const invocation = resolveLocalAuthSpawnInvocation({ command, args });
-          return await authChild.spawnAndWait(() =>
+          const result = await authChild.spawnAndWait(() =>
             spawn(invocation.command, invocation.args, {
               cwd,
               env: process.env,
@@ -1390,6 +1391,10 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
               ...invocation.options,
             }),
           );
+          if (result.exitCode === 0 && !result.signal) {
+            reloadSharedAuthStoreOwnership();
+          }
+          return result;
         })
     : undefined;
 
