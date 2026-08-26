@@ -45,7 +45,10 @@ describe("plugin Talk session Gateway admission", () => {
     try {
       await expect(
         openScopedSession(
-          { logGateway: { warn: vi.fn() } } as unknown as GatewayRequestContext,
+          {
+            getRuntimeConfig: () => ({}),
+            logGateway: { warn: vi.fn() },
+          } as unknown as GatewayRequestContext,
           "agent:main:main",
         ),
       ).rejects.toThrow("talk.session.create unavailable during gateway suspension");

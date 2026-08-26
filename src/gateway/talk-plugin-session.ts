@@ -282,21 +282,27 @@ export async function openPluginTalkSession(
       if (events.closed) {
         throw new Error("Talk session is closed");
       }
-      sendTalkRealtimeRelayAudio({
+      const delivery = sendTalkRealtimeRelayAudio({
         relaySessionId,
         connId: ownerId,
         audioBase64: Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength).toString("base64"),
         timestamp: options?.timestamp,
+      });
+      void delivery?.catch((error) => {
+        context.logGateway.warn(`plugin Talk audio delivery failed: ${formatErrorMessage(error)}`);
       });
     },
     cancelOutput(reason) {
       if (events.closed) {
         return;
       }
-      cancelTalkRealtimeRelayTurn({
+      const cancellation = cancelTalkRealtimeRelayTurn({
         relaySessionId,
         connId: ownerId,
         reason: reason?.trim() || "plugin-cancelled",
+      });
+      void cancellation?.catch((error) => {
+        context.logGateway.warn(`plugin Talk cancellation failed: ${formatErrorMessage(error)}`);
       });
     },
     close() {

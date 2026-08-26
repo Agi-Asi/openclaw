@@ -248,7 +248,7 @@ describe("talk realtime gateway relay", () => {
       tools: [],
     });
 
-    sendTalkRealtimeRelayAudio({
+    void sendTalkRealtimeRelayAudio({
       relaySessionId: session.relaySessionId,
       connId: "conn-local-sink",
       audioBase64: Buffer.from([1, 2]).toString("base64"),
@@ -291,7 +291,7 @@ describe("talk realtime gateway relay", () => {
       tools: [],
     });
 
-    sendTalkRealtimeRelayAudio({
+    void sendTalkRealtimeRelayAudio({
       relaySessionId: session.relaySessionId,
       connId: "conn-throwing-sink",
       audioBase64: Buffer.from([1, 2]).toString("base64"),
