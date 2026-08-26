@@ -702,23 +702,27 @@ describe("cli json stdout contract", () => {
     );
   });
 
+  // Every case opens the state database: config-health observation
+  // (observeConfigSnapshot -> readConfigHealthStateFromStore) runs on any
+  // config read whose file exists, so the migration diagnostic always lands
+  // on stderr; the protected contract is that stdout stays exact.
   it.each([
     {
       name: "aliases list",
       args: ["models", "aliases", "list", "--plain"],
-      opensStateDatabase: false,
+      opensStateDatabase: true,
       expectedStdout: "chat anthropic/claude-sonnet-4-6\n",
     },
     {
       name: "fallbacks list",
       args: ["models", "fallbacks", "list", "--plain"],
-      opensStateDatabase: false,
+      opensStateDatabase: true,
       expectedStdout: "anthropic/claude-sonnet-4-6\n",
     },
     {
       name: "image fallbacks list",
       args: ["models", "image-fallbacks", "list", "--plain"],
-      opensStateDatabase: false,
+      opensStateDatabase: true,
       expectedStdout: "anthropic/claude-sonnet-4-6\n",
     },
     {
