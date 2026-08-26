@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { isLiveTestEnabled } from "../../agents/live-test-helpers.js";
 import { resolveAgentRunSessionTarget } from "../../agents/run-session-target.js";
 import { SessionManager } from "../../agents/sessions/index.js";
@@ -189,10 +189,30 @@ describeLive("skill experience review live OpenAI eval", () => {
     ];
 
     const positiveCandidate = await candidate("live-positive", positiveMessages);
+    const embeddedAgent = await import("../../agents/embedded-agent.js");
+    const runEmbeddedAgent = embeddedAgent.runEmbeddedAgent;
+    const runSpy = vi
+      .spyOn(embeddedAgent, "runEmbeddedAgent")
+      .mockImplementation(async (params) => {
+        const result = await runEmbeddedAgent(params);
+        console.info(
+          "[skill-review-diagnostic]",
+          JSON.stringify({
+            entries: params.sessionManager?.getEntries().slice(-12),
+            payloads: result.payloads,
+          }),
+        );
+        return result;
+      });
     await runSkillExperienceReview(positiveCandidate, {
       getCurrentConfig: () => positiveCandidate.config ?? {},
     });
+    runSpy.mockRestore();
     const afterPositive = await listSkillProposals({ workspaceDir });
+    console.info(
+      "[skill-review-outcome]",
+      JSON.stringify({ proposalCount: afterPositive.proposals.length }),
+    );
     expect(afterPositive.proposals).toHaveLength(1);
     expect(afterPositive.proposals[0]).toMatchObject({ status: "pending" });
 
