@@ -95,6 +95,12 @@
   background: linear-gradient(to bottom, var(--chat-surface), transparent);
 }
 
+@media (max-width: 768px) {
+  .chat-main__conversation::before {
+    display: none;
+  }
+}
+
 openclaw-chat-sidebar-region,
 .sidebar-region__right-runtime {
   display: contents;
