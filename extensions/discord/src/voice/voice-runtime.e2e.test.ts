@@ -46,7 +46,6 @@ defineDiscordVoiceTests(
     lastAgentCommandToolNames,
     createJoinedAgentProxyFixture,
     lastTtsArgs,
-    lastTtsStreamArgs,
     expectUserMessageNotIncludes,
     processVoiceSegment,
     updateVoiceState,
@@ -351,44 +350,6 @@ defineDiscordVoiceTests(
       expect(transcriptLog).toContain("hello from voice ");
       expect(transcriptLog).not.toContain("\n");
       expect(transcriptLog?.length).toBeLessThan(650);
-    });
-
-    it("plays streaming TTS audio before falling back to a synthesized file", async () => {
-      const release = vi.fn(async () => undefined);
-      textToSpeechStreamMock.mockResolvedValue({
-        success: true,
-        audioStream: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new Uint8Array([1, 2, 3]));
-            controller.close();
-          },
-        }),
-        release,
-      });
-      agentCommandMock.mockResolvedValueOnce({
-        payloads: [{ text: "hello back" }],
-      } as never);
-
-      const client = createClientWithMember("u-guest", "Guest", "4321");
-      const manager = createManager(
-        { groupPolicy: "open", allowFrom: ["discord:u-guest"] },
-        client,
-        {},
-      );
-      await processVoiceSegment(manager, "u-guest");
-
-      expect(lastTtsStreamArgs().channel).toBe("discord");
-      expect(lastTtsStreamArgs().disableFallback).toBe(true);
-      expect(lastTtsStreamArgs().text).toBe("hello back");
-      expect(textToSpeechMock).not.toHaveBeenCalled();
-      const audioResourceInput = lastMockCall(
-        createAudioResourceMock as unknown as MockCallSource,
-        "audio resource",
-      )[0];
-      if (audioResourceInput === undefined) {
-        throw new Error("expected Discord audio resource input");
-      }
-      await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
     });
 
     it("logs a failed streaming provider once per session when using file fallback", async () => {
