@@ -385,7 +385,7 @@ describe("irc monitor reconnect", () => {
         return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
       });
       setIrcRuntime(core as never);
-      const runtime = { log: vi.fn(), error: vi.fn() };
+      const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
       const statusSink = vi.fn();
       const server = await startInboundIrcServer("bot");
       let monitor: { stop: () => Promise<void> } | undefined;
