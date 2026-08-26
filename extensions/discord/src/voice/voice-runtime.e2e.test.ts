@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { MockCallSource } from "./manager.e2e.test-support.js";
 import { defineDiscordVoiceTests } from "./voice-test-harness.test-support.js";
 
 defineDiscordVoiceTests(
@@ -11,13 +10,11 @@ defineDiscordVoiceTests(
     vi,
     createVoiceCaptureState,
     createVoiceReceiveRecoveryState,
-    lastMockCall,
     createDefaultVoiceStates,
     createConnectionMock,
     joinVoiceChannelMock,
     entersStateMock,
     createAudioPlayerMock,
-    createAudioResourceMock,
     agentCommandMock,
     resolveVoiceIngressWithParticipantsMock,
     transcribeAudioFileMock,
