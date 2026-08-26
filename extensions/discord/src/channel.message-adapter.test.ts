@@ -96,7 +96,7 @@ describe("discord channel message adapter", () => {
       replyToIdSource: "explicit",
       replyToMode: "off",
       deps: {
-        discord: async (to, text, options) =>
+        discord: async (...[to, text, options]: Parameters<typeof sendMessageDiscord>) =>
           await sendMessageDiscord(to, text, { ...options, cfg, rest, token: "fixture-token" }),
       },
     });
