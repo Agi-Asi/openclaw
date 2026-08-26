@@ -2,21 +2,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
-import type { CreateSandboxBackendParams } from "openclaw/plugin-sdk/sandbox";
 import {
   resolvePreferredOpenClawTmpDir,
   tempWorkspace,
   type TempWorkspace,
 } from "openclaw/plugin-sdk/temp-path";
-import {
-  createSandboxBrowserConfig,
-  createSandboxPruneConfig,
-  createSandboxSshConfig,
-  createSandboxTestContext,
-} from "openclaw/plugin-sdk/test-fixtures";
+import { createSandboxTestContext } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOpenShellSandboxBackendFactory } from "./backend.js";
 import { resolveOpenShellPluginConfig } from "./config.js";
+import { createOpenShellBackendSandboxConfig } from "./openshell.test-support.js";
 
 const sdkMocks = vi.hoisted(() => ({
   runSshSandboxCommand: vi.fn(),
@@ -50,41 +45,16 @@ vi.mock("./cli.js", async (importOriginal) => {
 
 const tempWorkspaces: TempWorkspace[] = [];
 
-function createOpenShellBackendSandboxConfig(): CreateSandboxBackendParams["cfg"] {
-  return {
-    mode: "all",
-    backend: "openshell",
-    scope: "session",
-    workspaceAccess: "rw",
-    workspaceRoot: "/tmp/openclaw-sandboxes",
-    dockerTmpfsSource: "configured",
-    docker: {
-      image: "openclaw-sandbox:bookworm-slim",
-      containerPrefix: "openclaw-sbx-",
-      workdir: "/workspace",
-      readOnlyRoot: false,
-      tmpfs: [],
-      network: "none",
-      capDrop: [],
-      binds: [],
-      env: {},
-    },
-    ssh: createSandboxSshConfig("/tmp/openclaw-sandboxes"),
-    browser: createSandboxBrowserConfig(),
-    tools: { allow: ["*"], deny: [] },
-    prune: createSandboxPruneConfig(),
-  };
-}
-
 async function createOpenShellBackendFixture(params: {
   workspaceDir: string;
   scopeKey: string;
   command?: string;
+  mode?: "mirror" | "remote";
 }) {
   const factory = createOpenShellSandboxBackendFactory({
     pluginConfig: resolveOpenShellPluginConfig({
       command: params.command ?? "openshell",
-      mode: "mirror",
+      mode: params.mode ?? "mirror",
     }),
   });
   return await factory({
@@ -152,18 +122,9 @@ describe("openshell backend exec workdir validation", () => {
       await fs.mkdir(protectedPath, { recursive: true });
       await fs.writeFile(path.join(protectedPath, "private.txt"), "host-only", "utf8");
     }
-    const backendFactory = createOpenShellSandboxBackendFactory({
-      pluginConfig: resolveOpenShellPluginConfig({
-        command: "openshell",
-        mode: "mirror",
-      }),
-    });
-    const backend = await backendFactory({
-      sessionKey: "agent:main:turn",
+    const backend = await createOpenShellBackendFixture({
       scopeKey: "agent:somalley_alice:dashboard-8",
       workspaceDir,
-      agentWorkspaceDir: workspaceDir,
-      cfg: createOpenShellBackendSandboxConfig(),
     });
 
     await expect(backend.validateWorkdir?.("/workspace")).resolves.toBe("/workspace");
@@ -241,18 +202,9 @@ describe("openshell backend exec workdir validation", () => {
     tempWorkspaces.push(workspace);
     const workspaceDir = workspace.dir;
     await fs.writeFile(path.join(workspaceDir, "seed.txt"), "seed", "utf8");
-    const backendFactory = createOpenShellSandboxBackendFactory({
-      pluginConfig: resolveOpenShellPluginConfig({
-        command: "openshell",
-        mode: "mirror",
-      }),
-    });
-    const backend = await backendFactory({
-      sessionKey: "agent:main:turn",
+    const backend = await createOpenShellBackendFixture({
       scopeKey: "agent:main",
       workspaceDir,
-      agentWorkspaceDir: workspaceDir,
-      cfg: createOpenShellBackendSandboxConfig(),
     });
 
     await expect(backend.validateWorkdir?.("/workspace")).resolves.toBe("/workspace");
@@ -434,5 +386,93 @@ describe("openshell backend exec workdir validation", () => {
         token: secondExec.finalizeToken,
       });
     }
+  });
+});
+
+// Covers the remote-mode seed obligation across a gateway restart: adopting an
+// existing sandbox must probe the managed roots instead of trusting process
+// memory, and must never re-seed roots that already hold content.
+async function createAdoptedRemoteBackend(params: { probeStdout: string }) {
+  const workspace = await tempWorkspace({
+    rootDir: resolvePreferredOpenClawTmpDir(),
+    prefix: "openclaw-openshell-remote-seed-",
+  });
+  tempWorkspaces.push(workspace);
+  await fs.writeFile(path.join(workspace.dir, "seed.txt"), "seed", "utf8");
+  cliMocks.createOpenShellSshSession.mockResolvedValue({
+    command: "ssh",
+    configPath: "/tmp/openclaw-openshell-test-ssh-config",
+    host: "openshell-test",
+  });
+  // `sandbox get` succeeds: the sandbox was created by a previous gateway
+  // process that died before the first exec could run the one-time seed.
+  cliMocks.runOpenShellCli.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+  sdkMocks.prepareSshSandboxExec.mockResolvedValue({
+    argv: ["ssh", "openshell-test"],
+    cleanup: vi.fn(),
+  });
+  sdkMocks.runSshSandboxCommand.mockImplementation(async ({ remoteCommand }) => ({
+    stdout: String(remoteCommand).includes("ls -A")
+      ? Buffer.from(params.probeStdout)
+      : Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    code: 0,
+  }));
+  return await createOpenShellBackendFixture({
+    workspaceDir: workspace.dir,
+    scopeKey: "agent:main",
+    mode: "remote",
+  });
+}
+
+function seedUploadCalls() {
+  return cliMocks.runOpenShellCli.mock.calls.filter(
+    ([params]) => params.args[0] === "sandbox" && params.args[1] === "upload",
+  );
+}
+
+describe("openshell remote-mode seed across gateway restart", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    await Promise.all(tempWorkspaces.splice(0).map((workspace) => workspace.cleanup()));
+  });
+
+  it("seeds an adopted sandbox whose managed roots are empty", async () => {
+    const backend = await createAdoptedRemoteBackend({ probeStdout: "0\n" });
+
+    const execSpec = await backend.buildExecSpec({ command: "pwd", env: {}, usePty: false });
+
+    const uploads = seedUploadCalls();
+    expect(uploads.length).toBeGreaterThan(0);
+    expect(uploads[0]?.[0]).toMatchObject({
+      args: expect.arrayContaining([expect.stringMatching(/\/seed\.txt$/), "/sandbox/"]),
+    });
+    await backend.finalizeExec?.({
+      status: "completed",
+      exitCode: 0,
+      timedOut: false,
+      token: execSpec.finalizeToken,
+    });
+  });
+
+  it("never re-seeds when a managed root already holds content", async () => {
+    const backend = await createAdoptedRemoteBackend({ probeStdout: "1\n" });
+
+    const execSpec = await backend.buildExecSpec({ command: "pwd", env: {}, usePty: false });
+
+    expect(seedUploadCalls()).toHaveLength(0);
+    const wipeCalls = sdkMocks.runSshSandboxCommand.mock.calls.filter(([params]) =>
+      String(params.remoteCommand).includes("rm -rf"),
+    );
+    expect(wipeCalls).toHaveLength(0);
+    await backend.finalizeExec?.({
+      status: "completed",
+      exitCode: 0,
+      timedOut: false,
+      token: execSpec.finalizeToken,
+    });
   });
 });
