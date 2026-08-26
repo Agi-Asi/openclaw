@@ -57,6 +57,11 @@ import { getGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js"
 const BEFORE_TOOL_CALL_HOOK_FAILURE_REASON =
   "Tool call blocked because before_tool_call hook failed";
 
+/** Keep receipt ownership private without widening observable hook outcomes. */
+function markOwnerDecision(outcome: HookOutcome): void {
+  Object.defineProperty(outcome, "ownerDecision", { value: true });
+}
+
 export function getBeforeToolCallPolicyDiagnosticState(): BeforeToolCallPolicyDiagnosticState {
   const policyRegistry = getGlobalHookRunnerRegistry() ?? undefined;
   return {
@@ -140,6 +145,7 @@ export async function runBeforeToolCallHook(args: {
             deniedReason: "tool-loop",
             reason: intervention.reason,
             params,
+            genericDecision: true,
           };
         }
       }
@@ -259,6 +265,7 @@ export async function runBeforeToolCallHook(args: {
         deniedReason: "plugin-before-tool-call",
         reason: trustedPolicyResult.blockReason || "Tool call blocked by trusted plugin policy",
         params,
+        genericDecision: true,
       };
     }
     let trustedApprovalParams: unknown;
@@ -312,6 +319,7 @@ export async function runBeforeToolCallHook(args: {
         params: policyAdjustedParams,
       };
       if (trustedApprovalResolution) {
+        markOwnerDecision(allowed);
         allowed.approvalResolution = trustedApprovalResolution;
       }
       return allowed;
@@ -397,6 +405,9 @@ export async function runBeforeToolCallHook(args: {
       blocked: false as const,
       params: finalParams,
     };
+    if (hookResult || finalApprovalResolution) {
+      markOwnerDecision(allowed);
+    }
     if (finalApprovalResolution) {
       allowed.approvalResolution = finalApprovalResolution;
     }
