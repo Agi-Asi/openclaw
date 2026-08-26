@@ -81,12 +81,7 @@ export async function createBuzzQaTransportAdapter(
       : undefined;
   const lease = await context.credentials.acquire({
     kind: "buzz",
-    source:
-      requestedCredentialSource === "convex"
-        ? "convex"
-        : requestedCredentialSource === "file"
-          ? "env"
-          : undefined,
+    source: requestedCredentialSource === "file" ? "env" : requestedCredentialSource,
     role: options.credentialRole,
     resolveEnvPayload: () => {
       if (!fileCredentials) {
