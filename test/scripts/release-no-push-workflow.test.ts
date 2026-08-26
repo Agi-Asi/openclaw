@@ -1586,6 +1586,12 @@ describe("release validation no-push transport", () => {
     expect(publishRelease.if).toBeUndefined();
     expect(publishRelease.run).toContain('gh release edit "${RELEASE_TAG}"');
     expect(publishRelease.run).toContain("--draft=false");
+    expect(publishRelease.run).toContain('latest_arg="--latest=false"');
+    expect(publishRelease.run).toContain('latest_arg="--latest"');
+    expect(publishRelease.run).toContain("release(tagName:$tag){isDraft isLatest isPrerelease}");
+    expect(publishRelease.run).toContain("'.data.repository.release'");
+    expect(publishRelease.run).toContain("'.isLatest'");
+    expect(publishRelease.run).toContain('!= "${expected_latest}"');
 
     const releasePublishText = readFileSync(releasePublishPath, "utf8");
     expect(releasePublishText).toContain("publish_docker_only");
