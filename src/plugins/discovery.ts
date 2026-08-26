@@ -884,6 +884,7 @@ function addCandidate(params: {
 
 function discoverBundleInRoot(params: {
   rootDir: string;
+  hasPackageExtensions: boolean;
   origin: PluginOrigin;
   env: NodeJS.ProcessEnv;
   ownershipUid?: number | null;
@@ -897,7 +898,7 @@ function discoverBundleInRoot(params: {
   realpathCache: Map<string, string>;
 }): "added" | "invalid" | "none" {
   return withPluginScanExistenceCache(() => {
-    const bundleFormat = detectBundleManifestFormat(params.rootDir);
+    const bundleFormat = detectBundleManifestFormat(params.rootDir, params.hasPackageExtensions);
     if (!bundleFormat) {
       return "none";
     }
@@ -1170,6 +1171,7 @@ function discoverPluginDirectory(params: PluginDirectoryDiscoveryParams): boolea
   if (
     discoverBundleInRoot({
       rootDir: dir,
+      hasPackageExtensions: extensions.length > 0,
       origin: params.origin,
       env: params.env,
       ownershipUid: params.ownershipUid,
