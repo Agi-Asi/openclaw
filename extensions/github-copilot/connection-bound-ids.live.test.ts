@@ -106,6 +106,16 @@ function buildReplayAssistantMessage(connectionBoundId: string): AssistantMessag
     timestamp: Date.now() - 1,
     content: [
       {
+        type: "thinking",
+        thinking: "Earlier assistant reasoning.",
+        thinkingSignature: JSON.stringify({
+          type: "reasoning",
+          id: "rs_live_replay",
+          encrypted_content: "intentionally-invalid-replay-ciphertext",
+          summary: [{ type: "summary_text", text: "Earlier assistant reasoning." }],
+        }),
+      },
+      {
         type: "text",
         text: "Earlier assistant text.",
         textSignature: JSON.stringify({ v: 1, id: connectionBoundId }),
@@ -205,6 +215,7 @@ describeLive("github-copilot connection-bound Responses IDs live", () => {
       {
         apiKey: token.apiKey,
         maxTokens: 256,
+        replayResponsesItemIds: true,
         onPayload: (payload: unknown) => {
           capturedPayload = {
             ...(payload as Record<string, unknown>),
@@ -219,6 +230,12 @@ describeLive("github-copilot connection-bound Responses IDs live", () => {
     const result = (await stream.result()) as AssistantMessage;
     logProgress("tool-call Responses request completed");
     const input = Array.isArray(capturedPayload?.input) ? capturedPayload.input : [];
+    const replayedReasoning = input.find(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        (item as Record<string, unknown>).type === "reasoning",
+    );
     const replayedAssistant = input.find(
       (item): item is Record<string, unknown> =>
         Boolean(item) &&
@@ -226,6 +243,8 @@ describeLive("github-copilot connection-bound Responses IDs live", () => {
         (item as Record<string, unknown>).type === "message",
     );
 
+    expect(replayedReasoning?.id).toBe("rs_live_replay");
+    expect(replayedReasoning).not.toHaveProperty("encrypted_content");
     expect(replayedAssistant?.id).toMatch(/^msg_[a-f0-9]{16}$/);
     expect(replayedAssistant?.id).not.toBe(staleId);
     const toolCall = result.content.find((block) => block.type === "toolCall");

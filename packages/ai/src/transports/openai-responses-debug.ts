@@ -457,6 +457,8 @@ export function normalizeResponsesFailedEvent(
 }
 
 export class ResponsesStreamFailure extends Error {
+  readonly code?: string;
+  readonly status?: number;
   readonly responseId?: string;
   readonly response: unknown;
   readonly observation: ReturnType<typeof normalizeResponsesFailedEvent>["observation"];
@@ -464,6 +466,15 @@ export class ResponsesStreamFailure extends Error {
   constructor(failure: ReturnType<typeof normalizeResponsesFailedEvent>, response: unknown) {
     super(failure.message);
     this.name = "ResponsesStreamFailure";
+    const providerError =
+      isRecord(response) && isRecord(response.error) ? response.error : undefined;
+    const code = providerError && readResponseFailedString(providerError, "code").trim();
+    if (code) {
+      this.code = code;
+    }
+    if (typeof providerError?.status === "number") {
+      this.status = providerError.status;
+    }
     this.responseId = failure.responseId;
     this.response = response;
     this.observation = failure.observation;

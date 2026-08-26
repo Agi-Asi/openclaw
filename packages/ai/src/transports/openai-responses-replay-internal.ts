@@ -1,4 +1,4 @@
-import type { Model } from "@openclaw/llm-core";
+import type { AssistantMessage, Model } from "@openclaw/llm-core";
 import type { ResponseInput } from "openai/resources/responses/responses.js";
 import type { OpenAIResponsesCompactionRejection } from "../provider-options.js";
 import type { createOpenAIResponsesClient } from "./openai-responses-client.js";
@@ -6,6 +6,7 @@ import {
   DEFAULT_AZURE_OPENAI_API_VERSION,
   type OpenAIResponsesRequestParams,
 } from "./openai-responses-contracts.js";
+import { ResponsesStreamFailure } from "./openai-responses-debug.js";
 import type { createResponsesPromptEgressObserver } from "./openai-responses-prompt-observer-internal.js";
 import { stripEncryptedReasoningContentFields } from "./openai-responses-replay-messages-internal.js";
 import { log } from "./openai-transport-shared.js";
@@ -28,12 +29,19 @@ export function isInvalidEncryptedContentError(error: unknown): boolean {
     return true;
   }
   const message = typeof record.message === "string" ? record.message : "";
+  const normalizedMessage = message.toLowerCase();
   return (
     message.includes("invalid_encrypted_content") ||
     message.includes("thinking_signature_invalid") ||
     // xAI reports this exact prose contract without an error code.
     (record.status === 400 &&
-      message.toLowerCase().includes("could not decrypt the provided encrypted_content"))
+      normalizedMessage.includes("could not decrypt the provided encrypted_content")) ||
+    // Copilot omits both the code and, for streamed failures, the HTTP status.
+    ((record.status === 400 ||
+      (error instanceof ResponsesStreamFailure && record.status === undefined)) &&
+      normalizedMessage.includes("encrypted content") &&
+      (normalizedMessage.includes("could not be verified") ||
+        normalizedMessage.includes("could not be decrypted or parsed")))
   );
 }
 
@@ -161,6 +169,46 @@ export async function resolveNextResponsesEncryptedContentAttempt<
     request: compactionStripped,
     rejectedCompaction: readOpenAIResponsesCompactionRejection(attempt.request),
   };
+}
+
+export async function drainResponsesStreamWithEncryptedContentRetry<T>(params: {
+  stream: AsyncIterable<unknown>;
+  attempt: ResponsesEncryptedContentAttempt<OpenAIResponsesRequestParams>;
+  output: AssistantMessage;
+  signal?: AbortSignal;
+  processStream: (stream: AsyncIterable<unknown>) => Promise<T>;
+  createStream: (
+    attempt: ResponsesEncryptedContentAttempt<OpenAIResponsesRequestParams>,
+  ) => Promise<{
+    stream: AsyncIterable<unknown>;
+    attempt: ResponsesEncryptedContentAttempt<OpenAIResponsesRequestParams>;
+  }>;
+  buildFullHistoryRequest?: () =>
+    | OpenAIResponsesRequestParams
+    | Promise<OpenAIResponsesRequestParams>;
+}): Promise<T> {
+  let { stream, attempt } = params;
+  const initialUsage = params.output.usage;
+  for (;;) {
+    try {
+      return await params.processStream(stream);
+    } catch (error) {
+      // Lazy provider streams fail after creation; replaying public output would duplicate it.
+      if (params.signal?.aborted || params.output.content.length > 0) {
+        throw error;
+      }
+      const recovery = await resolveNextResponsesEncryptedContentAttempt(attempt, error, {
+        buildFullHistoryRequest: params.buildFullHistoryRequest,
+      });
+      if (!recovery) {
+        throw error;
+      }
+      delete params.output.responseId;
+      delete params.output.responseModel;
+      params.output.usage = initialUsage;
+      ({ stream, attempt } = await params.createStream(recovery));
+    }
+  }
 }
 
 export async function createResponsesStreamWithEncryptedContentRetry(params: {

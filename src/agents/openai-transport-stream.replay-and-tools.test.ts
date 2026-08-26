@@ -716,7 +716,7 @@ describe("openai transport stream", () => {
     expect(onCompactionRejected).not.toHaveBeenCalled();
   });
 
-  it("does not retry encrypted-content failures emitted after stream creation", async () => {
+  it("leaves stream consumption failures to the managed transport recovery owner", async () => {
     const streamFailure = Object.assign(new Error("stream rejected encrypted content"), {
       code: "invalid_encrypted_content",
     });
@@ -902,6 +902,25 @@ describe("openai transport stream", () => {
       label: "rejects the xAI phrase on a 500",
       status: 500,
       message: "Could not decrypt the provided encrypted_content.",
+      expected: false,
+    },
+    {
+      label: "matches Copilot's code-less encrypted-content verification 400",
+      status: 400,
+      message:
+        "The encrypted content for item rs_prior could not be verified. Reason: Encrypted content could not be decrypted or parsed.",
+      expected: true,
+    },
+    {
+      label: "rejects Copilot's encrypted-content prose on a 500",
+      status: 500,
+      message: "The encrypted content could not be verified.",
+      expected: false,
+    },
+    {
+      label: "rejects unrelated verification failures",
+      status: 400,
+      message: "The request signature could not be verified.",
       expected: false,
     },
   ])("$label", ({ status, message, expected }) => {

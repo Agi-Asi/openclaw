@@ -16,6 +16,7 @@ import {
   captureOpenAIResponsesCompaction,
 } from "./openai-responses-compaction-replay.js";
 import { OPENAI_RESPONSES_REASONING_REPLAY_META_KEY } from "./openai-responses-contracts.js";
+import { rejectedSdkStream } from "./openai-responses-prompt-observer.test-support.js";
 
 type SdkResponse = { data: AsyncIterable<unknown>; response: Response };
 const SDK_FULL_HISTORY_PREFIX = "full history before compaction";
@@ -456,6 +457,173 @@ describe("OpenAI Responses provider prompt observer", () => {
     expect(JSON.stringify(sdkState.requests[2]?.input)).not.toContain(SDK_REASONING_CIPHERTEXT);
     expect(onPayload).toHaveBeenCalledTimes(2);
     expect(onCompactionRejected).toHaveBeenCalledOnce();
+  });
+
+  it("recovers a code-less Copilot replay rejection while draining one assistant lifecycle", async () => {
+    const identity = { sessionId: "copilot-recovery-session", authProfileId: "copilot-profile" };
+    const model = createModel({
+      provider: "github-copilot",
+      baseUrl: "https://api.individual.githubcopilot.com",
+    });
+    const context = createCompactionContext(model, identity, true);
+    const observations: ResponsesPromptObservation[] = [];
+    const options = { apiKey: "test-key", ...identity };
+    responsesPromptObserver.set(options, (observation) => observations.push(observation));
+    sdkState.outcomes = [
+      rejectedSdkStream({
+        message:
+          "The encrypted content could not be verified. Reason: Encrypted content could not be decrypted or parsed.",
+      }),
+      completedSdkResponse("resp_copilot_recovered"),
+    ];
+
+    const stream = await Promise.resolve(
+      createOpenAIResponsesTransportStreamFn()(model, context, options as never),
+    );
+    const events: string[] = [];
+    for await (const event of stream) {
+      events.push(event.type);
+    }
+    const recovered = await stream.result();
+
+    expect(recovered).toMatchObject({ stopReason: "stop", responseId: "resp_copilot_recovered" });
+    expect(recovered.responseModel).toBeUndefined();
+    expect(recovered.usage.totalTokens).toBe(8);
+    expect(events.filter((type) => type === "start")).toHaveLength(1);
+    expect(events.filter((type) => type === "done")).toHaveLength(1);
+    expect(sdkState.requests).toHaveLength(2);
+    expect(JSON.stringify(sdkState.requests[0])).toContain(SDK_REASONING_CIPHERTEXT);
+    expect(JSON.stringify(sdkState.requests[1])).not.toContain(SDK_REASONING_CIPHERTEXT);
+    expect(requestHasCompaction(sdkState.requests[0])).toBe(true);
+    expect(requestHasCompaction(sdkState.requests[1])).toBe(true);
+    expect(observations.map(({ payloadVariant }) => payloadVariant)).toEqual([
+      "initial",
+      "reasoning-stripped",
+    ]);
+  });
+
+  it("preserves staged compaction recovery after consecutive stream-drain rejections", async () => {
+    const identity = { sessionId: "drain-stage-session", authProfileId: "drain-profile" };
+    const model = createModel();
+    const context = createCompactionContext(model, identity, true);
+    const observations: ResponsesPromptObservation[] = [];
+    const onCompactionRejected = vi.fn();
+    const options = { apiKey: "test-key", ...identity, onCompactionRejected };
+    responsesPromptObserver.set(options, (observation) => observations.push(observation));
+    sdkState.outcomes = [
+      rejectedSdkStream({ code: "invalid_encrypted_content", message: "reasoning rejected" }),
+      rejectedSdkStream({ code: "invalid_encrypted_content", message: "compaction rejected" }),
+      completedSdkResponse("resp_drain_stages_recovered"),
+    ];
+
+    const stream = await Promise.resolve(
+      createOpenAIResponsesTransportStreamFn()(model, context, options as never),
+    );
+    expect(await stream.result()).toMatchObject({
+      stopReason: "stop",
+      responseId: "resp_drain_stages_recovered",
+      providerReplay: { type: "openai-responses-compaction-suppression", data: "rejected" },
+    });
+
+    expect(sdkState.requests).toHaveLength(3);
+    expect(requestHasCompaction(sdkState.requests[0])).toBe(true);
+    expect(requestHasCompaction(sdkState.requests[1])).toBe(true);
+    expect(requestHasCompaction(sdkState.requests[2])).toBe(false);
+    expect(JSON.stringify(sdkState.requests[1])).not.toContain(SDK_REASONING_CIPHERTEXT);
+    expect(JSON.stringify(sdkState.requests[2])).toContain(SDK_FULL_HISTORY_PREFIX);
+    expect(onCompactionRejected).toHaveBeenCalledOnce();
+    expect(observations.map(({ payloadVariant }) => payloadVariant)).toEqual([
+      "initial",
+      "reasoning-stripped",
+      "compaction-stripped",
+    ]);
+  });
+
+  it("recovers a nested encrypted-content stream error without losing its provider code", async () => {
+    const identity = { sessionId: "nested-error-session", authProfileId: "nested-profile" };
+    const model = createModel();
+    sdkState.outcomes = [
+      rejectedSdkStream(
+        { code: "invalid_encrypted_content", message: "reasoning rejected", status: 400 },
+        { nestedErrorEvent: true },
+      ),
+      completedSdkResponse("resp_nested_recovered"),
+    ];
+
+    const stream = await Promise.resolve(
+      createOpenAIResponsesTransportStreamFn()(
+        model,
+        createCompactionContext(model, identity, true),
+        { apiKey: "test-key", ...identity } as never,
+      ),
+    );
+
+    expect(await stream.result()).toMatchObject({
+      stopReason: "stop",
+      responseId: "resp_nested_recovered",
+    });
+    expect(sdkState.requests).toHaveLength(2);
+    expect(JSON.stringify(sdkState.requests[1])).not.toContain(SDK_REASONING_CIPHERTEXT);
+  });
+
+  it("never retries a rejected replay after assistant output has become visible", async () => {
+    const identity = { sessionId: "visible-output-session", authProfileId: "visible-profile" };
+    const model = createModel();
+    sdkState.outcomes = [
+      rejectedSdkStream(
+        { code: "invalid_encrypted_content", message: "reasoning rejected" },
+        {
+          events: [
+            {
+              type: "response.output_item.added",
+              output_index: 0,
+              item: { type: "message", id: "msg_visible", role: "assistant", content: [] },
+            },
+            {
+              type: "response.output_text.delta",
+              output_index: 0,
+              content_index: 0,
+              delta: "Already visible",
+            },
+          ],
+        },
+      ),
+      completedSdkResponse("resp_must_not_run"),
+    ];
+
+    const stream = await Promise.resolve(
+      createOpenAIResponsesTransportStreamFn()(
+        model,
+        createCompactionContext(model, identity, true),
+        { apiKey: "test-key", ...identity } as never,
+      ),
+    );
+
+    expect(await stream.result()).toMatchObject({ stopReason: "error" });
+    expect(sdkState.requests).toHaveLength(1);
+  });
+
+  it("never retries Copilot verification prose from an explicit streamed server failure", async () => {
+    const identity = { sessionId: "server-failure-session", authProfileId: "server-profile" };
+    const model = createModel({ provider: "github-copilot" });
+    sdkState.outcomes = [
+      rejectedSdkStream({
+        message: "The encrypted content could not be verified.",
+        status: 500,
+      }),
+      completedSdkResponse("resp_must_not_run"),
+    ];
+
+    const stream = await Promise.resolve(
+      createOpenAIResponsesTransportStreamFn()(
+        model,
+        createCompactionContext(model, identity, true),
+        { apiKey: "test-key", ...identity } as never,
+      ),
+    );
+
+    expect(await stream.result()).toMatchObject({ stopReason: "error", errorCode: "500" });
+    expect(sdkState.requests).toHaveLength(1);
   });
 
   it("does not invoke the provider or retry when prompt observation throws", async () => {

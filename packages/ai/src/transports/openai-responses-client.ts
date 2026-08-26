@@ -50,6 +50,7 @@ import { createResponsesPromptEgressObserver } from "./openai-responses-prompt-o
 import {
   createOpenAIResponsesAssistantOutput,
   createResponsesStreamWithEncryptedContentRetry,
+  drainResponsesStreamWithEncryptedContentRetry,
   isInvalidEncryptedContentError,
   resolveNextResponsesEncryptedContentAttempt,
   resolveAzureOpenAIApiVersion,
@@ -58,7 +59,7 @@ import { processResponsesStream } from "./openai-responses-stream-internal.js";
 import { observeResponsesStream } from "./openai-responses-stream-observer-internal.js";
 import {
   createOpenAIResponsesWebSocketStream,
-  type OpenAIResponsesWebSocketMode,
+  resolveNativeOpenAIResponsesWebSocketMode,
   supportsNativeOpenAIResponsesEndpoint,
 } from "./openai-responses-websocket.js";
 import {
@@ -82,25 +83,6 @@ import {
   withProviderResponseHook,
 } from "./transport-stream-shared.js";
 import { redactIdentifier } from "./transport-utils.js";
-
-function resolveNativeOpenAIResponsesWebSocketMode(
-  model: Model,
-  transport: OpenAIResponsesOptions["transport"],
-): OpenAIResponsesWebSocketMode | undefined {
-  if (transport !== "websocket" && transport !== "websocket-cached" && transport !== "auto") {
-    return undefined;
-  }
-  if (getAiTransportHost().requiresManagedTransport(model)) {
-    return undefined;
-  }
-  return supportsNativeOpenAIResponsesEndpoint({
-    provider: model.provider,
-    api: model.api,
-    baseUrl: model.baseUrl,
-  })
-    ? transport
-    : undefined;
-}
 
 function combineWebSocketTimeoutSignal(
   signal: AbortSignal,
@@ -419,6 +401,9 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
             `apiKey=${apiKey ? "present" : "missing"} ${summarizeResponsesPayload(params)}`,
         );
         let continuationBaseline: ResponsesContinuationRequest | undefined;
+        let responseAttempt: Awaited<
+          ReturnType<ResponsesTransportExecutorOptions["createResponseStream"]>
+        >["attempt"];
         const createSseStream = async (
           initialRequest = (continuationClaim?.request ?? params) as typeof params,
           initialAttemptKind: NonNullable<ResponsesStreamParams["initialAttemptKind"]> = "initial",
@@ -440,6 +425,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
             onCompactionRejected: (checkpoint) =>
               suppressOpenAIResponsesCompaction(output, model, responsesOptions, checkpoint),
           });
+          responseAttempt = attempt;
           if (continuationClaim) {
             continuationBaseline = attempt.request.previous_response_id
               ? (params as ResponsesContinuationRequest)
@@ -489,6 +475,11 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
               degradeCooldownMs: websocketSessionPolicy?.degradeCooldownMs,
             });
             finishWebSocket = websocket.finish;
+            responseAttempt = {
+              kind: "initial",
+              // WebSocket sanitization removes `stream`; SSE recovery must restore it.
+              request: { ...websocket.request, stream: true } as typeof params,
+            };
             observePrompt?.(websocket.request, {
               egress: "responses-websocket",
               payloadVariant: "initial",
@@ -523,15 +514,9 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
                     // semantic attempt instead of treating this like an ambiguous disconnect.
                     const encryptedContentRejected = isInvalidEncryptedContentError(error);
                     const recovery = encryptedContentRejected
-                      ? await resolveNextResponsesEncryptedContentAttempt(
-                          {
-                            kind: "initial",
-                            // WebSocket sanitization removes `stream`; SSE must restore it.
-                            request: { ...websocket.request, stream: true } as typeof params,
-                          },
-                          error,
-                          { buildFullHistoryRequest: () => buildRequest("full-history") },
-                        )
+                      ? await resolveNextResponsesEncryptedContentAttempt(responseAttempt, error, {
+                          buildFullHistoryRequest: () => buildRequest("full-history"),
+                        })
                       : undefined;
                     if (encryptedContentRejected && !recovery) {
                       throw error;
@@ -566,17 +551,38 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
           responseStream = await createSseStream();
         }
         try {
-          const terminal = await processResponsesStream(responseStream, output, stream, model, {
-            ...config.pricingOptions?.(responsesOptions, model),
-            firstEventTimeoutMs:
-              getFirstStreamEventTimeoutMs(options) ?? config.firstEventTimeoutMs,
-            abortFirstEventStream: firstEvent.abort,
-            onFirstEventTimeout: getFirstStreamEventTimeoutHandler(options),
+          const terminal = await drainResponsesStreamWithEncryptedContentRetry({
+            stream: responseStream,
+            attempt: responseAttempt,
+            output,
             signal: options?.signal,
-            reasoningReplayMetadata: buildOpenAIResponsesReasoningReplayMetadata(model, {
-              authProfileId: responsesOptions?.authProfileId,
-              sessionId: options?.sessionId,
-            }),
+            buildFullHistoryRequest: () => buildRequest("full-history"),
+            processStream: (candidate) =>
+              processResponsesStream(candidate, output, stream, model, {
+                ...config.pricingOptions?.(responsesOptions, model),
+                firstEventTimeoutMs:
+                  getFirstStreamEventTimeoutMs(options) ?? config.firstEventTimeoutMs,
+                abortFirstEventStream: firstEvent.abort,
+                onFirstEventTimeout: getFirstStreamEventTimeoutHandler(options),
+                signal: options?.signal,
+                reasoningReplayMetadata: buildOpenAIResponsesReasoningReplayMetadata(model, {
+                  authProfileId: responsesOptions?.authProfileId,
+                  sessionId: options?.sessionId,
+                }),
+              }),
+            createStream: async (attempt) => {
+              finishWebSocket?.({ keep: false });
+              finishWebSocket = undefined;
+              transport = "sse";
+              return {
+                stream: await createSseStream(
+                  attempt.request,
+                  attempt.kind,
+                  attempt.rejectedCompaction,
+                ),
+                attempt: responseAttempt,
+              };
+            },
           });
           finishWebSocket?.();
           if (options?.signal?.aborted) {

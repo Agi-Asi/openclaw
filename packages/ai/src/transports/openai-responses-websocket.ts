@@ -1,3 +1,4 @@
+import type { Model } from "@openclaw/llm-core";
 import type OpenAI from "openai";
 import type {
   ResponsesClientEvent,
@@ -17,6 +18,7 @@ import {
   OpenAIResponsesWebSocketPostDispatchError,
   OpenAIResponsesWebSocketPreDispatchError,
   OpenAIResponsesWebSocketSafeRetryError,
+  type OpenAIResponsesOptions,
 } from "./openai-responses-contracts.js";
 import { transportAbortError } from "./transport-stream-shared.js";
 import { sha256Hex } from "./transport-utils.js";
@@ -81,6 +83,19 @@ export function supportsNativeOpenAIResponsesEndpoint(params: {
     params.api === "openai-responses" &&
     isOfficialOpenAIResponsesBaseUrl(params.baseUrl)
   );
+}
+
+export function resolveNativeOpenAIResponsesWebSocketMode(
+  model: Model,
+  transport: OpenAIResponsesOptions["transport"],
+): OpenAIResponsesWebSocketMode | undefined {
+  if (
+    (transport !== "websocket" && transport !== "websocket-cached" && transport !== "auto") ||
+    getAiTransportHost().requiresManagedTransport(model)
+  ) {
+    return undefined;
+  }
+  return supportsNativeOpenAIResponsesEndpoint(model) ? transport : undefined;
 }
 
 function closeWebSocketSilently(socket: ResponsesWS, reason = "done"): void {

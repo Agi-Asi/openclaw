@@ -643,8 +643,13 @@ export async function processResponsesStream<TApi extends Api>(
         }
         break;
       } else if (event.type === "error") {
-        throw new Error(
-          event.message ? `Error Code ${event.code}: ${event.message}` : "Unknown error",
+        const nested = isRecord(event) && isRecord(event.error) ? event.error : undefined;
+        const code = typeof event.code === "string" ? event.code : nested?.code;
+        const message = typeof event.message === "string" ? event.message : nested?.message;
+        throw Object.assign(
+          new Error(message ? `Error Code ${code}: ${message}` : "Unknown error"),
+          ...(typeof code === "string" ? [{ code }] : []),
+          ...(typeof nested?.status === "number" ? [{ status: nested.status }] : []),
         );
       } else if (event.type === "response.failed") {
         const failure = normalizeResponsesFailedEvent(isRecord(event) ? event : {}, model);
