@@ -25,6 +25,30 @@ function overlaps(left: DOMRect, right: DOMRect): boolean {
 }
 
 describe.skipIf(!hasBrowserLayout)("navigation surface browser layout", () => {
+  it("does not move update attention into collapsed chrome", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const params = {
+      navigationSurfaceHidden: true,
+      mobileNavLayout: false,
+      onboarding: false,
+      updateAvailable: {
+        channel: "stable" as const,
+        currentVersion: "1.0.0",
+        latestVersion: "2.0.0",
+      },
+      updateBusy: false,
+      onUpdate: () => undefined,
+      refreshRequired: false,
+      onRefresh: () => undefined,
+    };
+
+    render(renderFloatingUpdateCard(params), container);
+
+    expect(document.querySelector("openclaw-sidebar-attention")).toBeNull();
+    expect(document.querySelector("openclaw-sidebar-update-card")).toBeNull();
+  });
+
   it("keeps the floating refresh card clear of the collapsed chrome cluster", async () => {
     await useDesktopViewport();
     render(

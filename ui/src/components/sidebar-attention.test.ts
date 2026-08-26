@@ -69,6 +69,7 @@ type SidebarAttentionElement = HTMLElement & {
   context: ApplicationContext;
   updateComplete: Promise<boolean>;
   cronJobs: CronJob[];
+  showInboxButton: boolean;
   startUpdate(): void;
   modelAuthStatus: ModelAuthStatusResult | null;
   loadedAtMs: number;
@@ -572,6 +573,55 @@ describe("sidebar attention refresh ownership", () => {
 });
 
 describe("update attention", () => {
+  it("can hide Inbox while keeping the footer update", async () => {
+    const context = {
+      gateway: {
+        snapshot: {
+          phase: "connected",
+          client: null,
+          hello: {
+            auth: { role: "operator", scopes: ["operator.admin"] },
+            features: { methods: ["update.run"] },
+            server: { bootId: "boot-a" },
+          },
+        },
+        connection: { gatewayUrl: "" },
+        subscribe: () => () => undefined,
+        subscribeEvents: () => () => undefined,
+      },
+      overlays: {
+        snapshot: {
+          approvalQueue: [],
+          updateAvailable: {
+            currentVersion: "2026.8.1",
+            latestVersion: "2026.8.2",
+            channel: "latest",
+          },
+          updateRunning: false,
+          updateReconciliationPending: false,
+          updateStatusBanner: null,
+        },
+        subscribe: () => () => undefined,
+      },
+      agentSelection: {
+        state: { selectedId: null, scopeId: null },
+        subscribe: () => () => undefined,
+      },
+      scopeUpgrade: hiddenScopeUpgradeCapability,
+    } as unknown as ApplicationContext;
+    const provider = createApplicationContextProvider(context);
+    const element = document.createElement("openclaw-sidebar-attention") as SidebarAttentionElement;
+    element.showInboxButton = false;
+    provider.append(element);
+    document.body.append(provider);
+
+    await element.updateComplete;
+
+    expect(element.querySelector(".sidebar-issues-button")).toBeNull();
+    expect(element.querySelector(".sidebar-footer-update")).not.toBeNull();
+    provider.remove();
+  });
+
   it("hides an unhydrated campaign only while update status can be polled", () => {
     const overlaySnapshot = {
       updateAvailable: {
