@@ -1,7 +1,8 @@
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
 import { parseCmdScriptCommandLine } from "../daemon/cmd-argv.js";
 import { sleep } from "../utils/sleep.js";
 import { getCommandPositionalsWithRootOptions } from "./cli-root-options.js";
@@ -13,7 +14,8 @@ import { readWindowsProcessStartTimeSync } from "./windows-port-pids.js";
 export type LocalTuiProcess = {
   pid: number;
   command: string;
-  startTime?: string;
+  instanceId?: string;
+  instanceIdentity?: "coarse" | "strong";
   ownership: "target" | "ambiguous";
 };
 
@@ -31,12 +33,22 @@ type PsResult = {
 
 const LOCAL_TUI_SUBCOMMANDS = new Set(["chat", "terminal", "tui"]);
 const LOCAL_TUI_PROCESS_PROBE_TIMEOUT_MS = 1_000;
-const LOCAL_TUI_UPDATE_LOCK_PATH = path.join(resolveStateDir(), "__locks", "local-tui-update");
 const LOCAL_TUI_UPDATE_LOCK_OPTIONS = {
   stale: 30_000,
   retries: { retries: 100, factor: 1, minTimeout: 50, maxTimeout: 250 },
   staleRecovery: "remove-if-unchanged" as const,
 };
+
+function resolveLocalTuiUpdateLockPath(targetRoot: string): string {
+  let canonicalRoot: string;
+  try {
+    canonicalRoot = fs.realpathSync.native(targetRoot);
+  } catch {
+    canonicalRoot = path.resolve(targetRoot);
+  }
+  const installId = createHash("sha256").update(canonicalRoot).digest("hex").slice(0, 24);
+  return path.join(os.tmpdir(), "openclaw-local-tui-update", installId);
+}
 
 function tokenizeCommandLine(command: string): string[] {
   return command.trim().split(/\s+/u).filter(Boolean);
@@ -110,7 +122,8 @@ function parseLocalTuiProcessLine(
   platform: NodeJS.Platform,
   targetRoot: string | undefined,
   realpath: (value: string) => string,
-) {
+  readPosixInstanceId: (pid: number, platform: NodeJS.Platform) => string | undefined,
+): LocalTuiProcess | null {
   const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\d+\s+\d+:\d+:\d+\s+\d+)\s+(.+)$/);
   if (!match) {
     return null;
@@ -123,13 +136,39 @@ function parseLocalTuiProcessLine(
   if (!Number.isFinite(pid) || pid <= 0 || pid === currentPid) {
     return null;
   }
-  const startTime = match[3]?.trim() ?? "";
   const command = match[4]?.trim() ?? "";
   const ownership = classifyLocalTuiCommand(command, platform, targetRoot, realpath);
   if (!ownership || ownership === "other") {
     return null;
   }
-  return { pid, command, startTime, ownership };
+  const kernelInstanceId = readPosixInstanceId(pid, platform);
+  const instanceId = kernelInstanceId ?? match[3]?.trim();
+  return {
+    pid,
+    command,
+    ownership,
+    ...(instanceId ? { instanceId } : {}),
+    ...(instanceId ? { instanceIdentity: kernelInstanceId ? "strong" : "coarse" } : {}),
+  };
+}
+
+function readPosixProcessInstanceId(pid: number, platform: NodeJS.Platform): string | undefined {
+  if (platform !== "linux") {
+    return undefined;
+  }
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat
+      .slice(stat.lastIndexOf(")") + 2)
+      .trim()
+      .split(/\s+/u);
+    // Linux starttime is field 22 and cannot collide when a PID is reused.
+    // Other POSIX platforms fail closed because their ps timestamps are second-granularity.
+    const startTicks = fields[19];
+    return startTicks ? `${pid}:${startTicks}` : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Lists local OpenClaw TUI processes whose in-memory chunk graph may outlive an update. */
@@ -145,6 +184,7 @@ export function listLocalTuiProcesses(
       options: SpawnSyncOptionsWithStringEncoding,
     ) => PsResult;
     readWindowsStartTime?: (pid: number) => number | null;
+    readPosixInstanceId?: (pid: number, platform: NodeJS.Platform) => string | undefined;
   } = {},
 ): LocalTuiProcess[] {
   const realpath = fs.realpathSync.native;
@@ -191,7 +231,9 @@ export function listLocalTuiProcesses(
                 pid,
                 command,
                 ownership,
-                ...(startTime === null ? {} : { startTime: String(startTime) }),
+                ...(startTime === null
+                  ? {}
+                  : { instanceId: String(startTime), instanceIdentity: "strong" as const }),
               },
             ]
           : [];
@@ -224,6 +266,7 @@ export function listLocalTuiProcesses(
       platform,
       params.targetRoot,
       realpath,
+      params.readPosixInstanceId ?? readPosixProcessInstanceId,
     );
     if (!proc || seen.has(proc.pid)) {
       continue;
@@ -264,11 +307,14 @@ export async function terminateLocalTuiProcesses(params: {
 
   for (const proc of params.processes) {
     const current = readCurrentProcess(proc.pid, params.targetRoot);
+    const originalIdentity = proc.instanceIdentity ?? "strong";
+    const currentIdentity = current?.instanceIdentity ?? "strong";
     if (
       proc.ownership !== "target" ||
-      !proc.startTime ||
+      !proc.instanceId ||
       current?.ownership !== "target" ||
-      current.startTime !== proc.startTime
+      current.instanceId !== proc.instanceId ||
+      currentIdentity !== originalIdentity
     ) {
       failed.push(proc.pid);
       continue;
@@ -292,7 +338,12 @@ export async function terminateLocalTuiProcesses(params: {
       continue;
     }
     const current = readCurrentProcess(proc.pid, params.targetRoot);
-    if (current?.ownership !== "target" || current.startTime !== proc.startTime) {
+    if (
+      current?.ownership !== "target" ||
+      current.instanceId !== proc.instanceId ||
+      (proc.instanceIdentity ?? "strong") !== "strong" ||
+      (current.instanceIdentity ?? "strong") !== "strong"
+    ) {
       failed.push(proc.pid);
       continue;
     }
@@ -335,7 +386,7 @@ export async function quiesceLocalTuiProcessesBeforeUpdate(
   // Keep startup and discovery in one interprocess order. The updater retains
   // this gate until mutation ends, so a newly launched TUI cannot enter stale code.
   const updateLock = await (overrides.acquireLock ?? acquireFileLock)(
-    LOCAL_TUI_UPDATE_LOCK_PATH,
+    resolveLocalTuiUpdateLockPath(targetRoot),
     LOCAL_TUI_UPDATE_LOCK_OPTIONS,
   );
   const processes = (overrides.list ?? listLocalTuiProcesses)({ targetRoot });
@@ -364,11 +415,15 @@ export async function quiesceLocalTuiProcessesBeforeUpdate(
 
 /** Waits for an in-flight update before a TUI enters its loaded runtime. */
 export async function waitForLocalTuiUpdate(
+  targetRoot: string,
   acquireLock: typeof acquireFileLock = acquireFileLock,
 ): Promise<void> {
   for (;;) {
     try {
-      const lock = await acquireLock(LOCAL_TUI_UPDATE_LOCK_PATH, LOCAL_TUI_UPDATE_LOCK_OPTIONS);
+      const lock = await acquireLock(
+        resolveLocalTuiUpdateLockPath(targetRoot),
+        LOCAL_TUI_UPDATE_LOCK_OPTIONS,
+      );
       await lock.release();
       return;
     } catch (error) {

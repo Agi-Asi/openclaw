@@ -34,24 +34,28 @@ describe("local TUI processes", () => {
         currentUid: 501,
         currentPid: 999,
         spawnSync,
+        readPosixInstanceId: (pid) => `linux:${pid}:start`,
       }),
     ).toEqual([
       {
         pid: 101,
         command: "/usr/local/bin/openclaw tui",
-        startTime: "Thu Aug 20 19:00:00 2026",
+        instanceId: "linux:101:start",
+        instanceIdentity: "strong",
         ownership: "target",
       },
       {
         pid: 106,
         command: "/usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs tui",
-        startTime: "Thu Aug 20 19:00:00 2026",
+        instanceId: "linux:106:start",
+        instanceIdentity: "strong",
         ownership: "target",
       },
       {
         pid: 108,
         command: "openclaw tui",
-        startTime: "Thu Aug 20 19:00:00 2026",
+        instanceId: "linux:108:start",
+        instanceIdentity: "strong",
         ownership: "ambiguous",
       },
     ]);
@@ -104,14 +108,16 @@ describe("local TUI processes", () => {
       {
         pid: 103,
         command: '"C:\\Program Files\\OpenClaw\\openclaw.exe" chat',
-        startTime: "123",
+        instanceId: "123",
+        instanceIdentity: "strong",
         ownership: "target",
       },
       {
         pid: 104,
         command:
           '"C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\OpenClaw\\openclaw.mjs" terminal',
-        startTime: "123",
+        instanceId: "123",
+        instanceIdentity: "strong",
         ownership: "target",
       },
     ]);
@@ -140,7 +146,9 @@ describe("local TUI processes", () => {
 
     await expect(
       terminateLocalTuiProcesses({
-        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
+        processes: [
+          { pid: 101, command: "openclaw-tui", instanceId: "start", ownership: "target" },
+        ],
         targetRoot: "/target",
         controller,
         graceMs: 0,
@@ -148,7 +156,7 @@ describe("local TUI processes", () => {
         readCurrentProcess: () => ({
           pid: 101,
           command: "/target/openclaw tui",
-          startTime: "start",
+          instanceId: "start",
           ownership: "target",
         }),
       }),
@@ -161,14 +169,12 @@ describe("local TUI processes", () => {
     ]);
   });
 
-  it("reports local TUI processes that survive the kill fallback", async () => {
-    const controller = {
-      kill: vi.fn(() => true),
-    };
+  it("does not signal a target process without a kernel-backed instance identity", async () => {
+    const controller = { kill: vi.fn(() => true) };
 
     await expect(
       terminateLocalTuiProcesses({
-        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
+        processes: [{ pid: 101, command: "/target/openclaw tui", ownership: "target" }],
         targetRoot: "/target",
         controller,
         graceMs: 0,
@@ -176,7 +182,55 @@ describe("local TUI processes", () => {
         readCurrentProcess: () => ({
           pid: 101,
           command: "/target/openclaw tui",
-          startTime: "start",
+          ownership: "target",
+        }),
+      }),
+    ).resolves.toEqual({ stopped: [], failed: [101] });
+    expect(controller.kill).not.toHaveBeenCalled();
+  });
+
+  it("allows graceful macOS termination but never escalates a coarse identity", async () => {
+    const controller = { kill: vi.fn(() => true) };
+    const process = {
+      pid: 101,
+      command: "/target/openclaw tui",
+      instanceId: "Thu Aug 20 19:00:00 2026",
+      instanceIdentity: "coarse" as const,
+      ownership: "target" as const,
+    };
+
+    await expect(
+      terminateLocalTuiProcesses({
+        processes: [process],
+        targetRoot: "/target",
+        controller,
+        graceMs: 0,
+        killGraceMs: 0,
+        readCurrentProcess: () => process,
+      }),
+    ).resolves.toEqual({ stopped: [], failed: [101] });
+    expect(controller.kill).toHaveBeenCalledWith(101, "SIGTERM");
+    expect(controller.kill).not.toHaveBeenCalledWith(101, "SIGKILL");
+  });
+
+  it("reports local TUI processes that survive the kill fallback", async () => {
+    const controller = {
+      kill: vi.fn(() => true),
+    };
+
+    await expect(
+      terminateLocalTuiProcesses({
+        processes: [
+          { pid: 101, command: "openclaw-tui", instanceId: "start", ownership: "target" },
+        ],
+        targetRoot: "/target",
+        controller,
+        graceMs: 0,
+        killGraceMs: 0,
+        readCurrentProcess: () => ({
+          pid: 101,
+          command: "/target/openclaw tui",
+          instanceId: "start",
           ownership: "target",
         }),
       }),
@@ -189,7 +243,9 @@ describe("local TUI processes", () => {
 
     await expect(
       terminateLocalTuiProcesses({
-        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
+        processes: [
+          { pid: 101, command: "openclaw-tui", instanceId: "start", ownership: "target" },
+        ],
         targetRoot: "/target",
         controller,
         graceMs: 0,
@@ -199,7 +255,7 @@ describe("local TUI processes", () => {
             ? {
                 pid: 101,
                 command: "/target/openclaw tui",
-                startTime: "start",
+                instanceId: "start",
                 ownership: "target",
               }
             : undefined,
@@ -215,20 +271,20 @@ describe("local TUI processes", () => {
       .mockReturnValueOnce({
         pid: 101,
         command: "/target/openclaw tui",
-        startTime: "start",
+        instanceId: "start",
         ownership: "target",
       })
       .mockReturnValueOnce({
         pid: 101,
         command: "openclaw tui",
-        startTime: "start",
+        instanceId: "start",
         ownership: "ambiguous",
       });
 
     await expect(
       terminateLocalTuiProcesses({
         processes: [
-          { pid: 101, command: "/target/openclaw tui", startTime: "start", ownership: "target" },
+          { pid: 101, command: "/target/openclaw tui", instanceId: "start", ownership: "target" },
         ],
         targetRoot: "/target",
         controller,
@@ -267,6 +323,29 @@ describe("local TUI processes", () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
+  it("uses the same update gate for profiles targeting one installation", async () => {
+    const lockPaths: string[] = [];
+    const acquireLock = vi.fn(async (lockPath: string) => {
+      lockPaths.push(lockPath);
+      return { lockPath, release: async () => {} };
+    });
+    vi.spyOn(fs.realpathSync, "native").mockReturnValue("/canonical/openclaw");
+
+    const first = await quiesceLocalTuiProcessesBeforeUpdate("/profile-a/openclaw", {
+      list: () => [],
+      acquireLock,
+    });
+    await first?.release();
+    const second = await quiesceLocalTuiProcessesBeforeUpdate("/profile-b/openclaw", {
+      list: () => [],
+      acquireLock,
+    });
+    await second?.release();
+
+    expect(lockPaths).toHaveLength(2);
+    expect(lockPaths[0]).toBe(lockPaths[1]);
+  });
+
   it("returns stopped clients to the update owner", async () => {
     const release = vi.fn(async () => {});
     const gate = await quiesceLocalTuiProcessesBeforeUpdate("/target", {
@@ -292,7 +371,10 @@ describe("local TUI processes", () => {
 
   it("waits for the update gate before TUI startup", async () => {
     const release = vi.fn(async () => {});
-    await waitForLocalTuiUpdate(vi.fn(async () => ({ lockPath: "test", release })));
+    await waitForLocalTuiUpdate(
+      "/target",
+      vi.fn(async () => ({ lockPath: "test", release })),
+    );
     expect(release).toHaveBeenCalledOnce();
   });
 
@@ -304,7 +386,7 @@ describe("local TUI processes", () => {
       .mockRejectedValueOnce(timeout)
       .mockResolvedValueOnce({ lockPath: "test", release });
 
-    await waitForLocalTuiUpdate(acquireLock);
+    await waitForLocalTuiUpdate("/target", acquireLock);
 
     expect(acquireLock).toHaveBeenCalledTimes(2);
     expect(release).toHaveBeenCalledOnce();
