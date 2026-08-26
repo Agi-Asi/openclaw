@@ -64,6 +64,9 @@ const mocks = vi.hoisted(() => ({
 const globalMocks = vi.hoisted(() => ({
   logVerbose: vi.fn(),
 }));
+const providerModelNormalizationMocks = vi.hoisted(() => ({
+  normalizeProviderModelIdWithRuntime: vi.fn(() => undefined),
+}));
 const askUserMocks = vi.hoisted(() => ({
   isAskUserPromptPending: vi.fn(async () => true),
 }));
@@ -433,6 +436,7 @@ export {
   messageAuditMocks,
   mocks,
   placementContextMocks,
+  providerModelNormalizationMocks,
   replyMediaPathMocks,
   runtimePluginMocks,
   sessionBindingMocks,
@@ -499,6 +503,11 @@ vi.mock("../../globals.js", async (importOriginal) => {
     logVerbose: globalMocks.logVerbose,
   };
 });
+
+vi.mock("../../agents/provider-model-normalization.runtime.js", () => ({
+  normalizeProviderModelIdWithRuntime:
+    providerModelNormalizationMocks.normalizeProviderModelIdWithRuntime,
+}));
 
 vi.mock("../../agents/tools/ask-user-tool.js", () => ({
   isAskUserPromptPending: askUserMocks.isAskUserPromptPending,

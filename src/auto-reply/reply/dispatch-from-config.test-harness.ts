@@ -35,6 +35,7 @@ import {
   noAbortResult,
   parseGenericThreadSessionInfo,
   placementContextMocks,
+  providerModelNormalizationMocks,
   resetPluginTtsAndThreadMocks,
   runtimePluginMocks,
   sessionBindingMocks,
@@ -501,6 +502,8 @@ export const describe0BeforeEach0 = () => {
   mocks.routeReply.mockResolvedValue({ ok: true, delivered: true, messageId: "mock" });
   mocks.tryFastApproveFromMessage.mockReset();
   mocks.tryFastApproveFromMessage.mockResolvedValue({ handled: false });
+  providerModelNormalizationMocks.normalizeProviderModelIdWithRuntime.mockReset();
+  providerModelNormalizationMocks.normalizeProviderModelIdWithRuntime.mockReturnValue(undefined);
   acpMocks.listAcpSessionEntries.mockReset().mockResolvedValue([]);
   diagnosticMocks.logMessageQueued.mockClear();
   diagnosticMocks.logMessageProcessed.mockClear();

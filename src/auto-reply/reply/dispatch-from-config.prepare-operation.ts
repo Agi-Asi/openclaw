@@ -69,7 +69,11 @@ export async function prepareDispatchOperation(state: PrepareDispatchOperationCo
     let queuedFinal = false;
     let routedFinalCount = 0;
     if (!suppressDelivery && fast.payload) {
-      const selectedModel = resolveSessionModelRef(cfg, sessionStoreEntry.entry, sessionAgentId);
+      // Fast-command prefixes consume persisted canonical selection identity after abort;
+      // do not wake the provider runtime to transform it.
+      const selectedModel = resolveSessionModelRef(cfg, sessionStoreEntry.entry, sessionAgentId, {
+        allowPluginNormalization: false,
+      });
       const modelSelection = {
         ...selectedModel,
         thinkLevel: sessionStoreEntry.entry?.thinkingLevel,

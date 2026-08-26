@@ -17,6 +17,7 @@ import {
   internalHookMocks,
   messageAuditMocks,
   mocks,
+  providerModelNormalizationMocks,
   replyMediaPathMocks,
   sessionBindingMocks,
   sessionStoreMocks,
@@ -538,6 +539,9 @@ describe("dispatchReplyFromConfig", () => {
       model: "claude-opus-4-6-20260205",
       thinkLevel: "high",
     });
+    expect(
+      providerModelNormalizationMocks.normalizeProviderModelIdWithRuntime,
+    ).not.toHaveBeenCalled();
   });
 
   it("carries session prefix context through the actual routed fast-abort delivery", async () => {
