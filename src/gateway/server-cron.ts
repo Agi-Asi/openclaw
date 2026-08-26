@@ -10,6 +10,7 @@ import {
 import { abortAndDrainEmbeddedAgentRun } from "../agents/embedded-agent.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { CliDeps } from "../cli/deps.types.js";
+import { resolveControlUiAutomationRunUrl } from "../config/control-ui-link-base.js";
 import { getRuntimeConfig } from "../config/io.js";
 import {
   resolveSessionStoreCompatibilityAgentId,
@@ -40,6 +41,7 @@ import { runCronIsolatedAgentTurn } from "../cron/isolated-agent.js";
 import { retryTransientDirectCronDelivery } from "../cron/isolated-agent/delivery-dispatch-policy.js";
 import { resolveCronJobBoundSessionKeys } from "../cron/job-session-bindings.js";
 import { toPublicCronJob } from "../cron/public-job.js";
+import { createCronExecutionId } from "../cron/run-id.js";
 import { resolveCronScheduledToolPolicy } from "../cron/scheduled-tool-policy.js";
 import { cronScriptFailureMetadata } from "../cron/script-failure.js";
 import { CronService, type CronEvent } from "../cron/service.js";
@@ -58,8 +60,8 @@ import { createCronScriptRuntime } from "../cron/trigger-script.js";
 import type { CronJob, CronPayload } from "../cron/types.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveMainScopedEventSessionKey } from "../infra/event-session-routing.js";
-import { runHeartbeatOnce } from "../infra/heartbeat-runner.js";
-import { requestHeartbeat } from "../infra/heartbeat-wake.js";
+import { runHeartbeatOnce } from "../infra/heartbeat-runner-run.js";
+import { requestHeartbeat, type HeartbeatWakeRequest } from "../infra/heartbeat-wake.js";
 import { mergeSsrFPolicies } from "../infra/net/ssrf.js";
 import { listConfiguredMessageChannels } from "../infra/outbound/channel-selection.js";
 import { withSystemEventOwner } from "../infra/system-event-ownership.js";
@@ -72,7 +74,10 @@ import type {
   PluginHookGatewayCronService,
   PluginHookGatewayContext,
 } from "../plugins/hook-types.js";
-import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
+import {
+  getGatewaySuspendAdmissionPhase,
+  runWithGatewayIndependentRootWorkAdmission,
+} from "../process/gateway-work-admission.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import {
   normalizeAgentId,
@@ -81,6 +86,7 @@ import {
 } from "../routing/session-key.js";
 import { defaultRuntime } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
+import { runSkillCollectionReviewForAgent } from "../skills/workshop/collection-review.js";
 import {
   createCronExitWatchers,
   type CronExitResult,
@@ -103,6 +109,7 @@ import {
   sendGatewayCronWebhook,
   sendGatewayCronFailureAlert,
 } from "./server-cron-notifications.js";
+import { reconcileSkillCollectionReviewJobs } from "./server-cron-skill-review-jobs.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
 import {
   bumpSessionAutomationVersion,
@@ -222,28 +229,18 @@ function pickDefined<T extends Record<string, unknown>>(
   return result;
 }
 
-function omitExplicitHeartbeatDestination(
-  heartbeat: AgentDefaultsConfig["heartbeat"] | undefined,
-): AgentDefaultsConfig["heartbeat"] | undefined {
-  if (!heartbeat) {
-    return undefined;
-  }
-  return {
-    ...heartbeat,
-    to: undefined,
-    accountId: undefined,
-  };
-}
-
 function sanitizeCronHeartbeatOverride(
   heartbeat: AgentDefaultsConfig["heartbeat"] | undefined,
 ): AgentDefaultsConfig["heartbeat"] | undefined {
-  return heartbeat?.target === "last" ? omitExplicitHeartbeatDestination(heartbeat) : heartbeat;
+  return heartbeat?.target === "last"
+    ? { ...heartbeat, to: undefined, accountId: undefined }
+    : heartbeat;
 }
 
 async function finalizeCronCompletionAnnouncement(params: {
   job: CronJob;
   text?: string;
+  runStartedAtMs?: number;
   abortSignal?: AbortSignal;
   deps: CliDeps;
   resolveCronAgent: (requested?: string | null) => { agentId: string; cfg: OpenClawConfig };
@@ -269,6 +266,15 @@ async function finalizeCronCompletionAnnouncement(params: {
   }
 
   const { agentId, cfg } = params.resolveCronAgent(params.job.agentId);
+  const inspectUrl = resolveControlUiAutomationRunUrl(cfg, {
+    jobId: params.job.id,
+    runId:
+      params.runStartedAtMs === undefined
+        ? undefined
+        : createCronExecutionId(params.job.id, params.runStartedAtMs),
+  });
+  // Command summaries are already redacted; adding the link earlier would strip its URL.
+  const text = inspectUrl ? `${params.text}\nInspect: ${inspectUrl}` : params.text;
   const abortSignal = params.abortSignal ?? new AbortController().signal;
   let deliveryMayHaveReachedRecipient = false;
   try {
@@ -290,7 +296,7 @@ async function finalizeCronCompletionAnnouncement(params: {
             accountId: plan.accountId,
             sessionKey: resolveCronDeliverySessionKey(params.job),
           },
-          payload: { text: params.text },
+          payload: { text },
           abortSignal,
           onDeliveryAttempt: (reachedRecipient) => {
             deliveryMayHaveReachedRecipient ||= reachedRecipient;
@@ -530,6 +536,40 @@ export function buildGatewayCronService(params: {
     };
     const heartbeatOverride = { ...baseHeartbeat, ...paramsLocal.heartbeat };
     return sanitizeCronHeartbeatOverride(heartbeatOverride);
+  };
+  const resolveCronHeartbeatWake = (
+    opts:
+      | {
+          source?: HeartbeatWakeRequest["source"];
+          intent?: HeartbeatWakeRequest["intent"];
+          reason?: string;
+          agentId?: string;
+          sessionKey?: string;
+          heartbeat?: HeartbeatWakeRequest["heartbeat"];
+        }
+      | undefined,
+    direct = false,
+  ) => {
+    const { runtimeConfig, agentId, sessionKey } = resolveCronTarget({
+      ...opts,
+      preserveUntargeted: direct || opts?.source !== "manual",
+    });
+    // Untargeted monitor ticks resolve their configured session in the runner;
+    // direct runs and caller-targeted wakes preserve their resolved session.
+    const useConfiguredSession = !direct && opts?.source === "interval" && !opts.sessionKey?.trim();
+    return {
+      runtimeConfig,
+      wake: {
+        source: opts?.source ?? "cron",
+        intent: opts?.intent ?? "event",
+        reason: opts?.reason,
+        agentId,
+        sessionKey: useConfiguredSession ? undefined : sessionKey,
+        heartbeat: direct
+          ? resolveCronHeartbeatOverride({ runtimeConfig, agentId, heartbeat: opts?.heartbeat })
+          : sanitizeCronHeartbeatOverride(opts?.heartbeat),
+      },
+    };
   };
 
   const defaultAgentId = tryResolveAmbientOwnerAgentId(params.cfg);
@@ -811,53 +851,33 @@ export function buildGatewayCronService(params: {
         }
       : {}),
     requestHeartbeat: (opts) => {
-      const { agentId, sessionKey } = resolveCronTarget({
-        ...opts,
-        preserveUntargeted: opts?.source !== "manual",
-      });
-      // Monitor ticks choose agents.*.heartbeat.session in the runner; caller-targeted
-      // interval wakes keep their explicit session just like manual and event wakes.
-      const useConfiguredSession = opts?.source === "interval" && !opts.sessionKey?.trim();
+      const { wake } = resolveCronHeartbeatWake(opts);
       requestHeartbeat({
-        source: opts?.source ?? "cron",
-        intent: opts?.intent ?? "event",
-        reason: opts?.reason,
-        agentId,
-        sessionKey: useConfiguredSession ? undefined : sessionKey,
-        heartbeat: sanitizeCronHeartbeatOverride(opts?.heartbeat),
+        ...wake,
         ...(opts?.scheduledEveryMs !== undefined
           ? { scheduledEveryMs: opts.scheduledEveryMs }
-          : {}),
-        ...(opts?.scheduledAnchorMs !== undefined
-          ? { scheduledAnchorMs: opts.scheduledAnchorMs }
           : {}),
         ...(opts.tasks?.length ? { tasks: opts.tasks } : {}),
       });
     },
     runHeartbeatOnce: async (opts) => {
-      const { runtimeConfig, agentId, sessionKey } = resolveCronTarget({
-        ...opts,
-        preserveUntargeted: true,
-      });
+      const { runtimeConfig, wake } = resolveCronHeartbeatWake(opts, true);
       return await runHeartbeatOnce({
         cfg: runtimeConfig,
-        source: opts?.source ?? "cron",
-        intent: opts?.intent ?? "event",
-        reason: opts?.reason,
-        agentId,
-        sessionKey,
+        ...wake,
         // Preserve ownership across this adapter so the wake does not self-block on
         // the cron run that is awaiting it.
         owningCronJobMarker: opts?.owningCronJobMarker,
         owningCronLaneTaskMarker: opts?.owningCronLaneTaskMarker,
-        heartbeat: resolveCronHeartbeatOverride({
-          runtimeConfig,
-          agentId,
-          heartbeat: opts?.heartbeat,
-        }),
         deps: { ...params.deps, runtime: defaultRuntime },
       });
     },
+    runSkillCollectionReview: ({ agentId, abortSignal }) =>
+      runSkillCollectionReviewForAgent({
+        config: getRuntimeConfig(),
+        agentId,
+        ...(abortSignal ? { abortSignal } : {}),
+      }),
     runIsolatedAgentJob: async ({
       job,
       message,
@@ -909,6 +929,7 @@ export function buildGatewayCronService(params: {
           typeof result.summary === "string" && result.summary.trim()
             ? redactCronCommandSummaryForExternalDelivery(result.summary)
             : undefined,
+        runStartedAtMs: job.state.runningAtMs,
         abortSignal,
         deps: params.deps,
         resolveCronAgent,
@@ -979,6 +1000,7 @@ export function buildGatewayCronService(params: {
       const completion = await finalizeCronCompletionAnnouncement({
         job,
         text: job.sessionTarget === "main" ? undefined : notify,
+        runStartedAtMs: job.state.runningAtMs,
         abortSignal,
         deps: params.deps,
         resolveCronAgent,
@@ -1166,9 +1188,16 @@ export function buildGatewayCronService(params: {
         }
       };
       try {
-        await runWithGatewayIndependentRootWorkAdmission(async () => {
+        const persistCompletion = async () => {
           await cron.updateWithPrecondition(job.id, { enabled: false }, completionToken);
-        });
+        };
+        if (getGatewaySuspendAdmissionPhase() === "draining") {
+          // The exact live watcher already blocks suspension; finish only its
+          // preconditioned terminal write without admitting unrelated work.
+          await persistCompletion();
+        } else {
+          await runWithGatewayIndependentRootWorkAdmission(persistCompletion);
+        }
         return () => {
           releaseCompletionToken();
           void reconcileExitWatchers();
@@ -1518,12 +1547,17 @@ export function buildGatewayCronService(params: {
       if (epoch !== heartbeatReconcileEpoch) {
         return;
       }
-      const { ok } = await reconcileHeartbeatMonitorJobs({
+      const { ok: heartbeatOk } = await reconcileHeartbeatMonitorJobs({
         cron,
         cfg: cfgOverride ?? getRuntimeConfig(),
         logger: cronLogger,
       });
-      if (!ok && epoch === heartbeatReconcileEpoch) {
+      const { ok: skillReviewOk } = await reconcileSkillCollectionReviewJobs({
+        cron,
+        cfg: cfgOverride ?? getRuntimeConfig(),
+        logger: cronLogger,
+      });
+      if ((!heartbeatOk || !skillReviewOk) && epoch === heartbeatReconcileEpoch) {
         heartbeatRetryTimer = setTimeout(() => {
           heartbeatRetryTimer = undefined;
           void reconcileHeartbeatJobs(cfgOverride);

@@ -283,6 +283,11 @@ export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): 
     talk: createRuntimeTalk(),
     config: createRuntimeConfig(),
     agent,
+    hooks: _options.hooks ?? {
+      dispatchHookAgentTurn: async () => {
+        throw new Error("Plugin hook runtime is only available inside the Gateway.");
+      },
+    },
     subagent: _options.subagent ?? createUnavailableSubagentRuntime(),
     nodes: _options.nodes ?? createUnavailableNodesRuntime(),
     sandbox: createRuntimeSandbox(agent),
