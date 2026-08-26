@@ -296,17 +296,22 @@ describe("listSessionTranscriptCorpusEntriesForAgent", () => {
         updateMode: "none",
       },
     );
-    const [archivePath, resetArchivePath] = [
-      ["deleted.2026-06-25T12-01-00.000Z", "Archived JSONL transcript text"],
-      ["reset.2026-06-25T12-02-00.000Z", "Retained pre-reset conversation fact"],
-    ].map(([suffix, content]) => {
+    const createArchive = (suffix: string, content: string): string => {
       const filePath = path.join(sessionsDir, `${sessionId}.jsonl.${suffix}`);
       fsSync.writeFileSync(
         filePath,
         JSON.stringify({ type: "message", message: { role: "user", content } }),
       );
       return filePath;
-    });
+    };
+    const archivePath = createArchive(
+      "deleted.2026-06-25T12-01-00.000Z",
+      "Archived JSONL transcript text",
+    );
+    const resetArchivePath = createArchive(
+      "reset.2026-06-25T12-02-00.000Z",
+      "Retained pre-reset conversation fact",
+    );
 
     expect(fsSync.existsSync(path.join(sessionsDir, `${sessionId}.jsonl`))).toBe(false);
     const entries = await listSessionTranscriptCorpusEntriesForAgent("main");
