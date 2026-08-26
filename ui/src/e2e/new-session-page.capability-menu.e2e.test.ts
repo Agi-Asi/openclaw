@@ -63,8 +63,14 @@ suite.define(() => {
       const menu = composer.locator("wa-dropdown.agent-chat__capability-menu");
       await composer.getByRole("button", { name: "Add attachment" }).click();
       await expect.poll(() => menu.getAttribute("data-view")).toBe("root");
+      await expect.poll(() => menu.getByRole("menuitem", { name: "Draft" }).count()).toBe(0);
+      const draftToggle = composer.getByRole("switch", { name: "Draft" });
+      await expect.poll(() => draftToggle.count()).toBe(1);
+      await draftToggle.click();
+      await expect.poll(() => draftToggle.getAttribute("aria-checked")).toBe("true");
+      await composer.getByRole("button", { name: "Add attachment" }).click();
+      await expect.poll(() => menu.getAttribute("data-view")).toBe("root");
 
-      await menu.getByRole("menuitem", { name: "Draft" }).click();
       await menu.getByRole("menuitem", { name: /^Skills/ }).click();
       await expect.poll(() => menu.getAttribute("data-view")).toBe("skills");
       const release = menu.getByRole("menuitem", { name: "Release" });

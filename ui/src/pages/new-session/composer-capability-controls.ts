@@ -52,9 +52,7 @@ export function renderNewSessionPlusMenu(
   options: NewSessionComposerCapabilityOptions,
   attachments: Parameters<typeof renderChatComposerPlusMenu>[0]["attachments"],
 ) {
-  const draftEnabled = options.visibility === "draft";
   const overrideCount = countSessionToolOverrides(options.toolOverrides);
-  const selectedCount = overrideCount + (draftEnabled ? 1 : 0);
   const disabled = options.submitting || options.messageLocked === true;
   const controller = options.textareaController;
   return renderChatComposerPlusMenu({
@@ -64,22 +62,9 @@ export function renderNewSessionPlusMenu(
     open: controller.capabilityMenuOpen,
     view: controller.capabilityMenuView,
     toolOverrides: options.toolOverrides,
-    rootToggles: options.draftAvailable
-      ? [
-          {
-            value: "new-session-draft",
-            label: t("newSession.draft"),
-            icon: icons.pencil,
-            checked: draftEnabled,
-            disabled,
-            title: t("newSession.draftDescription"),
-            onChange: (checked) => options.onVisibilityChange?.(checked ? "draft" : "normal"),
-          },
-        ]
-      : undefined,
     selectedLabel:
-      selectedCount > 0
-        ? t("newSession.composerOptionsSelected", { count: String(selectedCount) })
+      overrideCount > 0
+        ? t("newSession.composerOptionsSelected", { count: String(overrideCount) })
         : undefined,
     onOpenChange: (open) => {
       controller.capabilityMenuOpen = open;
