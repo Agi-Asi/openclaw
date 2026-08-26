@@ -900,6 +900,73 @@ esac
   });
 }
 
+function windowsNodeRelease(params: {
+  assetName?: string;
+  digest?: string;
+  draft?: boolean;
+  prerelease: boolean;
+  publishedAt: string;
+  state?: string;
+  tag: string;
+}) {
+  return {
+    assets: [
+      {
+        digest: params.digest ?? `sha256:${"c".repeat(64)}`,
+        name: params.assetName ?? `OpenClawTray-${params.tag.replace(/^v/u, "")}-win-x64.zip`,
+        state: params.state ?? "uploaded",
+      },
+    ],
+    draft: params.draft ?? false,
+    prerelease: params.prerelease,
+    published_at: params.publishedAt,
+    tag_name: params.tag,
+  };
+}
+
+function runWindowsNodeReleaseResolver(releases: ReturnType<typeof windowsNodeRelease>[]) {
+  const job = workflowJob(RELEASE_CHECKS_WORKFLOW, "resolve_windows_node_release_artifacts");
+  const script = workflowStep(job, "Select immutable stable and prerelease assets").run;
+  if (!script) throw new Error("Expected Windows-node release resolver script");
+  const workdir = tempDirs.make("windows-node-release-resolver-");
+  const releasesPath = resolve(workdir, "releases.json");
+  writeFileSync(releasesPath, JSON.stringify(releases));
+  const ghPath = resolve(workdir, "gh");
+  writeFileSync(
+    ghPath,
+    `#!/bin/sh
+case "$2" in
+  repos/openclaw/openclaw-windows-node/releases*) cat "$MOCK_RELEASES_FILE" ;;
+  repos/openclaw/openclaw-windows-node/git/ref/tags/*) printf '{"object":{"type":"commit","sha":"%s"}}\\n' "$MOCK_TAG_SHA" ;;
+  *) exit 2 ;;
+esac
+`,
+  );
+  chmodSync(ghPath, 0o755);
+  const outputPath = resolve(workdir, "github-output.txt");
+  const summaryPath = resolve(workdir, "github-summary.md");
+  writeFileSync(outputPath, "");
+  writeFileSync(summaryPath, "");
+  const result = spawnSync("bash", ["-c", script], {
+    cwd: workdir,
+    encoding: "utf8",
+    env: {
+      GH_TOKEN: "test-token",
+      GITHUB_OUTPUT: outputPath,
+      GITHUB_STEP_SUMMARY: summaryPath,
+      MOCK_RELEASES_FILE: releasesPath,
+      MOCK_TAG_SHA: "b".repeat(40),
+      PATH: `${workdir}:${process.env.PATH}`,
+    },
+  });
+  const outputs: Record<string, string> = {};
+  for (const line of readFileSync(outputPath, "utf8").split("\n")) {
+    const separator = line.indexOf("=");
+    if (separator > 0) outputs[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+  return { outputs, result, summary: readFileSync(summaryPath, "utf8") };
+}
+
 function runReleasePublishInputValidation(overrides: Record<string, string>) {
   const job = workflowJob(RELEASE_PUBLISH_WORKFLOW, "resolve_release_target");
   const script = workflowStep(job, "Validate inputs").run;
@@ -1325,6 +1392,10 @@ function runReleaseChecksSummary(params: {
   discordResult?: "failure" | "skipped" | "success";
   resolveResult?: "failure" | "success";
   telegramSelected?: boolean;
+  windowsSelected?: boolean;
+  windowsPrereleaseResult?: "cancelled" | "failure" | "skipped" | "success";
+  windowsMainResult?: "cancelled" | "failure" | "skipped" | "success";
+  windowsStableResult?: "cancelled" | "failure" | "skipped" | "success";
   validatedStatuses?: Array<{ job: string; status: string; variant: string }>;
   workflowRef?: string;
 }) {
@@ -1373,6 +1444,10 @@ function runReleaseChecksSummary(params: {
       RESOLVE_TARGET_RESULT: params.resolveResult ?? "success",
       RUNTIME_TOOL_COVERAGE_RELEASE_CHECKS_RESULT: "skipped",
       VALIDATE_ADVISORY_STATUSES_OUTCOME: "success",
+      WINDOWS_NODE_PRERELEASE_E2E_RESULT: params.windowsPrereleaseResult ?? "skipped",
+      WINDOWS_NODE_MAIN_E2E_RESULT: params.windowsMainResult ?? "skipped",
+      WINDOWS_NODE_SELECTED: String(params.windowsSelected ?? false),
+      WINDOWS_NODE_STABLE_E2E_RESULT: params.windowsStableResult ?? "skipped",
       WORKFLOW_REF: params.workflowRef ?? "refs/heads/release/2026.7.1",
     },
   });
