@@ -1,7 +1,7 @@
 // Resolve Openclaw Package Candidate tests cover resolve openclaw package candidate script behavior.
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,6 +14,7 @@ import {
   downloadUrl,
   findSingleTarballForTest,
   loadTrustedPackageSource,
+  main,
   moveNewestPackedTarballForTest,
   parseArgs,
   readArtifactPackageCandidateMetadata,
@@ -22,8 +23,10 @@ import {
   runCommandForTest,
   validateOpenClawPackageSpec,
 } from "../../scripts/resolve-openclaw-package-candidate.mts";
+import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 
 const tempDirs: string[] = [];
+const autoTempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 type LookupAddress = { address: string; family: number };
 
@@ -1265,6 +1268,66 @@ describe("resolve-openclaw-package-candidate", () => {
     await expect(readArtifactPackageCandidateMetadata(dir)).resolves.toEqual({
       packageSourceSha: "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2",
     });
+  });
+
+  it("validates the normalized artifact source SHA before registry preparation", async () => {
+    const dir = autoTempDirs.make("openclaw-artifact-registry-source-");
+    const artifactDir = path.join(dir, "artifact");
+    const binDir = path.join(dir, "bin");
+    const gitLog = path.join(dir, "git.log");
+    const sourceSha = "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2";
+    await mkdir(artifactDir);
+    await mkdir(binDir);
+    await writeFile(path.join(artifactDir, "openclaw.tgz"), "not inspected before trust failure");
+    await writeFile(
+      path.join(artifactDir, "package-candidate.json"),
+      JSON.stringify({ packageSourceSha: sourceSha.toUpperCase() }),
+    );
+    const fakeGit = path.join(binDir, "git");
+    await writeFile(
+      fakeGit,
+      `#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_GIT_LOG"
+case "$1" in
+  fetch) exit 0 ;;
+  rev-parse) printf '%s\\n' "$FAKE_SOURCE_SHA" ;;
+  merge-base) exit 1 ;;
+  tag | for-each-ref) exit 0 ;;
+  *) exit 99 ;;
+esac
+`,
+    );
+    await chmod(fakeGit, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.FAKE_GIT_LOG = gitLog;
+    process.env.FAKE_SOURCE_SHA = sourceSha;
+    process.env.PATH = `${binDir}:${previousPath}`;
+    try {
+      await expect(
+        main([
+          "--source",
+          "artifact",
+          "--artifact-dir",
+          artifactDir,
+          "--output-dir",
+          path.join(dir, "output"),
+          "--plugin-registry-output-dir",
+          path.join(dir, "registry"),
+          "--required-plugin-packages-json",
+          '["@openclaw/codex"]',
+        ]),
+      ).rejects.toThrow(
+        `package_ref ${sourceSha} resolved to ${sourceSha}, which is not reachable from an OpenClaw branch or release tag`,
+      );
+    } finally {
+      process.env.PATH = previousPath;
+      delete process.env.FAKE_GIT_LOG;
+      delete process.env.FAKE_SOURCE_SHA;
+    }
+    await expect(readFile(gitLog, "utf8")).resolves.toContain(
+      `rev-parse --verify ${sourceSha}^{commit}`,
+    );
   });
 
   it("normalizes whitespace-only artifact package source SHAs to absent", async () => {
