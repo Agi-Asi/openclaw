@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isLiveTestEnabled } from "../../agents/live-test-helpers.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
@@ -131,21 +131,6 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       { role: "assistant", content: "This again shows the manifest should be read first." },
     ];
 
-    const embeddedAgent = await import("../../agents/embedded-agent.js");
-    const runEmbeddedAgent = embeddedAgent.runEmbeddedAgent;
-    const runSpy = vi
-      .spyOn(embeddedAgent, "runEmbeddedAgent")
-      .mockImplementation(async (params) => {
-        const result = await runEmbeddedAgent(params);
-        console.info(
-          "[skill-history-diagnostic]",
-          JSON.stringify({
-            entries: params.sessionManager?.getEntries().slice(-8),
-            payloads: result.payloads,
-          }),
-        );
-        return result;
-      });
     let recoveryCompletionIdeas: number | undefined;
     const ideas = await runSkillHistoryScanReview({
       agentId: "main",
@@ -159,8 +144,6 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       ],
       workspaceDir,
     });
-    runSpy.mockRestore();
-    console.info("[skill-history-outcome]", JSON.stringify({ ideas, recoveryCompletionIdeas }));
     expect(ideas).toBe(1);
     expect(recoveryCompletionIdeas).toBe(1);
     const afterRecovery = await listSkillProposals({ workspaceDir });
