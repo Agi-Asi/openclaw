@@ -17887,6 +17887,7 @@ public struct ApprovalResolveParams: Codable, Sendable {
         self.decision = decision
         self.reviewer = reviewer
     }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case instanceid = "instanceId"
@@ -18292,6 +18293,7 @@ public struct ExecApprovalResolveParams: Codable, Sendable {
         self.decision = decision
         self.reviewer = reviewer
     }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case instanceid = "instanceId"
@@ -18660,6 +18662,7 @@ public struct PluginApprovalResolveParams: Codable, Sendable {
         self.decision = decision
         self.reviewer = reviewer
     }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case instanceid = "instanceId"
