@@ -574,40 +574,77 @@ describe("session sharing handlers", () => {
           createdActor: { type: "human", id: "owner@example.com" },
         },
       );
-      const { ticket } = createBoardViewTicket({
-        sessionKey: "global",
-        agentId: "work",
-        name: "status",
-        revision: 1,
-        viewGeneration: "a".repeat(32),
-      });
-      const memberClient = identifiedClient("outsider@example.com");
       const cfg = {
         agents: { list: [{ id: "main", default: true }, { id: "work" }] },
       } as ReturnType<GatewayRequestContext["getRuntimeConfig"]>;
-      const requestContext = context(vi.fn(), cfg);
+      let gatewayAActive = true;
+      const gatewayARef: { value?: GatewayRequestContext } = {};
+      const gatewayA: GatewayRequestContext = {
+        ...context(vi.fn(), cfg),
+        resolveGatewayContext: () => (gatewayAActive ? gatewayARef.value : undefined),
+      };
+      gatewayARef.value = gatewayA;
+      const gatewayBRef: { value?: GatewayRequestContext } = {};
+      const gatewayB: GatewayRequestContext = {
+        ...context(vi.fn(), cfg),
+        resolveGatewayContext: () => gatewayBRef.value,
+      };
+      gatewayBRef.value = gatewayB;
+      const issueTicket = (agentId?: string) =>
+        createBoardViewTicket({
+          sessionKey: "global",
+          ...(agentId ? { agentId } : {}),
+          name: "status",
+          revision: 1,
+          viewGeneration: agentId ? "a".repeat(32) : "b".repeat(32),
+          authority: {
+            gatewayContext: gatewayA,
+            resolveGatewayContext: gatewayA.resolveGatewayContext!,
+          },
+        }).ticket;
+      const ticket = issueTicket("work");
+      const unscopedTicket = issueTicket();
+      const memberClient = identifiedClient("outsider@example.com");
 
       expect(
         resolveSessionMutationAuthorization({
           client: memberClient,
           method: "board.action",
           requestParams: { ticket, agentId: "work" },
-          context: requestContext,
+          context: gatewayA,
         }).error,
       ).toMatchObject({ details: { code: "SESSION_PARTICIPATION_REQUIRED" } });
-
-      const { ticket: unscopedTicket } = createBoardViewTicket({
-        sessionKey: "global",
-        name: "status",
-        revision: 1,
-        viewGeneration: "b".repeat(32),
-      });
+      expect(
+        resolveSessionMutationAuthorization({
+          client: identifiedClient("owner@example.com"),
+          method: "board.action",
+          requestParams: { ticket, agentId: "work" },
+          context: gatewayA,
+        }).error,
+      ).toBeNull();
+      expect(
+        resolveSessionMutationAuthorization({
+          client: identifiedClient("owner@example.com"),
+          method: "board.action",
+          requestParams: { ticket, agentId: "work" },
+          context: gatewayB,
+        }).error,
+      ).toMatchObject({ details: { code: "SESSION_MUTATION_TARGET_REQUIRED" } });
+      gatewayAActive = false;
+      expect(
+        resolveSessionMutationAuthorization({
+          client: identifiedClient("owner@example.com"),
+          method: "board.event",
+          requestParams: { ticket, agentId: "work" },
+          context: gatewayA,
+        }).error,
+      ).toMatchObject({ details: { code: "SESSION_MUTATION_TARGET_REQUIRED" } });
       expect(
         resolveSessionMutationAuthorization({
           client: memberClient,
           method: "board.action",
           requestParams: { ticket: unscopedTicket, agentId: "work" },
-          context: requestContext,
+          context: gatewayA,
         }).error,
       ).toMatchObject({ details: { code: "SESSION_MUTATION_TARGET_REQUIRED" } });
     });

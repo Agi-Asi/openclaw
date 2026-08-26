@@ -96,7 +96,33 @@ describe("board gateway runtime boundaries", () => {
       "sessions.list",
       { limit: 2 },
       expect.objectContaining({ params: expect.any(Object) }),
+      expect.objectContaining({ assertActive: expect.any(Function) }),
     );
+  });
+
+  it("rejects ticketed events after the issuing request authority retires", async () => {
+    let active = true;
+    const requestContext: { value?: GatewayRequestContext } = {};
+    const harness = createHarness(undefined, undefined, undefined, {
+      resolveGatewayContext: () => (active ? requestContext.value : undefined),
+    });
+    requestContext.value = harness.context;
+    await harness.invoke("board.widget.put", {
+      sessionKey: "session",
+      name: "counter",
+      content: { kind: "html", html: "counter" },
+    });
+    const board = await harness.invoke("board.get", { sessionKey: "session" });
+    const snapshot = board.mock.calls[0]?.[1] as BoardSnapshot;
+    const ticket = snapshot.widgets[0]?.viewTicket;
+
+    const allowed = await harness.invoke("board.event", { ticket, payload: { count: 1 } });
+    expect(allowed.mock.calls[0]?.[0]).toBe(true);
+    active = false;
+    const denied = await harness.invoke("board.event", { ticket, payload: { count: 2 } });
+    expect(denied.mock.calls[0]?.[0]).toBe(false);
+    expect(denied.mock.calls[0]?.[2]).toMatchObject({ code: "UNAVAILABLE" });
+    expect(peekSystemEvents("agent:main:session")).toHaveLength(1);
   });
 
   it.each([
@@ -307,7 +333,11 @@ describe("board gateway runtime boundaries", () => {
       jobId: "job-1",
     });
     expect(allowed.mock.calls[0]?.[1]).toEqual({ ok: true, jobId: "job-1" });
-    expect(triggerCronJob).toHaveBeenCalledWith("job-1", expect.any(Object));
+    expect(triggerCronJob).toHaveBeenCalledWith(
+      "job-1",
+      expect.any(Object),
+      expect.objectContaining({ assertActive: expect.any(Function) }),
+    );
   });
 
   it("caps board.event payloads and preserves Unicode at the notice boundary", async () => {
