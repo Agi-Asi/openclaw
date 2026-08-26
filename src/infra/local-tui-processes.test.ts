@@ -141,10 +141,16 @@ describe("local TUI processes", () => {
     await expect(
       terminateLocalTuiProcesses({
         processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
+        targetRoot: "/target",
         controller,
         graceMs: 0,
         killGraceMs: 0,
-        readStartTime: () => "start",
+        readCurrentProcess: () => ({
+          pid: 101,
+          command: "/target/openclaw tui",
+          startTime: "start",
+          ownership: "target",
+        }),
       }),
     ).resolves.toEqual({ stopped: [101], failed: [] });
     expect(signals).toEqual([
@@ -163,10 +169,16 @@ describe("local TUI processes", () => {
     await expect(
       terminateLocalTuiProcesses({
         processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
+        targetRoot: "/target",
         controller,
         graceMs: 0,
         killGraceMs: 0,
-        readStartTime: () => "start",
+        readCurrentProcess: () => ({
+          pid: 101,
+          command: "/target/openclaw tui",
+          startTime: "start",
+          ownership: "target",
+        }),
       }),
     ).resolves.toEqual({ stopped: [], failed: [101] });
   });
@@ -178,12 +190,54 @@ describe("local TUI processes", () => {
     await expect(
       terminateLocalTuiProcesses({
         processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
+        targetRoot: "/target",
         controller,
         graceMs: 0,
         killGraceMs: 0,
-        readStartTime: () => (++reads === 1 ? "start" : undefined),
+        readCurrentProcess: () =>
+          ++reads === 1
+            ? {
+                pid: 101,
+                command: "/target/openclaw tui",
+                startTime: "start",
+                ownership: "target",
+              }
+            : undefined,
       }),
     ).resolves.toEqual({ stopped: [], failed: [101] });
+    expect(controller.kill).not.toHaveBeenCalledWith(101, "SIGKILL");
+  });
+
+  it("revalidates target ownership immediately before the kill fallback", async () => {
+    const controller = { kill: vi.fn(() => true) };
+    const readCurrentProcess = vi
+      .fn()
+      .mockReturnValueOnce({
+        pid: 101,
+        command: "/target/openclaw tui",
+        startTime: "start",
+        ownership: "target",
+      })
+      .mockReturnValueOnce({
+        pid: 101,
+        command: "openclaw tui",
+        startTime: "start",
+        ownership: "ambiguous",
+      });
+
+    await expect(
+      terminateLocalTuiProcesses({
+        processes: [
+          { pid: 101, command: "/target/openclaw tui", startTime: "start", ownership: "target" },
+        ],
+        targetRoot: "/target",
+        controller,
+        graceMs: 0,
+        killGraceMs: 0,
+        readCurrentProcess,
+      }),
+    ).resolves.toEqual({ stopped: [], failed: [101] });
+    expect(controller.kill).toHaveBeenCalledWith(101, "SIGTERM");
     expect(controller.kill).not.toHaveBeenCalledWith(101, "SIGKILL");
   });
 

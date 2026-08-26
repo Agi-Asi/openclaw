@@ -243,42 +243,34 @@ function isProcessAlive(controller: ProcessController, pid: number): boolean {
   }
 }
 
-function readProcessStartTime(pid: number): string | undefined {
-  if (process.platform === "win32") {
-    const startTime = readWindowsProcessStartTimeSync(pid);
-    return startTime === null ? undefined : String(startTime);
-  }
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart="], {
-    encoding: "utf8",
-    killSignal: "SIGKILL",
-    timeout: LOCAL_TUI_PROCESS_PROBE_TIMEOUT_MS,
-  });
-  return result.status === 0 ? result.stdout?.trim() || undefined : undefined;
-}
-
 /** Terminates local TUI processes with SIGTERM, then SIGKILL for remaining pids. */
 export async function terminateLocalTuiProcesses(params: {
   processes: LocalTuiProcess[];
+  targetRoot: string;
   controller?: ProcessController;
   graceMs?: number;
   killGraceMs?: number;
-  readStartTime?: (pid: number) => string | undefined;
+  readCurrentProcess?: (pid: number, targetRoot: string) => LocalTuiProcess | undefined;
 }): Promise<{ stopped: number[]; failed: number[] }> {
   const controller = params.controller ?? process;
   const graceMs = Math.max(0, params.graceMs ?? 500);
   const killGraceMs = Math.max(0, params.killGraceMs ?? 250);
-  const readStartTime = params.readStartTime ?? readProcessStartTime;
+  const readCurrentProcess =
+    params.readCurrentProcess ??
+    ((pid: number, targetRoot: string) =>
+      listLocalTuiProcesses({ targetRoot }).find((process) => process.pid === pid));
   const stopped: number[] = [];
   const failed: number[] = [];
 
   for (const proc of params.processes) {
-    const currentStartTime = readStartTime(proc.pid);
-    if (!proc.startTime || !currentStartTime) {
+    const current = readCurrentProcess(proc.pid, params.targetRoot);
+    if (
+      proc.ownership !== "target" ||
+      !proc.startTime ||
+      current?.ownership !== "target" ||
+      current.startTime !== proc.startTime
+    ) {
       failed.push(proc.pid);
-      continue;
-    }
-    if (currentStartTime !== proc.startTime) {
-      stopped.push(proc.pid);
       continue;
     }
     try {
@@ -299,13 +291,9 @@ export async function terminateLocalTuiProcesses(params: {
       stopped.push(proc.pid);
       continue;
     }
-    const currentStartTime = readStartTime(proc.pid);
-    if (!currentStartTime) {
+    const current = readCurrentProcess(proc.pid, params.targetRoot);
+    if (current?.ownership !== "target" || current.startTime !== proc.startTime) {
       failed.push(proc.pid);
-      continue;
-    }
-    if (currentStartTime !== proc.startTime) {
-      stopped.push(proc.pid);
       continue;
     }
     try {
@@ -361,7 +349,10 @@ export async function quiesceLocalTuiProcessesBeforeUpdate(
   if (processes.length === 0) {
     return Object.assign(updateLock, { stopped: [] });
   }
-  const stopped = await (overrides.terminate ?? terminateLocalTuiProcesses)({ processes });
+  const stopped = await (overrides.terminate ?? terminateLocalTuiProcesses)({
+    processes,
+    targetRoot,
+  });
   if (stopped.failed.length > 0) {
     await updateLock.release();
     throw new Error(
