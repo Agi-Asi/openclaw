@@ -76,7 +76,7 @@ describe("doctor WhatsApp responsiveness", () => {
         path: "channels.whatsapp",
         target: "101",
         requirement: "local-tui-event-loop-pressure",
-        fixHint: expect.stringContaining("openclaw doctor --fix"),
+        fixHint: expect.stringContaining("Close local TUI sessions"),
       }),
     ]);
   });

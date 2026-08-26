@@ -54,9 +54,7 @@ export function collectWhatsappResponsivenessHealthFindings(params: {
       path: "channels.whatsapp",
       target: pids,
       requirement: "local-tui-event-loop-pressure",
-      fixHint: `Close local TUI sessions (${pids}), or run ${formatCliCommand(
-        "openclaw doctor --fix",
-      )}.`,
+      fixHint: `Close local TUI sessions (${pids}), then rerun ${formatCliCommand("openclaw doctor")}.`,
     },
   ];
 }
@@ -88,7 +86,7 @@ export async function noteWhatsappResponsivenessHealth(params: {
     warnings.push(
       params.shouldRepair
         ? "Doctor cannot safely close a TUI whose installation is unknown; close those sessions and retry."
-        : `Fix: close those TUI sessions, or run ${formatCliCommand("openclaw doctor --fix")}.`,
+        : `Fix: close those TUI sessions, then rerun ${formatCliCommand("openclaw doctor")}.`,
     );
   }
 
