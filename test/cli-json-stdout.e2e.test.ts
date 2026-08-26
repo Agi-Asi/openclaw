@@ -5,6 +5,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { withTempHome } from "openclaw/plugin-sdk/test-env";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../src/agents/defaults.js";
+import { readConfigMachineState } from "../src/state/config-machine-state.js";
 import { OPENCLAW_STATE_SCHEMA_SQL } from "../src/state/openclaw-state-schema.js";
 
 function runBuiltCli(
@@ -849,14 +851,11 @@ describe("cli json stdout contract", () => {
             OPENCLAW_CONFIG_PATH: configPath,
             OPENCLAW_STATE_DIR: stateDir,
           });
-        const readCatalogRow = () => {
-          const database = new DatabaseSync(databasePath, { readOnly: true });
-          try {
-            return database.prepare("SELECT * FROM model_catalog_remote WHERE id = 1").get();
-          } finally {
-            database.close();
-          }
-        };
+        const readCatalogRow = () =>
+          readConfigMachineState<{ generated_at: number; bundle_json: string }>(
+            "modelCatalog.remote",
+            { path: databasePath },
+          );
 
         const human = runRefresh(["refresh"], "initial");
         expect(human.status, human.stderr).toBe(0);
