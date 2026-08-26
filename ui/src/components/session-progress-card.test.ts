@@ -2,13 +2,15 @@
 
 import type { ProgressCard } from "@openclaw/gateway-protocol";
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderSessionProgressCard } from "./session-progress-card.ts";
+
+const NOW_MS = Date.UTC(2026, 7, 26, 13, 37);
 
 const progressCard: ProgressCard = {
   sessionKey: "agent:main:work",
   revision: 2,
-  updatedAt: 1,
+  updatedAt: NOW_MS - 2 * 60_000,
   markdown: '**Focused change**\n\n<progress value="1" max="3"></progress>',
   steps: [
     { step: "Inspect the route", status: "completed" },
@@ -18,8 +20,17 @@ const progressCard: ProgressCard = {
 };
 
 describe("renderSessionProgressCard", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW_MS);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it.each(["board", "composer", "hovercard"] as const)(
-    "shows the last activity time for %s cards with and without checklist steps",
+    "shows relative activity for %s cards with and without checklist steps",
     (placement) => {
       const container = document.createElement("div");
 
@@ -30,8 +41,8 @@ describe("renderSessionProgressCard", () => {
         expect(timestamp?.getAttribute("datetime")).toBe(
           new Date(progressCard.updatedAt).toISOString(),
         );
-        expect(timestamp?.textContent).toMatch(/\d{1,2}:\d{2}:\d{2}/);
-        expect(timestamp?.getAttribute("aria-label")).toMatch(/^Last activity: /);
+        expect(timestamp?.textContent).toBe("Updated 2m ago");
+        expect(timestamp?.getAttribute("aria-label")).toBe("Updated 2m ago");
         expect(timestamp?.getAttribute("title")).toBe(timestamp?.getAttribute("aria-label"));
         const accessibleCard =
           placement === "composer"
@@ -44,12 +55,44 @@ describe("renderSessionProgressCard", () => {
     },
   );
 
+  it.each([
+    [undefined, "Updated 2m ago"],
+    ["queued", "Updated 2m ago"],
+    ["running", "Updated 2m ago"],
+    ["done", "Completed 2m ago"],
+    ["failed", "Failed 2m ago"],
+    ["timeout", "Failed 2m ago"],
+    ["killed", "Stopped 2m ago"],
+  ] as const)("maps canonical session status %s to %s", (status, expected) => {
+    const container = document.createElement("div");
+
+    render(renderSessionProgressCard(progressCard, "composer", undefined, status), container);
+
+    expect(container.querySelector("time")?.textContent).toBe(expected);
+  });
+
+  it("labels activity from the last minute as just now", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderSessionProgressCard(
+        { ...progressCard, updatedAt: NOW_MS - 10_000 },
+        "composer",
+        undefined,
+        "running",
+      ),
+      container,
+    );
+
+    expect(container.querySelector("time")?.textContent).toBe("Updated just now");
+  });
+
   it("renders sanitized markdown and one accessible typed checklist", () => {
     const container = document.createElement("div");
     render(renderSessionProgressCard(progressCard, "hovercard"), container);
 
     const card = container.querySelector(".session-progress-card");
-    expect(card?.getAttribute("aria-label")).toMatch(/^1 of 3 completed\. Last activity: /);
+    expect(card?.getAttribute("aria-label")).toBe("1 of 3 completed. Updated 2m ago");
     expect(card?.querySelector("strong")?.textContent).toBe("Focused change");
     expect(card?.querySelector("progress")?.getAttribute("value")).toBe("1");
     expect(card?.querySelectorAll(".session-progress-card__count")).toHaveLength(0);
@@ -143,13 +186,19 @@ describe("renderSessionProgressCard", () => {
     );
     expect(card?.open).toBe(true);
     expect(card?.dataset.complete).toBe("false");
-    expect(card?.querySelector("summary")?.getAttribute("aria-label")).toMatch(
-      /^1 of 3 completed\. Last activity: /,
+    expect(card?.querySelector("summary")?.getAttribute("aria-label")).toBe(
+      "1 of 3 completed. Updated 2m ago",
     );
     expect(card?.querySelector("[role=region]")?.getAttribute("aria-label")).toBe(
       "1 of 3 completed",
     );
     expect(card?.querySelector("summary")?.textContent).toContain("Task progress");
+    expect(
+      card
+        ?.querySelector(".session-progress-card__heading-actions")
+        ?.textContent?.replaceAll(/\s+/gu, " ")
+        .trim(),
+    ).toBe("Updated 2m ago · 2 of 3");
     expect(card?.querySelector("progress")).toBeNull();
     expect(card?.querySelectorAll(".session-progress-card__step")).toHaveLength(3);
   });
@@ -168,6 +217,38 @@ describe("renderSessionProgressCard", () => {
     expect(count?.nextElementSibling?.classList).toContain(
       "session-progress-card__summary-expanded",
     );
+  });
+
+  it.each([
+    ["running", "2/3"],
+    ["done", "Completed"],
+    ["failed", "Failed"],
+    ["timeout", "Failed"],
+    ["killed", "Stopped"],
+  ] as const)("shows %s as %s in the closed summary", (status, expected) => {
+    const container = document.createElement("div");
+    render(renderSessionProgressCard(progressCard, "composer", undefined, status), container);
+
+    expect(
+      container.querySelector(".session-progress-card__summary-count--collapsed")?.textContent,
+    ).toBe(expected);
+  });
+
+  it("uses a terminal circle-x instead of a spinner after the run stops", () => {
+    const container = document.createElement("div");
+    render(renderSessionProgressCard(progressCard, "composer", undefined, "killed"), container);
+
+    const indicator = container.querySelector(".session-progress-card__summary-indicator");
+    expect(container.querySelector(".session-run-spinner")).toBeNull();
+    expect(indicator?.querySelector('circle[cx="12"][cy="12"][r="10"]')).not.toBeNull();
+    expect(indicator?.querySelector('path[d="m15 9-6 6"]')).not.toBeNull();
+    expect(indicator?.querySelector('path[d="m9 9 6 6"]')).not.toBeNull();
+    expect(
+      container.querySelector('.session-progress-card__step-marker[data-outcome="killed"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('.session-progress-card__step[aria-label$=", stopped"]'),
+    ).not.toBeNull();
   });
 
   it("starts completed composer progress collapsed", () => {
