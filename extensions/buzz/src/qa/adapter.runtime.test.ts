@@ -135,7 +135,7 @@ describe("Buzz QA transport adapter", () => {
         expect.objectContaining({ kind: "buzz", source: "convex" }),
       );
     } finally {
-      await adapter.cleanup();
+      await adapter.cleanup?.();
       await adapter.cleanupAfterGatewayStop?.();
     }
   });
