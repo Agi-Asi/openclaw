@@ -2701,6 +2701,19 @@ describe("package acceptance workflow", () => {
       description: "Acceptance profile: smoke, package, telegram, product, full, or custom",
       options: ["smoke", "package", "telegram", "product", "full", "custom"],
     });
+    const dispatchInputs = parsedWorkflow.on?.workflow_dispatch?.inputs;
+    const callInputs = parsedWorkflow.on?.workflow_call?.inputs;
+    expect(dispatchInputs?.prepublish_plugin_registry_json).toEqual(
+      callInputs?.prepublish_plugin_registry_json,
+    );
+    expect(dispatchInputs?.advisory).toBeUndefined();
+    expect(callInputs?.advisory).toEqual({
+      description: "Treat acceptance failures as advisory for the caller",
+      required: false,
+      default: false,
+      type: "boolean",
+    });
+    expect(Object.keys(dispatchInputs ?? {})).toHaveLength(25);
     expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.telegram_advisory).toBeUndefined();
     expect(parsedWorkflow.on?.workflow_call?.inputs?.suite_profile).toMatchObject({
       default: "package",
