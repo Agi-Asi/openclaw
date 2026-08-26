@@ -5618,7 +5618,9 @@ button.chat-pr__diff {
     padding-inline: 0;
   }
 
-  .agent-chat__input .chat-controls__effort-trigger .chat-controls__inline-select-label {
+  .agent-chat__input
+    .chat-controls__effort-trigger
+    :is(.chat-controls__inline-select-label, .chat-controls__inline-select-chevron) {
     display: none;
   }
 

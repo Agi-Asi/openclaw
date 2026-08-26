@@ -111,6 +111,13 @@ suite.define(() => {
         );
 
         expect(await effort.locator(".chat-controls__effort-icon svg").count()).toBe(1);
+        await expect
+          .poll(() =>
+            effort
+              .locator(".chat-controls__inline-select-chevron")
+              .evaluate((element) => getComputedStyle(element).display),
+          )
+          .toBe("none");
         await effort.click();
         await page.locator(".chat-controls__effort-menu").waitFor();
         const [composerBox, effortMenuBox] = await Promise.all([
