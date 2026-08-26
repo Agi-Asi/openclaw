@@ -141,13 +141,14 @@ describe("Control UI theme contrast", () => {
     expect(sessionLabelRule).toMatch(/color:\s*var\(--muted\)/);
     expect(readOpacity(sessionLabelRule)).toBe(1);
 
+    const lightTheme = readCssVarBlock(baseCss, ':root[data-theme-mode="light"]');
     for (const selector of [
       ':root[data-theme-mode="light"]',
       ':root[data-theme="openknot-light"]',
       ':root[data-theme="dash-light"]',
       ':root[data-theme="absolutely-light"]',
     ]) {
-      const theme = readCssVarBlock(baseCss, selector);
+      const theme = { ...lightTheme, ...readCssVarBlock(baseCss, selector) };
       const muted = requireCssColor(theme, "muted");
       for (const surface of ["bg", "bg-elevated", "bg-muted", "card"]) {
         expect(contrastRatio(muted, requireCssColor(theme, surface))).toBeGreaterThanOrEqual(4.5);
