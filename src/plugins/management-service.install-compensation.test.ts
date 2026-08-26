@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { computeDeclaredSurfaceHash } from "./capability-consent.js";
+import { buildPluginCapabilitySummary } from "./capability-summary.js";
 import {
   resolveDefaultPluginNpmDir,
   resolvePluginNpmGenerationProjectDir,
@@ -10,6 +12,11 @@ import {
 import { createColdPluginFixture } from "./test-helpers/cold-plugin-fixtures.js";
 
 const compensationTempDirs = useAutoCleanupTempDirTracker(afterEach);
+const emptyArtifactAcknowledgment = {
+  reviewToken: computeDeclaredSurfaceHash(
+    buildPluginCapabilitySummary({ manifest: {}, origin: "global" }).declared,
+  ),
+};
 
 const mocks = vi.hoisted(() => ({
   applyUninstall: vi.fn(),
@@ -130,7 +137,7 @@ describe("managed plugin install compensation", () => {
         request: { source: "clawhub", spec: "clawhub:community/demo" },
         snapshot: installPersistSnapshot(),
         env,
-        acknowledgeCapabilities: true,
+        acknowledgeCapabilities: emptyArtifactAcknowledgment,
       }),
     ).rejects.toBe(conflict);
 
@@ -188,7 +195,7 @@ describe("managed plugin install compensation", () => {
           request: { source: "npm", spec: packageName, mode: "install" },
           snapshot: installPersistSnapshot(),
           env,
-          acknowledgeCapabilities: true,
+          acknowledgeCapabilities: emptyArtifactAcknowledgment,
         }),
       ).rejects.toBe(conflict);
 
@@ -227,7 +234,7 @@ describe("managed plugin install compensation", () => {
         snapshot: installPersistSnapshot(),
         env,
         cleanupOnPersistenceFailure: true,
-        acknowledgeCapabilities: true,
+        acknowledgeCapabilities: emptyArtifactAcknowledgment,
       }),
     ).rejects.toBe(conflict);
 
