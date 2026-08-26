@@ -17,7 +17,6 @@ import {
   attestCodexPluginThreadApps,
   discardUnattestedCodexPluginThread,
 } from "./plugin-thread-attestation.js";
-import { mergeCodexThreadConfigs } from "./plugin-thread-config.js";
 import {
   assertCodexThreadForkResponse,
   assertCodexThreadStartResponse,
@@ -29,11 +28,12 @@ import type {
   CodexTurnEnvironmentParams,
   JsonObject,
 } from "./protocol.js";
-import type {
-  CodexAppServerBindingIdentity,
-  CodexAppServerBindingStore,
-  CodexAppServerPendingSupervisionBranch,
-  CodexAppServerThreadBinding,
+import {
+  resolveCodexBindingReasoningEffort,
+  type CodexAppServerBindingIdentity,
+  type CodexAppServerBindingStore,
+  type CodexAppServerPendingSupervisionBranch,
+  type CodexAppServerThreadBinding,
 } from "./session-binding.js";
 import {
   CodexThreadBindingConflictAfterCleanupError,
@@ -176,12 +176,7 @@ export async function materializePendingSupervisionBranch(
       dynamicTools: params.dynamicTools,
       appServer: params.appServer,
       developerInstructions: params.developerInstructions,
-      config: mergeCodexThreadConfigs(
-        params.config,
-        probeResponse.reasoningEffort
-          ? { model_reasoning_effort: probeResponse.reasoningEffort }
-          : undefined,
-      ),
+      config: params.config,
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
       nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
@@ -230,6 +225,10 @@ export async function materializePendingSupervisionBranch(
     ]);
     params.throwIfAborted();
     const startResponse = assertCodexThreadStartResponse(rawStartResponse);
+    const reasoningEffort = resolveCodexBindingReasoningEffort(
+      startResponse.reasoningEffort,
+      probeResponse.reasoningEffort,
+    );
     assertExactSupervisionModelSelection(startResponse, {
       model: nativeModel,
       modelProvider: nativeModelProvider,
@@ -307,7 +306,7 @@ export async function materializePendingSupervisionBranch(
           ...params.bindingPatch,
           model: nativeModel,
           modelProvider: bindingModelProvider,
-          reasoningEffort: startResponse.reasoningEffort,
+          reasoningEffort,
           historyCoveredThrough,
         },
       });
@@ -368,7 +367,7 @@ export async function materializePendingSupervisionBranch(
       pendingSupervisionBranch: undefined,
       model: nativeModel,
       modelProvider: bindingModelProvider,
-      reasoningEffort: startResponse.reasoningEffort,
+      reasoningEffort,
       historyCoveredThrough,
       lifecycle: { action: "forked" },
     };

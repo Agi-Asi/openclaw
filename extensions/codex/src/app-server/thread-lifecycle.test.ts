@@ -3457,14 +3457,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
         return nativeThreadResult(probeThreadId, "native-effective", "native-provider", "low");
       }
       if (method === "thread/start") {
-        const config = (requestParams as { config?: Record<string, unknown> }).config;
-        const reasoningEffort = config?.model_reasoning_effort;
-        const response = nativeThreadResult(
-          finalThreadId,
-          "native-effective",
-          "native-provider",
-          typeof reasoningEffort === "string" ? reasoningEffort : null,
-        );
+        const response = nativeThreadResult(finalThreadId, "native-effective", "native-provider");
+        delete response.reasoningEffort;
         return response;
       }
       if (method === "thread/resume") {
@@ -3501,6 +3495,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       shellEnvironment: { GH_TOKEN: "", GITHUB_TOKEN: "" },
       disableLoginShell: true,
       appServer: createThreadLifecycleAppServerOptions(),
+      config: { model_reasoning_effort: "high" },
       appServerRuntimeFingerprint: "codex-runtime-v1",
     };
 
@@ -3546,7 +3541,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       config: {
         project_doc_max_bytes: 131_072,
         allow_login_shell: false,
-        model_reasoning_effort: "low",
+        model_reasoning_effort: "high",
         shell_environment_policy: {
           experimental_use_profile: false,
           set: { GH_TOKEN: "", GITHUB_TOKEN: "" },
@@ -3599,6 +3594,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
     request.mockClear();
     const resumed = await startOrResumeThread({
       ...commonParams,
+      config: undefined,
       appServerRuntimeFingerprint: "codex-runtime-v2",
     });
 
