@@ -192,7 +192,7 @@ Options:
   --output-name <name>        Output tarball filename. Default: ${DEFAULT_OUTPUT_NAME}
   --metadata <file>           Write package metadata JSON.
   --plugin-registry-output-dir <dir>
-                              Build an immutable registry for source=ref before cleanup.
+                              Build an immutable registry for source=ref, npm, or artifact.
   --required-plugin-packages-json <json>
                               Scoped package names to include in that registry.
   --github-output <file>      Append tarball, sha256, package name/version outputs.`;
@@ -1705,12 +1705,6 @@ async function resolveCandidate(options: PackageCandidateOptions) {
         packOutput,
         options.outputName || DEFAULT_OUTPUT_NAME,
       );
-      if (options.pluginRegistryOutputDir) {
-        pluginRegistrySource = await preparePackageSourceWorktree(options.packageRef);
-        packageWorktreeDir = pluginRegistrySource.sourceDir;
-        packageRef = options.packageRef;
-        await installPackageSourceDeps(pluginRegistrySource.sourceDir);
-      }
     } else if (options.source === "url" || options.source === "trusted-url") {
       if (!options.packageUrl) {
         throw new Error(`${options.source} requires --package-url`);
@@ -1755,9 +1749,27 @@ async function resolveCandidate(options: PackageCandidateOptions) {
       );
     }
     if (options.pluginRegistryOutputDir && !pluginRegistrySource) {
-      throw new Error(
-        "--plugin-registry-output-dir is only supported with source=ref or source=npm",
+      if (options.source !== "npm" && options.source !== "artifact") {
+        throw new Error(
+          "--plugin-registry-output-dir is only supported with source=ref, source=npm, or source=artifact",
+        );
+      }
+      if (options.source === "artifact") {
+        packageSourceSha = packageSourceSha || (await readPackageBuildSourceSha(target));
+        if (!packageSourceSha) {
+          throw new Error(
+            "source=artifact requires packageSourceSha metadata or build-info for prerelease plugin registry creation",
+          );
+        }
+        packageTrustedReason ||= "package-build-info";
+      } else {
+        packageRef = options.packageRef;
+      }
+      pluginRegistrySource = await preparePackageSourceWorktree(
+        options.source === "npm" ? packageRef : packageSourceSha,
       );
+      packageWorktreeDir = pluginRegistrySource.sourceDir;
+      await installPackageSourceDeps(pluginRegistrySource.sourceDir);
     }
     if (options.pluginRegistryOutputDir && pluginRegistrySource) {
       const requiredPackages = JSON.parse(options.requiredPluginPackagesJson) as string[];
