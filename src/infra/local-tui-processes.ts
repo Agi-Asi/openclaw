@@ -312,9 +312,10 @@ export async function terminateLocalTuiProcesses(params: {
     if (
       proc.ownership !== "target" ||
       !proc.instanceId ||
+      originalIdentity !== "strong" ||
       current?.ownership !== "target" ||
       current.instanceId !== proc.instanceId ||
-      currentIdentity !== originalIdentity
+      currentIdentity !== "strong"
     ) {
       failed.push(proc.pid);
       continue;

@@ -189,7 +189,7 @@ describe("local TUI processes", () => {
     expect(controller.kill).not.toHaveBeenCalled();
   });
 
-  it("allows graceful macOS termination but never escalates a coarse identity", async () => {
+  it("does not signal a macOS process with a coarse identity", async () => {
     const controller = { kill: vi.fn(() => true) };
     const process = {
       pid: 101,
@@ -209,8 +209,7 @@ describe("local TUI processes", () => {
         readCurrentProcess: () => process,
       }),
     ).resolves.toEqual({ stopped: [], failed: [101] });
-    expect(controller.kill).toHaveBeenCalledWith(101, "SIGTERM");
-    expect(controller.kill).not.toHaveBeenCalledWith(101, "SIGKILL");
+    expect(controller.kill).not.toHaveBeenCalled();
   });
 
   it("reports local TUI processes that survive the kill fallback", async () => {
