@@ -141,10 +141,13 @@ export type SidebarSessionHovercardRow = Pick<
   | "createdActor"
   | "createdAt"
   | "channelAvatarUrl"
+  | "endedAt"
   | "label"
   | "lastMessagePreview"
   | "participantCount"
   | "participants"
+  | "status"
+  | "startedAt"
   | "updatedAt"
   | "workContext"
 >;

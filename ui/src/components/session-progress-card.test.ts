@@ -1,11 +1,14 @@
 /* @vitest-environment jsdom */
 
 import type { ProgressCard } from "@openclaw/gateway-protocol";
+import { MAX_DATE_TIMESTAMP_MS } from "@openclaw/normalization-core/number-coercion";
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderSessionProgressCard } from "./session-progress-card.ts";
 
 const NOW_MS = Date.UTC(2026, 7, 26, 13, 37);
+const RUN_STARTED_MS = NOW_MS - 3 * 60_000;
+const RUN_ENDED_MS = NOW_MS - 30_000;
 
 const progressCard: ProgressCard = {
   sessionKey: "agent:main:work",
@@ -48,9 +51,7 @@ describe("renderSessionProgressCard", () => {
           placement === "composer"
             ? timestamp?.closest("summary")
             : timestamp?.closest(".session-progress-card");
-        expect(accessibleCard?.getAttribute("aria-label")).toContain(
-          timestamp?.getAttribute("aria-label"),
-        );
+        expect(accessibleCard?.getAttribute("aria-label")).not.toContain("Updated");
       }
     },
   );
@@ -59,16 +60,53 @@ describe("renderSessionProgressCard", () => {
     [undefined, "Updated 2m ago"],
     ["queued", "Updated 2m ago"],
     ["running", "Updated 2m ago"],
-    ["done", "Completed 2m ago"],
-    ["failed", "Failed 2m ago"],
-    ["timeout", "Failed 2m ago"],
-    ["killed", "Stopped 2m ago"],
+    ["done", "Updated 2m ago"],
+    ["failed", "Updated 2m ago"],
+    ["timeout", "Updated 2m ago"],
+    ["killed", "Updated 2m ago"],
   ] as const)("maps canonical session status %s to %s", (status, expected) => {
     const container = document.createElement("div");
 
     render(renderSessionProgressCard(progressCard, "composer", undefined, status), container);
 
     expect(container.querySelector("time")?.textContent).toBe(expected);
+  });
+
+  it("uses endedAt for terminal wording and falls back to Updated without it", () => {
+    const container = document.createElement("div");
+    render(
+      renderSessionProgressCard(
+        progressCard,
+        "composer",
+        undefined,
+        "done",
+        RUN_STARTED_MS,
+        RUN_ENDED_MS,
+      ),
+      container,
+    );
+    expect(container.querySelector("time")?.textContent).toBe("Completed just now");
+    expect(container.querySelector("time")?.getAttribute("datetime")).toBe(
+      new Date(RUN_ENDED_MS).toISOString(),
+    );
+
+    render(renderSessionProgressCard(progressCard, "composer", undefined, "done"), container);
+    expect(container.querySelector("time")?.textContent).toBe("Updated 2m ago");
+  });
+
+  it("refreshes relative time while connected and stops after disconnect", async () => {
+    const container = document.createElement("div");
+    render(
+      renderSessionProgressCard({ ...progressCard, updatedAt: NOW_MS - 10_000 }, "composer"),
+      container,
+    );
+    expect(container.querySelector("time")?.textContent).toBe("Updated just now");
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(container.querySelector("time")?.textContent).toBe("Updated 1m ago");
+
+    render(null, container);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("labels activity from the last minute as just now", () => {
@@ -92,7 +130,7 @@ describe("renderSessionProgressCard", () => {
     render(renderSessionProgressCard(progressCard, "hovercard"), container);
 
     const card = container.querySelector(".session-progress-card");
-    expect(card?.getAttribute("aria-label")).toBe("1 of 3 completed. Updated 2m ago");
+    expect(card?.getAttribute("aria-label")).toBe("1 of 3 completed");
     expect(card?.querySelector("strong")?.textContent).toBe("Focused change");
     expect(card?.querySelector("progress")?.getAttribute("value")).toBe("1");
     expect(card?.querySelectorAll(".session-progress-card__count")).toHaveLength(0);
@@ -187,7 +225,7 @@ describe("renderSessionProgressCard", () => {
     expect(card?.open).toBe(true);
     expect(card?.dataset.complete).toBe("false");
     expect(card?.querySelector("summary")?.getAttribute("aria-label")).toBe(
-      "1 of 3 completed. Updated 2m ago",
+      "Wire the checklist. 1 of 3 completed",
     );
     expect(card?.querySelector("[role=region]")?.getAttribute("aria-label")).toBe(
       "1 of 3 completed",
@@ -227,7 +265,17 @@ describe("renderSessionProgressCard", () => {
     ["killed", "Stopped"],
   ] as const)("shows %s as %s in the closed summary", (status, expected) => {
     const container = document.createElement("div");
-    render(renderSessionProgressCard(progressCard, "composer", undefined, status), container);
+    render(
+      renderSessionProgressCard(
+        progressCard,
+        "composer",
+        undefined,
+        status,
+        RUN_STARTED_MS,
+        RUN_ENDED_MS,
+      ),
+      container,
+    );
 
     expect(
       container.querySelector(".session-progress-card__summary-count--collapsed")?.textContent,
@@ -236,7 +284,17 @@ describe("renderSessionProgressCard", () => {
 
   it("uses a terminal circle-x instead of a spinner after the run stops", () => {
     const container = document.createElement("div");
-    render(renderSessionProgressCard(progressCard, "composer", undefined, "killed"), container);
+    render(
+      renderSessionProgressCard(
+        progressCard,
+        "composer",
+        undefined,
+        "killed",
+        RUN_STARTED_MS,
+        RUN_ENDED_MS,
+      ),
+      container,
+    );
 
     const indicator = container.querySelector(".session-progress-card__summary-indicator");
     expect(container.querySelector(".session-run-spinner")).toBeNull();
@@ -249,6 +307,48 @@ describe("renderSessionProgressCard", () => {
     expect(
       container.querySelector('.session-progress-card__step[aria-label$=", stopped"]'),
     ).not.toBeNull();
+    expect(container.querySelector("summary")?.getAttribute("aria-label")).toBe(
+      "Wire the checklist. Stopped",
+    );
+  });
+
+  it("does not apply a later run outcome to an older progress card", () => {
+    const container = document.createElement("div");
+    render(
+      renderSessionProgressCard(
+        { ...progressCard, updatedAt: RUN_STARTED_MS - 1 },
+        "composer",
+        undefined,
+        "failed",
+        RUN_STARTED_MS,
+        RUN_ENDED_MS,
+      ),
+      container,
+    );
+
+    expect(container.querySelector("time")?.textContent).toBe("Updated 3m ago");
+    expect(container.querySelector("[data-outcome=failed]")).toBeNull();
+    expect(container.querySelector(".session-run-spinner")).not.toBeNull();
+  });
+
+  it("falls back safely for timestamps outside the Date range", () => {
+    const container = document.createElement("div");
+    render(
+      renderSessionProgressCard(
+        { ...progressCard, updatedAt: MAX_DATE_TIMESTAMP_MS + 1 },
+        "composer",
+        undefined,
+        "failed",
+        RUN_STARTED_MS,
+        MAX_DATE_TIMESTAMP_MS + 1,
+      ),
+      container,
+    );
+
+    expect(container.querySelector("time")?.getAttribute("datetime")).toBe(
+      new Date(NOW_MS).toISOString(),
+    );
+    expect(container.querySelector("[data-outcome=failed]")).toBeNull();
   });
 
   it("starts completed composer progress collapsed", () => {

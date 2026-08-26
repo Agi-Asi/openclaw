@@ -1,5 +1,8 @@
 import type { ProgressCard, ProgressCardStep, SessionRunStatus } from "@openclaw/gateway-protocol";
+import { asDateTimestampMs } from "@openclaw/normalization-core/number-coercion";
 import { html, nothing } from "lit";
+import { AsyncDirective } from "lit/async-directive.js";
+import { directive } from "lit/directive.js";
 import { ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { t } from "../i18n/index.ts";
@@ -31,14 +34,63 @@ const TERMINAL_OUTCOME_LABEL_KEYS: Partial<Record<SessionRunStatus, Parameters<t
   timeout: "sessionProgressCard.outcome.failed",
 };
 
-const TERMINAL_STEP_STATUS_LABEL_KEYS: Partial<
-  Record<SessionRunStatus, Parameters<typeof t>[0]>
-> = {
-  done: "sessionProgressCard.status.completed",
-  failed: "sessionProgressCard.status.failed",
-  killed: "sessionProgressCard.status.stopped",
-  timeout: "sessionProgressCard.status.failed",
-};
+const TERMINAL_STEP_STATUS_LABEL_KEYS: Partial<Record<SessionRunStatus, Parameters<typeof t>[0]>> =
+  {
+    done: "sessionProgressCard.status.completed",
+    failed: "sessionProgressCard.status.failed",
+    killed: "sessionProgressCard.status.stopped",
+    timeout: "sessionProgressCard.status.failed",
+  };
+
+class ProgressActivityTimeDirective extends AsyncDirective {
+  private timestamp = 0;
+  private labelKey: Parameters<typeof t>[0] = "sessionProgressCard.activity.updated";
+  private timer: ReturnType<typeof setInterval> | undefined;
+
+  render(timestamp: number, labelKey: Parameters<typeof t>[0]) {
+    this.timestamp = timestamp;
+    this.labelKey = labelKey;
+    if (this.isConnected) {
+      this.startTimer();
+    }
+    return this.renderTime();
+  }
+
+  protected override disconnected(): void {
+    this.stopTimer();
+  }
+
+  protected override reconnected(): void {
+    this.setValue(this.renderTime());
+    this.startTimer();
+  }
+
+  private startTimer(): void {
+    if (this.timer) {
+      return;
+    }
+    this.timer = setInterval(() => this.setValue(this.renderTime()), 30_000);
+  }
+
+  private stopTimer(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+  }
+
+  private renderTime() {
+    const label = t(this.labelKey, { time: formatRelativeTimestamp(this.timestamp) });
+    return html`<time
+      datetime=${new Date(this.timestamp).toISOString()}
+      aria-label=${label}
+      title=${label}
+      >${label}</time
+    >`;
+  }
+}
+
+const progressActivityTime = directive(ProgressActivityTimeDirective);
 
 const composerDisclosureOwners = new WeakMap<HTMLDetailsElement, string>();
 
@@ -154,6 +206,8 @@ export function renderSessionProgressCard(
   placement: SessionProgressCardPlacement,
   onDismiss?: (card: ProgressCard) => void,
   sessionStatus?: SessionRunStatus,
+  startedAt?: number,
+  endedAt?: number,
 ) {
   if (!card) {
     return nothing;
@@ -165,18 +219,29 @@ export function renderSessionProgressCard(
         total: String(counts.total),
       })
     : t("sessionProgressCard.noteLabel");
-  const activityTime = formatRelativeTimestamp(card.updatedAt);
-  const activityLabel = t(
-    sessionStatus ? ACTIVITY_LABEL_KEYS[sessionStatus] : "sessionProgressCard.activity.updated",
-    { time: activityTime },
-  );
-  const accessibleLabel = `${countLabel}. ${activityLabel}`;
-  const lastActivity = html`<time
-    datetime=${new Date(card.updatedAt).toISOString()}
-    aria-label=${activityLabel}
-    title=${activityLabel}
-    >${activityLabel}</time
-  >`;
+  const validStartedAt = asDateTimestampMs(startedAt);
+  const validEndedAt = asDateTimestampMs(endedAt);
+  const validUpdatedAt = asDateTimestampMs(card.updatedAt);
+  const hasValidRunWindow =
+    validStartedAt !== undefined &&
+    validEndedAt !== undefined &&
+    validEndedAt >= validStartedAt &&
+    validUpdatedAt !== undefined &&
+    validUpdatedAt >= validStartedAt;
+  const terminalTimestamp =
+    sessionStatus && TERMINAL_OUTCOME_LABEL_KEYS[sessionStatus] && hasValidRunWindow
+      ? validEndedAt
+      : undefined;
+  const effectiveSessionStatus =
+    sessionStatus && TERMINAL_OUTCOME_LABEL_KEYS[sessionStatus] && !terminalTimestamp
+      ? undefined
+      : sessionStatus;
+  const activityTimestamp = terminalTimestamp ?? validUpdatedAt ?? Date.now();
+  const activityKey = terminalTimestamp
+    ? ACTIVITY_LABEL_KEYS[sessionStatus!]
+    : "sessionProgressCard.activity.updated";
+  const accessibleLabel = countLabel;
+  const lastActivity = progressActivityTime(activityTimestamp, activityKey);
   const dismissible = Boolean(
     onDismiss && card.steps?.length && card.steps.every((step) => step.status === "completed"),
   );
@@ -207,9 +272,10 @@ export function renderSessionProgressCard(
         })
       : t("sessionProgressCard.noteLabel");
     const stepLabel = currentStep?.step ?? t("sessionProgressCard.noteLabel");
-    const terminalOutcomeKey = sessionStatus
-      ? TERMINAL_OUTCOME_LABEL_KEYS[sessionStatus]
+    const terminalOutcomeKey = effectiveSessionStatus
+      ? TERMINAL_OUTCOME_LABEL_KEYS[effectiveSessionStatus]
       : undefined;
+    const summaryLabel = `${stepLabel}. ${terminalOutcomeKey ? t(terminalOutcomeKey) : countLabel}`;
     const shortCount = counts
       ? t("sessionProgressCard.shortCount", {
           completed: String(currentPosition),
@@ -217,9 +283,11 @@ export function renderSessionProgressCard(
         })
       : nothing;
     const summaryIndicator =
-      sessionStatus === "done"
+      effectiveSessionStatus === "done"
         ? icons.check
-        : sessionStatus === "failed" || sessionStatus === "timeout" || sessionStatus === "killed"
+        : effectiveSessionStatus === "failed" ||
+            effectiveSessionStatus === "timeout" ||
+            effectiveSessionStatus === "killed"
           ? icons.circleX
           : complete
             ? icons.check
@@ -232,14 +300,14 @@ export function renderSessionProgressCard(
       data-complete=${String(complete)}
       ${ref((element) => initializeComposerDisclosure(element, card.sessionKey, !complete))}
     >
-      <summary class="session-progress-card__summary" aria-label=${accessibleLabel}>
+      <summary class="session-progress-card__summary" aria-label=${summaryLabel}>
         <span
           class="session-progress-card__summary-indicator session-progress-card__current-marker${complete ||
-          sessionStatus === "done"
+          effectiveSessionStatus === "done"
             ? " session-progress-card__summary-indicator--complete"
             : ""}"
           data-status=${currentStep?.status ?? "pending"}
-          data-outcome=${sessionStatus ?? nothing}
+          data-outcome=${effectiveSessionStatus ?? nothing}
           aria-hidden="true"
         >
           ${summaryIndicator}
@@ -250,7 +318,7 @@ export function renderSessionProgressCard(
         ${counts
           ? html`<span
               class="session-progress-card__summary-count session-progress-card__summary-count--collapsed"
-              data-outcome=${sessionStatus ?? nothing}
+              data-outcome=${effectiveSessionStatus ?? nothing}
               >${terminalOutcomeKey
                 ? t(terminalOutcomeKey)
                 : `${currentPosition}/${counts.total}`}</span
@@ -272,7 +340,7 @@ export function renderSessionProgressCard(
         >
       </summary>
       <div class="session-progress-card__body" role="region" aria-label=${composerCountLabel}>
-        ${renderMarkdown(card.markdown)} ${renderSteps(card, sessionStatus)}
+        ${renderMarkdown(card.markdown)} ${renderSteps(card, effectiveSessionStatus)}
       </div>
     </details>`;
   }
@@ -289,6 +357,6 @@ export function renderSessionProgressCard(
         >${dismiss}
       </span>
     </div>
-    ${renderBody(card, sessionStatus)}
+    ${renderBody(card, effectiveSessionStatus)}
   </section>`;
 }
