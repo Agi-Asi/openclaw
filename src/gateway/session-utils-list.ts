@@ -83,6 +83,7 @@ type ListSessionsFromStoreParams = {
   lightweightListRows?: boolean;
   opts: SessionsListParams;
   involvingActorId?: string;
+  ownerFirstActorId?: string;
 };
 
 type SessionEntrySelection = {
@@ -180,7 +181,8 @@ function filterSessionEntries(params: {
   getRowContext?: SessionListRowContextProvider;
   entryFilter?: (key: string, entry: SessionEntry) => boolean;
   involvingActorId?: string;
-}): Pick<SessionEntrySelection, "ownerFacet" | "entries"> {
+  ownerFirstActorId?: string;
+}): Pick<SessionEntrySelection, "ownerFacet" | "entries"> & { ownerEntries: SessionEntryPair[] } {
   const { cfg, store, opts, now } = params;
   const includeGlobal = opts.includeGlobal === true;
   const includeUnknown = opts.includeUnknown === true;
@@ -196,8 +198,10 @@ function filterSessionEntries(params: {
   const creatorId = normalizeOptionalString(opts.creatorId);
   const ownerId = normalizeOptionalString(opts.ownerId);
   const involvingActorId = normalizeOptionalString(params.involvingActorId);
+  const ownerFirstActorId = normalizeOptionalString(params.ownerFirstActorId);
   const activeCutoff = activeMinutes === undefined ? undefined : now - activeMinutes * 60_000;
   const entries: SessionEntryPair[] = [];
+  const ownerEntries: SessionEntryPair[] = [];
   const ownerFacet = new Map<string, SessionOwnerFacetIdentity>();
   let configuredAgentIds = params.configuredAgentIds;
   let filterOwnerIdentityById: Map<string, SessionActorProfileIdentity | undefined> | undefined;
@@ -317,7 +321,7 @@ function filterSessionEntries(params: {
       if (effectiveOwner) {
         addSessionOwnerFacetIdentity(ownerFacet, effectiveOwner);
       }
-    } else if (ownerId || involvingActorId) {
+    } else if (ownerId || involvingActorId || ownerFirstActorId) {
       filterOwnerIdentityById ??= new Map();
       configuredAgentIds ??= new Set(listAgentIds(cfg));
       effectiveOwner = projectAssignableSessionOwner(
@@ -347,10 +351,13 @@ function filterSessionEntries(params: {
         continue;
       }
     }
+    if (effectiveOwner?.type === "human" && effectiveOwner.id === ownerFirstActorId) {
+      ownerEntries.push([key, entry]);
+    }
     entries.push([key, entry]);
   }
 
-  return { entries, ownerFacet: sortSessionOwnerFacet(ownerFacet) };
+  return { entries, ownerEntries, ownerFacet: sortSessionOwnerFacet(ownerFacet) };
 }
 
 function isPhantomAgentStoreListEntry(key: string, entry: SessionEntry | undefined): boolean {
@@ -373,15 +380,22 @@ function selectSessionEntries(params: {
   configuredAgentIds?: ReadonlySet<string>;
   entryFilter?: (key: string, entry: SessionEntry) => boolean;
   involvingActorId?: string;
+  ownerFirstActorId?: string;
 }): SessionEntrySelection {
-  const { ownerFacet, entries: filtered } = filterSessionEntries(params);
+  const { ownerFacet, ownerEntries, entries: filtered } = filterSessionEntries(params);
   const limit = resolveSessionsListLimit(params.opts, params.defaultLimit);
   const offset = resolveSessionsListOffset(params.opts);
   const windowLimit = resolveSessionsListWindowLimit(limit, offset);
   const sortedWindow = sortAndLimitSessionEntries(filtered, windowLimit, params.opts.sortBy);
-  const entries =
+  const sharedEntries =
     limit === undefined ? sortedWindow.slice(offset) : sortedWindow.slice(offset, offset + limit);
-  const nextOffset = offset + entries.length;
+  let entries = sharedEntries;
+  if (params.ownerFirstActorId && offset === 0) {
+    const owned = sortAndLimitSessionEntries(ownerEntries, limit, params.opts.sortBy);
+    const ownedKeys = new Set(owned.map(([key]) => key));
+    entries = [...owned, ...sharedEntries.filter(([key]) => !ownedKeys.has(key))];
+  }
+  const nextOffset = offset + sharedEntries.length;
   const hasMore = nextOffset < filtered.length;
   return {
     entries,
@@ -429,6 +443,7 @@ function prepareSessionList(params: ListSessionsFromStoreParams) {
     userProfileIdentityById,
     configuredAgentIds,
     involvingActorId: params.involvingActorId,
+    ownerFirstActorId: params.ownerFirstActorId,
   });
   const fullRowContext =
     rowContext ||
@@ -461,6 +476,10 @@ function prepareSessionList(params: ListSessionsFromStoreParams) {
     ...selection,
     includeDerivedTitles: opts.includeDerivedTitles === true,
     includeLastMessage: opts.includeLastMessage === true,
+    // This request replaces two independently enriched pages; retain their combined bound.
+    transcriptFieldRows: params.ownerFirstActorId
+      ? SESSIONS_LIST_TRANSCRIPT_FIELD_ROWS * 2
+      : SESSIONS_LIST_TRANSCRIPT_FIELD_ROWS,
     now,
     configuredAgentIds,
     rowContext: sharedRowContext,
@@ -523,7 +542,7 @@ export function listSessionsFromStore(params: ListSessionsFromStoreParams): Sess
   const { cfg, store, opts } = params;
   const list = prepareSessionList(params);
   const sessions = list.entries.map(([key, entry], index) => {
-    const includeTranscriptFields = index < SESSIONS_LIST_TRANSCRIPT_FIELD_ROWS;
+    const includeTranscriptFields = index < list.transcriptFieldRows;
     const rowAgentId =
       !parseAgentSessionKey(key) && typeof opts.agentId === "string"
         ? normalizeAgentId(opts.agentId)
@@ -587,7 +606,7 @@ export async function listSessionsFromStoreAsync(
     const list = prepareSessionList(params);
     const sessions: GatewaySessionRow[] = [];
     const transcriptScopes = list.entries
-      .slice(0, SESSIONS_LIST_TRANSCRIPT_FIELD_ROWS)
+      .slice(0, list.transcriptFieldRows)
       .flatMap(([key, entry]) => {
         if (!entry.sessionId || (!list.includeDerivedTitles && !list.includeLastMessage)) {
           return [];
@@ -610,7 +629,7 @@ export async function listSessionsFromStoreAsync(
     let transcriptFieldIndex = 0;
     for (let i = 0; i < list.entries.length; i++) {
       const [key, entry] = expectDefined(list.entries[i], "entries entry at i");
-      const includeTranscriptFields = i < SESSIONS_LIST_TRANSCRIPT_FIELD_ROWS;
+      const includeTranscriptFields = i < list.transcriptFieldRows;
       const rowAgentId =
         !parseAgentSessionKey(key) && typeof opts.agentId === "string"
           ? normalizeAgentId(opts.agentId)
