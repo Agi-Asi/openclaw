@@ -889,7 +889,11 @@ export async function runGlobalPackageUpdateSteps(params: {
       return;
     }
     await params.beforeMutation?.();
-    tuiUpdateLock = await quiesceLocalTuiProcessesBeforeUpdate();
+    const targetRoot = params.packageRoot ?? params.installTarget.packageRoot;
+    if (!targetRoot) {
+      throw new Error("Update refused: could not resolve the target package root.");
+    }
+    tuiUpdateLock = await quiesceLocalTuiProcessesBeforeUpdate(targetRoot);
     if (tuiUpdateLock?.stopped.length) {
       steps.push({
         name: "close active TUI clients",

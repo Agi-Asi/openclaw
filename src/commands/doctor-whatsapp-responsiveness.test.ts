@@ -16,8 +16,7 @@ describe("doctor WhatsApp responsiveness", () => {
     vi.clearAllMocks();
   });
 
-  it("warns and repairs local TUI pressure when WhatsApp is enabled and the gateway is degraded", async () => {
-    const terminate = vi.fn().mockResolvedValue({ stopped: [101], failed: [] });
+  it("warns without signaling an installation-ambiguous TUI", async () => {
     const cfg = { channels: { whatsapp: { enabled: true } } } as OpenClawConfig;
 
     await noteWhatsappResponsivenessHealth({
@@ -35,20 +34,16 @@ describe("doctor WhatsApp responsiveness", () => {
         },
       },
       shouldRepair: true,
-      listLocalTuiProcesses: () => [{ pid: 101, command: "openclaw-tui" }],
-      terminateLocalTuiProcesses: terminate,
+      listLocalTuiProcesses: () => [{ pid: 101, command: "openclaw-tui", ownership: "ambiguous" }],
     });
 
-    expect(terminate).toHaveBeenCalledWith({
-      processes: [{ pid: 101, command: "openclaw-tui" }],
-    });
     expect(noteMock).toHaveBeenCalledWith(
       [
         "Gateway event loop is degraded while local TUI clients are running.",
         "WhatsApp replies can queue behind TUI startup/session refresh work.",
         "Local TUI pids: 101",
         "",
-        "Stopped local TUI clients: 101",
+        "Doctor cannot safely close a TUI whose installation is unknown; close those sessions and retry.",
       ].join("\n"),
       "WhatsApp responsiveness",
     );
@@ -71,7 +66,7 @@ describe("doctor WhatsApp responsiveness", () => {
           cpuCoreRatio: 0.4,
         },
       },
-      listLocalTuiProcesses: () => [{ pid: 101, command: "openclaw-tui" }],
+      listLocalTuiProcesses: () => [{ pid: 101, command: "openclaw-tui", ownership: "ambiguous" }],
     });
 
     expect(findings).toEqual([
@@ -104,7 +99,9 @@ describe("doctor WhatsApp responsiveness", () => {
             cpuCoreRatio: 0,
           },
         },
-        listLocalTuiProcesses: () => [{ pid: 101, command: "openclaw-tui" }],
+        listLocalTuiProcesses: () => [
+          { pid: 101, command: "openclaw-tui", ownership: "ambiguous" },
+        ],
       }),
     ).toEqual([]);
     expect(
@@ -140,7 +137,9 @@ describe("doctor WhatsApp responsiveness", () => {
             cpuCoreRatio: 0.4,
           },
         },
-        listLocalTuiProcesses: () => [{ pid: 101, command: "openclaw-tui" }],
+        listLocalTuiProcesses: () => [
+          { pid: 101, command: "openclaw-tui", ownership: "ambiguous" },
+        ],
       }),
     ).toEqual([]);
   });

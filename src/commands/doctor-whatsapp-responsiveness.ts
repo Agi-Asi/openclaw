@@ -6,7 +6,6 @@ import type { HealthFinding } from "../flows/health-checks.js";
 import {
   formatLocalTuiPidList,
   listLocalTuiProcesses,
-  terminateLocalTuiProcesses,
   type LocalTuiProcess,
 } from "../infra/local-tui-processes.js";
 import type { StatusSummary } from "../status/types.js";
@@ -62,13 +61,12 @@ export function collectWhatsappResponsivenessHealthFindings(params: {
   ];
 }
 
-/** Emits WhatsApp responsiveness warnings and optionally stops contending local TUI clients. */
+/** Emits WhatsApp responsiveness warnings without signaling unbound processes. */
 export async function noteWhatsappResponsivenessHealth(params: {
   cfg: OpenClawConfig;
   status?: Pick<StatusSummary, "eventLoop"> | null;
   shouldRepair: boolean;
   listLocalTuiProcesses?: () => LocalTuiProcess[];
-  terminateLocalTuiProcesses?: typeof terminateLocalTuiProcesses;
 }): Promise<void> {
   if (!hasWhatsappEnabled(params.cfg)) {
     return;
@@ -87,25 +85,11 @@ export async function noteWhatsappResponsivenessHealth(params: {
         `Local TUI pids: ${formatLocalTuiPidList(tuiProcesses)}`,
       ].join("\n"),
     );
-    if (params.shouldRepair) {
-      const repair = await (params.terminateLocalTuiProcesses ?? terminateLocalTuiProcesses)({
-        processes: tuiProcesses,
-      });
-      const repairLines: string[] = [];
-      if (repair.stopped.length > 0) {
-        repairLines.push(`Stopped local TUI clients: ${repair.stopped.join(", ")}`);
-      }
-      if (repair.failed.length > 0) {
-        repairLines.push(`Could not stop local TUI clients: ${repair.failed.join(", ")}`);
-      }
-      if (repairLines.length > 0) {
-        warnings.push(repairLines.join("\n"));
-      }
-    } else {
-      warnings.push(
-        `Fix: close those TUI sessions, or run ${formatCliCommand("openclaw doctor --fix")}.`,
-      );
-    }
+    warnings.push(
+      params.shouldRepair
+        ? "Doctor cannot safely close a TUI whose installation is unknown; close those sessions and retry."
+        : `Fix: close those TUI sessions, or run ${formatCliCommand("openclaw doctor --fix")}.`,
+    );
   }
 
   if (warnings.length > 0) {

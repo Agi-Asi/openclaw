@@ -1,4 +1,5 @@
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
 import { parseCmdScriptCommandLine } from "../daemon/cmd-argv.js";
@@ -13,6 +14,7 @@ export type LocalTuiProcess = {
   pid: number;
   command: string;
   startTime?: string;
+  ownership: "target" | "ambiguous";
 };
 
 type ProcessSignal = "SIGTERM" | "SIGKILL";
@@ -53,21 +55,44 @@ function isLocalTuiSubcommand(command: string | null | undefined): boolean {
   return command === undefined || (command !== null && LOCAL_TUI_SUBCOMMANDS.has(command));
 }
 
-function isLocalTuiCommand(command: string, platform: NodeJS.Platform): boolean {
+function classifyLocalTuiCommand(
+  command: string,
+  platform: NodeJS.Platform,
+  targetRoot: string | undefined,
+  realpath: (value: string) => string,
+): LocalTuiProcess["ownership"] | "other" | undefined {
   const argv =
     platform === "win32" ? parseCmdScriptCommandLine(command) : tokenizeCommandLine(command);
   const executable = normalizeExecutableName(argv[0]);
-  if (executable === "openclaw-tui") {
-    return true;
+  const isNodeLaunch = executable === "node" && normalizeExecutableName(argv[1]) === "openclaw.mjs";
+  const isTui =
+    executable === "openclaw-tui" ||
+    (executable === "openclaw" && isLocalTuiSubcommand(resolveOpenClawCommand(argv.slice(1)))) ||
+    (isNodeLaunch && isLocalTuiSubcommand(resolveOpenClawCommand(argv.slice(2))));
+  if (!isTui) {
+    return undefined;
   }
-  if (executable === "openclaw") {
-    return isLocalTuiSubcommand(resolveOpenClawCommand(argv.slice(1)));
+  if (!targetRoot) {
+    return "ambiguous";
   }
-  return (
-    executable === "node" &&
-    normalizeExecutableName(argv[1]) === "openclaw.mjs" &&
-    isLocalTuiSubcommand(resolveOpenClawCommand(argv.slice(2)))
-  );
+  const entrypoint = isNodeLaunch ? argv[1] : argv[0];
+  const pathApi = platform === "win32" ? path.win32 : path;
+  if (!entrypoint || !pathApi.isAbsolute(entrypoint)) {
+    return "ambiguous";
+  }
+  let resolvedEntrypoint: string;
+  let resolvedTarget: string;
+  try {
+    resolvedEntrypoint = realpath(entrypoint);
+    resolvedTarget = realpath(targetRoot);
+  } catch {
+    return "ambiguous";
+  }
+  const relative = pathApi.relative(resolvedTarget, resolvedEntrypoint);
+  return relative === "" ||
+    (!relative.startsWith(`..${pathApi.sep}`) && relative !== ".." && !pathApi.isAbsolute(relative))
+    ? "target"
+    : "other";
 }
 
 function resolveOpenClawCommand(args: readonly string[]): string | null | undefined {
@@ -78,7 +103,14 @@ function resolveOpenClawCommand(args: readonly string[]): string | null | undefi
   return positionals === null ? null : positionals[0];
 }
 
-function parseLocalTuiProcessLine(line: string, currentUid: number, currentPid = process.pid) {
+function parseLocalTuiProcessLine(
+  line: string,
+  currentUid: number,
+  currentPid: number,
+  platform: NodeJS.Platform,
+  targetRoot: string | undefined,
+  realpath: (value: string) => string,
+) {
   const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\d+\s+\d+:\d+:\d+\s+\d+)\s+(.+)$/);
   if (!match) {
     return null;
@@ -93,15 +125,17 @@ function parseLocalTuiProcessLine(line: string, currentUid: number, currentPid =
   }
   const startTime = match[3]?.trim() ?? "";
   const command = match[4]?.trim() ?? "";
-  if (!isLocalTuiCommand(command, process.platform)) {
+  const ownership = classifyLocalTuiCommand(command, platform, targetRoot, realpath);
+  if (!ownership || ownership === "other") {
     return null;
   }
-  return { pid, command, startTime };
+  return { pid, command, startTime, ownership };
 }
 
 /** Lists local OpenClaw TUI processes whose in-memory chunk graph may outlive an update. */
 export function listLocalTuiProcesses(
   params: {
+    targetRoot?: string;
     platform?: NodeJS.Platform;
     currentUid?: number;
     currentPid?: number;
@@ -113,6 +147,7 @@ export function listLocalTuiProcesses(
     readWindowsStartTime?: (pid: number) => number | null;
   } = {},
 ): LocalTuiProcess[] {
+  const realpath = fs.realpathSync.native;
   if ((params.platform ?? process.platform) === "win32") {
     const result = (params.spawnSync ?? spawnSync)(
       getWindowsPowerShellExePath(),
@@ -141,13 +176,24 @@ export function listLocalTuiProcesses(
         const startTime = pid
           ? (params.readWindowsStartTime ?? readWindowsProcessStartTimeSync)(pid)
           : null;
+        const ownership = command
+          ? classifyLocalTuiCommand(command, "win32", params.targetRoot, realpath)
+          : undefined;
         return pid &&
           pid !== (params.currentPid ?? process.pid) &&
           typeof ownerSidValue === "string" &&
           ownerSidValue === currentSidValue &&
           command &&
-          isLocalTuiCommand(command, "win32")
-          ? [{ pid, command, ...(startTime === null ? {} : { startTime: String(startTime) }) }]
+          ownership &&
+          ownership !== "other"
+          ? [
+              {
+                pid,
+                command,
+                ownership,
+                ...(startTime === null ? {} : { startTime: String(startTime) }),
+              },
+            ]
           : [];
       });
     } catch {
@@ -169,8 +215,16 @@ export function listLocalTuiProcesses(
   }
   const seen = new Set<number>();
   const processes: LocalTuiProcess[] = [];
+  const platform = params.platform ?? process.platform;
   for (const line of ps.stdout.split(/\r?\n/)) {
-    const proc = parseLocalTuiProcessLine(line, currentUid, params.currentPid);
+    const proc = parseLocalTuiProcessLine(
+      line,
+      currentUid,
+      params.currentPid ?? process.pid,
+      platform,
+      params.targetRoot,
+      realpath,
+    );
     if (!proc || seen.has(proc.pid)) {
       continue;
     }
@@ -280,6 +334,7 @@ export function formatLocalTuiPidList(processes: readonly LocalTuiProcess[]) {
 
 /** Quiesces clients at the shared update mutation boundary. */
 export async function quiesceLocalTuiProcessesBeforeUpdate(
+  targetRoot: string,
   overrides: {
     list?: typeof listLocalTuiProcesses;
     terminate?: typeof terminateLocalTuiProcesses;
@@ -295,7 +350,14 @@ export async function quiesceLocalTuiProcessesBeforeUpdate(
     LOCAL_TUI_UPDATE_LOCK_PATH,
     LOCAL_TUI_UPDATE_LOCK_OPTIONS,
   );
-  const processes = (overrides.list ?? listLocalTuiProcesses)();
+  const processes = (overrides.list ?? listLocalTuiProcesses)({ targetRoot });
+  const ambiguous = processes.filter((proc) => proc.ownership === "ambiguous");
+  if (ambiguous.length > 0) {
+    await updateLock.release();
+    throw new Error(
+      `Update refused: could not bind local TUI clients ${formatLocalTuiPidList(ambiguous)} to this installation. Close them and retry the update.`,
+    );
+  }
   if (processes.length === 0) {
     return Object.assign(updateLock, { stopped: [] });
   }

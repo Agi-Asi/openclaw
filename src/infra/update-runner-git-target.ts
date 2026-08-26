@@ -61,7 +61,7 @@ export async function prepareGitMutation(params: {
         : {}
       : { metadataUnreadable: target.reason },
   );
-  const tuiUpdateLock = await quiesceLocalTuiProcessesBeforeUpdate();
+  const tuiUpdateLock = await quiesceLocalTuiProcessesBeforeUpdate(params.root);
   return {
     ...preparation,
     ...(tuiUpdateLock ? { releaseTuiUpdateLock: tuiUpdateLock.release } : {}),

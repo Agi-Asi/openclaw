@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   listLocalTuiProcesses,
   quiesceLocalTuiProcessesBeforeUpdate,
@@ -7,79 +8,51 @@ import {
 } from "./local-tui-processes.js";
 
 describe("local TUI processes", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("lists only verified local TUI processes from ps output", () => {
+    const targetRoot = "/usr/lib/node_modules/openclaw";
     const spawnSync = vi.fn().mockReturnValue({
       status: 0,
       stdout: [
-        " 501 101 Thu Aug 20 19:00:00 2026 openclaw-tui",
-        " 501 101 Thu Aug 20 19:00:00 2026 openclaw-tui",
-        " 501 102 Thu Aug 20 19:00:00 2026 /usr/bin/node /usr/lib/node_modules/openclaw/dist/index.js gateway --port 18789",
-        " 501 104 Thu Aug 20 19:00:00 2026 openclaw tui --local",
-        " 501 105 Thu Aug 20 19:00:00 2026 /usr/bin/openclaw chat",
+        " 501 101 Thu Aug 20 19:00:00 2026 /usr/local/bin/openclaw tui",
         " 501 106 Thu Aug 20 19:00:00 2026 /usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs tui",
-        " 501 107 Thu Aug 20 19:00:00 2026 helper --note 'openclaw tui'",
-        " 501 108 Thu Aug 20 19:00:00 2026 openclaw-helper openclaw terminal",
-        " 501 109 Thu Aug 20 19:00:00 2026 openclaw --flag tui",
-        " 501 110 Thu Aug 20 19:00:00 2026 openclaw --profile work tui --local",
-        " 501 111 Thu Aug 20 19:00:00 2026 /usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs --no-color terminal",
-        " 501 112 Thu Aug 20 19:00:00 2026 openclaw --profile=work chat",
-        " 501 114 Thu Aug 20 19:00:00 2026 openclaw",
-        " 501 115 Thu Aug 20 19:00:00 2026 openclaw --profile work",
-        " 501 116 Thu Aug 20 19:00:00 2026 /usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs --no-color",
-        " 502 113 Thu Aug 20 19:00:00 2026 openclaw tui",
+        " 501 107 Thu Aug 20 19:00:00 2026 /opt/other/bin/openclaw chat",
+        " 501 108 Thu Aug 20 19:00:00 2026 openclaw tui",
+        " 501 109 Thu Aug 20 19:00:00 2026 helper --note openclaw",
         " 501 999 Thu Aug 20 19:00:00 2026 openclaw tui",
       ].join("\n"),
     });
+    vi.spyOn(fs.realpathSync, "native").mockImplementation((value) =>
+      value === "/usr/local/bin/openclaw" ? `${targetRoot}/bin/openclaw` : String(value),
+    );
 
     expect(
       listLocalTuiProcesses({
+        targetRoot,
         platform: "darwin",
         currentUid: 501,
         currentPid: 999,
         spawnSync,
       }),
     ).toEqual([
-      { pid: 101, command: "openclaw-tui", startTime: "Thu Aug 20 19:00:00 2026" },
       {
-        pid: 104,
-        command: "openclaw tui --local",
+        pid: 101,
+        command: "/usr/local/bin/openclaw tui",
         startTime: "Thu Aug 20 19:00:00 2026",
-      },
-      {
-        pid: 105,
-        command: "/usr/bin/openclaw chat",
-        startTime: "Thu Aug 20 19:00:00 2026",
+        ownership: "target",
       },
       {
         pid: 106,
         command: "/usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs tui",
         startTime: "Thu Aug 20 19:00:00 2026",
+        ownership: "target",
       },
       {
-        pid: 110,
-        command: "openclaw --profile work tui --local",
+        pid: 108,
+        command: "openclaw tui",
         startTime: "Thu Aug 20 19:00:00 2026",
-      },
-      {
-        pid: 111,
-        command: "/usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs --no-color terminal",
-        startTime: "Thu Aug 20 19:00:00 2026",
-      },
-      {
-        pid: 112,
-        command: "openclaw --profile=work chat",
-        startTime: "Thu Aug 20 19:00:00 2026",
-      },
-      { pid: 114, command: "openclaw", startTime: "Thu Aug 20 19:00:00 2026" },
-      {
-        pid: 115,
-        command: "openclaw --profile work",
-        startTime: "Thu Aug 20 19:00:00 2026",
-      },
-      {
-        pid: 116,
-        command: "/usr/bin/node /usr/lib/node_modules/openclaw/openclaw.mjs --no-color",
-        startTime: "Thu Aug 20 19:00:00 2026",
+        ownership: "ambiguous",
       },
     ]);
     expect(spawnSync).toHaveBeenCalledWith("ps", ["-axo", "uid=,pid=,lstart=,command="], {
@@ -117,26 +90,29 @@ describe("local TUI processes", () => {
         { ProcessId: 106, CommandLine: "C:\\openclaw.exe tui", OwnerSid: null, CurrentSid: "S-1" },
       ]),
     });
+    vi.spyOn(fs.realpathSync, "native").mockImplementation((value) => String(value));
 
     expect(
       listLocalTuiProcesses({
+        targetRoot: "C:\\Program Files\\OpenClaw",
         platform: "win32",
         currentPid: 999,
         spawnSync,
         readWindowsStartTime: () => 123,
       }),
     ).toEqual([
-      { pid: 101, command: "C:\\openclaw.exe tui", startTime: "123" },
       {
         pid: 103,
         command: '"C:\\Program Files\\OpenClaw\\openclaw.exe" chat',
         startTime: "123",
+        ownership: "target",
       },
       {
         pid: 104,
         command:
           '"C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\OpenClaw\\openclaw.mjs" terminal',
         startTime: "123",
+        ownership: "target",
       },
     ]);
     expect(spawnSync).toHaveBeenCalledOnce();
@@ -164,7 +140,7 @@ describe("local TUI processes", () => {
 
     await expect(
       terminateLocalTuiProcesses({
-        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start" }],
+        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
         controller,
         graceMs: 0,
         killGraceMs: 0,
@@ -186,7 +162,7 @@ describe("local TUI processes", () => {
 
     await expect(
       terminateLocalTuiProcesses({
-        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start" }],
+        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
         controller,
         graceMs: 0,
         killGraceMs: 0,
@@ -201,7 +177,7 @@ describe("local TUI processes", () => {
 
     await expect(
       terminateLocalTuiProcesses({
-        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start" }],
+        processes: [{ pid: 101, command: "openclaw-tui", startTime: "start", ownership: "target" }],
         controller,
         graceMs: 0,
         killGraceMs: 0,
@@ -212,10 +188,10 @@ describe("local TUI processes", () => {
   });
 
   it("refuses shared update mutation when a matched client survives", async () => {
-    const processes = [{ pid: 101, command: "openclaw --profile work tui" }];
+    const processes = [{ pid: 101, command: "/target/openclaw tui", ownership: "target" as const }];
 
     await expect(
-      quiesceLocalTuiProcessesBeforeUpdate({
+      quiesceLocalTuiProcessesBeforeUpdate("/target", {
         list: () => processes,
         terminate: async () => ({ stopped: [], failed: [101] }),
       }),
@@ -226,7 +202,7 @@ describe("local TUI processes", () => {
 
   it("holds the startup gate after discovery until the update owner releases it", async () => {
     const release = vi.fn(async () => {});
-    const lock = await quiesceLocalTuiProcessesBeforeUpdate({
+    const lock = await quiesceLocalTuiProcessesBeforeUpdate("/target", {
       list: () => [],
       acquireLock: vi.fn(async () => ({ lockPath: "test", release })),
     });
@@ -239,14 +215,25 @@ describe("local TUI processes", () => {
 
   it("returns stopped clients to the update owner", async () => {
     const release = vi.fn(async () => {});
-    const gate = await quiesceLocalTuiProcessesBeforeUpdate({
-      list: () => [{ pid: 101, command: "openclaw tui" }],
+    const gate = await quiesceLocalTuiProcessesBeforeUpdate("/target", {
+      list: () => [{ pid: 101, command: "/target/openclaw tui", ownership: "target" }],
       terminate: async () => ({ stopped: [101], failed: [] }),
       acquireLock: vi.fn(async () => ({ lockPath: "test", release })),
     });
 
     expect(gate?.stopped).toEqual([101]);
     await gate?.release();
+  });
+
+  it("refuses mutation before signaling an ambiguous TUI", async () => {
+    const terminate = vi.fn();
+    await expect(
+      quiesceLocalTuiProcessesBeforeUpdate("/target", {
+        list: () => [{ pid: 101, command: "openclaw tui", ownership: "ambiguous" }],
+        terminate,
+      }),
+    ).rejects.toThrow("could not bind local TUI clients 101 to this installation");
+    expect(terminate).not.toHaveBeenCalled();
   });
 
   it("waits for the update gate before TUI startup", async () => {
