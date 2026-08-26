@@ -1660,6 +1660,7 @@ async function resolveCandidate(options: PackageCandidateOptions) {
   let packageTrustedReason = "";
   let packageTrustedSourceId = "";
   let packageWorktreeDir = "";
+  let packageBuildSourceSha: string | undefined;
   let pluginRegistrySource: Awaited<ReturnType<typeof preparePackageSourceWorktree>> | undefined;
   let artifactMetadata: ArtifactMetadata = {};
   let pluginRegistryIdentity:
@@ -1743,6 +1744,24 @@ async function resolveCandidate(options: PackageCandidateOptions) {
           : "";
       const input = await findSingleTarball(options.artifactDir);
       await fs.copyFile(input, target);
+      packageBuildSourceSha = await readPackageBuildSourceSha(target);
+      if (packageSourceSha && packageBuildSourceSha && packageSourceSha !== packageBuildSourceSha) {
+        throw new Error(
+          `artifact packageSourceSha ${packageSourceSha} does not match package build-info commit ${packageBuildSourceSha}`,
+        );
+      }
+      if (!packageSourceSha && packageBuildSourceSha) {
+        packageSourceSha = packageBuildSourceSha;
+        packageTrustedReason = "package-build-info";
+      }
+      if (options.pluginRegistryOutputDir) {
+        if (!packageBuildSourceSha) {
+          throw new Error(
+            "source=artifact requires a valid package build-info commit for prerelease plugin registry creation",
+          );
+        }
+        packageTrustedReason ||= "package-build-info";
+      }
     } else {
       throw new Error(
         `source must be one of: ref, npm, url, trusted-url, artifact. Got: ${options.source}`,
@@ -1754,15 +1773,7 @@ async function resolveCandidate(options: PackageCandidateOptions) {
           "--plugin-registry-output-dir is only supported with source=ref, source=npm, or source=artifact",
         );
       }
-      if (options.source === "artifact") {
-        packageSourceSha = packageSourceSha || (await readPackageBuildSourceSha(target));
-        if (!packageSourceSha) {
-          throw new Error(
-            "source=artifact requires packageSourceSha metadata or build-info for prerelease plugin registry creation",
-          );
-        }
-        packageTrustedReason ||= "package-build-info";
-      } else {
+      if (options.source === "npm") {
         packageRef = options.packageRef;
       }
       pluginRegistrySource = await preparePackageSourceWorktree(
@@ -1810,7 +1821,7 @@ async function resolveCandidate(options: PackageCandidateOptions) {
   );
   const pkg = await readPackageJson(target);
   if (!packageSourceSha) {
-    packageSourceSha = await readPackageBuildSourceSha(target);
+    packageSourceSha = packageBuildSourceSha ?? (await readPackageBuildSourceSha(target));
     if (packageSourceSha && !packageTrustedReason) {
       packageTrustedReason = "package-build-info";
     }

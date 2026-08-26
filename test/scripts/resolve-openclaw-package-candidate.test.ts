@@ -45,6 +45,99 @@ async function missing(file: string): Promise<boolean> {
   );
 }
 
+async function createPackageTarball(
+  dir: string,
+  buildInfo?: string | { commit: string },
+): Promise<string> {
+  const root = path.join(dir, "package");
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({ name: "openclaw", version: "2026.8.1" }),
+  );
+  if (buildInfo !== undefined) {
+    await writeFile(
+      path.join(root, "dist", "build-info.json"),
+      typeof buildInfo === "string" ? buildInfo : JSON.stringify(buildInfo),
+    );
+  }
+  const tarball = path.join(dir, "openclaw.tgz");
+  await new Promise<void>((resolve, reject) => {
+    execFile("tar", ["-czf", tarball, "-C", dir, "package"], (error) => {
+      if (error) {
+        reject(toLintErrorObject(error, "Non-Error rejection"));
+        return;
+      }
+      resolve();
+    });
+  });
+  return tarball;
+}
+
+async function createArtifactFixture(
+  prefix: string,
+  {
+    buildInfo,
+    packageSourceSha,
+  }: { buildInfo?: string | { commit: string }; packageSourceSha?: string },
+) {
+  const dir = autoTempDirs.make(prefix);
+  const artifactDir = path.join(dir, "artifact");
+  const binDir = path.join(dir, "bin");
+  const gitLog = path.join(dir, "git.log");
+  const nodeLog = path.join(dir, "node.log");
+  await mkdir(artifactDir);
+  await mkdir(binDir);
+  await createPackageTarball(artifactDir, buildInfo);
+  if (packageSourceSha !== undefined) {
+    await writeFile(
+      path.join(artifactDir, "package-candidate.json"),
+      JSON.stringify({ packageSourceSha }),
+    );
+  }
+  await writeFile(
+    path.join(binDir, "git"),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_GIT_LOG"
+exit 99
+`,
+  );
+  await writeFile(
+    path.join(binDir, "node"),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_NODE_LOG"
+exit 0
+`,
+  );
+  await chmod(path.join(binDir, "git"), 0o755);
+  await chmod(path.join(binDir, "node"), 0o755);
+  return {
+    artifactDir,
+    binDir,
+    dir,
+    gitLog,
+    nodeLog,
+    registryDir: path.join(dir, "registry"),
+  };
+}
+
+async function withArtifactFixtureCommands<T>(
+  fixture: Awaited<ReturnType<typeof createArtifactFixture>>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previousPath = process.env.PATH;
+  process.env.FAKE_GIT_LOG = fixture.gitLog;
+  process.env.FAKE_NODE_LOG = fixture.nodeLog;
+  process.env.PATH = `${fixture.binDir}:${previousPath}`;
+  try {
+    return await run();
+  } finally {
+    process.env.PATH = previousPath;
+    delete process.env.FAKE_GIT_LOG;
+    delete process.env.FAKE_NODE_LOG;
+  }
+}
+
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -1270,6 +1363,131 @@ describe("resolve-openclaw-package-candidate", () => {
     });
   });
 
+  it.each([
+    ["without a registry", false],
+    ["with a registry", true],
+  ])("rejects artifact provenance mismatches %s before side effects", async (_label, registry) => {
+    const metadataSha = "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2";
+    const buildInfoSha = "77df743c0c8d6d80ee4f77d84a798e62749be7f3";
+    const fixture = await createArtifactFixture("openclaw-artifact-provenance-mismatch-", {
+      buildInfo: { commit: buildInfoSha.toUpperCase() },
+      packageSourceSha: metadataSha.toUpperCase(),
+    });
+
+    await withArtifactFixtureCommands(fixture, async () => {
+      await expect(
+        main([
+          "--source",
+          "artifact",
+          "--artifact-dir",
+          fixture.artifactDir,
+          "--output-dir",
+          path.join(fixture.dir, "output"),
+          ...(registry
+            ? [
+                "--plugin-registry-output-dir",
+                fixture.registryDir,
+                "--required-plugin-packages-json",
+                '["@openclaw/codex"]',
+              ]
+            : []),
+        ]),
+      ).rejects.toThrow(
+        `artifact packageSourceSha ${metadataSha} does not match package build-info commit ${buildInfoSha}`,
+      );
+    });
+    await expect(missing(fixture.gitLog)).resolves.toBe(true);
+    await expect(missing(fixture.registryDir)).resolves.toBe(true);
+  });
+
+  it("uses normalized artifact build-info provenance when metadata is absent", async () => {
+    const sourceSha = "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2";
+    const fixture = await createArtifactFixture("openclaw-artifact-build-info-fallback-", {
+      buildInfo: { commit: sourceSha.toUpperCase() },
+    });
+    const metadataPath = path.join(fixture.dir, "resolved.json");
+
+    await withArtifactFixtureCommands(fixture, async () => {
+      await main([
+        "--source",
+        "artifact",
+        "--artifact-dir",
+        fixture.artifactDir,
+        "--output-dir",
+        path.join(fixture.dir, "output"),
+        "--metadata",
+        metadataPath,
+      ]);
+    });
+
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8")) as Record<string, unknown>;
+    expect(metadata.packageSourceSha).toBe(sourceSha);
+    expect(metadata.packageTrustedReason).toBe("package-build-info");
+  });
+
+  it("requires artifact build-info only when preparing a registry", async () => {
+    const sourceSha = "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2";
+    const fixture = await createArtifactFixture("openclaw-artifact-missing-build-info-", {
+      packageSourceSha: sourceSha,
+    });
+    const metadataPath = path.join(fixture.dir, "resolved.json");
+
+    await withArtifactFixtureCommands(fixture, async () => {
+      await main([
+        "--source",
+        "artifact",
+        "--artifact-dir",
+        fixture.artifactDir,
+        "--output-dir",
+        path.join(fixture.dir, "output-without-registry"),
+        "--metadata",
+        metadataPath,
+      ]);
+      await expect(
+        main([
+          "--source",
+          "artifact",
+          "--artifact-dir",
+          fixture.artifactDir,
+          "--output-dir",
+          path.join(fixture.dir, "output-with-registry"),
+          "--plugin-registry-output-dir",
+          fixture.registryDir,
+          "--required-plugin-packages-json",
+          '["@openclaw/codex"]',
+        ]),
+      ).rejects.toThrow(
+        "source=artifact requires a valid package build-info commit for prerelease plugin registry creation",
+      );
+    });
+
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8")) as Record<string, unknown>;
+    expect(metadata.packageSourceSha).toBe(sourceSha);
+    await expect(missing(fixture.gitLog)).resolves.toBe(true);
+    await expect(missing(fixture.registryDir)).resolves.toBe(true);
+  });
+
+  it("rejects malformed artifact build-info before package validation", async () => {
+    const fixture = await createArtifactFixture("openclaw-artifact-malformed-build-info-", {
+      buildInfo: "{not-json",
+      packageSourceSha: "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2",
+    });
+
+    await withArtifactFixtureCommands(fixture, async () => {
+      await expect(
+        main([
+          "--source",
+          "artifact",
+          "--artifact-dir",
+          fixture.artifactDir,
+          "--output-dir",
+          path.join(fixture.dir, "output"),
+        ]),
+      ).rejects.toBeInstanceOf(SyntaxError);
+    });
+    await expect(missing(fixture.nodeLog)).resolves.toBe(true);
+  });
+
   it("validates the normalized artifact source SHA before registry preparation", async () => {
     const dir = autoTempDirs.make("openclaw-artifact-registry-source-");
     const artifactDir = path.join(dir, "artifact");
@@ -1278,7 +1496,7 @@ describe("resolve-openclaw-package-candidate", () => {
     const sourceSha = "66ce632b9b7c5c7fdd3e66c739687d51638ad6e2";
     await mkdir(artifactDir);
     await mkdir(binDir);
-    await writeFile(path.join(artifactDir, "openclaw.tgz"), "not inspected before trust failure");
+    await createPackageTarball(artifactDir, { commit: sourceSha });
     await writeFile(
       path.join(artifactDir, "package-candidate.json"),
       JSON.stringify({ packageSourceSha: sourceSha.toUpperCase() }),
@@ -1404,22 +1622,8 @@ esac
   it("reads the source SHA from packed npm build metadata", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "openclaw-package-build-info-"));
     tempDirs.push(dir);
-    const root = path.join(dir, "package");
-    await mkdir(path.join(root, "dist"), { recursive: true });
-    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "openclaw" }));
-    await writeFile(
-      path.join(root, "dist", "build-info.json"),
-      JSON.stringify({ commit: "66CE632B9B7C5C7FDD3E66C739687D51638AD6E2" }),
-    );
-    const tarball = path.join(dir, "openclaw.tgz");
-    await new Promise<void>((resolve, reject) => {
-      execFile("tar", ["-czf", tarball, "-C", dir, "package"], (error) => {
-        if (error) {
-          reject(toLintErrorObject(error, "Non-Error rejection"));
-          return;
-        }
-        resolve();
-      });
+    const tarball = await createPackageTarball(dir, {
+      commit: "66CE632B9B7C5C7FDD3E66C739687D51638AD6E2",
     });
 
     await expect(readPackageBuildSourceSha(tarball)).resolves.toBe(
