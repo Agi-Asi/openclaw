@@ -7,6 +7,7 @@ import { resolveMSTeamsSenderAccess } from "./monitor-handler/access.js";
 import { createMSTeamsMessageHandler } from "./monitor-handler/message-handler.js";
 import { createMSTeamsReactionHandler } from "./monitor-handler/reaction-handler.js";
 import type { MSTeamsIngressDispatchResult, MSTeamsIngressLifecycle } from "./msteams-ingress.js";
+import { buildMSTeamsAdaptiveCardActivity } from "./presentation.js";
 import type { MSTeamsTurnContext } from "./sdk-types.js";
 import { buildGroupWelcomeText, buildWelcomeCard } from "./welcome-card.js";
 
@@ -217,15 +218,7 @@ export function registerMSTeamsHandlers<T extends MSTeamsActivityHandler>(
             promptStarters: msteamsCfg?.promptStarters,
           });
           try {
-            await ctx.sendActivity({
-              type: "message",
-              attachments: [
-                {
-                  contentType: "application/vnd.microsoft.card.adaptive",
-                  content: card,
-                },
-              ],
-            });
+            await ctx.sendActivity(buildMSTeamsAdaptiveCardActivity(card));
             deps.log.info("sent welcome card");
           } catch (err) {
             deps.log.debug?.("failed to send welcome card", { error: formatUnknownError(err) });
