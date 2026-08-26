@@ -117,6 +117,14 @@ describe("findOcPaths — JSONC kind", () => {
       }
     }
   });
+
+  it("$last on an object emits the concrete key", () => {
+    const out = findOcPaths(jsonc, parseOcPath("oc://config/plugins/$last/enabled"));
+    expect(out).toHaveLength(1);
+    const result = requireFirstResult(out);
+    expect(result.path.item).toBe("slack");
+    expect(result.match.kind === "leaf" && result.match.valueText).toBe("true");
+  });
 });
 
 describe("findOcPaths — slash-deep JSONC paths", () => {

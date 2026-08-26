@@ -1,6 +1,7 @@
 // OC Path module implements resolve value behavior.
-import { isPositionalSeg, parseArrayIndexSegment, resolvePositionalSeg } from "../oc-path.js";
+import { isPositionalSeg, parseArrayIndexSegment } from "../oc-path.js";
 import type { JsoncEntry, JsoncValue } from "./ast.js";
+import { resolveJsoncPositionalSeg } from "./positional.js";
 
 type JsoncValueOcPathMatch =
   | { readonly kind: "value"; readonly node: JsoncValue; readonly path: readonly string[] }
@@ -23,7 +24,7 @@ export function resolveJsoncValueOcPath(
       return null;
     }
     if (isPositionalSeg(seg)) {
-      const concrete = positionalForJsonc(current, seg);
+      const concrete = resolveJsoncPositionalSeg(current, seg);
       if (concrete !== null) {
         seg = concrete;
       }
@@ -58,15 +59,4 @@ export function resolveJsoncValueOcPath(
     return { kind: "object-entry", node: lastEntry, path: walked };
   }
   return { kind: "value", node: current, path: walked };
-}
-
-function positionalForJsonc(node: JsoncValue, seg: string): string | null {
-  if (node.kind === "object") {
-    const keys = node.entries.map((e) => e.key);
-    return resolvePositionalSeg(seg, { indexable: false, size: keys.length, keys });
-  }
-  if (node.kind === "array") {
-    return resolvePositionalSeg(seg, { indexable: true, size: node.items.length });
-  }
-  return null;
 }
