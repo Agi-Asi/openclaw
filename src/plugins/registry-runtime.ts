@@ -1003,10 +1003,24 @@ export function createPluginRuntimeResolver(state: PluginRegistryState) {
             params,
             commandRuntime,
           ) => {
-            const { senderIsOwner: claimedOwner, messageChannel, ...remainingParams } = params;
-            const senderIsOwner = claimedOwner === true;
-            // Validate and dispatch the same host-owned values; never re-read plugin-owned authority.
-            const ingressParams = { ...remainingParams, senderIsOwner, messageChannel };
+            const ingressParams = Object.create(null) as typeof params;
+            for (const [key, descriptor] of Object.entries(
+              Object.getOwnPropertyDescriptors(params),
+            )) {
+              if (!descriptor.enumerable) {
+                continue;
+              }
+              if (!("value" in descriptor)) {
+                throw new Error(
+                  `Plugin "${pluginId}" cannot admit accessor-backed channel ingress.`,
+                );
+              }
+              Reflect.set(ingressParams, key, descriptor.value);
+            }
+            // Snapshot host-owned admission facts without invoking plugin getters or proxy reads.
+            const senderIsOwner = ingressParams.senderIsOwner === true;
+            const { messageChannel } = ingressParams;
+            ingressParams.senderIsOwner = senderIsOwner;
             if (
               !channelOwnerRecord ||
               // Community channels may admit guests; trusted provenance is required only for owner elevation.

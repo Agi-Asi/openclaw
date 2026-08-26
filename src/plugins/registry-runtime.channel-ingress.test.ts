@@ -196,15 +196,26 @@ describe("bundled channel ingress runtime ownership", () => {
         return channelReads++ === 0 ? "community" : "discord";
       },
     };
-    await expect(retainedGuest(changingGuestOptions, commandRuntime)).resolves.toEqual({
+    await expect(retainedGuest(changingGuestOptions, commandRuntime)).rejects.toThrow(
+      'Plugin "impostor" cannot admit accessor-backed channel ingress.',
+    );
+    expect(ownerClaimReads).toBe(0);
+    expect(channelReads).toBe(0);
+    let proxyReads = 0;
+    const proxiedGuestOptions = new Proxy(guestOptions, {
+      get(target, property, receiver) {
+        proxyReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    await expect(retainedGuest(proxiedGuestOptions, commandRuntime)).resolves.toEqual({
       payloads: [],
     });
     expect(command).toHaveBeenLastCalledWith(
       expect.objectContaining({ messageChannel: "community", senderIsOwner: false }),
       commandRuntime,
     );
-    expect(ownerClaimReads).toBe(1);
-    expect(channelReads).toBe(1);
+    expect(proxyReads).toBe(0);
     await expect(
       retainedGuest({ ...guestOptions, senderIsOwner: true }, commandRuntime),
     ).rejects.toThrow('Plugin "impostor" cannot admit authenticated owner authority');
