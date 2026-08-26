@@ -937,13 +937,21 @@ describe("handleDiscordMessageAction", () => {
 
   it("downgrades oversized table presentations to complete text", async () => {
     const cfg = discordConfig();
+    const authoredText = `${"x".repeat(1997)}AUTHORED_TAIL`;
 
     await handleDiscordMessageAction({
       action: "send",
       params: {
         to: "channel:123",
         presentation: {
+          title: authoredText,
           blocks: [
+            { type: "text", text: authoredText },
+            { type: "context", text: authoredText },
+            {
+              type: "buttons",
+              buttons: [{ label: `${"x".repeat(80)}LABEL_TAIL`, value: "choice" }],
+            },
             {
               type: "table",
               caption: "Large pipeline",
@@ -964,6 +972,8 @@ describe("handleDiscordMessageAction", () => {
     expect(payload?.components).toBeUndefined();
     expect(payload?.content).toEqual(expect.stringContaining("account-0-"));
     expect(payload?.content).toEqual(expect.stringContaining("account-899-"));
+    expect(String(payload?.content).split("AUTHORED_TAIL")).toHaveLength(4);
+    expect(payload?.content).toEqual(expect.stringContaining("LABEL_TAIL"));
   });
 
   it("does not use another provider's current target for Discord sends", async () => {
