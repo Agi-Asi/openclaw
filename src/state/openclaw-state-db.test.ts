@@ -28,7 +28,10 @@ import { assertSqliteSchemaContains } from "../infra/sqlite-schema-contract.js";
 import { loadTaskRegistryStateFromSqlite } from "../tasks/task-registry.store.sqlite.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { VERSION } from "../version.js";
-import { readConfigMachineState } from "./config-machine-state.js";
+import {
+  readConfigMachineState,
+  readConfigMachineStateWithMetadata,
+} from "./config-machine-state.js";
 import { listOpenClawRegisteredAgentDatabases } from "./openclaw-agent-db-registry.js";
 import { FIRST_USE_STATE_TABLES } from "./openclaw-state-db-contract.js";
 import { ensureGitHubPublicationSchema } from "./openclaw-state-db-schema-additive.js";
@@ -289,6 +292,10 @@ const FOLDED_STATE_TABLES_V12 = [
   "voicewake_routing_routes",
   "onboarding_recommendations",
   "cron_store_epochs",
+  "tui_last_sessions",
+  "sidebar_sections",
+  "node_host_config",
+  "web_push_vapid_keys",
 ] as const;
 
 function seedV6CommitmentSchema(database: DatabaseSync): void {
@@ -1923,6 +1930,23 @@ describe("openclaw state database", () => {
           id, bundle_json, generated_at, source_url, checked_at
         ) VALUES (1, '{"cached":true}', 40, 'https://example.invalid/catalog', 50);
         INSERT INTO cron_store_epochs (store_key, store_epoch) VALUES ('default', 60);
+        INSERT INTO sidebar_sections (section_id, position) VALUES
+          ('category:projects', 1),
+          ('ungrouped', 0);
+        INSERT INTO node_host_config (
+          config_key, version, node_id, token, display_name, gateway_host,
+          gateway_port, gateway_tls, gateway_tls_fingerprint, gateway_context_path,
+          gateway_cloudflare_access_json, installed_apps_sharing, updated_at_ms
+        ) VALUES (
+          'current', 1, 'node-42', 'retired-token', 'Build Node', 'gateway.example',
+          443, 1, 'fingerprint-42', '/openclaw-gw',
+          '{"clientId":"access-id","clientSecret":"access-secret"}', 1, 700
+        );
+        INSERT INTO web_push_vapid_keys (
+          key_id, public_key, private_key, subject, updated_at_ms
+        ) VALUES ('default', 'public-vapid-key', 'private-vapid-key', 'https://openclaw.ai', 800);
+        INSERT INTO tui_last_sessions (scope_key, session_key, updated_at)
+          VALUES ('cached-scope', 'agent:main:cached', 900);
       `);
       legacy.close();
 
@@ -1993,6 +2017,36 @@ describe("openclaw state database", () => {
       expect(
         readConfigMachineState("onboarding.recommendations.workspace-existing", options),
       ).toEqual({ newer: true });
+      expect(readConfigMachineState("sidebar.sectionOrder", options)).toEqual([
+        "ungrouped",
+        "category:projects",
+      ]);
+      expect(readConfigMachineStateWithMetadata("nodeHost.config", options)).toEqual({
+        value: {
+          version: 1,
+          nodeId: "node-42",
+          displayName: "Build Node",
+          gateway: {
+            host: "gateway.example",
+            port: 443,
+            tls: true,
+            tlsFingerprint: "fingerprint-42",
+            contextPath: "/openclaw-gw",
+            cloudflareAccess: { clientId: "access-id", clientSecret: "access-secret" },
+          },
+          installedAppsSharing: true,
+        },
+        updatedAtMs: 700,
+      });
+      expect(readConfigMachineStateWithMetadata("webPush.vapidKeys", options)).toEqual({
+        value: {
+          publicKey: "public-vapid-key",
+          privateKey: "private-vapid-key",
+          subject: "https://openclaw.ai",
+        },
+        updatedAtMs: 800,
+      });
+      expect(readConfigMachineState("tui.lastSession.cached-scope", options)).toBeUndefined();
       expect(readConfigMachineState("skills.curatorState", options)).toBeUndefined();
       expect(readConfigMachineState("clawhub.promotionsFeed", options)).toBeUndefined();
       expect(readConfigMachineState("modelCatalog.remote", options)).toBeUndefined();
@@ -2237,7 +2291,7 @@ describe("openclaw state database", () => {
         "Retired legacy skill curator lifecycle and proposal origin-run tables",
         "Folded singleton state tables into config_machine_state (v12)",
         "Migrated shared state audit event ledger → versioned message lifecycle schema",
-        "Migrated shared state tables to SQLite STRICT typing (57)",
+        "Migrated shared state tables to SQLite STRICT typing (54)",
       ],
       warnings: [],
     });

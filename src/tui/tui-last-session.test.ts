@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  readConfigMachineStateWithMetadata,
+  writeConfigMachineState,
+} from "../state/config-machine-state.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import {
   buildTuiLastSessionScopeKey,
@@ -51,6 +55,11 @@ describe("tui last session state", () => {
     });
 
     await expect(readTuiLastSessionKey({ scopeKey, stateDir })).resolves.toBe("agent:main:tui-123");
+    expect(
+      readConfigMachineStateWithMetadata<string>(`tui.lastSession.${scopeKey}`, {
+        env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+      }),
+    ).toEqual({ value: "agent:main:tui-123", updatedAtMs: expect.any(Number) });
     await expect(fs.stat(path.join(stateDir, "tui", "last-session.json"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -163,17 +172,33 @@ describe("tui last session state", () => {
       sessionKey: "agent:main:telegram:thread",
       stateDir,
     });
+    await writeTuiLastSessionKey({
+      scopeKey: "other-terminal",
+      sessionKey: "agent:main:main",
+      stateDir,
+    });
+    writeConfigMachineState("unrelated.sessionReference", "agent:main:main", {
+      env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+    });
 
     expect(
       clearTuiLastSessionPointers({
         stateDir,
         sessionKeys: new Set(["agent:main:main"]),
       }),
-    ).toBe(1);
+    ).toBe(2);
     await expect(readTuiLastSessionKey({ scopeKey: "terminal", stateDir })).resolves.toBeNull();
+    await expect(
+      readTuiLastSessionKey({ scopeKey: "other-terminal", stateDir }),
+    ).resolves.toBeNull();
     await expect(readTuiLastSessionKey({ scopeKey: "remote", stateDir })).resolves.toBe(
       "agent:main:telegram:thread",
     );
+    expect(
+      readConfigMachineStateWithMetadata<string>("unrelated.sessionReference", {
+        env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+      })?.value,
+    ).toBe("agent:main:main");
   });
 });
 

@@ -930,22 +930,6 @@ export interface NativeHookRelayBridges {
   updated_at_ms: number;
 }
 
-export interface NodeHostConfig {
-  config_key: string;
-  display_name: string | null;
-  gateway_cloudflare_access_json: string | null;
-  gateway_context_path: string | null;
-  gateway_host: string | null;
-  gateway_port: number | null;
-  gateway_tls: number | null;
-  gateway_tls_fingerprint: string | null;
-  installed_apps_sharing: Generated<number>;
-  node_id: string;
-  token: string | null;
-  updated_at_ms: number;
-  version: number;
-}
-
 export interface NodeWorkerLaunchContainers {
   container_json: string | null;
   launch_id: string;
@@ -1211,11 +1195,6 @@ export interface SessionWatchCursors {
   watcher_session_key: string;
 }
 
-export interface SidebarSections {
-  position: number;
-  section_id: string;
-}
-
 export interface SkillUploadChunks {
   byte_offset: number;
   chunk_blob: Uint8Array;
@@ -1418,12 +1397,6 @@ export interface TaskRuns {
   tool_use_count: number | null;
 }
 
-export interface TuiLastSessions {
-  scope_key: string;
-  session_key: string;
-  updated_at: number;
-}
-
 export interface UserPreferences {
   pref_key: string;
   profile_id: string;
@@ -1438,14 +1411,6 @@ export interface WebPushSubscriptions {
   endpoint_hash: string;
   p256dh: string;
   subscription_id: string;
-  updated_at_ms: number;
-}
-
-export interface WebPushVapidKeys {
-  key_id: string;
-  private_key: string;
-  public_key: string;
-  subject: string;
   updated_at_ms: number;
 }
 
@@ -1744,7 +1709,6 @@ export interface DB {
   migration_runs: MigrationRuns;
   migration_sources: MigrationSources;
   native_hook_relay_bridges: NativeHookRelayBridges;
-  node_host_config: NodeHostConfig;
   node_worker_launch_containers: NodeWorkerLaunchContainers;
   node_worker_launches: NodeWorkerLaunches;
   official_external_plugin_catalog_snapshots: OfficialExternalPluginCatalogSnapshots;
@@ -1766,7 +1730,6 @@ export interface DB {
   session_state_heads: SessionStateHeads;
   session_upstream_links: SessionUpstreamLinks;
   session_watch_cursors: SessionWatchCursors;
-  sidebar_sections: SidebarSections;
   skill_upload_chunks: SkillUploadChunks;
   skill_uploads: SkillUploads;
   skill_usage: SkillUsage;
@@ -1778,10 +1741,8 @@ export interface DB {
   subagent_runs: SubagentRuns;
   task_delivery_state: TaskDeliveryState;
   task_runs: TaskRuns;
-  tui_last_sessions: TuiLastSessions;
   user_preferences: UserPreferences;
   web_push_subscriptions: WebPushSubscriptions;
-  web_push_vapid_keys: WebPushVapidKeys;
   worker_environment_credentials: WorkerEnvironmentCredentials;
   worker_environment_ssh_fallback_ports: WorkerEnvironmentSshFallbackPorts;
   worker_environments: WorkerEnvironments;

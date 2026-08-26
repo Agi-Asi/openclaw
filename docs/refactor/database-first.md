@@ -309,7 +309,7 @@ The branch already has a real shared SQLite base:
 - Runtime stores derive selected and inserted row types from those generated
   Kysely `DB` interfaces instead of shadowing SQLite row shapes by hand. Raw SQL
   remains limited to schema application, pragmas, and migration-only DDL.
-- The global SQLite schema is at `user_version = 11`. The per-agent schema is at
+- The global SQLite schema is at `user_version = 12`. The per-agent schema is at
   version `17`; their openers apply bounded forward migrations from supported
   older schemas. File-to-database import remains in Doctor code.
 - Relational ownership is enforced where the ownership boundary is canonical:
@@ -325,7 +325,7 @@ The branch already has a real shared SQLite base:
   `workspace_setup_state`, `workspace_path_aliases`, `workspace_attestations`,
   `workspace_generated_bootstrap_hashes`, `native_hook_relay_bridges`,
   `current_conversation_bindings`, `plugin_binding_approvals`,
-  `tui_last_sessions`, `acp_sessions`, `acp_replay_sessions`,
+  `acp_sessions`, `acp_replay_sessions`,
   `acp_replay_events`, `task_runs`, `task_delivery_state`, `flow_runs`,
   `subagent_runs`, `migration_runs`, and `backup_runs`.
 - Arbitrary plugin-owned state does not get host-owned typed tables. Installed
@@ -425,8 +425,9 @@ The branch already has a real shared SQLite base:
   account, session, retry, error, platform-send, and recovery state onto the
   replay JSON. `entry_json` keeps the replay payloads, hooks, and formatting
   payload, but typed columns are authoritative for hot queue routing/state.
-- TUI last-session restore pointers now live in typed shared
-  `tui_last_sessions` rows keyed by the hashed TUI connection/session scope.
+- TUI last-session restore pointers now live in shared `config_machine_state`
+  rows under `tui.lastSession.<scopeKey>`, keyed by the hashed TUI
+  connection/session scope.
   Runtime reads and writes only SQLite, atomically upserts each scope, and
   excludes heartbeat sessions. `openclaw doctor --fix` strictly validates the
   old TUI JSON file, keeps newer SQLite rows, verifies the canonical result,
@@ -522,9 +523,10 @@ The branch already has a real shared SQLite base:
   `openclaw update --channel` now fails on invalid legacy config and asks the
   user to run doctor, rather than silently importing doctor migration code.
 - Web push, APNs, and config health use typed shared SQLite tables for
-  subscriptions, VAPID keys, node registrations, and config health entries.
-  Voice Wake and update checks use owner-managed `config_machine_state` values
-  under `voicewake.triggers`, `voicewake.routing`, and `update.checkState`.
+  subscriptions, node registrations, and config health entries. VAPID keys,
+  Voice Wake, and update checks use owner-managed `config_machine_state` values
+  under `webPush.vapidKeys`, `voicewake.triggers`, `voicewake.routing`, and
+  `update.checkState`.
   Web Push and APNs writes upsert only the affected primary-key row; config
   health reconciles by config path. Their runtime modules remain separate from
   Doctor-only legacy JSON import helpers.
@@ -535,7 +537,8 @@ The branch already has a real shared SQLite base:
   Receipt-backed retries perform cleanup only, while
   `apns_registration_tombstones` cover invalidations before first repair, so
   stale relay grants or device tokens cannot resurrect.
-- Node-host config now uses a typed singleton row in the shared SQLite database.
+- Node-host config now uses the `nodeHost.config` machine-state key in the shared
+  SQLite database.
   Runtime fails closed while the old `node.json` file or an interrupted claim
   remains; explicit `openclaw doctor --fix` strictly imports and removes it
   before normal runtime use.
@@ -1120,8 +1123,9 @@ sessionId})`; create, branch, continue, list, and fork flows live in their
   table and discards its inert rows. Unknown same-named tables or indexes are
   preserved and the migration is refused. Runtime no longer reads or writes
   commitment state. Doctor leaves the legacy `commitments.json` source untouched.
-- Web Push subscriptions and the generated VAPID identity now use typed shared
-  `web_push_subscriptions` and `web_push_vapid_keys` rows. Runtime registration,
+- Web Push subscriptions use typed shared `web_push_subscriptions` rows, and
+  generated VAPID identity uses the `webPush.vapidKeys` machine-state key.
+  Runtime registration,
   expiry cleanup, and first-use key generation use row-level SQLite
   transactions. Explicit Doctor repair validates both retired JSON stores,
   claims them before the SQLite write, imports them atomically, rejects
@@ -1500,16 +1504,13 @@ flow_runs(...)
 subagent_runs(run_id, child_session_key, requester_session_key, controller_session_key, created_at, ended_at, cleanup_handled, payload_json)
 current_conversation_bindings(binding_key, binding_id, target_agent_id, target_session_id, target_session_key, channel, account_id, conversation_kind, parent_conversation_id, conversation_id, target_kind, status, bound_at, expires_at, metadata_json, updated_at)
 plugin_binding_approvals(plugin_root, channel, account_id, plugin_id, plugin_name, approved_at)
-tui_last_sessions(scope_key, session_key, updated_at)
 plugin_state_entries(plugin_id, namespace, entry_key, value_json, created_at, expires_at)
 plugin_blob_entries(plugin_id, namespace, entry_key, metadata_json, blob, created_at, expires_at)
 skill_uploads(upload_id, kind, slug, force, size_bytes, sha256, actual_sha256, received_bytes, archive_blob, created_at, expires_at, committed, committed_at, idempotency_key_hash)
 skill_upload_chunks(upload_id, byte_offset, size_bytes, chunk_blob)
 web_push_subscriptions(endpoint_hash, subscription_id, endpoint, p256dh, auth, created_at_ms, updated_at_ms)
-web_push_vapid_keys(key_id, public_key, private_key, subject, updated_at_ms)
 apns_registrations(node_id, transport, token, relay_handle, send_grant, installation_id, relay_origin, topic, environment, distribution, token_debug_suffix, updated_at_ms)
 apns_registration_tombstones(node_id, deleted_at_ms)
-node_host_config(config_key, version, node_id, token, display_name, gateway_host, gateway_port, gateway_tls, gateway_tls_fingerprint, gateway_context_path, updated_at_ms)
 device_identities(identity_key, device_id, public_key_pem, private_key_pem, created_at_ms, updated_at_ms)
 device_auth_tokens(device_id, role, token, scopes_json, updated_at_ms)
 macos_port_guardian_records(pid, port, command, mode, timestamp)
@@ -1533,7 +1534,10 @@ backup_runs(id, created_at, archive_path, status, manifest_json)
 
 `config_machine_state` owns the `skills.curatorState`, `update.checkState`,
 `clawhub.promotionsFeed`, `modelCatalog.remote`, `voicewake.triggers`,
-`voicewake.routing`, and `onboarding.recommendations.<workspaceKey>` snapshots.
+`voicewake.routing`, `onboarding.recommendations.<workspaceKey>`,
+`tui.lastSession.<scopeKey>`, `sidebar.sectionOrder`, `nodeHost.config`, and
+`webPush.vapidKeys` snapshots. Secret-excluding Git backups omit the `nodeHost.`
+and `webPush.vapidKeys` key prefixes without dropping other machine state.
 
 Agent database:
 
@@ -2225,7 +2229,7 @@ Add a repo check that fails new runtime writes to legacy state paths:
 - `identity/device.json`
 - `identity/device-auth.json` (retired; Doctor-only import into `device_auth_tokens`)
 - `push/web-push-subscriptions.json` (retired; Doctor-only import into `web_push_subscriptions`)
-- `push/vapid-keys.json` (retired; Doctor-only import into `web_push_vapid_keys`)
+- `push/vapid-keys.json` (retired; Doctor-only import into `webPush.vapidKeys`)
 - `push/apns-registrations.json` (retired; Doctor-only import into `apns_registrations`)
 - `process-leases.json`
 - `gateway-instance-id`

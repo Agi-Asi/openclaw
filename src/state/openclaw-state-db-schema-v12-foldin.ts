@@ -11,6 +11,10 @@ export const FOLDED_SINGLETON_STATE_TABLES_V12 = [
   "voicewake_routing_config",
   "onboarding_recommendations",
   "cron_store_epochs",
+  "tui_last_sessions",
+  "sidebar_sections",
+  "node_host_config",
+  "web_push_vapid_keys",
 ] as const;
 
 export function migrateSingletonStateFoldInV12(db: DatabaseSync, previousVersion: number): boolean {
@@ -124,6 +128,69 @@ export function migrateSingletonStateFoldInV12(db: DatabaseSync, previousVersion
           updatedAt: row.updated_at_ms,
         }),
         Number(row.updated_at_ms),
+      );
+    }
+  }
+
+  if (tableExists(db, "sidebar_sections")) {
+    const sections = db
+      .prepare("SELECT section_id FROM sidebar_sections ORDER BY position, section_id")
+      .all();
+    if (sections.length > 0) {
+      importState.run(
+        "sidebar.sectionOrder",
+        JSON.stringify(sections.map((section) => section.section_id)),
+        Date.now(),
+      );
+    }
+  }
+
+  if (tableExists(db, "node_host_config")) {
+    const nodeHost = db
+      .prepare("SELECT * FROM node_host_config WHERE config_key = 'current'")
+      .get();
+    if (nodeHost) {
+      const gateway = {
+        ...(nodeHost.gateway_host == null ? {} : { host: nodeHost.gateway_host }),
+        ...(nodeHost.gateway_port == null ? {} : { port: nodeHost.gateway_port }),
+        ...(nodeHost.gateway_tls == null ? {} : { tls: nodeHost.gateway_tls === 1 }),
+        ...(nodeHost.gateway_tls_fingerprint == null
+          ? {}
+          : { tlsFingerprint: nodeHost.gateway_tls_fingerprint }),
+        ...(nodeHost.gateway_context_path == null
+          ? {}
+          : { contextPath: nodeHost.gateway_context_path }),
+        ...(nodeHost.gateway_cloudflare_access_json == null
+          ? {}
+          : { cloudflareAccess: JSON.parse(String(nodeHost.gateway_cloudflare_access_json)) }),
+      };
+      importState.run(
+        "nodeHost.config",
+        JSON.stringify({
+          version: nodeHost.version,
+          nodeId: nodeHost.node_id,
+          ...(nodeHost.display_name == null ? {} : { displayName: nodeHost.display_name }),
+          ...(Object.keys(gateway).length === 0 ? {} : { gateway }),
+          installedAppsSharing: nodeHost.installed_apps_sharing === 1,
+        }),
+        Number(nodeHost.updated_at_ms),
+      );
+    }
+  }
+
+  if (tableExists(db, "web_push_vapid_keys")) {
+    const vapidKeys = db
+      .prepare("SELECT * FROM web_push_vapid_keys WHERE key_id = 'default'")
+      .get();
+    if (vapidKeys) {
+      importState.run(
+        "webPush.vapidKeys",
+        JSON.stringify({
+          publicKey: vapidKeys.public_key,
+          privateKey: vapidKeys.private_key,
+          subject: vapidKeys.subject,
+        }),
+        Number(vapidKeys.updated_at_ms),
       );
     }
   }

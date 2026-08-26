@@ -140,7 +140,6 @@ const rawSqliteAllowPathGroups = {
     "src/plugin-state/plugin-state-store.sqlite.ts",
     "src/tasks/task-flow-registry.store.sqlite.ts",
     "src/tasks/task-registry.store.sqlite.ts",
-    "src/tui/tui-last-session.ts",
   ],
 };
 

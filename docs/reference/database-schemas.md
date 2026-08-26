@@ -128,7 +128,7 @@ Version 3 was an unshipped development step folded into version 4.
 | 9       | In-root agent database registry paths stored relative to the state directory                                                                                                                                                                     | Unreleased          |
 | 10      | Six dead tables retired (agent_model_catalogs, android_notification_recent_packages, command_log_entries, diagnostic_stability_bundles, media_blobs, model_capability_cache)                                                                     | Unreleased          |
 | 11      | Legacy skill curator lifecycle table and never-read proposal origin-run projection retired                                                                                                                                                       | Unreleased          |
-| 12      | Singleton state tables folded into config_machine_state; write-only cron_store_epochs retired                                                                                                                                                    | Unreleased          |
+| 12      | Thirteen singleton/cache tables retired; durable state folded into config_machine_state                                                                                                                                                          | Unreleased          |
 
 ### State schema 11
 
@@ -191,7 +191,7 @@ The general procedure is:
 
 ### Example: state schema 12 to 11
 
-Schema 12 folded small state snapshots into `config_machine_state` and retired the write-only cron store epoch table. A schema 11 build still expects the nine former tables, so a manual downgrade must recreate their exact schemas and indexes before lowering the version.
+Schema 12 folded durable state snapshots into `config_machine_state` and retired rebuildable caches plus the write-only cron store epoch table. A schema 11 build still expects the thirteen former tables, so a manual downgrade must recreate their exact schemas and indexes before lowering the version.
 
 Run equivalent SQL against the global state database after inspecting the exact schema that wrote it:
 
@@ -294,6 +294,44 @@ CREATE TABLE IF NOT EXISTS model_catalog_remote (
   checked_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS tui_last_sessions (
+  scope_key TEXT NOT NULL PRIMARY KEY,
+  session_key TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_tui_last_sessions_session_key
+  ON tui_last_sessions(session_key, updated_at DESC, scope_key);
+
+CREATE TABLE IF NOT EXISTS sidebar_sections (
+  section_id TEXT NOT NULL PRIMARY KEY,
+  position INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS node_host_config (
+  config_key TEXT NOT NULL PRIMARY KEY,
+  version INTEGER NOT NULL,
+  node_id TEXT NOT NULL,
+  token TEXT,
+  display_name TEXT,
+  gateway_host TEXT,
+  gateway_port INTEGER,
+  gateway_tls INTEGER,
+  gateway_tls_fingerprint TEXT,
+  gateway_context_path TEXT,
+  gateway_cloudflare_access_json TEXT,
+  installed_apps_sharing INTEGER NOT NULL DEFAULT 0,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS web_push_vapid_keys (
+  key_id TEXT NOT NULL PRIMARY KEY,
+  public_key TEXT NOT NULL,
+  private_key TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+
 PRAGMA user_version = 11;
 UPDATE schema_meta
 SET schema_version = 11,
@@ -303,7 +341,7 @@ WHERE meta_key = 'primary';
 COMMIT;
 ```
 
-The recreated tables start empty. Migrated voice wake settings, onboarding recommendations, and update-check state remain readable in `config_machine_state` under `voicewake.triggers`, `voicewake.routing`, `onboarding.recommendations.<workspaceKey>`, and `update.checkState`; manually repopulate their former tables if the older build must retain those settings. Skill-curator, promotions-feed, and remote-catalog caches can be rebuilt. A botched downgrade means restore from the verified backup.
+The recreated tables start empty. Migrated voice wake settings, onboarding recommendations, update-check state, sidebar layout, node-host identity, and Web Push signing keys remain readable in `config_machine_state` under `voicewake.triggers`, `voicewake.routing`, `onboarding.recommendations.<workspaceKey>`, `update.checkState`, `sidebar.sectionOrder`, `nodeHost.config`, and `webPush.vapidKeys`; manually repopulate their former tables if the older build must retain those settings. Node-host identity and Web Push signing keys are sensitive: avoid copying their values into shell history or logs. Skill-curator, promotions-feed, remote-catalog, and TUI last-session caches can be rebuilt. A botched downgrade means restore from the verified backup.
 
 ### Example: state schema 11 to 10
 

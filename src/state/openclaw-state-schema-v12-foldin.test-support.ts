@@ -94,6 +94,43 @@ CREATE TABLE IF NOT EXISTS model_catalog_remote (
   last_modified TEXT,
   checked_at INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS tui_last_sessions (
+  scope_key TEXT NOT NULL PRIMARY KEY,
+  session_key TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_tui_last_sessions_session_key
+  ON tui_last_sessions(session_key, updated_at DESC, scope_key);
+
+CREATE TABLE IF NOT EXISTS sidebar_sections (
+  section_id TEXT NOT NULL PRIMARY KEY,
+  position INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS node_host_config (
+  config_key TEXT NOT NULL PRIMARY KEY,
+  version INTEGER NOT NULL,
+  node_id TEXT NOT NULL,
+  token TEXT,
+  display_name TEXT,
+  gateway_host TEXT,
+  gateway_port INTEGER,
+  gateway_tls INTEGER,
+  gateway_tls_fingerprint TEXT,
+  gateway_context_path TEXT,
+  gateway_cloudflare_access_json TEXT,
+  installed_apps_sharing INTEGER NOT NULL DEFAULT 0,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS web_push_vapid_keys (
+  key_id TEXT NOT NULL PRIMARY KEY,
+  public_key TEXT NOT NULL,
+  private_key TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
 `;
 
 export const STATE_SCHEMA_12_TO_11_DOWNGRADE_SQL = `${FOLDED_STATE_TABLES_V12_FIXTURE_SQL}

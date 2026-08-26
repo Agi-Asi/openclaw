@@ -821,14 +821,6 @@ CREATE TABLE IF NOT EXISTS web_push_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_updated
   ON web_push_subscriptions(updated_at_ms DESC, subscription_id);
 
-CREATE TABLE IF NOT EXISTS web_push_vapid_keys (
-  key_id TEXT NOT NULL PRIMARY KEY,
-  public_key TEXT NOT NULL,
-  private_key TEXT NOT NULL,
-  subject TEXT NOT NULL,
-  updated_at_ms INTEGER NOT NULL
-) STRICT;
-
 CREATE TABLE IF NOT EXISTS apns_registrations (
   node_id TEXT NOT NULL PRIMARY KEY,
   transport TEXT NOT NULL,
@@ -850,22 +842,6 @@ CREATE INDEX IF NOT EXISTS idx_apns_registrations_updated
 CREATE TABLE IF NOT EXISTS apns_registration_tombstones (
   node_id TEXT NOT NULL PRIMARY KEY,
   deleted_at_ms INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS node_host_config (
-  config_key TEXT NOT NULL PRIMARY KEY,
-  version INTEGER NOT NULL,
-  node_id TEXT NOT NULL,
-  token TEXT,
-  display_name TEXT,
-  gateway_host TEXT,
-  gateway_port INTEGER,
-  gateway_tls INTEGER,
-  gateway_tls_fingerprint TEXT,
-  gateway_context_path TEXT,
-  gateway_cloudflare_access_json TEXT,
-  installed_apps_sharing INTEGER NOT NULL DEFAULT 0,
-  updated_at_ms INTEGER NOT NULL
 ) STRICT;
 
 -- Node-host-owned launch journal. The descriptor and its credential remain
@@ -1707,15 +1683,6 @@ CREATE TABLE IF NOT EXISTS plugin_binding_approvals (
 CREATE INDEX IF NOT EXISTS idx_plugin_binding_approvals_plugin
   ON plugin_binding_approvals(plugin_id, approved_at DESC);
 
-CREATE TABLE IF NOT EXISTS tui_last_sessions (
-  scope_key TEXT NOT NULL PRIMARY KEY,
-  session_key TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS idx_tui_last_sessions_session_key
-  ON tui_last_sessions(session_key, updated_at DESC, scope_key);
-
 CREATE TABLE IF NOT EXISTS task_delivery_state (
   task_id TEXT NOT NULL PRIMARY KEY,
   requester_origin_json TEXT,
@@ -1916,13 +1883,6 @@ CREATE TABLE IF NOT EXISTS session_groups (
   created_at INTEGER NOT NULL,
   cwd TEXT,
   worktree INTEGER
-) STRICT;
-
--- Gateway-owned sidebar section layout. IDs are ungrouped, groups, work, or
--- category:<name>; pinned sessions are ordered separately and never stored.
-CREATE TABLE IF NOT EXISTS sidebar_sections (
-  section_id TEXT NOT NULL PRIMARY KEY,
-  position INTEGER NOT NULL
 ) STRICT;
 
 -- Gateway-owned durable cloud worker lifecycle. Provider-specific execution

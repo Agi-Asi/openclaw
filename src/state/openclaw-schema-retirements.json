@@ -100,6 +100,14 @@
       "database": "state",
       "status": "completed",
       "targetVersion": 12,
+      "table": "node_host_config",
+      "indexes": [],
+      "note": "Folded into secret-excluded config_machine_state key nodeHost.config."
+    },
+    {
+      "database": "state",
+      "status": "completed",
+      "targetVersion": 12,
       "table": "onboarding_recommendations",
       "indexes": [],
       "note": "Folded into config_machine_state keys onboarding.recommendations.<workspaceKey>."
@@ -108,9 +116,25 @@
       "database": "state",
       "status": "completed",
       "targetVersion": 12,
+      "table": "sidebar_sections",
+      "indexes": [],
+      "note": "Folded into config_machine_state key sidebar.sectionOrder."
+    },
+    {
+      "database": "state",
+      "status": "completed",
+      "targetVersion": 12,
       "table": "skill_curator_state",
       "indexes": [],
       "note": "Folded into config_machine_state key skills.curatorState."
+    },
+    {
+      "database": "state",
+      "status": "completed",
+      "targetVersion": 12,
+      "table": "tui_last_sessions",
+      "indexes": ["idx_tui_last_sessions_session_key"],
+      "note": "Dropped rebuildable last-session pointers; new pointers use tui.lastSession.<scopeKey>."
     },
     {
       "database": "state",
@@ -143,6 +167,14 @@
       "table": "voicewake_triggers",
       "indexes": ["idx_voicewake_triggers_trigger"],
       "note": "Folded into config_machine_state key voicewake.triggers."
+    },
+    {
+      "database": "state",
+      "status": "completed",
+      "targetVersion": 12,
+      "table": "web_push_vapid_keys",
+      "indexes": [],
+      "note": "Folded into secret-excluded config_machine_state key webPush.vapidKeys."
     }
   ]
 }
