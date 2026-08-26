@@ -722,6 +722,16 @@ describe("Git-backed SQLite snapshots", () => {
     expect(rows).not.toContain(pushSecret);
     expect(manifestJson).not.toContain(nodeSecret);
     expect(manifestJson).not.toContain(pushSecret);
+
+    const restoredPath = path.join(root, "restored.sqlite");
+    const restored = await restoreGitBackupDirectory({
+      sourcePath: outputPath,
+      targetPath: restoredPath,
+      expectedIdentity: { role: "global" },
+    });
+    // Restore must disclose the intentionally omitted machine-state prefixes so
+    // operators cannot mistake a redacted restore for a complete one.
+    expect(restored.excludedConfigStateKeyPrefixes).toEqual(["nodeHost.", "webPush.vapidKeys"]);
   });
 
   it("rejects a restored global database without canonical ownership metadata", async () => {

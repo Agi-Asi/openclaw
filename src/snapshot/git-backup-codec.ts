@@ -55,6 +55,7 @@ export type GitBackupRestoreResult = {
   targetPath: string;
   tables: GitBackupTableResult[];
   excludedTables: string[];
+  excludedConfigStateKeyPrefixes: string[];
 };
 
 type SchemaEntry = {
@@ -655,7 +656,14 @@ export async function restoreGitBackupDirectory(params: {
         guard.assertTargetMatchesExpectedContent(() => assertNoSqliteSidecarsSync(targetPath));
       },
     });
-    return { manifest, targetPath, tables, excludedTables: manifest.excludedTables };
+    return {
+      manifest,
+      targetPath,
+      tables,
+      excludedTables: manifest.excludedTables,
+      // Older backups predate prefix redaction; absent means nothing was omitted.
+      excludedConfigStateKeyPrefixes: manifest.excludedConfigStateKeyPrefixes ?? [],
+    };
   } catch (error) {
     if (database.isOpen) {
       database.close();
