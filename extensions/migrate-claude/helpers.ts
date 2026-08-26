@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   markMigrationItemError,
+  markMigrationItemSkipped,
   MIGRATION_REASON_MISSING_SOURCE_OR_TARGET,
 } from "openclaw/plugin-sdk/migration";
 import type { MigrationItem } from "openclaw/plugin-sdk/plugin-entry";
@@ -83,10 +84,19 @@ export async function appendItem(item: MigrationItem): Promise<MigrationItem> {
         ? item.details.sourceLabel
         : path.basename(item.source);
     const header = `\n\n<!-- Imported from Claude: ${label} -->\n\n`;
+    const body = content.trimEnd();
+    if (!body) {
+      return markMigrationItemSkipped(item, "source file is empty");
+    }
+    const importBlock = `${header}${body}\n`;
+    const existing = await fs.readFile(item.target, "utf8").catch(() => "");
+    if (existing.includes(importBlock)) {
+      return markMigrationItemSkipped(item, "already imported from Claude");
+    }
     await fs.mkdir(path.dirname(item.target), { recursive: true });
     await appendRegularFile({
       filePath: item.target,
-      content: `${header}${content.trimEnd()}\n`,
+      content: importBlock,
       rejectSymlinkParents: true,
     });
     return { ...item, status: "migrated" };
