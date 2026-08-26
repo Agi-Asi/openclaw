@@ -18,6 +18,11 @@ export type ReleaseValidationCampaignArtifact =
       releaseUrl: string;
     };
 
+export type ReleaseValidationCampaignGitHub = {
+  paginate: unknown;
+  rest: { issues: Record<string, unknown> };
+};
+
 export function validateReleaseValidationCampaignArtifact(
   artifact: unknown,
   options?: {
@@ -28,7 +33,7 @@ export function validateReleaseValidationCampaignArtifact(
 ): ReleaseValidationCampaignArtifact;
 
 export function runReleaseValidationCampaignPublish(params: {
-  github: any;
+  github: ReleaseValidationCampaignGitHub;
   context: { repo: { owner: string; repo: string } };
   core: { info(message: string): void; setOutput?(name: string, value: string): void };
   artifact: unknown;
