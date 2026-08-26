@@ -234,6 +234,7 @@ export async function openPluginTalkSession(
         clientConnId,
         ownerId,
         quotaOwnerId,
+        signal,
         eventSink: (event) => {
           events.eventSink(event);
           if (event.type === "close") {

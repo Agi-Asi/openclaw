@@ -260,6 +260,7 @@ export const talkSessionHandlers: GatewayRequestHandlers = {
               ? {
                   quotaOwnerId: pluginDispatch.quotaOwnerId,
                   eventSink: pluginDispatch.eventSink,
+                  signal: pluginDispatch.signal,
                 }
               : {}),
             request: params,

@@ -2058,6 +2058,64 @@ describe("talk.session unified handlers", () => {
     expectRespondOk(respond, { relaySessionId: "relay-plugin-owner" });
   });
 
+  it("does not create a relay when the plugin route closes during deferred setup", async () => {
+    const provider = {
+      id: "openai",
+      label: "OpenAI Realtime",
+      isConfigured: () => true,
+      createBridge: vi.fn(),
+    };
+    const setup = createDeferred<void>();
+    const route = new AbortController();
+    const respond = vi.fn();
+    mocks.resolveConfiguredRealtimeVoiceProvider.mockReturnValue({ provider, providerConfig: {} });
+    mocks.ensureClientVoiceAgentSessionEntry.mockImplementationOnce(async () => {
+      await setup.promise;
+      return "session-main";
+    });
+
+    const opening = withPluginTalkSessionDispatchContext(
+      {
+        clientConnId: "conn-1",
+        ownerId: "plugin:avatar:lifecycle-1",
+        quotaOwnerId: "plugin:avatar:conn-1",
+        eventSink: vi.fn(),
+        signal: route.signal,
+      },
+      async () =>
+        await callTalkHandler("talk.session.create", {
+          params: {
+            sessionKey: "agent:main:main",
+            mode: "realtime",
+            transport: "gateway-relay",
+            brain: "agent-consult",
+            provider: "openai",
+          },
+          respond,
+          context: {
+            getRuntimeConfig: () =>
+              ({
+                talk: { realtime: { provider: "openai", providers: { openai: {} } } },
+              }) as OpenClawConfig,
+            logGateway: { warn: vi.fn() },
+          },
+        }),
+    );
+    await vi.waitFor(() => expect(mocks.ensureClientVoiceAgentSessionEntry).toHaveBeenCalled());
+
+    route.abort(new Error("plugin route closed"));
+    setup.resolve();
+
+    await opening;
+    expect(respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({ message: expect.stringContaining("plugin route closed") }),
+    );
+    expect(mocks.createTalkRealtimeRelaySession).not.toHaveBeenCalled();
+    expect(provider.createBridge).not.toHaveBeenCalled();
+  });
+
   it("rejects realtime creation when the resolved agent exceeds the operator role", async () => {
     const provider = {
       id: "openai",

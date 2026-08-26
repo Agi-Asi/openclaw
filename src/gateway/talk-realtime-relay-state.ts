@@ -236,6 +236,7 @@ export type CreateTalkRealtimeRelaySessionParams = {
   voice?: string;
   language?: string;
   forceAgentConsultOnFinalTranscript?: boolean;
+  signal?: AbortSignal;
 };
 
 export type TalkRealtimeRelaySessionResult = {

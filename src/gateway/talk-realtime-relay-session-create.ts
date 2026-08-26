@@ -68,6 +68,7 @@ function isRelayAssistantEchoTranscript(session: RelaySession | undefined, text:
 export function createTalkRealtimeRelaySession(
   params: CreateTalkRealtimeRelaySessionParams,
 ): TalkRealtimeRelaySessionResult {
+  params.signal?.throwIfAborted();
   const quotaOwnerId = params.quotaOwnerId ?? params.connId;
   enforceRelaySessionLimits(quotaOwnerId);
   const forceAgentConsultOnFinalTranscript = params.forceAgentConsultOnFinalTranscript === true;
@@ -163,6 +164,7 @@ export function createTalkRealtimeRelaySession(
       })
     : undefined;
   const runAgentConsult = async ({ prompt, signal }: { prompt: string; signal?: AbortSignal }) => {
+    params.signal?.throwIfAborted();
     if (!getActiveRelay()) {
       throw new Error("Realtime gateway-relay session is closed");
     }
@@ -203,6 +205,7 @@ export function createTalkRealtimeRelaySession(
     },
   });
   const relayProvider = outputOwnership.bind(params.provider, runAgentConsult);
+  params.signal?.throwIfAborted();
   const bridge = harness.createBridge({
     provider: relayProvider,
     cfg: params.cfg,
@@ -561,6 +564,11 @@ export function createTalkRealtimeRelaySession(
       closeRelaySession(active, reason);
     },
   });
+  if (params.signal?.aborted) {
+    harness.close();
+    bridge.close();
+    params.signal.throwIfAborted();
+  }
   bridgeRef.current = bridge;
   const earlyTerminal = constructionTerminal.current;
   if (earlyTerminal) {
@@ -655,6 +663,10 @@ export function createTalkRealtimeRelaySession(
       closeTalkRealtimeRelaySessionsForConnection(params.connId);
     },
   );
+  if (params.signal?.aborted) {
+    closeRelaySession(relay, "completed");
+    params.signal.throwIfAborted();
+  }
   bridge.connect().catch((error: unknown) => {
     const active = relaySessions.get(relaySessionId);
     if (active !== relay) {

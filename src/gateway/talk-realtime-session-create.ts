@@ -37,6 +37,7 @@ type PluginTalkSessionDispatchContext = {
   ownerId: string;
   quotaOwnerId: string;
   eventSink: TalkRealtimeRelayEventSink;
+  signal?: AbortSignal;
 };
 
 const PLUGIN_TALK_SESSION_DISPATCH_CONTEXT_KEY: unique symbol = Symbol.for(
@@ -74,6 +75,13 @@ export class TalkRealtimeSessionAuthorizationError extends Error {
   }
 }
 
+function throwIfTalkSessionAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) {
+    return;
+  }
+  throw signal.reason instanceof Error ? signal.reason : new Error("Talk session creation aborted");
+}
+
 export async function createGatewayRealtimeTalkSession(params: {
   context: GatewayRequestContext;
   client: GatewayClient | null | undefined;
@@ -83,7 +91,9 @@ export async function createGatewayRealtimeTalkSession(params: {
   quotaOwnerId?: string;
   request: RealtimeTalkSessionRequest;
   eventSink?: TalkRealtimeRelayEventSink;
+  signal?: AbortSignal;
 }) {
+  throwIfTalkSessionAborted(params.signal);
   const runtimeConfig = params.context.getRuntimeConfig();
   const realtimeConfig = buildTalkRealtimeConfig(runtimeConfig, params.request.provider);
   const launchOptions = buildRealtimeVoiceLaunchOptions({
@@ -119,6 +129,7 @@ export async function createGatewayRealtimeTalkSession(params: {
     requireSessionKeyForProfile: true,
     warn: (message) => params.context.logGateway.warn(`talk realtime context: ${message}`),
   });
+  throwIfTalkSessionAborted(params.signal);
   const sessionKey =
     realtimeContext.requestedSessionKey ??
     buildAgentMainSessionKey({ agentId: realtimeContext.agentId });
@@ -131,6 +142,7 @@ export async function createGatewayRealtimeTalkSession(params: {
     throw new TalkRealtimeSessionAuthorizationError(creationError);
   }
   await ensureClientVoiceAgentSessionEntry({ agentId: realtimeContext.agentId, sessionKey });
+  throwIfTalkSessionAborted(params.signal);
   const session = createTalkRealtimeRelaySession({
     context: params.context,
     connId: params.ownerId,
@@ -147,6 +159,7 @@ export async function createGatewayRealtimeTalkSession(params: {
     voice: launchOptions.voice,
     language: normalizeOptionalLowercaseString(params.request.language),
     forceAgentConsultOnFinalTranscript: relayLaunch.forceAgentConsultOnFinalTranscript,
+    signal: params.signal,
   });
   rememberUnifiedTalkSession(session.relaySessionId, {
     kind: "realtime-relay",
