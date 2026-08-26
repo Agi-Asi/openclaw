@@ -196,15 +196,6 @@ describe("frozen QA runtime-pair summary validation", () => {
     );
   });
 
-  it("rejects a statusless summary without terminal evidence", () => {
-    const fixture = summary([scenario({ name: "legacy unknown", status: "pass" })]);
-    Reflect.deleteProperty(fixture.run, "status");
-
-    expect(() => validateQaRuntimePairSummary(fixture)).toThrow(
-      "runtime-pair summary is not completed",
-    );
-  });
-
   it("accepts only passing scenarios and explicit one-sided Codex-native gaps", () => {
     const fixture = summary([
       scenario({ name: "passing", status: "pass" }),

@@ -526,14 +526,14 @@ describe("upgrade survivor assertions", () => {
     ).toThrow(/main legacy session row missing/);
   });
 
-  it("uses a valid file store when generic cache_entries has no session rows", () => {
+  it("does not mask empty legacy cache_entries with a valid file store", () => {
     expect(() =>
       runSessionStateAssertion((stateDir) => {
         writeMigratedSessionState(stateDir);
         writeLegacyCacheSessionState(stateDir, { empty: true, replaceNodes: true });
         writeMigratedSessionFiles(stateDir);
       }),
-    ).not.toThrow();
+    ).toThrow(/main legacy session row missing/);
   });
 
   it("prefers legacy cache_entries over a stale file session store", () => {
