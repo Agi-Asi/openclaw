@@ -43,7 +43,13 @@ import {
   resolveBoardWidgetContentKindByPluginKind,
   resolveBoardWidgetContentKindResourceUrls,
 } from "../../plugins/board-widget-content-kinds.js";
+import {
+  capturePluginRegistryLifecycleEpoch,
+  isPluginRegistryLifecycleEpochActive,
+} from "../../plugins/registry-lifecycle.js";
 import { getActivePluginRegistry } from "../../plugins/runtime.js";
+import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
+import { isGatewaySubordinateWorkAdmissionClosed } from "../../process/gateway-work-admission.js";
 import {
   readBoardDataBinding,
   runBoardActionVerb,
@@ -75,13 +81,10 @@ type McpAppDependencies = {
   resolveAllowedToolNames: typeof resolveMcpAppAllowedToolNames;
   mintFromTranscript: typeof mintMcpAppViewFromTranscript;
 };
-type BoardDataReader = typeof readBoardDataBinding;
-type BoardActionVerbRunner = typeof runBoardActionVerb;
-type BoardCronTrigger = typeof triggerBoardCronJob;
 type BoardHandlerDependencies = Partial<McpAppDependencies> & {
-  readDataBinding?: BoardDataReader;
-  runActionVerb?: BoardActionVerbRunner;
-  triggerCronJob?: BoardCronTrigger;
+  readDataBinding?: typeof readBoardDataBinding;
+  runActionVerb?: typeof runBoardActionVerb;
+  triggerCronJob?: typeof triggerBoardCronJob;
 };
 
 const defaultMcpAppDependencies: McpAppDependencies = {
@@ -114,6 +117,27 @@ function respondBoardError(
     return;
   }
   respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(error)));
+}
+
+function captureBoardRequestAuthority() {
+  const scopedPluginRegistry = getPluginRuntimeGatewayRequestScope()?.pluginRegistry;
+  const pluginRegistryEpoch =
+    scopedPluginRegistry && capturePluginRegistryLifecycleEpoch(scopedPluginRegistry);
+  const assertActive = () => {
+    if (
+      isGatewaySubordinateWorkAdmissionClosed() ||
+      (scopedPluginRegistry &&
+        (!pluginRegistryEpoch ||
+          !isPluginRegistryLifecycleEpochActive(scopedPluginRegistry, pluginRegistryEpoch)))
+    ) {
+      throw new Error("board request authority is no longer active");
+    }
+  };
+  assertActive();
+  return {
+    assertActive,
+    pluginRegistry: scopedPluginRegistry ?? getActivePluginRegistry() ?? undefined,
+  };
 }
 
 function resolveBoardSessionKey(
@@ -294,11 +318,13 @@ export function createBoardHandlers(
         return;
       }
       try {
+        const authority = captureBoardRequestAuthority();
         const boardParams = params as BoardUpdateParams;
         const boardSessionKey = resolveBoardSessionKey(boardParams, context, respond);
         if (!boardSessionKey) {
           return;
         }
+        authority.assertActive();
         const snapshot = store.applyOps(boardSessionKey, boardParams.ops);
         if (boardParams.ops.length > 0) {
           context.broadcast("board.changed", {
@@ -317,6 +343,7 @@ export function createBoardHandlers(
         return;
       }
       try {
+        const authority = captureBoardRequestAuthority();
         const requestParams = params as BoardWidgetPutParams;
         const requestedBoardSessionKey = resolveBoardSessionKey(requestParams, context, respond);
         if (!requestedBoardSessionKey) {
@@ -332,6 +359,7 @@ export function createBoardHandlers(
         let declared = requestDeclared;
         if (requestParams.content.kind === "canvas-doc") {
           const document = await readCanvasDocument(requestParams.content.docId);
+          authority.assertActive();
           if (document.cspSandbox !== "scripts") {
             throw new BoardValidationError(
               "invalid_operation",
@@ -345,6 +373,7 @@ export function createBoardHandlers(
             viewId: requestParams.content.viewId,
             cfg: context.getRuntimeConfig(),
           });
+          authority.assertActive();
           const { view } = active;
           if (!view.toolCallId) {
             throw new BoardValidationError(
@@ -359,13 +388,16 @@ export function createBoardHandlers(
           } catch {
             // Reconstructed or revoked source leases may be pinned only as read-only content.
           }
+          authority.assertActive();
           const allowedTools = interactive ? await mcpApp.resolveAllowedToolNames(active) : [];
+          authority.assertActive();
           if (interactive) {
             try {
               await requireMcpAppInteraction(view);
             } catch {
               interactive = false;
             }
+            authority.assertActive();
           }
           content = {
             kind: "mcp-app",
@@ -380,7 +412,7 @@ export function createBoardHandlers(
           declared = interactive && allowedTools.length > 0 ? { tools: allowedTools } : undefined;
         } else if (requestParams.content.kind === "registered") {
           const registration = resolveBoardWidgetContentKind(
-            getActivePluginRegistry(),
+            authority.pluginRegistry,
             requestParams.content.contentKind,
           );
           if (!registration) {
@@ -423,10 +455,8 @@ export function createBoardHandlers(
           content.kind === "html"
             ? {
                 kind: "html",
-                // Authority-bearing bridge code must precede every admitted
-                // byte, including complete HTML and managed Canvas documents.
-                // The wrapper is idempotent so an already-wrapped Canvas view
-                // keeps one effective bridge owner.
+                // Authority-bearing bridge code precedes every admitted byte.
+                // Idempotence keeps one bridge owner for wrapped Canvas views.
                 html: buildWidgetDocument(requestParams.title ?? requestParams.name, content.html, {
                   connectOrigins: declared?.netOrigins,
                 }),
@@ -438,6 +468,7 @@ export function createBoardHandlers(
           content: materializedContent,
           ...(declared ? { declared } : {}),
         };
+        authority.assertActive();
         let snapshot = store.putWidget(boardParams);
         const widget = snapshot.widgets.find(
           (candidate) => candidate.name === snapshot.resolvedWidgetName,
@@ -449,6 +480,7 @@ export function createBoardHandlers(
             name: snapshot.resolvedWidgetName,
             declared: declared ?? {},
           });
+          authority.assertActive();
           if (decision) {
             snapshot = {
               ...store.grant(
@@ -478,11 +510,13 @@ export function createBoardHandlers(
         return;
       }
       try {
+        const authority = captureBoardRequestAuthority();
         const boardParams = params as BoardWidgetGrantParams;
         const boardSessionKey = resolveBoardSessionKey(boardParams, context, respond);
         if (!boardSessionKey) {
           return;
         }
+        authority.assertActive();
         const snapshot = store.grant(
           boardSessionKey,
           boardParams.name,
@@ -564,6 +598,7 @@ export function createBoardHandlers(
         return;
       }
       try {
+        const authority = captureBoardRequestAuthority();
         const boardParams = params as BoardEventParams;
         const identity =
           "ticket" in boardParams
@@ -588,6 +623,7 @@ export function createBoardHandlers(
         if (!identity) {
           return;
         }
+        authority.assertActive();
         const appended = appendNotice({
           sessionKey: identity.sessionKey,
           widget: identity.name,
