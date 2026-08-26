@@ -101,7 +101,11 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
 
   it("clusters repeated recovery evidence and abstains from routine work", async () => {
     const recoveryOne = [
-      { role: "user", content: "Deploy service alpha from this repository." },
+      {
+        role: "user",
+        content:
+          "Deploy service alpha. Our standard procedure for every service is to read its checked-in deploy manifest before the first deploy call.",
+      },
       toolCall("deploy", { service: "alpha" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "region required" },
       toolCall("deploy", { service: "alpha", region: "us" }),
@@ -115,7 +119,11 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       { role: "assistant", content: "The manifest-first preflight avoided more guessing." },
     ];
     const recoveryTwo = [
-      { role: "user", content: "Deploy service beta from its checked-in configuration." },
+      {
+        role: "user",
+        content:
+          "Deploy service beta. Always read its checked-in deploy manifest before the first deploy call; this applies to every service.",
+      },
       toolCall("deploy", { service: "beta" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "service id required" },
       toolCall("lookup", { service: "beta" }),

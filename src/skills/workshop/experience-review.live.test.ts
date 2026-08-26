@@ -136,7 +136,7 @@ describeLive("skill experience review live OpenAI eval", () => {
       {
         role: "user",
         content:
-          "Deploy this repository from its checked-in manifest. Do not ask for values already present there.",
+          "Deploy this repository. From now on, always read its checked-in manifest before the first deploy call; do not ask for values already present there.",
       },
       { role: "assistant", content: [{ type: "toolCall", name: "deploy", arguments: {} }] },
       { role: "toolResult", toolName: "deploy", isError: true, content: "project required" },
