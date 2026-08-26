@@ -146,7 +146,9 @@ function normalizeStoredNodeHostConfig(value: unknown): NodeHostConfig {
           "gateway_tls_fingerprint",
         ),
         contextPath: optionalNonEmptyString(storedGateway.contextPath, "gateway_context_path"),
-        cloudflareAccess: normalizeNodeHostCloudflareAccessConfig(storedGateway.cloudflareAccess),
+        ...cloudflareAccessEntry(
+          normalizeNodeHostCloudflareAccessConfig(storedGateway.cloudflareAccess),
+        ),
       })
     : undefined;
   return {
@@ -158,6 +160,14 @@ function normalizeStoredNodeHostConfig(value: unknown): NodeHostConfig {
   };
 }
 
+// Own-property parity with the retired column reader: an absent Cloudflare
+// Access config omits the key entirely so toStrictEqual consumers match.
+function cloudflareAccessEntry(cloudflareAccess: NodeHostCloudflareAccessConfig | undefined): {
+  cloudflareAccess?: NodeHostCloudflareAccessConfig;
+} {
+  return cloudflareAccess ? { cloudflareAccess } : {};
+}
+
 function normalizeGatewayConfig(gateway: NodeHostGatewayConfig): NodeHostGatewayConfig | undefined {
   const normalized: NodeHostGatewayConfig = {
     host: optionalInputString(gateway.host),
@@ -165,7 +175,7 @@ function normalizeGatewayConfig(gateway: NodeHostGatewayConfig): NodeHostGateway
     tls: gateway.tls,
     tlsFingerprint: optionalInputString(gateway.tlsFingerprint),
     contextPath: optionalInputString(gateway.contextPath),
-    cloudflareAccess: normalizeNodeHostCloudflareAccessConfig(gateway.cloudflareAccess),
+    ...cloudflareAccessEntry(normalizeNodeHostCloudflareAccessConfig(gateway.cloudflareAccess)),
   };
   return Object.values(normalized).some((value) => value !== undefined) ? normalized : undefined;
 }
