@@ -54,14 +54,16 @@ export async function createBuzzQaTransportAdapter(
   context: FactoryContext,
 ): Promise<AdapterDefinition> {
   const options = context.adapterOptions ?? {};
+  const credentialFile = options.credentialFile?.trim();
   const requestedCredentialSource =
-    options.credentialSource?.trim().toLowerCase() ||
-    process.env.OPENCLAW_QA_CREDENTIAL_SOURCE?.trim().toLowerCase() ||
-    "file";
-  if (requestedCredentialSource !== "file" && requestedCredentialSource !== "convex") {
+    options.credentialSource?.trim().toLowerCase() || (credentialFile ? "file" : undefined);
+  if (
+    requestedCredentialSource !== undefined &&
+    requestedCredentialSource !== "file" &&
+    requestedCredentialSource !== "convex"
+  ) {
     throw new Error('Buzz QA credential source must be "file" or "convex".');
   }
-  const credentialFile = options.credentialFile?.trim();
   if (requestedCredentialSource === "file" && !credentialFile) {
     throw new Error("Buzz QA file credentials require --credential-file <path>.");
   }
@@ -79,7 +81,12 @@ export async function createBuzzQaTransportAdapter(
       : undefined;
   const lease = await context.credentials.acquire({
     kind: "buzz",
-    source: requestedCredentialSource === "convex" ? "convex" : "env",
+    source:
+      requestedCredentialSource === "convex"
+        ? "convex"
+        : requestedCredentialSource === "file"
+          ? "env"
+          : undefined,
     role: options.credentialRole,
     resolveEnvPayload: () => {
       if (!fileCredentials) {
