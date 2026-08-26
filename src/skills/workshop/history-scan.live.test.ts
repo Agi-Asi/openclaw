@@ -116,7 +116,11 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       { role: "toolResult", toolName: "deploy", content: "deployed" },
       toolCall("fetch", { path: "/ready" }),
       { role: "toolResult", toolName: "fetch", content: "200" },
-      { role: "assistant", content: "The manifest-first preflight avoided more guessing." },
+      {
+        role: "assistant",
+        content:
+          "Recovered reusable procedure: read deploy.json first, extract every required deploy field, deploy once with the complete input, then verify the manifest's health path. This avoids the two failed deploy rounds above.",
+      },
     ];
     const recoveryTwo = [
       {
@@ -136,7 +140,11 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       { role: "toolResult", toolName: "deploy", content: "deployed" },
       toolCall("fetch", { path: "/healthz" }),
       { role: "toolResult", toolName: "fetch", content: "200" },
-      { role: "assistant", content: "This again shows the manifest should be read first." },
+      {
+        role: "assistant",
+        content:
+          "Recovered the same reusable procedure: read deploy.json first, extract the service and health fields, deploy once with complete input, then verify that health path. This avoids the two failed lookup/deploy rounds above.",
+      },
     ];
 
     let recoveryCompletionIdeas: number | undefined;

@@ -64,7 +64,7 @@ async function candidate(
         },
       },
       agents: {
-        entries: { main: { default: true } },
+        entries: { main: { default: true, workspace: workspaceDir } },
         defaults: {
           model: { primary: `openai/${modelId}` },
           models: {
