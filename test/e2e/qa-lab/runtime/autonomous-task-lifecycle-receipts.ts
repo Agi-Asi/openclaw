@@ -439,11 +439,36 @@ async function runProof(options: ProducerOptions): Promise<string> {
     }
 
     const db = new DatabaseSync(stateDatabasePath(gateway), { readOnly: true });
-    let genericCount = 0;
+    let duplicatedOwnerCount = 0;
     try {
-      if (hasSqliteColumns(db, "execution_decision_facts", ["receipt_id"])) {
-        genericCount = (
-          db.prepare("SELECT COUNT(*) AS count FROM execution_decision_facts").get() as {
+      if (
+        hasSqliteColumns(db, "execution_decision_facts", [
+          "context_id",
+          "execution_id",
+          "owner",
+          "source_ref",
+        ]) &&
+        hasSqliteColumns(db, "execution_owner_lifecycle_bindings", [
+          "context_id",
+          "execution_id",
+          "owner_id",
+          "owner_kind",
+        ])
+      ) {
+        duplicatedOwnerCount = (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM execution_decision_facts AS fact
+               JOIN execution_owner_lifecycle_bindings AS binding
+                 ON binding.context_id = fact.context_id
+                AND binding.execution_id = fact.execution_id
+                AND binding.owner_id = fact.source_ref
+               WHERE (binding.owner_kind = 'cron' AND fact.owner = 'cron_run_receipts')
+                  OR (binding.owner_kind = 'task' AND fact.owner = 'task_runs')
+                  OR (binding.owner_kind = 'flow' AND fact.owner = 'flow_runs')`,
+            )
+            .get() as {
             count: number;
           }
         ).count;
@@ -451,7 +476,7 @@ async function runProof(options: ProducerOptions): Promise<string> {
     } finally {
       db.close();
     }
-    if (genericCount !== 0) {
+    if (duplicatedOwnerCount !== 0) {
       throw new Error("owner lifecycle rows were duplicated into execution_decision_facts");
     }
 
