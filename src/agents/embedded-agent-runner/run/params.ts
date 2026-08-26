@@ -91,6 +91,8 @@ export type RunEmbeddedAgentParams = {
   preparedRunAdmission?: PreparedAgentRunAdmission;
   /** Caller-owned in-memory transcript for ephemeral helper runs. */
   sessionManager?: SessionManager;
+  /** Detached runs may read session identity but never write its durable transcript or metadata. */
+  sessionPersistence?: "durable" | "detached";
   sessionId: string;
   sessionKey?: string;
   /** Storage-neutral transcript/session target. Defaults to sessionId/sessionKey/agentId. */
@@ -178,6 +180,8 @@ export type RunEmbeddedAgentParams = {
   swarmOutputSchema?: Record<string, unknown>;
   /** Restrict this reconstructed run to restart-safe tools. */
   forceRestartSafeTools?: boolean;
+  /** Restrict one internal post-mutation recovery attempt to audited core reads. */
+  forceCodeModeReconciliationTools?: boolean;
   /** Preserve Code Mode controls for a replay-safe restart recovery turn. */
   forceCodeModeTools?: boolean;
   /** Internal one-shot model probe mode: no tools, no workspace/chat prompt policy. */
@@ -250,6 +254,8 @@ export type RunEmbeddedAgentParams = {
   model?: string;
   /** Vision capability resolved by the run owner from its prepared model catalog. */
   modelHasVision?: boolean;
+  /** Session-selected context-window option id carried by the run owner. */
+  contextWindow?: string;
   /** Route-bound thinking capability resolved from the selected prepared catalog row. */
   modelThinkingCapability?: PreparedModelThinkingCapability;
   /** Effective model fallback chain for this session attempt. Undefined uses config defaults. */
@@ -286,6 +292,8 @@ export type RunEmbeddedAgentParams = {
   bootstrapContextRunKind?: BootstrapContextRunKind;
   /** Optional tool allow-list; when set, only these tools are sent to the model. */
   toolsAllow?: string[];
+  /** Preserve the visible tool schemas while allowing execution only for these names. */
+  toolExecutionAllow?: readonly string[];
   /** Exact attempt authority attached to the active steering backend. */
   toolAuthorityFingerprint?: string;
   /** Owner-scoped plugin tool grant; normal policy and deny rules still apply. */

@@ -253,19 +253,15 @@ explicitly when a no-UI approval prompt should fall back to allow.
 - `tools.exec.host=auto` chooses **where** exec runs: sandbox when available, otherwise gateway.
 - YOLO chooses **how** host exec is approved: `security=full` plus `ask=off`.
 - YOLO does **not** add a separate heuristic command-obfuscation approval gate or script-preflight rejection layer on top of the configured host exec policy.
-- `auto` does not make gateway routing a free override from a sandboxed session. A per-call `host=node` request is allowed from `auto`; `host=gateway` is only allowed from `auto` when no sandbox runtime is active. For a stable non-auto default, set `tools.exec.host` or use `/exec host=...` explicitly.
+- `auto` does not make node or gateway routing a free override from a sandboxed session. Per-call `host=node` and `host=gateway` requests are allowed from `auto` only when no sandbox runtime is active. For a stable non-auto default, set `tools.exec.host` or use `/exec host=...` explicitly.
 
 </Warning>
 
-CLI-backed providers that expose their own noninteractive permission mode
-can follow this policy. Claude CLI adds
-`--permission-mode bypassPermissions` when OpenClaw's effective exec
-policy is YOLO. For OpenClaw-managed Claude live sessions, OpenClaw's
-effective exec policy is authoritative over Claude's native permission mode:
-YOLO normalizes live launches to `--permission-mode bypassPermissions`, and
-restrictive effective exec policy normalizes live launches to
-`--permission-mode default`, even if raw Claude backend args specify another
-mode.
+For OpenClaw-managed Claude sessions, the Claude Agent SDK always uses its
+`default` permission mode. OpenClaw's effective exec policy remains
+authoritative through its native tool approval callback, including YOLO and
+restrictive policies, even if raw Claude backend args request
+`bypassPermissions`.
 
 If you want a more conservative setup, tighten OpenClaw exec policy back to
 `allowlist` / `on-miss` or `deny`.
@@ -424,6 +420,32 @@ Each allowlist entry supports:
 | `lastUsedAt`       | Last-used timestamp                                                      |
 | `lastUsedCommand`  | Last command that matched; omitted for generated hashed argv entries     |
 | `lastResolvedPath` | Last resolved binary path                                                |
+
+## Cron standing grants
+
+Approvals raised by gateway-host cron runs are delivered only to connected
+approval surfaces (Control UI, TUI, macOS app) — never to chat channels, which
+would repeat a card on every occurrence. While a reviewer surface is
+connected, the scheduled run waits for the decision like an interactive run;
+cron jobs are single-flight, so at most one card per job is pending at a
+time. With no approval surface connected, the request is denied immediately
+and the run's error explains the policy fix, exactly as before. Node-host
+cron execs keep the fully headless policy (no cards) until node execution
+gains its own standing-grant path.
+
+When an approval originates from a cron job's isolated run, resolving it with
+**allow always** does not write a JSON allowlist entry. Instead the Gateway
+mints a scoped standing grant bound to that exact agent, cron job, job
+configuration, and operation (command text, working directory, and requested
+environment). Later occurrences of the same job execute that exact operation
+without prompting while the grant is valid.
+
+A grant expires 30 days after the approval and fails closed back to a normal
+prompt whenever anything changed: the job was edited or deleted, the command,
+working directory, or environment differs, the grant expired or was revoked,
+or the original approval record is gone. Mutable file operands and commands
+that require explicit review (heredocs, strict inline eval, audit
+suppression) keep prompting per occurrence. Non-cron approvals are unchanged.
 
 ## Auto-allow skill CLIs
 

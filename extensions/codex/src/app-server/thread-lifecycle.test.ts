@@ -931,7 +931,8 @@ function threadStartResult(threadId = "thread-1") {
       status: { type: "idle" },
       path: null,
       cwd: tempDir,
-      cliVersion: "0.148.0",
+      projectId: null,
+      cliVersion: "0.149.0",
       source: "unknown",
       agentNickname: null,
       agentRole: null,
@@ -1505,6 +1506,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1652,6 +1654,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.multi_agent": false,
       "features.standalone_web_search": false,
       web_search: "cached",
@@ -1782,6 +1785,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1806,6 +1810,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1866,6 +1871,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1946,6 +1952,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1981,6 +1988,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -2185,6 +2193,7 @@ describe("Codex app-server turn params", () => {
         "features.goals": false,
         "tools.update_plan.enabled": false,
         "features.apply_patch_streaming_events": true,
+        suppress_unstable_features_warning: true,
         "features.standalone_web_search": false,
         web_search: "cached",
       },
@@ -2216,7 +2225,7 @@ describe("Codex app-server turn params", () => {
     });
   });
 
-  it("uses turn-scoped collaboration instructions for heartbeat Codex turns", () => {
+  it("keeps heartbeat Codex turns in normal Default collaboration mode", () => {
     const params = createAttemptParams({ provider: "codex" });
     params.modelId = "gpt-5.4-codex";
     params.thinkLevel = "medium";
@@ -2226,27 +2235,15 @@ describe("Codex app-server turn params", () => {
     expect(heartbeatCollaborationMode.mode).toBe("default");
     expect(heartbeatCollaborationMode.settings.model).toBe("gpt-5.4-codex");
     expect(heartbeatCollaborationMode.settings.reasoning_effort).toBe("medium");
-    expect(heartbeatCollaborationMode.settings.developer_instructions).toContain(
-      "This is an OpenClaw heartbeat turn. Apply these instructions only to this heartbeat wake",
-    );
-    expect(heartbeatCollaborationMode.settings.developer_instructions).toContain(
-      "Heartbeat = useful proactive progress",
-    );
-    expect(heartbeatCollaborationMode.settings.developer_instructions).toContain(
-      "If `heartbeat_respond` is not already available and `tool_search` is available",
-    );
+    expect(heartbeatCollaborationMode.settings.developer_instructions).toBeNull();
 
-    params.trigger = "user";
-    expect(
-      buildTurnCollaborationMode(params, {
-        turnScopedDeveloperInstructions: "Turn-only workspace instructions.",
-      }).settings.developer_instructions,
-    ).toContain("Turn-only workspace instructions.");
-    expect(
-      buildTurnCollaborationMode(params, {
-        turnScopedDeveloperInstructions: "Turn-only workspace instructions.",
-      }).settings.developer_instructions,
-    ).toContain("# Collaboration Mode: Default");
+    const workspaceInstructions = buildTurnCollaborationMode(params, {
+      turnScopedDeveloperInstructions: "Turn-only workspace instructions.",
+    }).settings.developer_instructions;
+    expect(workspaceInstructions).toContain("Turn-only workspace instructions.");
+    expect(workspaceInstructions).toContain("# Collaboration Mode: Default");
+    expect(workspaceInstructions).not.toContain("This is an OpenClaw heartbeat turn");
+    expect(workspaceInstructions).not.toContain("### Heartbeats");
   });
 
   it("uses turn-scoped collaboration instructions for cron Codex turns", () => {

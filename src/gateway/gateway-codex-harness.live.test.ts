@@ -334,7 +334,7 @@ function readCodexNativeUsageSnapshots(
   events: readonly CapturedAgentEvent[],
 ): CodexNativeUsageSnapshot[] {
   return events.flatMap((event) => {
-    if (event.stream !== "codex_app_server.usage") {
+    if (event.stream !== "usage") {
       return [];
     }
     const activeContextTokens = event.data?.activeContextTokens;
@@ -723,7 +723,6 @@ async function writeLiveGatewayConfig(params: {
       },
       entries: {
         dev: {
-          default: true,
           workspace: params.workspace,
           thinkingDefault: CODEX_HARNESS_THINKING,
           model: { primary: params.modelKey },
@@ -2176,6 +2175,7 @@ describeLive("gateway live (Codex harness)", () => {
           auth: { mode: "token", token },
           controlUiEnabled: false,
         });
+        await server.startupSettled;
         client = await connectTestGatewayClient({
           url: `ws://127.0.0.1:${port}`,
           token,
@@ -2500,6 +2500,7 @@ describeLive("gateway live (Codex harness)", () => {
               auth: { mode: "token", token },
               controlUiEnabled: false,
             });
+            await server.startupSettled;
             client = await connectTestGatewayClient({
               url: `ws://127.0.0.1:${port}`,
               token,
