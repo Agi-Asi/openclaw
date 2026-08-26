@@ -4,12 +4,13 @@ import { normalizeLowercaseStringOrEmpty as normalizeMarker } from "@openclaw/no
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.js";
 import {
-  deleteConfigMachineState,
   readConfigMachineStateWithMetadata,
   writeConfigMachineState,
+  updateConfigMachineState,
 } from "../state/config-machine-state.js";
 import { withExistingOpenClawStateDatabaseReadOnly } from "../state/openclaw-state-db-readonly.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
+import type { OpenClawStateDatabaseOptions } from "../state/openclaw-state-db.js";
 import type { TuiSessionList } from "./tui-backend.js";
 import type { SessionScope } from "./tui-types.js";
 
@@ -142,9 +143,32 @@ export function clearTuiLastSessionPointers(params: {
     });
   }, options);
   return (matchingKeys ?? []).reduce(
-    (cleared, stateKey) => cleared + Number(deleteConfigMachineState(stateKey, options)),
+    (cleared, stateKey) =>
+      cleared + Number(clearTuiPointerIfRetired(stateKey, params.sessionKeys, options)),
     0,
   );
+}
+
+// Compare-and-delete inside the write transaction: a live replacement pointer
+// written after the read-only scan must survive doctor cleanup.
+function clearTuiPointerIfRetired(
+  stateKey: string,
+  retiredSessionKeys: ReadonlySet<string>,
+  options: OpenClawStateDatabaseOptions,
+): boolean {
+  let cleared = false;
+  updateConfigMachineState<string>(
+    stateKey,
+    (current) => {
+      if (typeof current === "string" && retiredSessionKeys.has(current)) {
+        cleared = true;
+        return undefined;
+      }
+      return current;
+    },
+    options,
+  );
+  return cleared;
 }
 
 /** Resolves a remembered key to a currently listed session for the active agent. */

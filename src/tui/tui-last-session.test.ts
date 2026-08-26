@@ -200,6 +200,32 @@ describe("tui last session state", () => {
       })?.value,
     ).toBe("agent:main:main");
   });
+
+  it("keeps a live replacement pointer written after the retired-pointer scan", async () => {
+    const stateDir = await makeTempStateDir();
+    await writeTuiLastSessionKey({
+      scopeKey: "terminal",
+      sessionKey: "agent:main:retired",
+      stateDir,
+    });
+    // A replacement lands before the delete phase; the in-transaction
+    // compare-and-delete must preserve it instead of erasing the live pointer.
+    await writeTuiLastSessionKey({
+      scopeKey: "terminal",
+      sessionKey: "agent:main:live",
+      stateDir,
+    });
+
+    expect(
+      clearTuiLastSessionPointers({
+        stateDir,
+        sessionKeys: new Set(["agent:main:retired"]),
+      }),
+    ).toBe(0);
+    await expect(readTuiLastSessionKey({ scopeKey: "terminal", stateDir })).resolves.toBe(
+      "agent:main:live",
+    );
+  });
 });
 
 describe("createRememberSessionKeyWriter", () => {

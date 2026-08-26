@@ -202,7 +202,7 @@ without exceptions outside doctor/import/export/debug boundaries.
 - No active session files.
 - No fake JSONL test fixtures except doctor legacy migration tests.
 - No raw SQLite access where Kysely is expected.
-- No new file-era runtime stores. The current global schema is version `11`, and
+- No new file-era runtime stores. The current global schema is version `12`, and
   the current per-agent schema is version `17`; older supported databases move
   through the bounded forward migrations listed in
   [Database schemas](/reference/database-schemas).
