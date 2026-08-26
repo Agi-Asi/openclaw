@@ -218,14 +218,9 @@ export function registerCronAddCommand(cron: Command) {
                   cwd: normalizeOptionalString(opts.commandCwd),
                   env: parseCronCommandEnv(opts.commandEnv),
                   input: typeof opts.commandInput === "string" ? opts.commandInput : undefined,
-                  timeoutSeconds:
-                    timeoutSeconds && Number.isFinite(timeoutSeconds) ? timeoutSeconds : undefined,
-                  noOutputTimeoutSeconds:
-                    noOutputTimeoutSeconds && Number.isFinite(noOutputTimeoutSeconds)
-                      ? noOutputTimeoutSeconds
-                      : undefined,
-                  outputMaxBytes:
-                    outputMaxBytes && Number.isFinite(outputMaxBytes) ? outputMaxBytes : undefined,
+                  timeoutSeconds,
+                  noOutputTimeoutSeconds,
+                  outputMaxBytes,
                   ...(toolsAllow ? { toolsAllow } : {}),
                 };
               }
@@ -235,8 +230,7 @@ export function registerCronAddCommand(cron: Command) {
                 model: normalizeOptionalString(opts.model),
                 fallbacks: parseCronFallbacks(opts.fallbacks),
                 thinking: normalizeOptionalString(opts.thinking),
-                timeoutSeconds:
-                  timeoutSeconds && Number.isFinite(timeoutSeconds) ? timeoutSeconds : undefined,
+                timeoutSeconds,
                 lightContext: opts.lightContext === true ? true : undefined,
                 toolsAllow,
               };
