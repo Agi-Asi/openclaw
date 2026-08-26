@@ -7,6 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_ROOT="$(cd "${OPENCLAW_NPM_ONBOARD_SOURCE_ROOT:-${OPENCLAW_LIVE_DOCKER_REPO_ROOT:-$ROOT_DIR}}" && pwd)"
 source "$ROOT_DIR/scripts/lib/docker-e2e-image.sh"
 source "$ROOT_DIR/scripts/lib/docker-e2e-package.sh"
+source "$ROOT_DIR/scripts/e2e/lib/prepublish-plugin-registry.sh"
 
 IMAGE_NAME="$(docker_e2e_resolve_image "openclaw-npm-onboard-channel-agent-e2e" OPENCLAW_NPM_ONBOARD_E2E_IMAGE)"
 DOCKER_TARGET="${OPENCLAW_NPM_ONBOARD_DOCKER_TARGET:-bare}"
@@ -23,7 +24,7 @@ STATUS_TEXT_MAX_BYTES="$(
 run_log=""
 plugin_pack_dir=""
 plugin_package_args=()
-prepublish_registry_args=()
+OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DOCKER_ARGS=()
 
 cleanup() {
   if [ -n "${PACKAGE_TGZ:-}" ]; then
@@ -97,18 +98,8 @@ prepare_source_plugin_package() {
 prepare_source_plugin_package
 
 if [ -n "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR:-}" ]; then
-  if [ ! -d "$OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR" ]; then
-    echo "OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR must point to an existing directory; got: $OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR" >&2
-    exit 1
-  fi
-  prepublish_registry_dir="$(cd "$OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR" && pwd)"
-  prepublish_registry_args=(
-    -v "$prepublish_registry_dir:/tmp/openclaw-prepublish-plugin-registry:ro"
-    -e OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR=/tmp/openclaw-prepublish-plugin-registry
-    -e "OPENCLAW_DOCKER_E2E_SELECTED_SHA=${OPENCLAW_DOCKER_E2E_SELECTED_SHA:?missing selected SHA}"
-    -e "OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_CANDIDATE_VERSION=${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_CANDIDATE_VERSION:?missing candidate version}"
-    -e "OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256=${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256:?missing manifest SHA-256}"
-  )
+  openclaw_prepublish_plugin_registry_configure_docker_args \
+    "$OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR"
 fi
 
 docker_e2e_package_mount_args "$PACKAGE_TGZ"
@@ -124,7 +115,7 @@ if ! docker_e2e_run_with_harness \
   -e "OPENCLAW_TEST_STATE_SCRIPT_B64=$OPENCLAW_TEST_STATE_SCRIPT_B64" \
   "${DOCKER_E2E_PACKAGE_ARGS[@]}" \
   "${plugin_package_args[@]}" \
-  "${prepublish_registry_args[@]}" \
+  "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DOCKER_ARGS[@]}" \
   -i "$IMAGE_NAME" bash -s >"$run_log" 2>&1 <<'EOF'; then
 set -Eeuo pipefail
 
@@ -201,14 +192,8 @@ dump_debug_logs() {
 trap 'status=$?; dump_debug_logs "$status"; exit "$status"' ERR
 
 if [ -n "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR:-}" ]; then
-  OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_REQUIRED_PACKAGES_JSON='["@openclaw/codex"]' \
-    openclaw_prepublish_plugin_registry_start \
-    "$OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR" \
-    "${OPENCLAW_DOCKER_E2E_SELECTED_SHA:?missing selected SHA}" \
-    "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_CANDIDATE_VERSION:?missing candidate version}" \
-    "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256:?missing manifest SHA-256}" \
-    /tmp/openclaw-npm-onboard-plugin-registry \
-    plugin_registry_pid
+  openclaw_prepublish_plugin_registry_start_mounted \
+    /tmp/openclaw-npm-onboard-plugin-registry plugin_registry_pid '["@openclaw/codex"]'
 fi
 
 openclaw_e2e_install_package /tmp/openclaw-install.log
