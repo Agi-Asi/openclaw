@@ -308,6 +308,25 @@ describe("runConfigureWizard", () => {
     mocks.guardCancel.mockImplementation((value: unknown) => value);
   });
 
+  it("directs invalid config to the doctor repair command", async () => {
+    setupBaseWizardState();
+    mocks.readConfigFileSnapshot.mockResolvedValueOnce({
+      exists: true,
+      valid: false,
+      config: {},
+      issues: [{ path: "routing.allowFrom", message: "Legacy key" }],
+    });
+    const runtime = createRuntime();
+
+    await runConfigureWizard({ command: "configure" }, runtime);
+
+    expect(mocks.clackOutro).toHaveBeenCalledWith(
+      "Config invalid. Run `openclaw doctor --fix` to repair it, then re-run configure.",
+    );
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(mocks.clackSelect).not.toHaveBeenCalled();
+  });
+
   it("persists provider-owned web search config changes returned by setupSearch", async () => {
     setupBaseWizardState();
     mocks.setupSearch.mockImplementation(async (cfg: OpenClawConfig) => {
