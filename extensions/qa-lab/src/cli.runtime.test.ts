@@ -1031,7 +1031,7 @@ describe("qa cli runtime", () => {
     },
   );
 
-  it("filters QA-channel-pinned scenarios from an implicit Crabline smoke profile", async () => {
+  it("filters QA-channel-pinned scenarios from an implicit Crabline driver profile", async () => {
     runQaSuite.mockImplementationOnce(async (params) => {
       await fs.writeFile(suiteEvidencePath, JSON.stringify(makeQaEvidence()), "utf8");
       const observedCells = executionCellsForSuiteParams(params);
@@ -1079,7 +1079,7 @@ describe("qa cli runtime", () => {
     expect(runQaSuite).not.toHaveBeenCalled();
   });
 
-  it("dispatches the Matrix restart scenario through the Crabline smoke profile", async () => {
+  it("dispatches the Matrix restart scenario through the Crabline driver profile", async () => {
     await runQaProfileCommand({
       repoRoot: "/tmp/openclaw-repo",
       profile: "smoke-ci",
@@ -1208,6 +1208,34 @@ describe("qa cli runtime", () => {
       channelId: "telegram",
       scenarioIds: ["telegram-help-command"],
     });
+  });
+
+  it("dispatches generic suite Discord selection through Crabline", async () => {
+    await runQaSuiteCommand({
+      channelDriver: "crabline",
+      channel: "discord",
+      providerMode: "mock-openai",
+      scenarioIds: ["channel-canary"],
+    });
+
+    expect(runQaSuite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelDriver: "crabline",
+        channelDriverSelection: expect.objectContaining({ channel: "discord" }),
+        scenarioIds: ["channel-canary"],
+      }),
+    );
+  });
+
+  it("rejects channels outside Crabline's canonical server contract", async () => {
+    await expect(
+      runQaSuiteCommand({
+        channelDriver: "crabline",
+        channel: "imessage",
+        providerMode: "mock-openai",
+      }),
+    ).rejects.toThrow("--channel must be one of");
+    expect(runQaSuite).not.toHaveBeenCalled();
   });
 
   it("keeps implicit channel membership identical for live and Crabline drivers", async () => {

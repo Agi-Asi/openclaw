@@ -1,4 +1,4 @@
-// Qa Lab tests cover Crabline local-provider transport integration behavior.
+// Qa Lab tests cover Crabline channel-driver integration with local provider servers.
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawCrablineChannelDriverSelection } from "@openclaw/crabline";
@@ -97,7 +97,7 @@ describe("crabline transport", () => {
         expect(delivery.replyTo).toBe(delivery.to);
 
         await expect(
-          fs.access(path.join(outputDir, "crabline-fake-provider-server.json")),
+          fs.access(path.join(outputDir, "crabline-provider-server.json")),
         ).rejects.toMatchObject({ code: "ENOENT" });
         await expect(
           transport.sendInbound({
@@ -241,18 +241,19 @@ describe("crabline transport", () => {
       });
 
       try {
+        await transport.state.addInboundMessage({
+          conversation: { id: "-1001234567890", kind: "group" },
+          senderId: "100001",
+          text: "Provision forum topic.",
+          threadId: "42",
+        });
+        await transport.state.reset();
         const config = transport.createGatewayConfig({ baseUrl: "http://127.0.0.1:1" });
         const telegram = config.channels?.telegram as
           | { apiRoot?: string; botToken?: string }
           | undefined;
         const apiRoot = requireString(telegram?.apiRoot, "Telegram API root");
         const botToken = requireString(telegram?.botToken, "Telegram bot token");
-        await transport.sendInbound({
-          conversation: { id: "-1001234567890", kind: "group" },
-          senderId: "100001",
-          text: "forum topic seed",
-          threadId: "42",
-        });
         const postTelegram = async (method: string, body: Record<string, unknown>) => {
           const response = await fetch(`${apiRoot}/bot${botToken}/${method}`, {
             body: JSON.stringify(body),
@@ -435,7 +436,9 @@ describe("crabline transport", () => {
         const env = transport.createRuntimeEnvPatch?.() ?? {};
         expect(env).toMatchObject({
           CRABLINE_WHATSAPP_ADMIN_TOKEN: expect.any(String),
-          CRABLINE_WHATSAPP_RECORDER_PATH: expect.stringMatching(/whatsapp-fake-provider\.jsonl$/u),
+          CRABLINE_WHATSAPP_RECORDER_PATH: expect.stringMatching(
+            /whatsapp-provider-server\.jsonl$/u,
+          ),
           CRABLINE_WHATSAPP_SELF_JID: "15550000000@s.whatsapp.net",
           OPENCLAW_WHATSAPP_WEB_SOCKET_URL: expect.stringMatching(
             /^ws:\/\/127\.0\.0\.1:\d+\/ws\/chat\?access_token=/u,
@@ -660,7 +663,6 @@ describe("crabline transport", () => {
           senderName: "Alice",
           text: "Mattermost baseline marker check.",
         });
-        await transport.state.reset();
         const delivery = transport.buildAgentDelivery({ target: "group:qa-channel" });
         const env = transport.createRuntimeEnvPatch?.() ?? {};
         const mattermostUrl = requireString(env.MATTERMOST_URL, "Mattermost URL");
@@ -929,7 +931,7 @@ describe("crabline transport", () => {
       });
 
       try {
-        const inbound = await transport.state.addInboundMessage({
+        await transport.state.addInboundMessage({
           conversation: {
             id: "telegram-command-room",
             kind: "channel",
@@ -945,13 +947,14 @@ describe("crabline transport", () => {
           | undefined;
         expect(telegram?.apiRoot).toBeTruthy();
         expect(telegram?.botToken).toBeTruthy();
+        const groupDelivery = transport.buildAgentDelivery({
+          target: "channel:telegram-command-room",
+        });
         const { response, release } = await fetchWithSsrFGuard({
           url: `${telegram?.apiRoot}/bot${telegram?.botToken}/sendMessage`,
           init: {
             body: JSON.stringify({
-              chat_id: transport.buildAgentDelivery({
-                target: `channel:${inbound.conversation.id}`,
-              }).to,
+              chat_id: groupDelivery.to,
               text: "assistant via fake telegram",
             }),
             headers: { "content-type": "application/json" },
