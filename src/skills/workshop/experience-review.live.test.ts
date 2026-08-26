@@ -64,7 +64,7 @@ async function candidate(
         },
       },
       agents: {
-        entries: { main: { default: true, workspace: workspaceDir } },
+        entries: { main: { default: true } },
         defaults: {
           model: { primary: `openai/${modelId}` },
           models: {
@@ -131,67 +131,58 @@ describeLive("skill experience review live OpenAI eval", () => {
     await tempDirs.cleanup();
   });
 
-  it("proposes a recovered calibration preflight but ignores routine one-off work", async () => {
+  it("proposes a recovered preflight procedure but ignores routine one-off work", async () => {
     const positiveMessages = [
       {
         role: "user",
         content:
-          "Calibrate this spectrometer. From now on, always read its checked-in calibration manifest before the first calibrate call; do not ask for values already present there.",
+          "Deploy this repository from its checked-in manifest. Do not ask for values already present there.",
       },
-      { role: "assistant", content: [{ type: "toolCall", name: "calibrate", arguments: {} }] },
-      { role: "toolResult", toolName: "calibrate", isError: true, content: "sensor required" },
+      { role: "assistant", content: [{ type: "toolCall", name: "deploy", arguments: {} }] },
+      { role: "toolResult", toolName: "deploy", isError: true, content: "project required" },
       {
         role: "assistant",
-        content: [{ type: "toolCall", name: "calibrate", arguments: { sensor: "optical" } }],
+        content: [{ type: "toolCall", name: "deploy", arguments: { project: "app" } }],
       },
-      { role: "toolResult", toolName: "calibrate", isError: true, content: "reference required" },
+      { role: "toolResult", toolName: "deploy", isError: true, content: "region required" },
       {
         role: "assistant",
         content: [
-          {
-            type: "toolCall",
-            name: "calibrate",
-            arguments: { sensor: "optical", reference: "argon" },
-          },
+          { type: "toolCall", name: "deploy", arguments: { project: "app", region: "us" } },
         ],
       },
-      { role: "toolResult", toolName: "calibrate", isError: true, content: "wavelength required" },
+      { role: "toolResult", toolName: "deploy", isError: true, content: "service required" },
       { role: "assistant", content: "I am still guessing required fields one at a time." },
       {
         role: "assistant",
-        content: [{ type: "toolCall", name: "read", arguments: { path: "calibration.json" } }],
+        content: [{ type: "toolCall", name: "read", arguments: { path: "deploy.json" } }],
       },
       {
         role: "toolResult",
         toolName: "read",
-        content: "sensor=optical reference=argon wavelength=696.5nm tolerance=0.2nm",
+        content: "project=app region=us service=api health=/ready",
       },
-      { role: "assistant", content: "The manifest contains all required calibration inputs." },
+      { role: "assistant", content: "The manifest contains all required deployment inputs." },
       {
         role: "assistant",
         content: [
           {
             type: "toolCall",
-            name: "calibrate",
-            arguments: {
-              sensor: "optical",
-              reference: "argon",
-              wavelength: "696.5nm",
-              tolerance: "0.2nm",
-            },
+            name: "deploy",
+            arguments: { project: "app", region: "us", service: "api" },
           },
         ],
       },
-      { role: "toolResult", toolName: "calibrate", content: "calibrated" },
+      { role: "toolResult", toolName: "deploy", content: "deployed" },
       {
         role: "assistant",
-        content: [{ type: "toolCall", name: "measure", arguments: { wavelength: "696.5nm" } }],
+        content: [{ type: "toolCall", name: "fetch", arguments: { path: "/ready" } }],
       },
-      { role: "toolResult", toolName: "measure", content: "696.5nm within tolerance" },
-      { role: "assistant", content: "Calibration verified." },
+      { role: "toolResult", toolName: "fetch", content: "200 ok" },
+      { role: "assistant", content: "Deployment verified." },
       {
         role: "assistant",
-        content: "Next time the manifest should be read before the first calibrate call.",
+        content: "Next time the manifest should be read before the first deploy call.",
       },
       { role: "assistant", content: "That preflight would remove three failed tool rounds." },
       { role: "assistant", content: "Done." },

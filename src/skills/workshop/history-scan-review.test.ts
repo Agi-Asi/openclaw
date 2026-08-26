@@ -29,7 +29,6 @@ describe("Skill Workshop history scan review", () => {
         model: "gpt-test",
         modelSelectionLocked: true,
         modelFallbacksOverride: [],
-        reasoningLevel: "on",
       }),
     );
   });

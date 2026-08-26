@@ -101,11 +101,7 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
 
   it("clusters repeated recovery evidence and abstains from routine work", async () => {
     const recoveryOne = [
-      {
-        role: "user",
-        content:
-          "Deploy service alpha. Our standard procedure for every service is to read its checked-in deploy manifest before the first deploy call.",
-      },
+      { role: "user", content: "Deploy service alpha from this repository." },
       toolCall("deploy", { service: "alpha" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "region required" },
       toolCall("deploy", { service: "alpha", region: "us" }),
@@ -116,18 +112,10 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       { role: "toolResult", toolName: "deploy", content: "deployed" },
       toolCall("fetch", { path: "/ready" }),
       { role: "toolResult", toolName: "fetch", content: "200" },
-      {
-        role: "assistant",
-        content:
-          "Recovered reusable procedure: read deploy.json first, extract every required deploy field, deploy once with the complete input, then verify the manifest's health path. This avoids the two failed deploy rounds above.",
-      },
+      { role: "assistant", content: "The manifest-first preflight avoided more guessing." },
     ];
     const recoveryTwo = [
-      {
-        role: "user",
-        content:
-          "Deploy service beta. Always read its checked-in deploy manifest before the first deploy call; this applies to every service.",
-      },
+      { role: "user", content: "Deploy service beta from its checked-in configuration." },
       toolCall("deploy", { service: "beta" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "service id required" },
       toolCall("lookup", { service: "beta" }),
@@ -140,11 +128,7 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
       { role: "toolResult", toolName: "deploy", content: "deployed" },
       toolCall("fetch", { path: "/healthz" }),
       { role: "toolResult", toolName: "fetch", content: "200" },
-      {
-        role: "assistant",
-        content:
-          "Recovered the same reusable procedure: read deploy.json first, extract the service and health fields, deploy once with complete input, then verify that health path. This avoids the two failed lookup/deploy rounds above.",
-      },
+      { role: "assistant", content: "This again shows the manifest should be read first." },
     ];
 
     let recoveryCompletionIdeas: number | undefined;
