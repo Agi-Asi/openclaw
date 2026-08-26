@@ -2703,10 +2703,8 @@ describe("package acceptance workflow", () => {
     });
     const dispatchInputs = parsedWorkflow.on?.workflow_dispatch?.inputs;
     const callInputs = parsedWorkflow.on?.workflow_call?.inputs;
-    expect(dispatchInputs?.prepublish_plugin_registry_json).toEqual(
-      callInputs?.prepublish_plugin_registry_json,
-    );
-    expect(dispatchInputs?.advisory).toBeUndefined();
+    expect(dispatchInputs?.prepublish_plugin_registry_json).toBeUndefined();
+    expect(dispatchInputs?.advisory).toEqual(callInputs?.advisory);
     expect(callInputs?.advisory).toEqual({
       description: "Treat acceptance failures as advisory for the caller",
       required: false,

@@ -143,11 +143,11 @@ on:
         required: false
         default: ""
         type: string
-      prepublish_plugin_registry_json:
-        description: Immutable prerelease plugin registry tuple from the package producer
+      advisory:
+        description: Treat acceptance failures as advisory for the caller
         required: false
-        default: ""
-        type: string
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       advisory:
