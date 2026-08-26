@@ -777,7 +777,9 @@ describe("cli json stdout contract", () => {
         expect(result.status, result.stderr).toBe(0);
         expect(result.stdout).toBe(testCase.expectedStdout);
         expect(result.stdout).not.toContain(migrationDiagnostic);
-        expect(result.stderr.includes(migrationDiagnostic)).toBe(testCase.opensStateDatabase);
+        expect(result.stderr.includes(migrationDiagnostic), result.stderr).toBe(
+          testCase.opensStateDatabase,
+        );
       },
       { prefix: "openclaw-models-plain-stdout-e2e-" },
     );
