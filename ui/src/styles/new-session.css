@@ -1069,6 +1069,19 @@ wa-popover.new-session-page__project-popover::part(body) {
     flex-wrap: wrap;
   }
 
+  .new-session-page__visibility {
+    justify-content: center;
+    flex: 0 0 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .new-session-page__visibility svg {
+    width: 17px;
+    height: 17px;
+  }
+
   .new-session-page__composer .agent-chat__input .chat-composer-model-control {
     flex: 1 1 auto;
     width: auto;
@@ -1083,10 +1096,20 @@ wa-popover.new-session-page__project-popover::part(body) {
 }
 
 @container chat-composer (max-width: 480px) {
+  .new-session-page__composer .agent-chat__composer-footer {
+    flex-wrap: wrap;
+  }
+
   .new-session-page__composer .agent-chat__input .chat-composer-model-control {
-    flex: 0 0 var(--chat-composer-control-size);
-    width: var(--chat-composer-control-size);
-    min-width: var(--chat-composer-control-size);
-    max-width: var(--chat-composer-control-size);
+    flex-shrink: 0;
+  }
+
+  .new-session-page__composer
+    .agent-chat__composer-controls:has(.chat-controls__effort-picker[data-chat-reasoning="true"]) {
+    flex: 0 0 calc(var(--chat-composer-control-size) * 2 + 2px);
+  }
+
+  .new-session-page__composer .agent-chat__composer-actions {
+    margin-left: auto;
   }
 }

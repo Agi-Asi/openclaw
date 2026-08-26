@@ -5613,6 +5613,27 @@ button.chat-pr__diff {
     min-width: 44px;
   }
 
+  .agent-chat__input .chat-controls__effort-trigger {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .agent-chat__input .chat-controls__effort-trigger .chat-controls__inline-select-label {
+    display: none;
+  }
+
+  .agent-chat__input .chat-controls__effort-icon {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+  }
+
+  .agent-chat__input .chat-controls__effort-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
   .agent-chat__input .chat-controls__model-menu,
   .agent-chat__input .chat-controls__effort-menu {
     width: calc(100vw - max(12px, var(--safe-area-left)) - max(12px, var(--safe-area-right)));
@@ -6344,6 +6365,10 @@ button.chat-pr__diff {
   color: var(--muted);
   flex: 0 0 auto;
   font-size: 11px;
+}
+
+.chat-controls__effort-icon {
+  display: none;
 }
 
 .chat-controls__trigger-provider-wrap {
@@ -7498,13 +7523,13 @@ button.chat-pr__diff {
 
   .agent-chat__input--chat .agent-chat__composer-meta {
     flex: 0 0 auto;
-    order: 2;
+    order: 3;
   }
 
   .agent-chat__input--chat .agent-chat__composer-controls {
     flex: 1 1 0;
     min-width: 0;
-    order: 3;
+    order: 2;
     overflow: hidden;
   }
 
@@ -7736,6 +7761,28 @@ button.chat-pr__diff {
 
   .agent-chat__input .chat-controls__effort-picker > .chat-controls__effort-trigger {
     display: none;
+  }
+
+  .agent-chat__input
+    .chat-composer-model-control:has(.chat-controls__effort-picker[data-chat-reasoning="true"]),
+  .agent-chat__input
+    .chat-controls__model-settings:has(.chat-controls__effort-picker[data-chat-reasoning="true"]) {
+    flex-basis: calc(var(--chat-composer-control-size) * 2 + 2px);
+    width: calc(var(--chat-composer-control-size) * 2 + 2px);
+    min-width: calc(var(--chat-composer-control-size) * 2 + 2px);
+    max-width: calc(var(--chat-composer-control-size) * 2 + 2px);
+  }
+
+  .agent-chat__input .chat-controls__effort-picker[data-chat-reasoning="true"] {
+    position: static;
+    flex: 0 0 var(--chat-composer-control-size);
+    width: var(--chat-composer-control-size);
+  }
+
+  .agent-chat__input
+    .chat-controls__effort-picker[data-chat-reasoning="true"]
+    > .chat-controls__effort-trigger {
+    display: flex;
   }
 }
 

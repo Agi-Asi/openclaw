@@ -2975,6 +2975,9 @@ describe("chat loading skeleton", () => {
 
   it("places context usage after the composer controls in the bottom row", () => {
     const container = renderChatView({
+      composerControls: html`<button class="chat-composer-model-control" type="button">
+        Model
+      </button>`,
       providerUsage: {
         basePath: "/rosita",
         modelAuthStatusResult: {
@@ -3002,9 +3005,23 @@ describe("chat loading skeleton", () => {
     });
 
     const context = container.querySelector(".context-ring");
+    const trail = expectDefined(
+      container.querySelector(".agent-chat__composer-trail"),
+      "composer trail",
+    );
+    const controls = expectDefined(
+      container.querySelector(".agent-chat__composer-controls"),
+      "composer controls",
+    );
+    const contextOwner = expectDefined(
+      context?.closest(".agent-chat__composer-context"),
+      "context owner",
+    );
     expect(context).toBeInstanceOf(HTMLElement);
-    expect(context?.closest(".agent-chat__composer-context")).not.toBeNull();
     expect(context?.closest(".agent-chat__composer-footer")).not.toBeNull();
+    expect(Array.from(trail.children).indexOf(contextOwner)).toBeGreaterThan(
+      Array.from(trail.children).indexOf(controls),
+    );
     // The session provider matches a plan-usage group, so dollar estimates
     // yield to the subscription windows.
     expect(container.querySelector("[data-chat-usage-provider='true']")?.textContent).toContain(

@@ -496,12 +496,12 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                 ${composerLeadControl}
               </div>
               <div class="agent-chat__composer-trail">
-                <div class="agent-chat__composer-meta agent-chat__composer-context">
-                  ${contextNotice}
-                </div>
                 ${composerControls !== nothing
                   ? html` <div class="agent-chat__composer-controls">${composerControls}</div> `
                   : nothing}
+                <div class="agent-chat__composer-meta agent-chat__composer-context">
+                  ${contextNotice}
+                </div>
                 <div class="agent-chat__composer-actions">
                   ${renderChatPrimaryActions(runControlsProps)}
                 </div>

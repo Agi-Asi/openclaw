@@ -124,6 +124,7 @@ export function renderChatEffortPicker(params: ChatEffortPickerParams) {
       class="chat-controls__inline-select chat-controls__effort-picker ${params.reserved
         ? "chat-controls__effort-picker--reserved"
         : ""}"
+      data-chat-reasoning=${showReasoning ? "true" : "false"}
       aria-hidden=${String(params.reserved === true)}
       ?inert=${params.reserved === true}
       @toggle=${(event: Event) => {
@@ -164,6 +165,7 @@ export function renderChatEffortPicker(params: ChatEffortPickerParams) {
           }
         }}
       >
+        <span class="chat-controls__effort-icon" aria-hidden="true">${icons.brain}</span>
         ${params.fastMode.active
           ? html`<span class="chat-controls__effort-zap" aria-hidden="true">${icons.zap}</span>`
           : nothing}

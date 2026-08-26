@@ -3260,7 +3260,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       expect(shell.x).toBeLessThanOrEqual(12);
       expect(layout.viewportWidth - (shell.x + shell.width)).toBeLessThanOrEqual(12);
       expect(attach.x - input.x).toBeLessThanOrEqual(10);
-      expect(model.x).toBeGreaterThanOrEqual(context.x + context.width - 1);
+      expect(context.x).toBeGreaterThanOrEqual(model.x + model.width - 1);
       expect(input.x + input.width - (send.x + send.width)).toBeLessThanOrEqual(8);
       for (const control of [model, context]) {
         expect(
@@ -3526,7 +3526,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         expect(attach.x).toBeLessThan(send.x);
         expect(send.x + send.width).toBeLessThanOrEqual(input.x + input.width + 1);
         expect(rectsOverlap(model, send)).toBe(false);
-        const contextModelGap = model.x - (context.x + context.width);
+        const contextModelGap = context.x - (model.x + model.width);
         expect(contextModelGap).toBeGreaterThanOrEqual(-1);
         const composerFontSize = await page
           .locator(".agent-chat__composer-combobox > textarea")
@@ -3541,7 +3541,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           expect(model.width).toBeLessThanOrEqual(footer.width);
           expect(modelSettings.width).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
           expect(modelSettings.height).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
-          expect(modelSettings.x).toBeGreaterThanOrEqual(context.x + context.width - 1);
+          expect(context.x).toBeGreaterThanOrEqual(modelSettings.x + modelSettings.width - 1);
         } else {
           const modelTrigger = expectControlRect(controls.modelTrigger, "composer model trigger");
           const modelLabel = expectControlRect(controls.modelLabel, "composer model label");
