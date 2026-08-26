@@ -133,6 +133,9 @@ workspace through their normal setup flow. On a rerun with an existing agent
 roster, onboarding preserves the configured fleet workspace: the classic
 wizard shows both paths and requires explicit confirmation before moving it,
 while non-interactive setup warns and keeps the current value.
+For an explicitly managed multi-agent fleet, provider setup updates the configured
+system agent's model and aliases without replacing fleet-wide model defaults or
+another agent's model.
 
 After inference passes, onboarding checks for memories from supported local AI
 tools: Claude Code auto-memory, Codex consolidated memories, and Hermes memory
@@ -366,8 +369,11 @@ Output: `--suppress-gateway-token-output` disables the automatic Control UI hand
 
 <Note>
 `--json` does not imply non-interactive mode in guided or classic onboarding.
+Without an interactive terminal, both onboarding modes return a structured
+JSON error; add `--non-interactive --accept-risk` for automation.
 With `--modern`, JSON is a one-shot OpenClaw overview and exits after that
-single result. Use `--non-interactive` for other scripts.
+single result. Use `--non-interactive` for other scripts. Invalid existing
+configuration also returns one JSON failure; repair guidance remains on stderr.
 </Note>
 
 ## Provider prefiltering

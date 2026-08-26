@@ -97,12 +97,15 @@ import {
   forgetActiveSessionForShutdown,
   noteActiveSessionForShutdown,
 } from "./active-sessions-shutdown-tracker.js";
+import { authorizeGatewaySessionCreation } from "./operator-role-policy.js";
+import type { GatewayOperatorRoleActor } from "./server-methods/shared-types.js";
 import { findDirectChildSessionsForParent } from "./session-child-sessions.js";
 import {
   type PreparedGatewaySessionLifecycle,
   type PrepareGatewaySessionLifecycle,
   rollbackGatewaySessionPreparation,
 } from "./session-lifecycle-preparation.js";
+import { resolveSessionPermissionRootError } from "./session-permission-policy.js";
 import { resolvePluginSessionOwnershipError } from "./session-plugin-ownership.js";
 import { notifyGatewaySessionReset } from "./session-reset-notifications.js";
 import {
@@ -962,6 +965,10 @@ export async function performGatewaySessionReset(params: {
   commandSource: string;
   /** Trusted provenance for a reset that materializes a previously missing row. */
   creation?: { via: SessionCreatedVia; actor?: SessionCreatedActor };
+  /** Authenticated durable operator identity for missing-session materialization. */
+  requestingOperatorProfileId?: string;
+  /** Trusted host actor; system-owned resets must identify themselves explicitly. */
+  operatorRoleActor?: GatewayOperatorRoleActor;
   /** Exact plugin namespace authorized by the scoped plugin runtime. */
   authorizedPluginId?: string;
   /** Arms local checkout attribution in the authoritative reset commit. */
@@ -1036,6 +1043,18 @@ export async function performGatewaySessionReset(params: {
     params.key,
     resetTarget.requestedAgentId ? { agentId: resetTarget.requestedAgentId } : undefined,
   ).entry;
+  if (!initialResetEntry) {
+    const creationError = authorizeGatewaySessionCreation({
+      cfg: resetTarget.cfg,
+      agentId: resetTarget.target.agentId,
+      ...(params.operatorRoleActor
+        ? { actor: params.operatorRoleActor }
+        : { profileId: params.requestingOperatorProfileId }),
+    });
+    if (creationError) {
+      return { ok: false, error: creationError };
+    }
+  }
   const initialOwnershipError = resolvePluginSessionOwnershipError({
     action: "reset",
     entry: initialResetEntry,
@@ -1118,6 +1137,18 @@ export async function performGatewaySessionReset(params: {
         params.key,
         resetTarget.requestedAgentId ? { agentId: resetTarget.requestedAgentId } : undefined,
       );
+      if (!currentEntry) {
+        resetPreparationError = authorizeGatewaySessionCreation({
+          cfg: resetTarget.cfg,
+          agentId: resetTarget.target.agentId,
+          ...(params.operatorRoleActor
+            ? { actor: params.operatorRoleActor }
+            : { profileId: params.requestingOperatorProfileId }),
+        });
+        if (resetPreparationError) {
+          return;
+        }
+      }
       // Check the locked generation before interrupting any work; a replaced
       // foreign row must not be reset or have its admitted run cancelled.
       resetPreparationError = resolvePluginSessionOwnershipError({
@@ -1172,6 +1203,20 @@ export async function performGatewaySessionReset(params: {
         return;
       }
       preparedResetSessionId = normalizeOptionalString(currentEntry?.sessionId);
+      // Lifecycle preparation can establish a worktree root unless the request clears it.
+      // Reject every other impossible tuple before active work is interrupted.
+      if (params.clearSpawnedCwd || !params.prepareLifecycle) {
+        const permissionRootError = resolveSessionPermissionRootError(
+          params.clearSpawnedCwd
+            ? undefined
+            : (params.permissionMode ?? currentEntry?.permissionMode),
+          params.clearSpawnedCwd ? undefined : (params.sessionRoot ?? currentEntry?.sessionRoot),
+        );
+        if (permissionRootError) {
+          resetPreparationError = errorShape(ErrorCodes.INVALID_REQUEST, permissionRootError);
+          return;
+        }
+      }
       admittedWorkReleased = await interruptSessionWorkAdmissions({
         scope: resetTarget.storePath,
         identities: resetLifecycleIdentities,
@@ -1189,6 +1234,19 @@ export async function performGatewaySessionReset(params: {
           return;
         }
         preparedLifecycle = prepared.value;
+      }
+      if (admittedWorkReleased) {
+        const permissionRootError = resolveSessionPermissionRootError(
+          params.clearSpawnedCwd
+            ? undefined
+            : (params.permissionMode ?? currentEntry?.permissionMode),
+          params.clearSpawnedCwd
+            ? undefined
+            : (preparedLifecycle?.sessionRoot ?? params.sessionRoot ?? currentEntry?.sessionRoot),
+        );
+        if (permissionRootError) {
+          resetPreparationError = errorShape(ErrorCodes.INVALID_REQUEST, permissionRootError);
+        }
       }
     },
     run: async () => {
@@ -1449,6 +1507,7 @@ export async function performGatewaySessionReset(params: {
       }
       let resetBoundaryAppended = false;
       let resetSkipped = false;
+      let creationAuthorizationError: ReturnType<typeof errorShape> | undefined;
       const lifecyclePromise = resetSessionEntryLifecycle({
         archivePreviousTranscript: false,
         agentId: target.agentId,
@@ -1466,6 +1525,18 @@ export async function performGatewaySessionReset(params: {
         },
         buildNextEntry: ({ currentEntry, primaryKey }) => {
           params.assertAuthorizedInstance?.();
+          if (!currentEntry) {
+            creationAuthorizationError = authorizeGatewaySessionCreation({
+              cfg,
+              agentId: target.agentId,
+              ...(params.operatorRoleActor
+                ? { actor: params.operatorRoleActor }
+                : { profileId: params.requestingOperatorProfileId }),
+            });
+            if (creationAuthorizationError) {
+              throw new Error(creationAuthorizationError.message);
+            }
+          }
           createdNewEntry = currentEntry === undefined;
           if (currentEntry?.sessionId !== boundaryEntry?.sessionId) {
             if (currentEntry) {
@@ -1513,6 +1584,7 @@ export async function performGatewaySessionReset(params: {
             sessionStartedAt: now,
             systemSent: false,
             abortedLastRun: false,
+            contextWindow: currentEntry?.contextWindow,
             thinkingLevel: currentEntry?.thinkingLevel,
             fastMode: currentEntry?.fastMode,
             toolOverrides: currentEntry?.toolOverrides,
@@ -1687,8 +1759,15 @@ export async function performGatewaySessionReset(params: {
           });
         },
       });
-      const lifecycle: Awaited<ReturnType<typeof resetSessionEntryLifecycle>> =
-        await lifecyclePromise;
+      let lifecycle: Awaited<ReturnType<typeof resetSessionEntryLifecycle>>;
+      try {
+        lifecycle = await lifecyclePromise;
+      } catch (error) {
+        if (creationAuthorizationError) {
+          return { ok: false, error: creationAuthorizationError };
+        }
+        throw error;
+      }
       lifecyclePreparationCommitted = !resetSkipped;
       if (!resetSkipped) {
         const resetSessionKey = target.canonicalKey ?? params.key;

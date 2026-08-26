@@ -1,12 +1,16 @@
 // Qa Lab tests cover suite runtime agent session plugin behavior.
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resetPluginStateStoreForTests } from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import {
   loadTranscriptEventsSync,
   upsertSessionEntry,
 } from "openclaw/plugin-sdk/session-store-runtime";
 import { appendSessionTranscriptMessageByIdentity } from "openclaw/plugin-sdk/session-transcript-runtime";
-import { appendSqliteSessionTranscriptEventForTest } from "openclaw/plugin-sdk/sqlite-runtime-testing";
+import {
+  closeOpenClawAgentDatabasesForTest,
+  appendSqliteSessionTranscriptEventForTest,
+} from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSession,
@@ -22,6 +26,11 @@ const { cleanup, makeTempDir } = createTempDirHarness();
 
 afterEach(async () => {
   vi.useRealTimers();
+  // Fixtures point a state dir at these temp workspaces, so the shared and per-agent
+  // SQLite handles stay cached and Windows fails the removal with EBUSY. The agent close
+  // releases its leases through shared state and reopens it, so the store is released second.
+  closeOpenClawAgentDatabasesForTest();
+  resetPluginStateStoreForTests();
   await cleanup();
 });
 
@@ -564,6 +573,129 @@ describe("qa suite runtime agent session helpers", () => {
       successfulToolCallCounts: { update_plan: 1 },
       successfulToolCallEvents: [{ name: "update_plan", timestamp: 100, toolCallId: "plan-ok" }],
     });
+  });
+
+  it("matches pending Code Mode waits to the exec checkpoint that created their run", async () => {
+    const tempRoot = await makeTempDir("qa-session-transcript-code-mode-wait-");
+    const sessionKey = "agent:qa:code-mode-wait";
+    const sessionId = "session-code-mode-wait";
+    await seedQaSession({ tempRoot, sessionKey, sessionId });
+
+    for (const message of [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "checkpoint-1-exec",
+            name: "exec",
+            arguments: { code: "await qa_restart_wait(); return 'CHECKPOINT-1';" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "checkpoint-1-exec",
+        toolName: "exec",
+        details: { status: "waiting", runId: "checkpoint-1-run" },
+        isError: false,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "checkpoint-1-wait",
+            name: "wait",
+            arguments: { runId: "checkpoint-1-run" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "checkpoint-1-wait",
+        toolName: "wait",
+        details: { status: "completed" },
+        isError: false,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "audit-exec",
+            name: "exec",
+            arguments: { code: "return await catalog.search('qa_restart_unsafe_probe');" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "audit-exec",
+        toolName: "exec",
+        details: { status: "waiting", runId: "audit-run" },
+        isError: false,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "audit-wait",
+            name: "wait",
+            arguments: { runId: "audit-run" },
+          },
+        ],
+      },
+    ]) {
+      await appendQaTranscriptMessage({ tempRoot, sessionKey, sessionId, message });
+    }
+
+    await expect(
+      readSessionTranscriptSummary({ gateway: { tempRoot } } as never, sessionKey, {
+        pendingCodeModeExecNeedle: "CHECKPOINT-1",
+      }),
+    ).resolves.toMatchObject({ hasPendingCodeModeWait: false });
+
+    for (const message of [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "checkpoint-2-exec",
+            name: "exec",
+            arguments: { code: "await qa_restart_wait(); return 'CHECKPOINT-2';" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "checkpoint-2-exec",
+        toolName: "exec",
+        details: { status: "waiting", runId: "checkpoint-2-run" },
+        isError: false,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "checkpoint-2-wait",
+            name: "wait",
+            arguments: { runId: "checkpoint-2-run" },
+          },
+        ],
+      },
+    ]) {
+      await appendQaTranscriptMessage({ tempRoot, sessionKey, sessionId, message });
+    }
+
+    await expect(
+      readSessionTranscriptSummary({ gateway: { tempRoot } } as never, sessionKey, {
+        pendingCodeModeExecNeedle: "CHECKPOINT-2",
+      }),
+    ).resolves.toMatchObject({ hasPendingCodeModeWait: true });
   });
 
   it("only exposes authenticated successful tool results with finite owner timestamps", async () => {

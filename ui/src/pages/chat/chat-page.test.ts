@@ -187,6 +187,7 @@ function setViewerPresenceContext(page: ChatPage) {
       lastErrorCode: null,
     },
     connection: { gatewayUrl: "ws://example.test", token: "", bootstrapToken: "", password: "" },
+    connectionRevision: 0,
     eventLog: [],
     connect: vi.fn(),
     setSessionKey: vi.fn(),
@@ -668,6 +669,18 @@ describe("chat page split layout host", () => {
     ).toBe(true);
     expect(panes.every((pane) => pane.onOpenSplitView === undefined)).toBe(true);
     expect(panes[0]?.chatMessagesBySession).toBe(panes[1]?.chatMessagesBySession);
+
+    itemAt(dividers, 0, "split divider").dispatchEvent(
+      new CustomEvent("resize", { detail: { splitRatio: 0.7 } }),
+    );
+    await page.updateComplete;
+    expect(getLayout(page)?.columnWeights[0]).toBeCloseTo(0.7);
+    expect(getLayout(page)?.columnWeights[1]).toBeCloseTo(0.3);
+    expect(loadSettings().chatSplitLayout).toBeUndefined();
+
+    itemAt(dividers, 0, "split divider").dispatchEvent(new CustomEvent("resize-end"));
+    expect(loadSettings().chatSplitLayout?.columnWeights[0]).toBeCloseTo(0.7);
+    expect(loadSettings().chatSplitLayout?.columnWeights[1]).toBeCloseTo(0.3);
 
     itemAt(cells, 0, "split cell").dispatchEvent(new Event("pointerdown"));
     await page.updateComplete;

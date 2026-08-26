@@ -41,6 +41,72 @@ import type {
   OnboardGatewayHealthCall,
   OnboardHealthCommandCall,
 } from "./onboard-non-interactive.test-helpers.js";
+import { logNonInteractiveOnboardingFailure } from "./onboard-non-interactive/local/output.js";
+
+describe("logNonInteractiveOnboardingFailure", () => {
+  const callerFix = "Fix: use the phase-specific recovery path.";
+  const failure = {
+    mode: "local" as const,
+    phase: "gateway-health",
+    message: "Gateway did not become reachable.",
+    detail: "connect ECONNREFUSED 127.0.0.1:18997",
+    hints: ["Phase-specific context.", callerFix],
+  };
+
+  it("uses a caller-supplied Fix hint in human and JSON output", () => {
+    const error = vi.fn();
+    logNonInteractiveOnboardingFailure({
+      ...failure,
+      opts: {},
+      runtime: { ...runtime, error },
+    });
+
+    const humanLines = String(error.mock.calls[0]?.[0]).split("\n");
+    expect(humanLines.filter((line) => line.startsWith("Fix:"))).toEqual([callerFix]);
+
+    const { runtimeWithCapture, readCapturedJson } = createOnboardJsonCaptureRuntime();
+    logNonInteractiveOnboardingFailure({
+      ...failure,
+      opts: { json: true },
+      runtime: runtimeWithCapture,
+    });
+
+    const parsed = JSON.parse(readCapturedJson()) as { hints: string[] };
+    expect(parsed.hints.filter((hint) => hint.startsWith("Fix:"))).toEqual([callerFix]);
+  });
+
+  it("keeps the classification recovery hint when the caller supplies no hints", () => {
+    const { runtimeWithCapture, readCapturedJson } = createOnboardJsonCaptureRuntime();
+    logNonInteractiveOnboardingFailure({
+      ...failure,
+      hints: undefined,
+      opts: { json: true },
+      runtime: runtimeWithCapture,
+    });
+
+    const parsed = JSON.parse(readCapturedJson()) as { hints: string[] };
+    expect(parsed.hints).toEqual([
+      "Fix: start `openclaw gateway run`, or run `openclaw gateway restart` for a managed gateway.",
+    ]);
+  });
+
+  it("leaves hints for a non-gateway-health phase unchanged", () => {
+    const hints = [callerFix, "Keep the configured environment available."];
+    const { runtimeWithCapture, readCapturedJson } = createOnboardJsonCaptureRuntime();
+    logNonInteractiveOnboardingFailure({
+      opts: { json: true },
+      runtime: runtimeWithCapture,
+      mode: "local",
+      phase: "daemon-install",
+      message: "Gateway service install did not complete successfully.",
+      hints,
+    });
+
+    const parsed = JSON.parse(readCapturedJson()) as { classification?: string; hints: string[] };
+    expect(parsed.classification).toBeUndefined();
+    expect(parsed.hints).toEqual(hints);
+  });
+});
 
 describe("onboard (non-interactive): gateway and remote auth", () => {
   let envSnapshot: ReturnType<typeof prepareOnboardGatewayTestEnv>;
@@ -72,6 +138,57 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
     configWritePluginLeaseDepths.length = 0;
     vi.clearAllMocks();
   });
+
+  it.each([false, true])(
+    "rejects invalid existing config without writes while honoring JSON output (json: %s)",
+    async (json) => {
+      await withStateDir("state-invalid-config-", async (stateDir) => {
+        const snapshot = await readConfigFileSnapshotMock();
+        readConfigFileSnapshotMock.mockResolvedValueOnce({
+          ...snapshot,
+          exists: true,
+          valid: false,
+          issues: [{ path: "gateway.port", message: "invalid" }],
+        });
+        const output = vi.fn();
+        const error = vi.fn();
+        const captureRuntime: RuntimeEnv = {
+          log: output,
+          error,
+          exit: (code) => {
+            throw new Error(`exit:${code}`);
+          },
+        };
+        const message = "Config invalid. Run `openclaw doctor` to repair it, then re-run setup.";
+
+        await expect(
+          runNonInteractiveSetup(
+            {
+              ...createOnboardLocalDaemonOptions(stateDir),
+              installDaemon: false,
+              skipHealth: true,
+              json,
+            },
+            captureRuntime,
+          ),
+        ).rejects.toThrow("exit:1");
+
+        expect(error).toHaveBeenCalledWith(message);
+        if (json) {
+          expect(output).toHaveBeenCalledOnce();
+          expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toEqual({
+            ok: false,
+            phase: "options",
+            message,
+          });
+        } else {
+          expect(output).not.toHaveBeenCalled();
+        }
+        expect(capturedReplaceConfigFileCalls).toHaveLength(0);
+        expect(ensureWorkspaceAndSessionsMock).not.toHaveBeenCalled();
+      });
+    },
+  );
 
   it("rejects concurrent onboarding runs sharing one state directory", async () => {
     await withStateDir("state-concurrent-onboard-", async (stateDir) => {

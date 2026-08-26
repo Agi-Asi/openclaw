@@ -10,6 +10,7 @@ import {
   runHeartbeatOnce,
 } from "../infra/heartbeat-runner.js";
 import { resolveHeartbeatIntervalMs } from "../infra/heartbeat-summary.js";
+import type { DeliverOutboundPayloadsParams } from "../infra/outbound/deliver.js";
 import {
   schedulePendingSessionDeliveries,
   startSessionDeliveryRuntime,
@@ -19,6 +20,8 @@ import {
   runWithGatewayIndependentRootWorkAdmission,
 } from "../process/gateway-work-admission.js";
 import { startSessionUpstreamMonitor } from "../sessions/session-upstream-monitor.js";
+import { assertQueuedConversationDeliveryAttemptAuthorized } from "./conversation-route-ownership.js";
+import { resolveGatewayPluginConfig } from "./runtime-plugin-config.js";
 import {
   fenceScheduledGatewayContextResolver,
   runWithScheduledGatewayContext,
@@ -34,7 +37,6 @@ import {
 export { scheduleGatewayIdleTask, type GatewayIdleTaskHandle } from "./server-idle-task.js";
 export {
   startGatewayChannelHealthMonitor,
-  startGatewayRuntimeServices,
   type GatewayChannelManager,
 } from "./server-runtime-startup-services.js";
 
@@ -74,7 +76,7 @@ export function startGatewayCronWithLogging(params: {
   }).catch((err: unknown) => params.logCron.error(`failed to enter start root: ${String(err)}`));
 }
 
-async function clearGatewayMaintenanceHandles(
+export async function clearGatewayMaintenanceHandles(
   maintenance: GatewayMaintenanceHandles | null,
 ): Promise<void> {
   if (!maintenance) {
@@ -88,40 +90,6 @@ async function clearGatewayMaintenanceHandles(
   await maintenance.stopMediaCleanup();
   clearInterval(maintenance.worktreeCleanup);
   maintenance.skillCuratorCleanup();
-}
-
-/** Runs maintenance that is intentionally delayed until after the gateway is ready. */
-export async function runGatewayPostReadyMaintenance(params: {
-  startMaintenance: () => Promise<GatewayMaintenanceHandles | null>;
-  applyMaintenance: (maintenance: GatewayMaintenanceHandles) => Promise<void> | void;
-  shouldStartCron: () => boolean;
-  markCronStartHandled: () => void;
-  cronState: GatewayCronState;
-  cronReconciliation: GatewayCronReconciliation;
-  cronConfig: OpenClawConfig;
-  logCron: { error: (message: string) => void };
-  log: GatewayPostReadyLogger;
-  recordPostReadyMemory: () => void;
-}): Promise<void> {
-  try {
-    const maintenance = await params.startMaintenance();
-    if (maintenance) {
-      await params.applyMaintenance(maintenance);
-    }
-  } catch (err) {
-    params.log.warn(`gateway post-ready maintenance startup failed: ${String(err)}`);
-  }
-  if (params.shouldStartCron()) {
-    params.markCronStartHandled();
-    startGatewayCronWithLogging({
-      cronState: params.cronState,
-      cronReconciliation: params.cronReconciliation,
-      reason: "startup",
-      config: params.cronConfig,
-      logCron: params.logCron,
-    });
-  }
-  params.recordPostReadyMemory();
 }
 
 /** Schedules post-ready maintenance and cancels/cleans handles if shutdown wins the race. */
@@ -145,42 +113,35 @@ export function scheduleGatewayPostReadyMaintenance(params: {
     if (params.isClosing()) {
       return;
     }
-    void runWithGatewayIndependentRootWorkAdmission(async () =>
-      runGatewayPostReadyMaintenance({
-        startMaintenance: async () => {
-          if (params.isClosing()) {
-            return null;
-          }
+    void runWithGatewayIndependentRootWorkAdmission(async () => {
+      try {
+        if (!params.isClosing()) {
           const maintenance = await params.startMaintenance();
           if (params.isClosing()) {
             // Maintenance can allocate intervals before shutdown is observed; clear them here
             // instead of handing live timers to a closing gateway.
             await clearGatewayMaintenanceHandles(maintenance);
-            return null;
+          } else if (maintenance) {
+            await params.applyMaintenance(maintenance);
           }
-          return maintenance;
-        },
-        applyMaintenance: async (maintenance) => {
-          if (params.isClosing()) {
-            await clearGatewayMaintenanceHandles(maintenance);
-            return;
-          }
-          await params.applyMaintenance(maintenance);
-        },
-        shouldStartCron: () => !params.isClosing() && params.shouldStartCron(),
-        markCronStartHandled: params.markCronStartHandled,
-        cronState: params.cronState,
-        cronReconciliation: params.cronReconciliation,
-        cronConfig: params.cronConfig,
-        logCron: params.logCron,
-        log: params.log,
-        recordPostReadyMemory: () => {
-          if (!params.isClosing()) {
-            params.recordPostReadyMemory();
-          }
-        },
-      }),
-    ).catch((err: unknown) =>
+        }
+      } catch (err) {
+        params.log.warn(`gateway post-ready maintenance startup failed: ${String(err)}`);
+      }
+      if (!params.isClosing() && params.shouldStartCron()) {
+        params.markCronStartHandled();
+        startGatewayCronWithLogging({
+          cronState: params.cronState,
+          cronReconciliation: params.cronReconciliation,
+          reason: "startup",
+          config: params.cronConfig,
+          logCron: params.logCron,
+        });
+      }
+      if (!params.isClosing()) {
+        params.recordPostReadyMemory();
+      }
+    }).catch((err: unknown) =>
       params.log.warn(`gateway post-ready maintenance deferred task failed: ${String(err)}`),
     );
   }, params.delayMs);
@@ -215,6 +176,34 @@ function startPendingOutboundDeliveryRecovery(params: {
       if (stopped) {
         return;
       }
+      const deliverWithCurrentConversationAuthority = async (
+        deliveryParams: DeliverOutboundPayloadsParams,
+      ) => {
+        const completion = deliveryParams.deliveryCompletion;
+        const attemptAuthority =
+          completion?.kind === "conversation"
+            ? completion
+            : deliveryParams.conversationDeliveryAttemptAuthority;
+        if (!attemptAuthority) {
+          return await deliverOutboundPayloadsInternal(deliveryParams);
+        }
+        return await deliverOutboundPayloadsInternal({
+          ...deliveryParams,
+          onDeliveryAttempt: async () => {
+            await deliveryParams.onDeliveryAttempt?.();
+            if (!attemptAuthority.routeFingerprint) {
+              return;
+            }
+            assertQueuedConversationDeliveryAttemptAuthorized({
+              config: resolveGatewayPluginConfig({ config: getRuntimeConfig() }),
+              agentId: attemptAuthority.agentId,
+              operationId: attemptAuthority.operationId,
+              ...(attemptAuthority.storePath ? { storePath: attemptAuthority.storePath } : {}),
+              routeFingerprint: attemptAuthority.routeFingerprint,
+            });
+          },
+        });
+      };
       logRecovery ??= params.log.child("delivery-recovery");
       if (migrationPending) {
         const cfg = initialPass ? params.cfg : getRuntimeConfig();
@@ -229,7 +218,7 @@ function startPendingOutboundDeliveryRecovery(params: {
         // one pass neither skipped ownership nor left retired rows behind.
         migrationPending = migration.skipped > 0 || migration.remaining > 0;
         await recoverPendingDeliveries({
-          deliver: deliverOutboundPayloadsInternal,
+          deliver: deliverWithCurrentConversationAuthority,
           log: logRecovery,
           cfg,
         });
@@ -242,7 +231,7 @@ function startPendingOutboundDeliveryRecovery(params: {
         logLabel: "Outbound delivery retry",
         cfg: getRuntimeConfig(),
         log: logRecovery,
-        deliver: deliverOutboundPayloadsInternal,
+        deliver: deliverWithCurrentConversationAuthority,
         selectEntry: () => ({ match: true, bypassBackoff: false }),
       });
     }).catch((err: unknown) => params.log.error(`Delivery recovery failed: ${String(err)}`));
