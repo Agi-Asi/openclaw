@@ -585,6 +585,8 @@ const GITHUB_YAML_PINNING_GUARD_TEST_TARGETS = ["test/scripts/ci-workflow-guards
 const GROUP_VISIBLE_REPLY_TEST_TARGETS = [
   "src/auto-reply/reply/dispatch-acp.test.ts",
   "src/auto-reply/reply/dispatch-from-config.test.ts",
+  "src/auto-reply/reply/dispatch-from-config.delivery.test.ts",
+  "src/auto-reply/reply/dispatch-from-config.lifecycle.test.ts",
   "src/auto-reply/reply/followup-runner.test.ts",
   "src/auto-reply/reply/groups.test.ts",
   "extensions/discord/src/monitor/message-handler.process.test.ts",
