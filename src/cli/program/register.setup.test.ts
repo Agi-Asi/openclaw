@@ -206,6 +206,19 @@ describe("registerSetupCommand", () => {
     expect(runSystemAgentMock).not.toHaveBeenCalled();
   });
 
+  it.each(["--tailscale-reset-on-exit", "--no-tailscale-reset-on-exit"])(
+    "keeps retired no-op %s neutral to system-agent routing",
+    async (flag) => {
+      await runCli(["setup", "--message", "status", flag]);
+
+      expect(runSystemAgentMock).toHaveBeenCalledWith(
+        { message: "status", yes: false, json: false },
+        runtime,
+      );
+      expect(runtime.error).not.toHaveBeenCalled();
+    },
+  );
+
   it("resumes pending local onboarding instead of opening chat after inference commits", async () => {
     const sourceConfig = {
       agents: { defaults: { model: "acme/verified" } },

@@ -16,7 +16,7 @@ import {
   resolveOnboardCommandOptions,
 } from "./register.onboard.js";
 
-const SYSTEM_AGENT_OPTION_NAMES = new Set(["message", "yes", "json"]);
+const NON_ONBOARDING_OPTION_NAMES = new Set(["message", "yes", "json", "tailscaleResetOnExit"]);
 const BASELINE_OPTION_NAMES = new Set(["baseline", "workspace", "json"]);
 
 type SetupRoute = "onboarding" | "system-agent";
@@ -43,7 +43,7 @@ export function resolveSetupCommandRoute(input: {
 function hasExplicitOnboardingOption(command: Command): boolean {
   return command.options.some((option) => {
     const name = option.attributeName();
-    return !SYSTEM_AGENT_OPTION_NAMES.has(name) && command.getOptionValueSource(name) === "cli";
+    return !NON_ONBOARDING_OPTION_NAMES.has(name) && command.getOptionValueSource(name) === "cli";
   });
 }
 
