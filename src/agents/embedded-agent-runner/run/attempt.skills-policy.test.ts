@@ -91,6 +91,12 @@ describe("runEmbeddedAttempt skill policy projections", () => {
     const snapshots = [];
     for (const review of [false, true]) {
       resetEmbeddedAttemptHarness();
+      hoisted.resolveEmbeddedRunSkillEntriesMock.mockReturnValue({
+        shouldLoadSkillEntries: true,
+        skillEntries: [createFixtureSkillEntry("demo")],
+        loadSkillEntries: vi.fn(() => [createFixtureSkillEntry("demo")]),
+      });
+      hoisted.resolveSkillsPromptForRunMock.mockReturnValue(skillsPrompt);
       hoisted.createOpenClawCodingToolsMock.mockReturnValue(codingTools);
       await createContextEngineAttemptRunner({
         contextEngine: createContextEngineBootstrapAndAssemble(),
@@ -139,7 +145,14 @@ describe("runEmbeddedAttempt skill policy projections", () => {
       );
       if (review) {
         await expect(
-          tools.find((tool) => tool.name === "read")?.execute("call", {}),
+          tools
+            .find((tool) => tool.name === "read")
+            ?.execute("call", { path: "/skills/demo/SKILL.md" }),
+        ).resolves.toMatchObject({ content: [{ type: "text", text: "ok" }] });
+        await expect(
+          tools
+            .find((tool) => tool.name === "read")
+            ?.execute("call", { path: "/skills/demo/../private.txt" }),
         ).rejects.toThrow(
           "Unavailable during skill review. Use skill_workshop or finish with NOTHING_TO_LEARN.",
         );

@@ -1,6 +1,7 @@
 /**
  * Prepares the attempt-local tool catalog, schema projection, and diagnostics.
  */
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { DiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
 import {
   isCodeModeDiagnosticEnabled,
@@ -70,7 +71,11 @@ export function prepareEmbeddedAttemptToolCatalog(input: {
   // tool hidden behind tool_call/exec is gated too; the catalog controls stay
   // callable because they only dispatch into the gated tools.
   let effectiveTools = attempt.toolExecutionAllow
-    ? gateToolExecution(uncompactedEffectiveTools, attempt.toolExecutionAllow)
+    ? gateToolExecution(
+        uncompactedEffectiveTools,
+        attempt.toolExecutionAllow,
+        new Set(codeModeSkills.flatMap((skill) => [skill.location, skill.source.filePath])),
+      )
     : uncompactedEffectiveTools;
   const catalogToolHookContext = {
     agentId: input.sessionAgentId,
@@ -220,13 +225,25 @@ export function prepareEmbeddedAttemptToolCatalog(input: {
 function gateToolExecution(
   tools: readonly AnyAgentTool[],
   allowNames: readonly string[],
+  skillInstructionPaths: ReadonlySet<string>,
 ): AnyAgentTool[] {
   return tools.map((tool) =>
     isToolExecutionAllowed(allowNames, tool.name) || TOOL_SEARCH_CONTROL_TOOL_NAMES.has(tool.name)
       ? tool
       : {
           ...tool,
-          execute: async () => {
+          execute: async (...args: Parameters<typeof tool.execute>) => {
+            const params = args[1];
+            // The unchanged foreground prompt can require a full advertised skill read.
+            // Admit only exact host-minted catalog paths; every other read stays gated.
+            if (
+              tool.name === "read" &&
+              isRecord(params) &&
+              typeof params.path === "string" &&
+              skillInstructionPaths.has(params.path)
+            ) {
+              return tool.execute(...args);
+            }
             throw new Error(TOOL_EXECUTION_GATED_MESSAGE);
           },
         },

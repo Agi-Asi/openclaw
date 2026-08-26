@@ -104,7 +104,7 @@ export async function runSkillHistoryScanReview(params: {
       bootstrapContextMode: "lightweight",
       skillsSnapshot: { prompt: "", skills: [] },
       verboseLevel: "off",
-      reasoningLevel: "off",
+      reasoningLevel: "on",
       suppressToolErrorWarnings: true,
     });
     runError = resolveSkillHistoryScanRunFailure(result);
