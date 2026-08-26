@@ -316,6 +316,7 @@ async function resolvePreparedModelCatalogOwnerSnapshotWithPolicy(
 async function loadPreparedModelCatalogOwnerSnapshotWithPolicy(
   params: LoadPreparedModelCatalogParams,
   configPolicy: PreparedModelCatalogConfigPolicy,
+  replacementAttempt = 0,
 ): Promise<PreparedModelRuntimeSnapshot> {
   const snapshot = await resolvePreparedModelCatalogOwnerSnapshotWithPolicy(params, configPolicy);
   const publishedReadOnlyOwner = params.readOnly
@@ -329,12 +330,41 @@ async function loadPreparedModelCatalogOwnerSnapshotWithPolicy(
     return snapshot;
   }
   if (params.readOnly && params.providerDiscoveryProviderIds) {
-    const modelCatalog = await loadScopedReadOnlyModelCatalog({
-      ...params,
-      agentDir: snapshot.agentDir,
-      config: snapshot.config,
-      ...(snapshot.workspaceDir ? { workspaceDir: snapshot.workspaceDir } : {}),
-    });
+    const readCurrentOwner = () =>
+      configPolicy === "published"
+        ? getPublishedPreparedModelCatalogOwnerSnapshot(params)
+        : getPreparedModelCatalogOwnerSnapshot(params);
+    let modelCatalog: ModelCatalogSnapshot;
+    try {
+      modelCatalog = await loadScopedReadOnlyModelCatalog(
+        {
+          ...params,
+          agentDir: snapshot.agentDir,
+          config: snapshot.config,
+          ...(snapshot.workspaceDir ? { workspaceDir: snapshot.workspaceDir } : {}),
+        },
+        () => {
+          if (readCurrentOwner() !== snapshot) {
+            throw new PreparedModelCatalogConfigReplacedError(snapshot.agentDir);
+          }
+        },
+      );
+    } catch (error) {
+      if (
+        configPolicy === "published" &&
+        replacementAttempt === 0 &&
+        error instanceof PreparedModelCatalogConfigReplacedError
+      ) {
+        return loadPreparedModelCatalogOwnerSnapshotWithPolicy(params, configPolicy, 1);
+      }
+      throw error;
+    }
+    if (readCurrentOwner() !== snapshot) {
+      if (configPolicy === "published" && replacementAttempt === 0) {
+        return loadPreparedModelCatalogOwnerSnapshotWithPolicy(params, configPolicy, 1);
+      }
+      throw new PreparedModelCatalogConfigReplacedError(snapshot.agentDir);
+    }
     const authStore = getPreparedModelRuntimeAuthStore(snapshot);
     if (!authStore) {
       throw new Error("prepared scoped model catalog omitted its auth generation");
@@ -354,6 +384,7 @@ async function loadPreparedModelCatalogOwnerSnapshotWithPolicy(
 
 async function loadScopedReadOnlyModelCatalog(
   params: LoadPreparedModelCatalogParams,
+  assertOwnerCurrent?: () => void,
 ): Promise<ModelCatalogSnapshot> {
   const { activationExact, activationFull, full } = resolveInputs(params);
   const fullCandidates =
@@ -377,6 +408,7 @@ async function loadScopedReadOnlyModelCatalog(
     params.scopedLiveProviderDiscovery === true
       ? prepareScopedReadOnlyLiveModelCatalog
       : prepareScopedReadOnlyModelCatalog;
+  assertOwnerCurrent?.();
   return prepareScoped(activationExact, params.providerDiscoveryProviderIds ?? []);
 }
 

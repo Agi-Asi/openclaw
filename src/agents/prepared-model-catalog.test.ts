@@ -377,6 +377,51 @@ describe("prepared model catalog access", () => {
     expect(mocks.prepareScopedCatalog).not.toHaveBeenCalled();
   });
 
+  it("retries scoped discovery when publication replaces its owner", async () => {
+    const authStore = { version: 1 as const, profiles: {} };
+    const firstSnapshot = {
+      ...fullSnapshot,
+      agentDir: "/tmp/prepared-model-catalog-agent",
+      workspaceDir: "/tmp/prepared-model-catalog-workspace",
+    };
+    const replacementSnapshot = {
+      ...firstSnapshot,
+      modelCatalog: {
+        entries: [{ provider: "anthropic", id: "replacement-static", name: "Replacement" }],
+        routeVariants: [],
+      },
+    };
+    setPreparedModelRuntimeAuthStore(firstSnapshot, authStore);
+    setPreparedModelRuntimeAuthStore(replacementSnapshot, authStore);
+    let published = firstSnapshot;
+    mocks.getSnapshot.mockImplementation(() => published);
+    mocks.prepareSnapshot.mockImplementation(async () => published);
+    mocks.isFullCatalog.mockReturnValue(false);
+    mocks.prepareScopedLiveCatalog
+      .mockImplementationOnce(async () => {
+        published = replacementSnapshot;
+        return {
+          entries: [{ provider: "anthropic", id: "retired", name: "Retired" }],
+          routeVariants: [],
+        };
+      })
+      .mockResolvedValueOnce({
+        entries: [{ provider: "anthropic", id: "current", name: "Current" }],
+        routeVariants: [],
+      });
+
+    const projected = await loadPublishedPreparedModelCatalogOwnerSnapshot({
+      providerDiscoveryProviderIds: ["anthropic"],
+      readOnly: true,
+      scopedLiveProviderDiscovery: true,
+    });
+
+    expect(projected.modelCatalog.entries).toEqual([
+      { provider: "anthropic", id: "current", name: "Current" },
+    ]);
+    expect(mocks.prepareScopedLiveCatalog).toHaveBeenCalledTimes(2);
+  });
+
   it("does not project scoped discovery from a retired fallback lease", async () => {
     mocks.prepareSnapshot.mockRejectedValue(new PreparedModelRuntimeOwnerNotPublishedError());
     mocks.loadSnapshot.mockResolvedValue(fullSnapshot);
