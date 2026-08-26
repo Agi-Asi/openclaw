@@ -890,23 +890,18 @@ export async function runGlobalPackageUpdateSteps(params: {
     }
     await params.beforeMutation?.();
     const targetRoot = params.packageRoot ?? params.installTarget.packageRoot;
-    if (!targetRoot) {
-      throw new Error("Update refused: could not resolve the target package root.");
-    }
-    tuiUpdateLock = await quiesceLocalTuiProcessesBeforeUpdate(targetRoot);
-    if (tuiUpdateLock?.stopped.length) {
-      steps.push({
-        name: "close active TUI clients",
-        command: "internal",
-        cwd:
-          params.packageRoot ??
-          params.installTarget.packageRoot ??
-          params.installCwd ??
-          process.cwd(),
-        durationMs: 0,
-        exitCode: 0,
-        stdoutTail: `Closed local TUI clients ${tuiUpdateLock.stopped.join(", ")} before updating.`,
-      });
+    if (targetRoot) {
+      tuiUpdateLock = await quiesceLocalTuiProcessesBeforeUpdate(targetRoot);
+      if (tuiUpdateLock?.stopped.length) {
+        steps.push({
+          name: "close active TUI clients",
+          command: "internal",
+          cwd: targetRoot,
+          durationMs: 0,
+          exitCode: 0,
+          stdoutTail: `Closed local TUI clients ${tuiUpdateLock.stopped.join(", ")} before updating.`,
+        });
+      }
     }
     mutationPrepared = true;
   };
