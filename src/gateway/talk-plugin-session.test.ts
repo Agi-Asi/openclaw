@@ -87,7 +87,7 @@ describe("plugin Talk session", () => {
       },
       { requireScopedClient: true },
     );
-    expect(createParams.ownerId).toMatch(/^plugin:avatar:[0-9a-f-]+$/);
+    expect(createParams.ownerId).toBe("plugin-http:127.0.0.1");
     expect(createParams.quotaOwnerId).toBe("plugin:avatar:plugin-http:127.0.0.1");
 
     createParams.eventSink({ relaySessionId: "relay-1", type: "ready" });
@@ -135,7 +135,7 @@ describe("plugin Talk session", () => {
     });
   });
 
-  it("separates per-session cleanup ownership from route quotas", async () => {
+  it("binds every session to the authenticated route while sharing its plugin quota", async () => {
     await openPluginTalkSession({
       sessionKey: "agent:main:first",
       signal: controller.signal,
@@ -147,7 +147,10 @@ describe("plugin Talk session", () => {
       onEvent: vi.fn(),
     });
 
-    expect(capturedDispatchContext(0).ownerId).not.toBe(capturedDispatchContext(1).ownerId);
+    expect(dispatchContexts.map((params) => params.ownerId)).toEqual([
+      "plugin-http:127.0.0.1",
+      "plugin-http:127.0.0.1",
+    ]);
     expect(dispatchContexts.map((params) => params.quotaOwnerId)).toEqual([
       "plugin:avatar:plugin-http:127.0.0.1",
       "plugin:avatar:plugin-http:127.0.0.1",

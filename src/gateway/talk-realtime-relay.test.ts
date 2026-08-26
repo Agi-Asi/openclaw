@@ -4899,7 +4899,7 @@ describe("talk realtime gateway relay", () => {
     });
   });
 
-  it("keeps plugin quotas stable while cleaning up each consuming connection", () => {
+  it("fences every plugin relay when its authenticated route closes", () => {
     const provider: RealtimeVoiceProviderPlugin = {
       id: "relay-test",
       label: "Relay Test",
@@ -4921,15 +4921,24 @@ describe("talk realtime gateway relay", () => {
         tools: [],
       });
 
-    const first = createSession("plugin:avatar:lifecycle-1");
-    createSession("plugin:avatar:lifecycle-2");
-    expect(() => createSession("plugin:avatar:lifecycle-3")).toThrow(
+    const routeConnId = "plugin-http:127.0.0.1";
+    const first = createSession(routeConnId);
+    const second = createSession(routeConnId);
+    expect(() => createSession(routeConnId)).toThrow(
       "Too many active realtime relay sessions for this connection",
     );
 
-    cleanupTalkConnection("plugin:avatar:lifecycle-1", context.logGateway);
+    cleanupTalkConnection(routeConnId, context.logGateway);
     expect(relaySessions.has(first.relaySessionId)).toBe(false);
-    expect(() => createSession("plugin:avatar:lifecycle-3")).not.toThrow();
+    expect(relaySessions.has(second.relaySessionId)).toBe(false);
+    expect(() =>
+      sendTalkRealtimeRelayAudio({
+        relaySessionId: first.relaySessionId,
+        connId: routeConnId,
+        audioBase64: "AA==",
+      }),
+    ).toThrow("Unknown realtime relay session");
+    expect(() => createSession(routeConnId)).not.toThrow();
   });
 
   it("releases plugin cleanup owners on stop, provider close, and expiry", () => {

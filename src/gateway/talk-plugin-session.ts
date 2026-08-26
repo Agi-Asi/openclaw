@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { TalkSessionCreateResult } from "../../packages/gateway-protocol/src/index.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
@@ -47,7 +46,7 @@ function requirePluginTalkScope() {
   return {
     clientConnId: scope.client.connId,
     context: scope.context,
-    pluginId: scope.pluginId,
+    ownerId: scope.client.connId,
     quotaOwnerId: `plugin:${scope.pluginId}:${scope.client.connId}`,
   };
 }
@@ -192,8 +191,7 @@ export async function openPluginTalkSession(
   if (params.signal.aborted) {
     throw talkSessionAbortError(params.signal, "Talk session was cancelled before it opened");
   }
-  const { clientConnId, context, pluginId, quotaOwnerId } = requirePluginTalkScope();
-  const ownerId = `plugin:${pluginId}:${randomUUID()}`;
+  const { clientConnId, context, ownerId, quotaOwnerId } = requirePluginTalkScope();
   const lifecycle: { relaySessionId?: string; aborted: boolean; removeAbortListener?: () => void } =
     {
       aborted: false,
