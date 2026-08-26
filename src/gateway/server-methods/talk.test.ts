@@ -2065,7 +2065,7 @@ describe("talk.session unified handlers", () => {
       isConfigured: () => true,
       createBridge: vi.fn(),
     };
-    const setup = createDeferred<void>();
+    const setup = createDeferred();
     const route = new AbortController();
     const respond = vi.fn();
     mocks.resolveConfiguredRealtimeVoiceProvider.mockReturnValue({ provider, providerConfig: {} });
