@@ -296,28 +296,17 @@ describe("listSessionTranscriptCorpusEntriesForAgent", () => {
         updateMode: "none",
       },
     );
-    const archivePath = path.join(
-      sessionsDir,
-      `${sessionId}.jsonl.deleted.2026-06-25T12-01-00.000Z`,
-    );
-    fsSync.writeFileSync(
-      archivePath,
-      JSON.stringify({
-        type: "message",
-        message: { role: "user", content: "Archived JSONL transcript text" },
-      }),
-    );
-    const resetArchivePath = path.join(
-      sessionsDir,
-      `${sessionId}.jsonl.reset.2026-06-25T12-02-00.000Z`,
-    );
-    fsSync.writeFileSync(
-      resetArchivePath,
-      JSON.stringify({
-        type: "message",
-        message: { role: "user", content: "Retained pre-reset conversation fact" },
-      }),
-    );
+    const [archivePath, resetArchivePath] = [
+      ["deleted.2026-06-25T12-01-00.000Z", "Archived JSONL transcript text"],
+      ["reset.2026-06-25T12-02-00.000Z", "Retained pre-reset conversation fact"],
+    ].map(([suffix, content]) => {
+      const filePath = path.join(sessionsDir, `${sessionId}.jsonl.${suffix}`);
+      fsSync.writeFileSync(
+        filePath,
+        JSON.stringify({ type: "message", message: { role: "user", content } }),
+      );
+      return filePath;
+    });
 
     expect(fsSync.existsSync(path.join(sessionsDir, `${sessionId}.jsonl`))).toBe(false);
     const entries = await listSessionTranscriptCorpusEntriesForAgent("main");
@@ -348,22 +337,15 @@ describe("listSessionTranscriptCorpusEntriesForAgent", () => {
       ]),
     );
 
-    const liveEntry = requireSessionEntry(
-      await buildSessionEntry(sessionKey, {
-        agentId: "main",
-        sessionId,
-        sessionKey,
-        storePath,
-        updatedAtMs: updatedAt,
-      }),
-    );
-    const liveState = statSessionEntrySync(sessionKey, {
+    const liveIdentity = {
       agentId: "main",
       sessionId,
       sessionKey,
       storePath,
       updatedAtMs: updatedAt,
-    });
+    };
+    const liveEntry = requireSessionEntry(await buildSessionEntry(sessionKey, liveIdentity));
+    const liveState = statSessionEntrySync(sessionKey, liveIdentity);
     const archiveEntry = requireSessionEntry(await buildSessionEntry(archivePath));
     const resetArchiveEntry = requireSessionEntry(await buildSessionEntry(resetArchivePath));
 
