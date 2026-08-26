@@ -4,7 +4,11 @@ import { selectAgentHarness } from "../agents/harness/selection.js";
 import { resolveRunWorkspaceDir } from "../agents/workspace-run.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { SYSTEM_AGENT_ID } from "./agent-id.js";
-import { resolveSystemAgentConfiguredRouteFromConfig } from "./inference-route.js";
+import {
+  projectDefaultInferenceRoute,
+  resolveSystemAgentConfiguredRouteFromConfig,
+  sameDefaultInferenceRoute,
+} from "./inference-route.js";
 
 function devConfig(agentRuntime?: string): OpenClawConfig {
   return {
@@ -42,6 +46,25 @@ afterEach(() => {
 });
 
 describe("resolveSystemAgentConfiguredRouteFromConfig", () => {
+  it("treats a workspace-only first-agent roster as inference-route neutral", async () => {
+    const withoutRoster: OpenClawConfig = {
+      agents: { defaults: { model: "openai/gpt-5.5" } },
+    };
+    const withFirstAgent: OpenClawConfig = {
+      agents: {
+        defaults: withoutRoster.agents?.defaults,
+        entries: { main: { default: true, workspace: "/tmp/openclaw-main" } },
+      },
+    };
+
+    expect(
+      sameDefaultInferenceRoute(
+        await projectDefaultInferenceRoute(withoutRoster),
+        await projectDefaultInferenceRoute(withFirstAgent),
+      ),
+    ).toBe(true);
+  });
+
   it("admits the reserved execution agent for a dev-shaped roster", async () => {
     const route = await resolveSystemAgentConfiguredRouteFromConfig(devConfig());
 
