@@ -78,6 +78,7 @@ const credentialHost: Parameters<typeof createBuzzQaTransportAdapter>[0]["creden
 
 describe("Buzz QA transport adapter", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
     relayDriverState.onMessage = undefined;
     sendMessage.mockResolvedValue({
@@ -111,6 +112,32 @@ describe("Buzz QA transport adapter", () => {
     expect(acquireQaCredentialLease).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "buzz", source: "env" }),
     );
+  });
+
+  it("uses the profile runner's credential source", async () => {
+    vi.stubEnv("OPENCLAW_QA_CREDENTIAL_SOURCE", "convex");
+    const adapter = await createBuzzQaTransportAdapter({
+      adapterOptions: {},
+      channelId: "buzz",
+      credentials: credentialHost,
+      driver: "live",
+      messages: {
+        addInboundMessage: vi.fn(),
+        addOutboundMessage: vi.fn(),
+        editMessage: vi.fn(),
+      },
+      outputDir: ".artifacts/qa-e2e/buzz",
+    });
+
+    try {
+      expect(readBuzzQaCredentialFile).not.toHaveBeenCalled();
+      expect(acquireQaCredentialLease).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "buzz", source: "convex" }),
+      );
+    } finally {
+      await adapter.cleanup();
+      await adapter.cleanupAfterGatewayStop?.();
+    }
   });
 
   it("sends a portable mentioned message through the native Buzz relay driver", async () => {
