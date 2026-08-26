@@ -27,8 +27,23 @@ export function validateReleaseValidationCampaignArtifact(
   },
 ): ReleaseValidationCampaignArtifact;
 
+type ReleaseValidationGitHubMethod = (...args: never[]) => Promise<unknown>;
+
 export function runReleaseValidationCampaignPublish(params: {
-  github: any;
+  github: {
+    paginate: (...args: never[]) => Promise<unknown[]>;
+    rest: {
+      issues: {
+        create: ReleaseValidationGitHubMethod;
+        createComment: ReleaseValidationGitHubMethod;
+        createLabel: ReleaseValidationGitHubMethod;
+        get: ReleaseValidationGitHubMethod;
+        getLabel: ReleaseValidationGitHubMethod;
+        listForRepo: ReleaseValidationGitHubMethod;
+        update: ReleaseValidationGitHubMethod;
+      };
+    };
+  };
   context: { repo: { owner: string; repo: string } };
   core: { info(message: string): void; setOutput?(name: string, value: string): void };
   artifact: unknown;
