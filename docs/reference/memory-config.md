@@ -179,13 +179,13 @@ Use `provider: "openai-compatible"` for a generic OpenAI-compatible
 `/v1/embeddings` server that should not inherit global OpenAI chat credentials.
 
 <ParamField path="remote.baseUrl" type="string">
-  Custom API base URL.
+  Custom API base URL. Provider credentials and headers are inherited only when this resolves to the provider's configured destination.
 </ParamField>
 <ParamField path="remote.apiKey" type="string">
-  Override API key.
+  API key owned by the remote destination. Set this when `remote.baseUrl` points somewhere other than the provider's configured destination.
 </ParamField>
 <ParamField path="remote.headers" type="object">
-  Extra HTTP headers (merged with provider defaults).
+  Extra HTTP headers owned by the remote destination. Provider defaults are merged only for the provider's configured destination.
 </ParamField>
 
 ```json5
@@ -211,12 +211,27 @@ Use `provider: "openai-compatible"` for a generic OpenAI-compatible
   <Accordion title="Gemini">
     | Key                    | Type     | Default                | Description                                |
     | ---------------------- | -------- | ---------------------- | ------------------------------------------- |
-    | `model`                | `string` | `gemini-embedding-001` | Also supports `gemini-embedding-2-preview` |
-    | `outputDimensionality` | `number` | `3072`                 | For Embedding 2: 768, 1536, or 3072        |
+    | `model`                | `string` | `gemini-embedding-001` | Also supports `gemini-embedding-2`         |
+    | `outputDimensionality` | `number` | `3072`                 | 128-3072; recommended: 768, 1536, or 3072  |
+
+    The legacy `gemini-embedding-2-preview` identifier remains accepted during
+    migration to the stable model.
 
     <Warning>
     Changing model or `outputDimensionality` changes the index identity. OpenClaw
     pauses vector search until you explicitly rebuild the memory index.
+
+    Upgrading any existing configuration that already uses
+    `gemini-embedding-2` can trigger the same pause even when you do not edit the
+    configuration. Before this release, the stable model's dimension was
+    omitted from index identity whether `outputDimensionality` was absent or
+    explicitly set. After upgrade, an absent setting resolves to 3072, while an
+    explicit setting between 128 and 3072 becomes part of the identity. The
+    default `gemini-embedding-001` keeps its existing identity when this setting
+    is absent; an explicitly configured value that was previously ignored now
+    also changes the identity. For either path, check the affected agent with
+    `openclaw memory status --deep --agent <id>`, then rebuild when ready with
+    `openclaw memory index --force --agent <id>`.
     </Warning>
 
   </Accordion>
@@ -420,10 +435,10 @@ Index images and audio alongside Markdown using Gemini Embedding 2:
 | `multimodal.maxFileBytes` | `number`   | `10485760` | Max file size for indexing (10 MiB)    |
 
 <Note>
-Only applies to files in `extraPaths`. Default memory roots stay Markdown-only. Requires `gemini-embedding-2-preview`. `fallback` must be `"none"`.
+Only applies to files in `extraPaths`. Default memory roots stay Markdown-only. Requires `gemini-embedding-2` (the legacy preview identifier is also accepted). `fallback` must be `"none"`.
 </Note>
 
-Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.heic`, `.heif` (images); `.mp3`, `.wav`, `.ogg`, `.opus`, `.m4a`, `.aac`, `.flac` (audio).
+Supported formats: `.jpg`, `.jpeg`, `.png` (images); `.mp3`, `.wav` (audio).
 
 ---
 
@@ -459,7 +474,7 @@ Index session transcripts and surface them via `memory_search`:
 | `sources`                     | `string[]` | `["memory"]`                                               | Add `"sessions"` to include transcripts  |
 
 <Warning>
-Session indexing is opt-in and runs asynchronously. Results can be slightly stale. Session logs live on disk, so treat filesystem access as the trust boundary.
+Session indexing is opt-in and runs asynchronously. Results can be slightly stale. Active transcripts live in the agent's SQLite database, while retained transcript artifacts can live on disk. Treat access to both as part of the same trust boundary.
 </Warning>
 
 <Note>
@@ -476,14 +491,19 @@ when you intentionally want both representations.
 
 Ordinary model-invoked session transcript search obeys
 [`tools.sessions.visibility`](/gateway/config-tools#tools-sessions). The default
-`tree` visibility exposes the current session, sessions it spawned, and
-same-agent group sessions watched through ambient group awareness. Other
-unrelated sessions require `agent` visibility (or `all` only when cross-agent
-recall is also required and agent-to-agent policy allows it).
+`tree` visibility exposes the current session and sessions it spawned. When
+the caller is the canonical main session, it covers every same-agent session.
+Non-main callers require `agent` visibility for unrelated same-agent sessions
+(or `all` when cross-agent recall is also required and agent-to-agent policy
+allows it).
 
 `rememberAcrossConversations` does not widen that setting. It supplies a
 separate runtime-only authorization limited to same-agent private
 transcripts during the bounded Active Memory pass.
+
+An explicit `memory_search` request for the `sessions` corpus requires session
+search to be enabled for that agent. If it is unavailable, OpenClaw explains
+how to enable session indexing instead of silently searching memory files.
 
 The examples below place these settings under top-level `memory.search`. You can also
 apply equivalent settings in a per-agent `memory.search` override when only one
