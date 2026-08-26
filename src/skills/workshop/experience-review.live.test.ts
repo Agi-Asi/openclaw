@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isLiveTestEnabled } from "../../agents/live-test-helpers.js";
 import { resolveAgentRunSessionTarget } from "../../agents/run-session-target.js";
 import { SessionManager } from "../../agents/sessions/index.js";
+import { createSessionEntryWithTranscript } from "../../config/sessions/session-accessor.js";
 import type { Message } from "../../llm/types.js";
 import {
   createOpenClawTestState,
@@ -89,6 +90,14 @@ async function candidate(
     sessionId,
     sessionKey,
   });
+  const created = await createSessionEntryWithTranscript(
+    target,
+    () => ({ ok: true, entry: { sessionId, updatedAt: Date.now() } }),
+    { cwd: workspaceDir },
+  );
+  if (!created.ok) {
+    throw new Error(`Failed to create live review session: ${created.error}`);
+  }
   for (const message of messages) {
     SessionManager.appendMessageToTranscript(target, message as Message, { config: result.config });
   }

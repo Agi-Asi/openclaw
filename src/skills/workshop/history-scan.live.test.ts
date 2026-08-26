@@ -81,6 +81,10 @@ function session(
   };
 }
 
+function toolCall(name: string, args: Record<string, string>) {
+  return { role: "assistant", content: [{ type: "toolCall", name, arguments: args }] };
+}
+
 describeLive("Skill Workshop history scan live OpenAI eval", () => {
   beforeAll(async () => {
     testState = await createOpenClawTestState({
@@ -98,32 +102,31 @@ describeLive("Skill Workshop history scan live OpenAI eval", () => {
   it("clusters repeated recovery evidence and abstains from routine work", async () => {
     const recoveryOne = [
       { role: "user", content: "Deploy service alpha from this repository." },
-      { role: "assistant", content: "I will try the deploy command." },
+      toolCall("deploy", { service: "alpha" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "region required" },
-      { role: "assistant", content: "I will guess the region." },
+      toolCall("deploy", { service: "alpha", region: "us" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "health path required" },
-      { role: "assistant", content: "I need another lookup." },
-      { role: "assistant", content: "Reading deploy.json now." },
+      toolCall("read", { path: "deploy.json" }),
       { role: "toolResult", toolName: "read", content: "region=us health=/ready" },
-      { role: "assistant", content: "Deploying with the manifest values." },
+      toolCall("deploy", { service: "alpha", region: "us", health: "/ready" }),
       { role: "toolResult", toolName: "deploy", content: "deployed" },
-      { role: "assistant", content: "Checking /ready." },
+      toolCall("fetch", { path: "/ready" }),
       { role: "toolResult", toolName: "fetch", content: "200" },
       { role: "assistant", content: "The manifest-first preflight avoided more guessing." },
     ];
     const recoveryTwo = [
       { role: "user", content: "Deploy service beta from its checked-in configuration." },
-      { role: "assistant", content: "Starting deployment." },
+      toolCall("deploy", { service: "beta" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "service id required" },
-      { role: "assistant", content: "Looking up the service id separately." },
+      toolCall("lookup", { service: "beta" }),
       { role: "toolResult", toolName: "lookup", content: "service=beta-api" },
-      { role: "assistant", content: "Trying again." },
+      toolCall("deploy", { service: "beta-api" }),
       { role: "toolResult", toolName: "deploy", isError: true, content: "health path required" },
-      { role: "assistant", content: "Reading deploy.json before another retry." },
+      toolCall("read", { path: "deploy.json" }),
       { role: "toolResult", toolName: "read", content: "service=beta-api health=/healthz" },
-      { role: "assistant", content: "Deploying with all manifest inputs." },
+      toolCall("deploy", { service: "beta-api", health: "/healthz" }),
       { role: "toolResult", toolName: "deploy", content: "deployed" },
-      { role: "assistant", content: "Verifying /healthz." },
+      toolCall("fetch", { path: "/healthz" }),
       { role: "toolResult", toolName: "fetch", content: "200" },
       { role: "assistant", content: "This again shows the manifest should be read first." },
     ];
