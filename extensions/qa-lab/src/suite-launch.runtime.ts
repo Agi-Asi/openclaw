@@ -428,7 +428,13 @@ async function runQaTestFileSuiteFromRuntime(params: {
   const primaryModel = runParams?.primaryModel?.trim() || defaultQaModelForMode(providerMode);
   return await runQaTestFileScenarios({
     evidenceMode: runParams?.evidenceMode,
-    ...(params.env ? { env: params.env, envMode: "replace" as const } : {}),
+    ...(params.env
+      ? { env: params.env, envMode: "replace" as const }
+      : {
+          // The owning QA process already loaded the prepared runtime. Native
+          // child setup must not clean or rebuild those files under live gateways.
+          env: { OPENCLAW_E2E_USE_PREBUILT_DIST: "1" },
+        }),
     ...(runParams?.failFast ? { failFast: true } : {}),
     ...(shouldLogQaSuiteProgress()
       ? { progress: (message: string) => writeQaSuiteProgress(true, message) }
@@ -1309,7 +1315,7 @@ async function runUnifiedQaSuite(params: {
   const concurrentPartitionResults = await runPartitionTasks(concurrentPartitionTasks, concurrency);
   const concurrentFailed = failFast && concurrentPartitionResults.some(partitionFailed);
   let scriptPreparationFailure: QaUnifiedPartitionResult | undefined;
-  if (!concurrentFailed && scriptScenarios?.some(dockerBatch.isDockerE2eScenario)) {
+  if (!concurrentFailed && scriptScenarios?.some(dockerBatch.dockerCandidateLaneName)) {
     try {
       preparedScriptEnv = await dockerBatch.prepareDockerE2eEnvironment({
         env: process.env,

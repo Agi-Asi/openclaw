@@ -1224,6 +1224,24 @@ describe("qa suite runtime launcher", () => {
     );
   });
 
+  it("keeps native Vitest setup on the suite-prepared runtime", async () => {
+    const repoRoot = await makeTempRepo("qa-suite-prepared-vitest-");
+
+    await runQaSuite({
+      repoRoot,
+      outputDir: ".artifacts/qa-e2e/prepared-vitest",
+      scenarioIds: ["auth-profile-doctor-migration-safety"],
+    });
+
+    expect(runQaTestFileScenarios).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: { OPENCLAW_E2E_USE_PREBUILT_DIST: "1" },
+        outputDir: path.join(repoRoot, ".artifacts", "qa-e2e", "prepared-vitest", "vitest"),
+      }),
+    );
+    expect(runQaTestFileScenarios.mock.calls[0]?.[0]).not.toHaveProperty("envMode");
+  });
+
   it("projects a skipped native producer as a skipped unified scenario", async () => {
     const repoRoot = await makeTempRepo("qa-suite-native-skip-");
     const defaultImplementation = requireDefaultQaTestFileImplementation();
@@ -2190,6 +2208,23 @@ describe("qa suite runtime launcher", () => {
 
     expect(prepareDockerE2eEnvironment).not.toHaveBeenCalled();
     expect(runQaTestFileScenarios).toHaveBeenCalledTimes(1);
+  });
+
+  it("prepares the Docker candidate before a script-owned Docker lane", async () => {
+    const repoRoot = await makeTempRepo("qa-suite-script-docker-prep-");
+    const preparedEnv = Object.freeze({ OPENCLAW_CURRENT_PACKAGE_TGZ: "/tmp/candidate.tgz" });
+    prepareDockerE2eEnvironment.mockResolvedValueOnce(preparedEnv);
+
+    await runQaSuite({ repoRoot, scenarioIds: ["cli-onboarding"] });
+
+    expect(prepareDockerE2eEnvironment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scenarios: [expect.objectContaining({ id: "cli-onboarding" })],
+      }),
+    );
+    expect(runQaTestFileScenarios).toHaveBeenCalledWith(
+      expect.objectContaining({ env: preparedEnv, envMode: "replace" }),
+    );
   });
 
   it("keeps selected evidence order and successful siblings when a parallel script rejects", async () => {
