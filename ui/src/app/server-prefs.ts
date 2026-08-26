@@ -5,6 +5,17 @@
 import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { RuntimeConfigCapability } from "../lib/config/runtime-config-capability.ts";
+import type { ApplicationGatewaySnapshot } from "./gateway.ts";
+import { hasOperatorWriteAccess } from "./operator-access.ts";
+import {
+  isAppearancePref,
+  loadProfileAppearancePrefs,
+  resetProfileAppearancePrefs,
+  resolveProfileAppearanceProfileId,
+  resolveProfileAppearancePrefs,
+  resolveProfilePreferenceScope,
+  writeProfileAppearancePrefs,
+} from "./server-prefs-profile.ts";
 import {
   extractServerUiPrefs,
   prefValuesEqual,
@@ -25,11 +36,18 @@ type ServerUiPrefsWriter = Pick<RuntimeConfigCapability, "canPatch" | "runExtern
   readonly state: {
     readonly client: GatewayBrowserClient | null;
     readonly connected: boolean;
+    readonly configSnapshot?: { readonly config?: unknown } | null;
   };
 };
 type ServerUiPrefsCommit = {
   needsRefresh: boolean;
   retainedLocal?: boolean;
+};
+type ServerUiPrefsPushHooks = {
+  afterCommit?: (commit: ServerUiPrefsCommit) => void;
+  profileId?: string | null;
+  canWrite?: boolean;
+  profile?: Pick<ApplicationGatewaySnapshot, "selfUser" | "hello"> | null;
 };
 export type { ServerUiPrefProvenance, ServerUiPrefState } from "./server-prefs-state.ts";
 
@@ -38,16 +56,20 @@ export function resolveServerUiPrefState<K extends SyncedPrefKey>(
   key: K,
   scope = "",
   settings = loadSettings(),
-  options: { canSync?: boolean | null } = {},
+  options: { canSync?: boolean | null; profileId?: string | null } = {},
 ): ServerUiPrefState<SyncedPrefValue<K>> {
+  const effectiveScope = resolveProfilePreferenceScope(scope, options.profileId);
   const shadowPrefs =
-    scope === pendingScope ? pendingPrefs : parseStoredPrefs(readStorage(PENDING_KEY, scope));
+    effectiveScope === pendingScope
+      ? pendingPrefs
+      : parseStoredPrefs(readStorage(PENDING_KEY, effectiveScope));
   return resolveServerUiPrefStateFromSnapshot(
     configObject,
     key,
     shadowPrefs,
     settings,
     options.canSync,
+    resolveProfileAppearancePrefs(scope, options.profileId),
   );
 }
 /** Synced-key delta between two local settings snapshots, for the push path. */
@@ -98,6 +120,8 @@ let pendingPrefs: ServerUiPrefs | null = null;
 let pendingPersistedKeys = new Set<SyncedPrefKey>();
 let pushWriter: ServerUiPrefsWriter | null = null;
 let pushScope = "";
+let pushProfileId: string | null = null;
+let pushCanWrite = false;
 let pushAfterCommit: ((commit: ServerUiPrefsCommit) => void) | undefined;
 let pushDraining = false;
 let drainRequested = false;
@@ -303,8 +327,11 @@ export function resetServerUiPrefsSync() {
   pendingPrefs = pushWriter = null;
   pendingPersistedKeys.clear();
   pushScope = "";
+  pushProfileId = null;
+  pushCanWrite = false;
   lastReconciledScope = "";
   lastReconciledConfigObject = null;
+  resetProfileAppearancePrefs();
   requestedServerUiPrefResets.clear();
   requestedDeviceLocalPrefResets.clear();
 }
@@ -315,6 +342,8 @@ export function resetServerUiPref<K extends ResettableServerUiPrefKey>(
   scope = pendingScope,
 ): UiSettings {
   const specification = SYNCED_PREFS[key];
+  const activeProfile = isAppearancePref(key) ? resolveProfileAppearanceProfileId(scope) : null;
+  const effectiveScope = resolveProfilePreferenceScope(scope, activeProfile);
   const reset = specification.reset;
   if (!reset) {
     throw new Error(`Server UI preference is not resettable: ${key}`);
@@ -326,23 +355,33 @@ export function resetServerUiPref<K extends ResettableServerUiPrefKey>(
     if (!write) {
       throw new Error(`Server UI preference cannot restore a retained local value: ${key}`);
     }
-    cancelPendingKeys(scope, [key]);
-    updateRetainedLocalKeys(scope, [key], false);
+    cancelPendingKeys(effectiveScope, [key]);
+    updateRetainedLocalKeys(effectiveScope, [key], false);
     requestedDeviceLocalPrefResets.add(key);
     return patchSettings(write(state.resetValue));
   }
   requestedServerUiPrefResets.add(key);
+  if (activeProfile && state?.provenance === "profile") {
+    const write = specification.write as
+      | ((value: SyncedPrefValue<K> | undefined) => Partial<UiSettings>)
+      | undefined;
+    if (write) {
+      return patchSettings(write(state.resetValue));
+    }
+  }
   return patchSettings(reset(loadSettings()));
 }
 export function applyServerUiPrefs(
   configObject: unknown,
   hooks: {
     scope?: string;
+    profileId?: string | null;
     onApplied: (patch: Partial<UiSettings>) => void;
     onThemeChanged?: (theme: ThemeName | null) => void;
   },
 ): boolean {
-  const scope = hooks.scope ?? "";
+  const gatewayScope = hooks.scope ?? "";
+  const scope = resolveProfilePreferenceScope(gatewayScope, hooks.profileId);
   if (scope === lastReconciledScope && configObject === lastReconciledConfigObject) {
     return false;
   }
@@ -353,7 +392,10 @@ export function applyServerUiPrefs(
   const shadowPrefs =
     scope === pendingScope ? pendingPrefs : parseStoredPrefs(readStorage(PENDING_KEY, scope));
   const retainedLocalKeys = readRetainedLocalKeys(scope);
-  const prefs = extractServerUiPrefs(configObject);
+  const prefs = {
+    ...extractServerUiPrefs(configObject),
+    ...resolveProfileAppearancePrefs(gatewayScope, hooks.profileId),
+  };
   const key = JSON.stringify(prefs);
   const lastSeenRaw = readStorage(LAST_SEEN_KEY, scope);
   if (key === lastSeenRaw) {
@@ -407,12 +449,30 @@ export function applyServerUiPrefs(
   hooks.onApplied(patch);
   return true;
 }
+
+export async function refreshProfileAppearancePrefs(options: {
+  client: GatewayBrowserClient;
+  profileId: string;
+  configObject: unknown;
+  scope?: string;
+  onApplied: (patch: Partial<UiSettings>) => void;
+  onThemeChanged?: (theme: ThemeName | null) => void;
+}): Promise<boolean> {
+  const scope = options.scope ?? options.client.gatewayUrl;
+  if (!(await loadProfileAppearancePrefs(options.client, options.profileId, scope))) {
+    return false;
+  }
+  lastReconciledConfigObject = null;
+  return applyServerUiPrefs(options.configObject, { ...options, scope });
+}
 export function isApplyingServerUiPrefs(): boolean {
   return applyingServerPrefs;
 }
-function adoptPushWriter(writer: ServerUiPrefsWriter): void {
-  const scope = writer.state.client?.gatewayUrl ?? "";
-  if (pushWriter === writer && pushScope === scope) {
+function adoptPushWriter(writer: ServerUiPrefsWriter, hooks: ServerUiPrefsPushHooks): void {
+  const profileId = hooks.profileId ?? hooks.profile?.selfUser?.id ?? null;
+  const scope = resolveProfilePreferenceScope(writer.state.client?.gatewayUrl ?? "", profileId);
+  pushCanWrite = hooks.canWrite ?? hasOperatorWriteAccess(hooks.profile?.hello?.auth ?? null);
+  if (pushWriter === writer && pushScope === scope && pushProfileId === profileId) {
     return;
   }
   // Reconcile the scope being left before moving pre-connection intent forward.
@@ -429,6 +489,7 @@ function adoptPushWriter(writer: ServerUiPrefsWriter): void {
   pushEpoch += 1;
   pushWriter = writer;
   pushScope = scope;
+  pushProfileId = profileId;
   pushDraining = false;
   adoptPendingScope(scope, true);
   if (scope && unscopedPending && Object.keys(unscopedPending).length) {
@@ -468,6 +529,7 @@ function scheduleConflictRedrain(writer: ServerUiPrefsWriter, epoch: number): vo
     }
   }, CONFLICT_REDRAIN_DELAY_MS);
 }
+
 async function drainPendingPrefs(writer: ServerUiPrefsWriter, epoch: number): Promise<void> {
   while (pendingPrefs) {
     if (pushWriter !== writer || pushEpoch !== epoch) {
@@ -477,47 +539,86 @@ async function drainPendingPrefs(writer: ServerUiPrefsWriter, epoch: number): Pr
     if (!pendingPrefs) {
       return;
     }
-    const batch = { ...pendingPrefs };
+    const profileBatch: ServerUiPrefs = {};
+    if (pushProfileId && pushCanWrite) {
+      for (const key of SYNCED_PREF_KEYS) {
+        if (isAppearancePref(key) && Object.hasOwn(pendingPrefs, key)) {
+          Object.assign(profileBatch, { [key]: pendingPrefs[key] });
+        }
+      }
+    }
+    const useProfile = Boolean(profileBatch && Object.keys(profileBatch).length);
+    const batch = useProfile ? profileBatch : { ...pendingPrefs };
     const afterCommit = pushAfterCommit;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (pushWriter !== writer || pushEpoch !== epoch) {
         return;
       }
-      const result = await writer.runExternalMutation(
-        (client) =>
-          // ui.prefs is a deliberately narrow hashless LWW surface enforced by
-          // hasHashlessPatchLwwStructure in the gateway. Serialization still
-          // matters: a pending whole-config save must commit before this merge.
-          client.request("config.patch", {
-            raw: JSON.stringify({ ui: { prefs: batch } }),
-            ...(batch.sidebarEntries !== undefined
-              ? { replacePaths: ["ui.prefs.sidebarEntries"] }
-              : {}),
-            note: "control-ui prefs sync",
-          }),
-        {
-          waitForWritesResumed: true,
-          canDispatch: () => {
-            if (writer.canPatch === false) {
-              return false;
-            }
-            reconcilePersistedPendingPrefs();
-            if (batchIsCurrent(batch)) {
-              return true;
-            }
-            drainRequested = Boolean(pendingPrefs);
-            return false;
-          },
-          dispatchError: "Access changed before preferences could sync.",
-        },
-      );
+      const result = useProfile
+        ? await writeProfileAppearancePrefs(
+            writer.state.client,
+            batch,
+            writer.state.connected && pushCanWrite && batchIsCurrent(batch),
+          )
+        : await writer.runExternalMutation(
+            (client) =>
+              // ui.prefs is a deliberately narrow hashless LWW surface enforced by
+              // hasHashlessPatchLwwStructure in the gateway. Serialization still
+              // matters: a pending whole-config save must commit before this merge.
+              client.request("config.patch", {
+                raw: JSON.stringify({ ui: { prefs: batch } }),
+                ...(batch.sidebarEntries !== undefined
+                  ? { replacePaths: ["ui.prefs.sidebarEntries"] }
+                  : {}),
+                note: "control-ui prefs sync",
+              }),
+            {
+              waitForWritesResumed: true,
+              canDispatch: () => {
+                if (writer.canPatch === false) {
+                  return false;
+                }
+                reconcilePersistedPendingPrefs();
+                if (batchIsCurrent(batch)) {
+                  return true;
+                }
+                drainRequested = Boolean(pendingPrefs);
+                return false;
+              },
+              dispatchError: "Access changed before preferences could sync.",
+            },
+          );
       if (pushWriter !== writer || pushEpoch !== epoch) {
         return;
       }
       if (result.ok) {
         removeBatch(batch);
         const lastSeen = parseStoredPrefs(readStorage(LAST_SEEN_KEY, pendingScope)) ?? {};
-        writeStorage(LAST_SEEN_KEY, pendingScope, JSON.stringify({ ...lastSeen, ...batch }));
+        const nextLastSeen = { ...lastSeen, ...batch };
+        const profilePrefs = resolveProfileAppearancePrefs(
+          writer.state.client?.gatewayUrl ?? "",
+          pushProfileId,
+        );
+        if (useProfile && profilePrefs) {
+          const configPrefs = extractServerUiPrefs(writer.state.configSnapshot?.config);
+          for (const key of SYNCED_PREF_KEYS) {
+            if (!Object.hasOwn(batch, key)) {
+              continue;
+            }
+            if (batch[key] === null) {
+              delete profilePrefs[key];
+              if (configPrefs[key] === undefined) {
+                delete nextLastSeen[key];
+              } else {
+                Object.assign(nextLastSeen, { [key]: configPrefs[key] });
+              }
+            } else {
+              Object.assign(profilePrefs, { [key]: batch[key] });
+            }
+          }
+          lastReconciledConfigObject = null;
+        }
+        writeStorage(LAST_SEEN_KEY, pendingScope, JSON.stringify(nextLastSeen));
         settlePendingStorage(batch);
         clearConflictRedrain();
         if (pushWriter !== writer || pushEpoch !== epoch) {
@@ -570,7 +671,11 @@ function startPendingDrain(writer: ServerUiPrefsWriter): void {
   if (!pendingPrefs) {
     return;
   }
-  if (writer.state.connected && writer.canPatch === false) {
+  if (
+    writer.state.connected &&
+    writer.canPatch === false &&
+    !(pushProfileId && pushCanWrite && Object.keys(pendingPrefs).some(isAppearancePref))
+  ) {
     return;
   }
   pushDraining = true;
@@ -590,30 +695,44 @@ function startPendingDrain(writer: ServerUiPrefsWriter): void {
 export function pushServerUiPrefs(
   writer: ServerUiPrefsWriter,
   prefs: ServerUiPrefs,
-  hooks: { afterCommit?: (commit: ServerUiPrefsCommit) => void } = {},
+  hooks: ServerUiPrefsPushHooks = {},
 ): void {
-  adoptPushWriter(writer);
+  adoptPushWriter(writer, hooks);
   clearConflictRedrain();
   pushAfterCommit = hooks.afterCommit;
-  if (writer.state.connected && writer.canPatch === false) {
+  const keys = SYNCED_PREF_KEYS.filter((key) => Object.hasOwn(prefs, key));
+  const blockedKeys = writer.state.connected
+    ? keys.filter((key) =>
+        pushProfileId && isAppearancePref(key) ? !pushCanWrite : writer.canPatch === false,
+      )
+    : [];
+  if (blockedKeys.length) {
     // A connected read-only edit is intentionally browser-local. Supersede only
     // same-key offline intent so a later authorization cannot replay stale input.
-    const keys = Object.keys(prefs) as SyncedPrefKey[];
-    cancelPendingKeys(pendingScope, keys);
-    updateRetainedLocalKeys(pendingScope, keys, true);
+    cancelPendingKeys(pendingScope, blockedKeys);
+    updateRetainedLocalKeys(pendingScope, blockedKeys, true);
     hooks.afterCommit?.({ needsRefresh: false, retainedLocal: true });
-    return;
+    if (blockedKeys.length === keys.length) {
+      return;
+    }
   }
+  const writablePrefs = blockedKeys.length
+    ? Object.fromEntries(
+        Object.entries(prefs).filter(
+          ([key]) => !blockedKeys.some((blockedKey) => blockedKey === key),
+        ),
+      )
+    : prefs;
   reconcilePersistedPendingPrefs();
-  pendingPrefs = { ...pendingPrefs, ...prefs };
+  pendingPrefs = { ...pendingPrefs, ...writablePrefs };
   mergePendingIntoStorage();
   startPendingDrain(writer);
 }
 export function flushServerUiPrefs(
   writer: ServerUiPrefsWriter,
-  hooks: { afterCommit?: (commit: ServerUiPrefsCommit) => void } = {},
+  hooks: ServerUiPrefsPushHooks = {},
 ): void {
-  adoptPushWriter(writer);
+  adoptPushWriter(writer, hooks);
   clearConflictRedrain();
   pushEpoch += 1;
   pushDraining = drainRequested = false;
