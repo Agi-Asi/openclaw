@@ -44,6 +44,7 @@ import { projectPublicSessionEntry } from "../config/sessions/session-entry-proj
 import { resolveSqliteTargetFromSessionStorePath } from "../config/sessions/session-sqlite-target.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { LEGACY_IMPLICIT_AGENT_ID, normalizeAgentId } from "../routing/session-key.js";
+import { normalizeGatewayModelCapabilityBaseUrl } from "./model-capability-base-url.js";
 import type {
   GatewayModelCatalogLoadParams,
   GatewayModelCatalogSnapshot,
@@ -390,20 +391,6 @@ export function getSessionDefaults(
     thinkingOptions: thinkingProfile.thinkingLevels.map((level) => level.label),
     thinkingDefault: thinkingProfile.thinkingDefault,
   };
-}
-
-function normalizeGatewayModelCapabilityBaseUrl(value: string | undefined): string | undefined {
-  const baseUrl = normalizeOptionalString(value);
-  if (!baseUrl) {
-    return undefined;
-  }
-  try {
-    const parsed = new URL(baseUrl);
-    parsed.pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
-    return parsed.toString();
-  } catch {
-    return baseUrl.replace(/\/+$/u, "");
-  }
 }
 
 function isGatewayModelExplicitlyConfiguredTextOnly(params: {
