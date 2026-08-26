@@ -196,7 +196,7 @@ describe("chat pane composer controls", () => {
       '[data-chat-permission-option="default"]',
     );
     const permissionIcons = {
-      default: icons.shieldCheck,
+      default: icons.shield,
       "read-only": icons.shieldEllipsis,
       guarded: icons.shieldLock,
       workspace: icons.shieldCog,
