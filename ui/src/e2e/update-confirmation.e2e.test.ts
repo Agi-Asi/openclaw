@@ -248,8 +248,8 @@ suite.define(() => {
           const style = getComputedStyle(button);
           return { height: Number.parseFloat(style.height), width: Number.parseFloat(style.width) };
         });
-        expect(buttonSize.width).toBeGreaterThanOrEqual(40);
-        expect(buttonSize.height).toBeGreaterThanOrEqual(40);
+        expect(buttonSize.width).toBe(32);
+        expect(buttonSize.height).toBe(32);
         expect(await page.locator(".sidebar-footer-update__label").isVisible()).toBe(false);
         expect(await page.locator(".sidebar-shell").evaluate((shell) => shell.scrollWidth)).toBe(
           await page.locator(".sidebar-shell").evaluate((shell) => shell.clientWidth),

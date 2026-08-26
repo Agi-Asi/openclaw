@@ -41,11 +41,7 @@ import {
 import { isMobileNavLayout, shouldMergeChatChrome } from "./mobile-nav-layout.ts";
 import type { NativeHistoryState } from "./native-web-chrome.ts";
 import { isNativeWebChromeHost } from "./native-web-chrome.ts";
-import {
-  floatingSidebarAttentionVisible,
-  navigationSurfaceIsHidden,
-  renderFloatingUpdateCard,
-} from "./navigation-surface.ts";
+import { navigationSurfaceIsHidden, renderFloatingUpdateCard } from "./navigation-surface.ts";
 import { readGatewayOperatorAccess } from "./operator-access.ts";
 import {
   NAV_WIDTH_MAX,
@@ -56,12 +52,6 @@ import {
 import { createUpdateProgressWatcher } from "./update-overlay-helpers.ts";
 
 const EMPTY_SESSION_HAS_DRAFT = () => false;
-const SIDEBAR_ATTENTION_ELEMENT = {
-  tagName: "openclaw-sidebar-attention",
-  label: t("attention.issues"),
-  loadModule: () => import("../components/sidebar-attention.ts"),
-} satisfies OptionalCustomElement;
-
 export interface ShellViewHost {
   readonly context: ApplicationContext<RouteId> | undefined;
   readonly runtime: ApplicationRuntime | undefined;
@@ -289,17 +279,6 @@ export function renderApplicationShell(host: ShellViewHost) {
     navDrawerOpen,
     mobileNavLayout,
   });
-  if (
-    floatingSidebarAttentionVisible({
-      navigationSurfaceHidden,
-      mobileNavLayout,
-      onboarding,
-      settingsTakeover,
-      compact: mergedChatChrome,
-    })
-  ) {
-    host.lazyCustomElements.preload(SIDEBAR_ATTENTION_ELEMENT, { reportError: true });
-  }
   const shellWidth = Math.max(globalThis.innerWidth || 0, NAV_WIDTH_MAX);
   // A route query is navigation input, not an owner record. Let it override the
   // live selection only after the roster proves that agent exists.
@@ -588,10 +567,6 @@ export function renderApplicationShell(host: ShellViewHost) {
         .tabIndex=${-1}
       >
         ${renderFloatingUpdateCard({
-          navigationSurfaceHidden,
-          mobileNavLayout,
-          onboarding,
-          settingsTakeover,
           compact: mergedChatChrome,
           updateAvailable: overlaySnapshot.updateAvailable,
           updateSchedule: overlaySnapshot.updateSchedule,
@@ -606,8 +581,6 @@ export function renderApplicationShell(host: ShellViewHost) {
           onRefresh: () => host.refreshControlUi(),
           onHoldUpdate: () => context.overlays.holdUpdate(),
           onReviewUpdate: () => host.navigate("updates"),
-          onNavigate: (routeId) => host.navigate(routeId),
-          onOpenApprovals: () => host.openApprovals(),
         })}
         ${pageActionsBlocked && gatewaySnapshot.phase !== "reload-required"
           ? html`<div class="connection-action-block" role="status" aria-live="polite">

@@ -161,7 +161,7 @@ async function expectPanelHeaderControlsClearShellChrome(page: Page): Promise<vo
     ].map(rect);
     const shells = [
       ...document.querySelectorAll(
-        ":is(.shell-chrome-controls, .macos-titlebar-controls, .sidebar-attention--floating) button:not([hidden])",
+        ":is(.shell-chrome-controls, .macos-titlebar-controls) button:not([hidden])",
       ),
     ]
       .map(rect)
@@ -210,7 +210,6 @@ suite.define(() => {
       deviceLess: false,
       direction: "ltr",
       expectedControl: ".shell-chrome-controls__search",
-      expectedUpdate: false,
       name: "expanded navigation",
       navCollapsed: false,
       operatorScopes: undefined,
@@ -224,7 +223,6 @@ suite.define(() => {
       deviceLess: false,
       direction: "ltr",
       expectedControl: ".shell-chrome-controls__search",
-      expectedUpdate: false,
       name: "collapsed navigation",
       navCollapsed: true,
       operatorScopes: undefined,
@@ -238,11 +236,10 @@ suite.define(() => {
       deviceLess: false,
       direction: "ltr",
       expectedControl: ".shell-chrome-controls__custodian",
-      expectedUpdate: true,
-      name: "collapsed navigation with custodian and attention",
+      name: "collapsed navigation with custodian",
       navCollapsed: true,
       operatorScopes: undefined,
-      proof: "collapsed-nav-custodian-attention",
+      proof: "collapsed-nav-custodian",
       themeMode: "dark" as const,
       updateAvailable: {
         channel: "stable",
@@ -255,12 +252,11 @@ suite.define(() => {
       custodian: false,
       deviceLess: true,
       direction: "rtl",
-      expectedControl: ".sidebar-attention--floating .sidebar-issues-button",
-      expectedUpdate: false,
-      name: "collapsed RTL limited-access status and attention",
+      expectedControl: ".shell-chrome-controls__search",
+      name: "collapsed RTL limited access",
       navCollapsed: true,
       operatorScopes: limitedScopes,
-      proof: "collapsed-rtl-limited-attention",
+      proof: "collapsed-rtl-limited",
       themeMode: "dark" as const,
       updateAvailable: undefined,
     },
@@ -294,22 +290,9 @@ suite.define(() => {
           await expect
             .poll(() => page.locator(".shell").getAttribute("class"))
             .toContain("shell--nav-collapsed");
-          await page.locator(".sidebar-attention--floating .sidebar-issues-button").waitFor();
         }
         await page.locator(testCase.expectedControl).waitFor();
-        if (testCase.expectedUpdate) {
-          const updateSlot = page.locator(
-            ".sidebar-attention--floating .sidebar-footer-update-slot",
-          );
-          await updateSlot.waitFor();
-          await updateSlot.hover();
-          await waitForShellLayout(page);
-          await expectPanelHeaderControlsClearShellChrome(page);
-          await page.mouse.move(800, 700);
-          await updateSlot.locator(".sidebar-footer-update").focus();
-          await waitForShellLayout(page);
-          await expectPanelHeaderControlsClearShellChrome(page);
-        }
+        expect(await page.locator(".sidebar-attention--floating").count()).toBe(0);
         await waitForShellLayout(page);
         await expectPanelHeaderControlsClearShellChrome(page);
         await capturePanel(page, testCase.proof);

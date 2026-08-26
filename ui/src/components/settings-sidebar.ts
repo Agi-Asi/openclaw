@@ -28,6 +28,7 @@ import { redactLoginFailureError } from "./login-gate.ts";
 import { renderOfflineSidebarStatus } from "./session-row-badges.ts";
 import type { SettingsSaveIndicatorProps } from "./settings-save-indicator.ts";
 import "./settings-save-indicator.ts";
+import "./sidebar-attention.ts";
 import "./sidebar-build-chip.ts";
 
 type SettingsSidebarProps = {
@@ -342,12 +343,21 @@ export function renderSettingsSidebar(props: SettingsSidebarProps) {
           : html`<openclaw-settings-save-indicator
               .props=${props.saveIndicator}
             ></openclaw-settings-save-indicator>`}
-        <openclaw-sidebar-build-chip
-          .basePath=${props.basePath}
-          .gatewayVersion=${props.gatewayVersion || null}
-          .variant=${"settings"}
-          .onNavigate=${() => props.onNavigate("about")}
-        ></openclaw-sidebar-build-chip>
+        <div class="settings-sidebar__footer-row">
+          <openclaw-sidebar-build-chip
+            .basePath=${props.basePath}
+            .gatewayVersion=${props.gatewayVersion || null}
+            .variant=${"settings"}
+            .onNavigate=${() => props.onNavigate("about")}
+          ></openclaw-sidebar-build-chip>
+          <span class="settings-sidebar__attention">
+            <openclaw-sidebar-attention
+              .showInboxButton=${false}
+              .onNavigate=${props.onNavigate}
+              .watchUpdateProgress=${props.watchUpdateProgress}
+            ></openclaw-sidebar-attention>
+          </span>
+        </div>
       </footer>
     </aside>
   `;

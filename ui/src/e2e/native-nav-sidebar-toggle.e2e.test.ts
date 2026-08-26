@@ -392,9 +392,7 @@ suite.define(() => {
     await panel.getByRole("button", { name: "Expand side panel" }).click();
     await panel.getByRole("button", { name: "Restore side panel" }).waitFor();
 
-    const shellControls = page.locator(
-      ".macos-titlebar-controls button:visible, .sidebar-attention--floating button:visible",
-    );
+    const shellControls = page.locator(".macos-titlebar-controls button:visible");
     const panelControls = panel.locator(":scope > .side-panel__header :is(button, wa-tab):visible");
     const shellBoxes = await Promise.all(
       Array.from({ length: await shellControls.count() }, (_, index) =>
@@ -411,7 +409,7 @@ suite.define(() => {
     expect(panelLeft - shellRight).toBeGreaterThanOrEqual(4);
     expect(panelLeft - shellRight).toBeLessThanOrEqual(16);
     if (testCase.deviceLess) {
-      await page.locator(".sidebar-attention--floating .sidebar-issues-button__count").waitFor();
+      expect(await page.locator(".sidebar-attention--floating").count()).toBe(0);
       expect(await page.locator(".scope-upgrade-shell-status").count()).toBe(0);
     }
     for (let index = 0; index < (await panelControls.count()); index += 1) {

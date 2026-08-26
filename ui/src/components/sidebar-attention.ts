@@ -63,9 +63,8 @@ type SidebarAttentionAgentScope = { selectedId: string | null; scopeId: string |
 const VISIBILITY_REFRESH_MIN_AGE_MS = 60_000;
 // Always-visible native windows need a slow lifecycle-owned refresh too.
 const IDLE_REFRESH_INTERVAL_MS = 10 * 60_000;
-// Display is stylesheet-owned (layout.css `display: contents` in the footer,
-// flex when floating): the LightDomContents base's inline display would defeat
-// the floating override, re-piling the collapsed-nav cluster at the origin.
+// Display is stylesheet-owned (`display: contents`) so the footer layout owns
+// the Inbox and update controls without an extra box between them.
 class SidebarAttention extends OpenClawLightDomElement {
   @consume({ context: applicationContext, subscribe: true })
   private context?: ApplicationContext;
@@ -86,6 +85,7 @@ class SidebarAttention extends OpenClawLightDomElement {
   @property({ attribute: false }) activeRouteId?: NavigationRouteId;
   @property({ attribute: false }) onNavigate?: (routeId: NavigationRouteId) => void;
   @property({ attribute: false }) watchUpdateProgress?: UpdateProgressWatcher;
+  @property({ attribute: false }) showInboxButton = true;
 
   private loadedClient: GatewayBrowserClient | null = null;
   private loadedGateway: ApplicationContext["gateway"] | null = null;
@@ -628,33 +628,35 @@ class SidebarAttention extends OpenClawLightDomElement {
       count: String(count),
     });
     return html`
-      <span class="sr-only" role="status" aria-live="polite">${label}</span>
-      <button
-        type="button"
-        class="sidebar-issues-button"
-        aria-expanded=${String(this.panelOpen)}
-        aria-haspopup="dialog"
-        aria-controls="sidebar-issues-panel"
-        aria-label=${label}
-        @click=${(event: MouseEvent) => {
-          const trigger = event.currentTarget;
-          if (!(trigger instanceof HTMLElement)) {
-            return;
-          }
-          if (this.panelOpen) {
-            this.closePanel(true);
-          } else {
-            void this.openPanel(trigger);
-          }
-        }}
-      >
-        <span class="sidebar-issues-button__icon" aria-hidden="true">${icons.inbox}</span>
-        ${count > 0
-          ? html`<span class="sidebar-issues-button__count" aria-hidden="true"
-              >${count > 9 ? "9+" : count}</span
-            >`
-          : nothing}
-      </button>
+      ${this.showInboxButton
+        ? html`<span class="sr-only" role="status" aria-live="polite">${label}</span>
+            <button
+              type="button"
+              class="sidebar-issues-button"
+              aria-expanded=${String(this.panelOpen)}
+              aria-haspopup="dialog"
+              aria-controls="sidebar-issues-panel"
+              aria-label=${label}
+              @click=${(event: MouseEvent) => {
+                const trigger = event.currentTarget;
+                if (!(trigger instanceof HTMLElement)) {
+                  return;
+                }
+                if (this.panelOpen) {
+                  this.closePanel(true);
+                } else {
+                  void this.openPanel(trigger);
+                }
+              }}
+            >
+              <span class="sidebar-issues-button__icon" aria-hidden="true">${icons.inbox}</span>
+              ${count > 0
+                ? html`<span class="sidebar-issues-button__count" aria-hidden="true"
+                    >${count > 9 ? "9+" : count}</span
+                  >`
+                : nothing}
+            </button>`
+        : nothing}
       ${updateEntry
         ? html`<span class="sidebar-footer-update-slot">
             <button

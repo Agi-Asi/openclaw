@@ -207,7 +207,7 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
     await availableItem.getByRole("button", { name: "Request admin" }).waitFor();
   });
 
-  it("keeps a pending admin request across Inbox presenters and Settings", async () => {
+  it("keeps a pending admin request while Inbox is hidden outside the open sidebar", async () => {
     const context = await createContext();
     const page = await context.newPage();
     const gateway = await installMockGateway(page, {
@@ -234,12 +234,10 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
       .locator(".shell-chrome-controls")
       .getByRole("button", { name: "Collapse sidebar" })
       .click();
-    const collapsedItem = await openLimitedAccessItem(await openInbox(page));
-    await waitForPendingUpgradeItem(collapsedItem);
+    expect(await page.locator(".sidebar-issues-button:visible").count()).toBe(0);
     expect(await gateway.getRequests("device.scopes.requestUpgrade")).toHaveLength(1);
     expect(await gateway.getRequests("device.scopes.waitUpgrade")).toHaveLength(1);
 
-    await closeInbox(page);
     await page.getByRole("button", { name: "Expand sidebar" }).click();
     const sidebar = page.locator("openclaw-app-sidebar");
     const identityCard = sidebar.locator(".sidebar-identity-card");
@@ -250,9 +248,7 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
       .getByRole("menuitem", { exact: true, name: "Settings" })
       .click();
     await waitForControlUiSettingsTakeover(page);
-    const settingsItem = await openLimitedAccessItem(await openInbox(page));
-    await waitForPendingUpgradeItem(settingsItem);
-    await waitForAnimations(page.locator("#sidebar-issues-panel"));
+    expect(await page.locator(".settings-sidebar__footer .sidebar-issues-button").count()).toBe(0);
     await captureProof(page, "settings-inbox-upgrade-pending.png");
     expect(await gateway.getRequests("device.scopes.requestUpgrade")).toHaveLength(1);
     expect(await gateway.getRequests("device.scopes.waitUpgrade")).toHaveLength(1);
@@ -302,7 +298,7 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
     },
   );
 
-  it("keeps Inbox reachable at the bottom left during onboarding", async () => {
+  it("does not float Inbox when onboarding hides navigation", async () => {
     const context = await createContext();
     const page = await context.newPage();
     await installMockGateway(page, {
@@ -314,10 +310,8 @@ describeControlUiE2e("Control UI live device scope upgrade", () => {
     expect(
       await page.getByText("Update the Gateway to continue setup with OpenClaw.").count(),
     ).toBe(0);
-    const inbox = page.locator(".sidebar-attention--floating .sidebar-issues-button");
-    await expect.poll(() => inbox.getAttribute("aria-label")).toBe("1 inbox item");
-    const item = await openLimitedAccessItem(await openInbox(page));
-    await item.getByRole("button", { name: "Request admin" }).waitFor();
+    expect(await page.locator(".sidebar-attention--floating").count()).toBe(0);
+    expect(await page.locator(".sidebar-issues-button:visible").count()).toBe(0);
     await captureProof(page, "onboarding-inbox-limited-access.png");
   });
 

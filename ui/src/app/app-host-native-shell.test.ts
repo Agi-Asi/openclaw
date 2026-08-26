@@ -7,7 +7,7 @@ import { getRenderedModalDialog, installDialogPolyfill } from "../test-helpers/m
 import "./app-host.ts";
 import { resetAppHostTestGlobals, type ShellKeyboardState } from "./app-host.test-support.ts";
 import type { ApplicationContext } from "./context.ts";
-import { navigationSurfaceIsHidden, renderFloatingUpdateCard } from "./navigation-surface.ts";
+import { renderFloatingUpdateCard } from "./navigation-surface.ts";
 
 type ShellNavigationState = {
   runtime: { context: ApplicationContext };
@@ -490,12 +490,10 @@ describe("OpenClaw native shell", () => {
 });
 
 describe("OpenClaw shell update affordance", () => {
-  it("renders floating attention while keeping update actions in navigation", async () => {
+  it("renders only the stale-client refresh card outside navigation", () => {
     const container = document.createElement("div");
     document.body.append(container);
     const shared = {
-      mobileNavLayout: false,
-      onboarding: false,
       updateAvailable: {
         currentVersion: "2026.7.1",
         latestVersion: "2026.7.2",
@@ -507,22 +505,13 @@ describe("OpenClaw shell update affordance", () => {
       refreshRequired: false,
       onRefresh: vi.fn(),
     };
-    const collapsed = navigationSurfaceIsHidden({
-      onboarding: false,
-      navCollapsed: true,
-      navDrawerOpen: false,
-      mobileNavLayout: false,
-    });
-    render(renderFloatingUpdateCard({ ...shared, navigationSurfaceHidden: collapsed }), container);
-    expect(
-      container.querySelector("openclaw-sidebar-attention.sidebar-attention--floating"),
-    ).not.toBeNull();
+    render(renderFloatingUpdateCard(shared), container);
+    expect(container.querySelector("openclaw-sidebar-attention")).toBeNull();
     expect(container.querySelector("openclaw-sidebar-update-card")).toBeNull();
 
     render(
       renderFloatingUpdateCard({
         ...shared,
-        navigationSurfaceHidden: collapsed,
         updateAvailable: null,
         refreshRequired: true,
       }),
@@ -535,114 +524,19 @@ describe("OpenClaw shell update affordance", () => {
     refreshCard?.onRefresh();
     expect(shared.onRefresh).toHaveBeenCalledOnce();
     expect(shared.onUpdate).not.toHaveBeenCalled();
-
-    const visible = navigationSurfaceIsHidden({
-      onboarding: false,
-      navCollapsed: false,
-      navDrawerOpen: false,
-      mobileNavLayout: false,
-    });
-    render(
-      renderFloatingUpdateCard({
-        ...shared,
-        navigationSurfaceHidden: visible,
-        updateAvailable: null,
-        refreshRequired: true,
-      }),
-      container,
-    );
-    expect(container.querySelector("openclaw-sidebar-update-card")).not.toBeNull();
     container.remove();
   });
 
-  it("keeps attention in the closed mobile drawer while preserving stale-client refresh", async () => {
+  it("hides the stale-client refresh card in compact chrome", () => {
     const container = document.createElement("div");
-    document.body.append(container);
-    try {
-      const navigationSurfaceHidden = navigationSurfaceIsHidden({
-        onboarding: false,
-        navCollapsed: false,
-        navDrawerOpen: false,
-        mobileNavLayout: true,
-      });
-      expect(navigationSurfaceHidden).toBe(true);
-      const shared = {
-        navigationSurfaceHidden,
-        mobileNavLayout: true,
-        onboarding: false,
-        updateAvailable: {
-          currentVersion: "2026.7.1",
-          latestVersion: "2026.7.2",
-          channel: "stable" as const,
-        },
-        updateBusy: false,
-        canUpdate: true,
-        onUpdate: vi.fn(),
-        refreshRequired: false,
-        onRefresh: vi.fn(),
-      };
-
-      render(renderFloatingUpdateCard(shared), container);
-      expect(
-        container.querySelector("openclaw-sidebar-attention.sidebar-attention--floating"),
-      ).toBeNull();
-
-      render(
-        renderFloatingUpdateCard({ ...shared, updateAvailable: null, refreshRequired: true }),
-        container,
-      );
-      const refreshCard = container.querySelector<
-        HTMLElement & { updateComplete: Promise<boolean> }
-      >("openclaw-sidebar-update-card");
-      await refreshCard?.updateComplete;
-      expect(refreshCard?.querySelector(".sidebar-update-card")).not.toBeNull();
-    } finally {
-      container.remove();
-    }
-  });
-
-  it("keeps the stale-client refresh visible during onboarding", () => {
-    const container = document.createElement("div");
-    const shared = {
-      mobileNavLayout: false,
-      onboarding: true,
-      updateAvailable: null,
-      updateBusy: false,
-      onUpdate: vi.fn(),
-      refreshRequired: true,
-      onRefresh: vi.fn(),
-    };
-    expect(
-      navigationSurfaceIsHidden({
-        onboarding: true,
-        navCollapsed: false,
-        navDrawerOpen: false,
-        mobileNavLayout: false,
-      }),
-    ).toBe(true);
-
-    for (const navigationSurfaceHidden of [false, true]) {
-      render(renderFloatingUpdateCard({ ...shared, navigationSurfaceHidden }), container);
-      expect(
-        container.querySelector("openclaw-sidebar-attention.sidebar-attention--floating") !== null,
-      ).toBe(navigationSurfaceHidden);
-      const cards = container.querySelectorAll<HTMLElement & { refreshRequired: boolean }>(
-        "openclaw-sidebar-update-card",
-      );
-      expect(cards).toHaveLength(1);
-      expect(cards[0]?.refreshRequired).toBe(true);
-    }
-
     render(
       renderFloatingUpdateCard({
-        ...shared,
-        navigationSurfaceHidden: true,
-        updateAvailable: {
-          currentVersion: "2026.7.1",
-          latestVersion: "2026.7.2",
-          channel: "stable",
-        },
-        refreshRequired: false,
+        compact: true,
+        updateAvailable: null,
+        updateBusy: false,
+        onUpdate: vi.fn(),
+        refreshRequired: true,
+        onRefresh: vi.fn(),
       }),
       container,
     );
