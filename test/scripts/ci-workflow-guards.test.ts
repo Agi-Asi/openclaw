@@ -6491,9 +6491,12 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(evaluateWorkflowExpression(checkShardStep.env.RUNNER_BACKEND, manualDispatch)).toBe(
       "github",
     );
+    expect(checkShardStep.env.RELEASE_GATE).toBe("${{ inputs.release_gate && 'true' || 'false' }}");
     expect(manifestStep.run).toContain("runnerBackend: process.env.OPENCLAW_CI_RUNNER_BACKEND");
     expect(checkShardRun).toContain('if [ "$RUNNER_BACKEND" = "github" ]; then');
     expect(checkShardRun).toContain("lint_args=(--only=extensions --only=scripts --threads=1)");
+    expect(checkShardRun).toContain('if [ "$RELEASE_GATE" = "true" ]; then');
+    expect(checkShardRun).toContain("lint_args=(--only=scripts --threads=1)");
     expect(checkShardRun).toContain('elif [ "$(nproc)" -lt 8 ]; then');
     expect(checkShardRun).toContain("lint_args=(--threads=1)");
     expect(checkShardRun).not.toContain("lint_args=(--split-core --threads=1)");

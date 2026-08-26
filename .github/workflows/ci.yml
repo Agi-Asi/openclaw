@@ -2660,6 +2660,7 @@ jobs:
           FROZEN_TARGET: ${{ needs.preflight.outputs.frozen_target }}
           HISTORICAL_TARGET: ${{ needs.preflight.outputs.compatibility_target }}
           FORMAT_CHECK: ${{ needs.preflight.outputs.run_format_check }}
+          RELEASE_GATE: ${{ inputs.release_gate && 'true' || 'false' }}
           RUN_CONTROL_UI_I18N: ${{ needs.preflight.outputs.run_control_ui_i18n }}
           RUN_UI_TESTS: ${{ needs.preflight.outputs.run_ui_tests }}
           RUNNER_BACKEND: ${{ (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && 'github' || vars.OPENCLAW_CI_RUNNER_BACKEND }}
@@ -2759,9 +2760,12 @@ jobs:
               lint_args=(--threads=8)
               if [ "$RUNNER_BACKEND" = "github" ]; then
                 # Five dedicated hosted jobs own the aggregated core Programs. Keep
-                # extension preparation, optional UI checks, and formatting in
-                # this sixth lane so each 4-core runner stays below ~6m.
+                # extension preparation in this sixth lane except when the exact
+                # merge-tree release lint job already owns it.
                 lint_args=(--only=extensions --only=scripts --threads=1)
+                if [ "$RELEASE_GATE" = "true" ]; then
+                  lint_args=(--only=scripts --threads=1)
+                fi
                 export GOMAXPROCS=2
               elif [ "$(nproc)" -lt 8 ]; then
                 # Fork PRs build each semantic Program once. Bound both oxlint
