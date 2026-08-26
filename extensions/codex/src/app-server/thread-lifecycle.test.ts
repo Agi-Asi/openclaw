@@ -3454,7 +3454,11 @@ describe("Codex app-server supervised branch lifecycle", () => {
         return nativeThreadResult(probeThreadId, "native-effective", "native-provider", "low");
       }
       if (method === "thread/start") {
-        const response = nativeThreadResult(finalThreadId, "native-effective", "native-provider");
+        const response: Record<string, unknown> = nativeThreadResult(
+          finalThreadId,
+          "native-effective",
+          "native-provider",
+        );
         delete response.reasoningEffort;
         return response;
       }
