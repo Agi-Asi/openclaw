@@ -293,24 +293,7 @@ suite.define(() => {
       .poll(() => page.locator(".shell").getAttribute("class"))
       .toContain("shell--nav-collapsed");
     await expect.poll(() => newThread.isVisible()).toBe(true);
-    await page.locator(".sidebar-attention--floating .sidebar-footer-update").waitFor();
-    const toolbarBox = await toolbar.boundingBox();
-    const attentionBox = await page.locator(".sidebar-attention--floating").boundingBox();
-    expect(toolbarBox).not.toBeNull();
-    expect(attentionBox).not.toBeNull();
-    expect(attentionBox!.x - (toolbarBox!.x + toolbarBox!.width)).toBeGreaterThanOrEqual(4);
-    const topLeftControls = page.locator(
-      ".macos-titlebar-controls button:visible, .sidebar-attention--floating button:visible",
-    );
-    const centerlines = await topLeftControls.evaluateAll((buttons) =>
-      buttons.map((button) => {
-        const box = button.getBoundingClientRect();
-        return box.top + box.height / 2;
-      }),
-    );
-    for (const centerline of centerlines.slice(1)) {
-      expect(centerline).toBeCloseTo(centerlines[0]!, 1);
-    }
+    expect(await page.locator(".sidebar-attention--floating").count()).toBe(0);
     if (railProofDir) {
       await mkdir(railProofDir, { recursive: true });
       await page.screenshot({
