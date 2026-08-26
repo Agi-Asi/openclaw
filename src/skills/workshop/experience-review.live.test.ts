@@ -131,61 +131,28 @@ describeLive("skill experience review live OpenAI eval", () => {
     await tempDirs.cleanup();
   });
 
-  it("proposes a recovered preflight procedure but ignores routine one-off work", async () => {
+  it("proposes a standing procedure but ignores routine one-off work", async () => {
     const positiveMessages = [
       {
         role: "user",
         content:
-          "Deploy this repository from its checked-in manifest. Do not ask for values already present there.",
+          "From now on, every incident handoff you prepare for me must group symptoms by affected component, use UTC for the first and last observed times, and end with the owner plus the next verification step. Treat this as my standing incident-handoff procedure.",
       },
-      { role: "assistant", content: [{ type: "toolCall", name: "deploy", arguments: {} }] },
-      { role: "toolResult", toolName: "deploy", isError: true, content: "project required" },
       {
         role: "assistant",
-        content: [{ type: "toolCall", name: "deploy", arguments: { project: "app" } }],
+        content: "Understood. I will use that structure for future incident handoffs.",
       },
-      { role: "toolResult", toolName: "deploy", isError: true, content: "region required" },
       {
         role: "assistant",
-        content: [
-          { type: "toolCall", name: "deploy", arguments: { project: "app", region: "us" } },
-        ],
-      },
-      { role: "toolResult", toolName: "deploy", isError: true, content: "service required" },
-      { role: "assistant", content: "I am still guessing required fields one at a time." },
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", name: "read", arguments: { path: "deploy.json" } }],
+        content: [{ type: "toolCall", name: "incident_handoff", arguments: { incident: "api" } }],
       },
       {
         role: "toolResult",
-        toolName: "read",
-        content: "project=app region=us service=api health=/ready",
+        toolName: "incident_handoff",
+        content:
+          "api: first 2026-08-25T18:00:00Z, last 2026-08-25T18:12:00Z; owner: on-call; next: verify error rate",
       },
-      { role: "assistant", content: "The manifest contains all required deployment inputs." },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "toolCall",
-            name: "deploy",
-            arguments: { project: "app", region: "us", service: "api" },
-          },
-        ],
-      },
-      { role: "toolResult", toolName: "deploy", content: "deployed" },
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", name: "fetch", arguments: { path: "/ready" } }],
-      },
-      { role: "toolResult", toolName: "fetch", content: "200 ok" },
-      { role: "assistant", content: "Deployment verified." },
-      {
-        role: "assistant",
-        content: "Next time the manifest should be read before the first deploy call.",
-      },
-      { role: "assistant", content: "That preflight would remove three failed tool rounds." },
-      { role: "assistant", content: "Done." },
+      { role: "assistant", content: "Handoff recorded using the standing procedure." },
     ];
 
     const positiveCandidate = await candidate("live-positive", positiveMessages);
