@@ -1040,7 +1040,7 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/openclaw-live-and-e2e-checks-reusable.yml
     with: &docker_acceptance_inputs
-      advisory: ${{ inputs.advisory }}
+      advisory: ${{ inputs.advisory || false }}
       ref: ${{ needs.resolve_package.outputs.package_source_sha || inputs.workflow_ref }}
       include_repo_e2e: false
       include_release_path_suites: ${{ needs.resolve_package.outputs.include_release_path_suites == 'true' }}

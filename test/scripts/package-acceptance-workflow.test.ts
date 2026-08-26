@@ -2842,6 +2842,8 @@ describe("package acceptance workflow", () => {
     expect(dockerAcceptance.with?.ref).toBe(
       "${{ needs.resolve_package.outputs.package_source_sha || inputs.workflow_ref }}",
     );
+    expect(dockerAcceptance.with?.advisory).toBe("${{ inputs.advisory || false }}");
+    expect(dockerAcceptanceRegistry.with?.advisory).toBe("${{ inputs.advisory || false }}");
     expect(dockerAcceptance.with?.prepublish_plugin_registry_artifact_name).toContain(
       "startsWith(",
     );
