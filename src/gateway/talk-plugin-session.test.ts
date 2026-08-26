@@ -37,6 +37,7 @@ function requireDispatchContext(): DispatchContext {
 
 describe("plugin Talk session", () => {
   let controller: AbortController;
+  let routeController: AbortController;
   let dispatchContexts: DispatchContext[];
 
   function capturedDispatchContext(index = 0): DispatchContext {
@@ -50,10 +51,12 @@ describe("plugin Talk session", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new AbortController();
+    routeController = new AbortController();
     dispatchContexts = [];
     mocks.scope.mockReturnValue({
       pluginId: "avatar",
       gatewayMethodDispatchAllowed: true,
+      routeSignal: routeController.signal,
       client: {
         connId: "plugin-http:127.0.0.1",
         connect: { scopes: ["operator.talk"] },
@@ -87,7 +90,7 @@ describe("plugin Talk session", () => {
       },
       { requireScopedClient: true },
     );
-    expect(createParams.ownerId).toBe("plugin-http:127.0.0.1");
+    expect(createParams.ownerId).toMatch(/^plugin:avatar:/);
     expect(createParams.quotaOwnerId).toBe("plugin:avatar:plugin-http:127.0.0.1");
 
     createParams.eventSink({ relaySessionId: "relay-1", type: "ready" });
@@ -135,7 +138,7 @@ describe("plugin Talk session", () => {
     });
   });
 
-  it("binds every session to the authenticated route while sharing its plugin quota", async () => {
+  it("gives every session a unique owner while sharing its authenticated route quota", async () => {
     await openPluginTalkSession({
       sessionKey: "agent:main:first",
       signal: controller.signal,
@@ -147,10 +150,10 @@ describe("plugin Talk session", () => {
       onEvent: vi.fn(),
     });
 
-    expect(dispatchContexts.map((params) => params.ownerId)).toEqual([
-      "plugin-http:127.0.0.1",
-      "plugin-http:127.0.0.1",
-    ]);
+    expect(new Set(dispatchContexts.map((params) => params.ownerId)).size).toBe(2);
+    expect(dispatchContexts.every((params) => params.ownerId.startsWith("plugin:avatar:"))).toBe(
+      true,
+    );
     expect(dispatchContexts.map((params) => params.quotaOwnerId)).toEqual([
       "plugin:avatar:plugin-http:127.0.0.1",
       "plugin:avatar:plugin-http:127.0.0.1",
@@ -292,6 +295,7 @@ describe("plugin Talk session", () => {
     mocks.scope.mockReturnValue({
       pluginId: "avatar",
       gatewayMethodDispatchAllowed: true,
+      routeSignal: controller.signal,
       client: {
         connId: "plugin-http:127.0.0.1",
         connect: { scopes: ["operator.read"] },
@@ -333,6 +337,23 @@ describe("plugin Talk session", () => {
     const createParams = capturedDispatchContext();
 
     controller.abort();
+
+    expect(mocks.stopSession).toHaveBeenCalledWith({
+      relaySessionId: "relay-1",
+      connId: createParams.ownerId,
+      disposition: "detach",
+    });
+  });
+
+  it("closes the relay when the host route lifetime ends", async () => {
+    await openPluginTalkSession({
+      sessionKey: "agent:main:avatar",
+      signal: controller.signal,
+      onEvent: vi.fn(),
+    });
+    const createParams = capturedDispatchContext();
+
+    routeController.abort(new Error("plugin route disconnected"));
 
     expect(mocks.stopSession).toHaveBeenCalledWith({
       relaySessionId: "relay-1",

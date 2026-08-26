@@ -23,6 +23,7 @@ function openScopedSession(context: GatewayRequestContext, sessionKey: string) {
       client,
       context,
       gatewayMethodDispatchAllowed: true,
+      routeSignal: new AbortController().signal,
       isWebchatConnect: () => false,
       pluginId: "avatar",
     },

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { TalkSessionCreateResult } from "../../packages/gateway-protocol/src/index.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
@@ -31,6 +32,7 @@ function requirePluginTalkScope() {
     !scope?.context ||
     !scope.pluginId ||
     !scope.client?.connId ||
+    !scope.routeSignal ||
     scope.gatewayMethodDispatchAllowed !== true
   ) {
     throw new Error(
@@ -46,8 +48,9 @@ function requirePluginTalkScope() {
   return {
     clientConnId: scope.client.connId,
     context: scope.context,
-    ownerId: scope.client.connId,
+    ownerId: `plugin:${scope.pluginId}:${randomUUID()}`,
     quotaOwnerId: `plugin:${scope.pluginId}:${scope.client.connId}`,
+    routeSignal: scope.routeSignal,
   };
 }
 
@@ -188,10 +191,11 @@ export async function openPluginTalkSession(
       "Choose an OpenClaw session before starting voice so the conversation uses the intended agent and workspace.",
     );
   }
-  if (params.signal.aborted) {
-    throw talkSessionAbortError(params.signal, "Talk session was cancelled before it opened");
+  const { clientConnId, context, ownerId, quotaOwnerId, routeSignal } = requirePluginTalkScope();
+  const signal = AbortSignal.any([params.signal, routeSignal]);
+  if (signal.aborted) {
+    throw talkSessionAbortError(signal, "Talk session was cancelled before it opened");
   }
-  const { clientConnId, context, ownerId, quotaOwnerId } = requirePluginTalkScope();
   const lifecycle: { relaySessionId?: string; aborted: boolean; removeAbortListener?: () => void } =
     {
       aborted: false,
@@ -221,8 +225,8 @@ export async function openPluginTalkSession(
     lifecycle.aborted = true;
     stopRelay("detach");
   };
-  params.signal.addEventListener("abort", abort, { once: true });
-  lifecycle.removeAbortListener = () => params.signal.removeEventListener("abort", abort);
+  signal.addEventListener("abort", abort, { once: true });
+  lifecycle.removeAbortListener = () => signal.removeEventListener("abort", abort);
   let session: TalkSessionCreateResult;
   try {
     session = await withPluginTalkSessionDispatchContext(
@@ -271,7 +275,7 @@ export async function openPluginTalkSession(
         ? deliveryError
         : new Error(`Plugin Talk event delivery failed: ${formatErrorMessage(deliveryError)}`);
     }
-    throw talkSessionAbortError(params.signal, "Talk session was cancelled while opening");
+    throw talkSessionAbortError(signal, "Talk session was cancelled while opening");
   }
 
   return {
