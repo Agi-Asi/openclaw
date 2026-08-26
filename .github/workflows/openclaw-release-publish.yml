@@ -2491,29 +2491,21 @@ jobs:
             fi
           }
 
-          bootstrap_summary_ref="$(jq -er '.bootstrap.ref | select(type == "string" and length > 0)' "${CLAWHUB_PLAN_PATH}")"
-          bootstrap_summary_sha="$(jq -er '.bootstrapWorkflowSha | select(test("^[a-f0-9]{40}$"))' "${CLAWHUB_PLAN_PATH}")"
           force_skip_clawhub=false
           if [[ "${RELEASE_NPM_DIST_TAG}" == "extended-stable" ]]; then
             force_skip_clawhub=true
           fi
           {
-            echo "### Publish sequence"
+            echo "### Publish"
             echo
             echo "- Workflow ref: \`${CHILD_WORKFLOW_REF}\`"
-            if [[ "${force_skip_clawhub}" == "true" ]]; then
-              echo "- ClawHub: skipped by release track"
-            else
-              echo "- Normal ClawHub workflow ref: release tag \`${RELEASE_TAG}\`"
-              echo "- ClawHub bootstrap workflow ref: \`${bootstrap_summary_ref}\` at \`${bootstrap_summary_sha}\`"
-            fi
             echo "- Release tag: \`${RELEASE_TAG}\`"
             echo "- Release SHA: \`${TARGET_SHA}\`"
             echo "- Release approval: this workflow job"
             if [[ "${force_skip_clawhub}" == "true" ]]; then
-              echo "- Plugin npm publish: dispatched before core npm"
+              echo "- ClawHub: skipped by release track"
             else
-              echo "- Plugin npm and ClawHub publish: dispatched in parallel"
+              echo "- ClawHub: dispatched in parallel"
             fi
             if [[ "${PUBLISH_OPENCLAW_NPM}" == "true" ]]; then
               echo "- OpenClaw npm publish: starts after plugin npm succeeds"
@@ -2525,13 +2517,6 @@ jobs:
             fi
             if is_stable_release && [[ "${PUBLISH_OPENCLAW_NPM}" == "true" ]]; then
               echo "- Windows Hub promotion: promoted concurrently with the OpenClaw npm publish; required before the GitHub release can be published"
-            fi
-            if [[ "${force_skip_clawhub}" == "true" ]]; then
-              :
-            elif [[ "${WAIT_FOR_CLAWHUB}" == "true" ]]; then
-              echo "- Workflow completion waits for ClawHub"
-            else
-              echo "- Workflow completion does not wait for ClawHub; monitor the dispatched ClawHub run separately"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
