@@ -248,8 +248,9 @@ function canReconcileTelegramLegacyLane(params: {
 
 export type TelegramIngressDrainLifecycle = Omit<
   ChannelIngressMonitorLifecycle,
-  "admission" | "onFailed"
+  "admission" | "onCancelled" | "onFailed"
 > & {
+  onCancelled: () => void | Promise<void>;
   onFailed: (error: unknown) => void | Promise<void>;
 };
 
@@ -339,8 +340,8 @@ export function createTelegramIngressMonitor(params: CreateTelegramIngressMonito
         ),
     },
     deliver: async (update, lifecycle) => {
-      // The monitor always supplies onFailed; the optional public field preserves
-      // structural compatibility for channel lifecycles that never use deferred failure.
+      // The monitor supplies both optional callbacks; public lifecycle fields
+      // stay optional for channel implementations that do not consume them.
       const telegramLifecycle = lifecycle as TelegramIngressDrainLifecycle;
       try {
         const result = await runWithTelegramSpooledReplayUpdate(
@@ -390,7 +391,7 @@ export function createTelegramIngressMonitor(params: CreateTelegramIngressMonito
               await telegramLifecycle.onFailed(error);
               return;
             }
-            await telegramLifecycle.onAbandoned();
+            await telegramLifecycle.onCancelled();
           };
           // Two-arg then: the rejection arm must observe only a participant.task
           // rejection. Chaining it as .catch would also swallow onFailed/onAdopted

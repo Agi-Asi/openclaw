@@ -336,10 +336,10 @@ describe("createTelegramIngressMonitor", () => {
             {
               id: eventId,
               attempts: 0,
-              lastError: "turn-abandoned",
             },
           ]),
         );
+        expect((await queue.listPending({ limit: "all" }))[0]?.lastError).toBeUndefined();
         expect((await queue.enqueue(eventId, payload, { laneKey })).kind).not.toBe("completed");
       });
     },
@@ -378,9 +378,10 @@ describe("createTelegramIngressMonitor", () => {
 
       await vi.waitFor(async () =>
         expect(await queue.listPending({ limit: "all" })).toMatchObject([
-          { id: eventId, attempts: 0, lastError: "turn-abandoned" },
+          { id: eventId, attempts: 0 },
         ]),
       );
+      expect((await queue.listPending({ limit: "all" }))[0]?.lastError).toBeUndefined();
       expect(await queue.listFailed?.({ limit: "all" })).toEqual([]);
     });
   });
@@ -427,10 +428,10 @@ describe("createTelegramIngressMonitor", () => {
           {
             id: eventId,
             attempts: 0,
-            lastError: "turn-abandoned",
           },
         ]),
       );
+      expect((await queue.listPending({ limit: "all" }))[0]?.lastError).toBeUndefined();
       expect((await queue.enqueue(eventId, payload, { laneKey })).kind).not.toBe("completed");
     });
   });
