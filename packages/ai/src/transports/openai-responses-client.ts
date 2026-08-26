@@ -403,7 +403,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
         let continuationBaseline: ResponsesContinuationRequest | undefined;
         let responseAttempt: Awaited<
           ReturnType<ResponsesTransportExecutorOptions["createResponseStream"]>
-        >["attempt"];
+        >["attempt"] = { kind: "initial", request: params };
         const createSseStream = async (
           initialRequest = (continuationClaim?.request ?? params) as typeof params,
           initialAttemptKind: NonNullable<ResponsesStreamParams["initialAttemptKind"]> = "initial",
