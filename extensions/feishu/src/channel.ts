@@ -552,12 +552,16 @@ function buildFeishuSendReplyAnchor(
       replyInThread: true,
     };
   }
-  return resolveFeishuReplyMode({
-    replyToId: ctx.reply?.replyToId ?? readFirstString(ctx.params, ["replyTo", "reply_to"]),
-    threadId:
-      readFirstString(ctx.params, ["threadId"]) ??
-      resolveFeishuTopicAutoThreadAnchor(ctx, accountId),
-  });
+  const threadId =
+    readFirstString(ctx.params, ["threadId"]) ?? resolveFeishuTopicAutoThreadAnchor(ctx, accountId);
+  // Core also writes implicit reply IDs into params; they must not override
+  // native topic delivery. Only an explicit reply can choose normal reply mode.
+  const replyToId = ctx.reply
+    ? ctx.reply.source === "implicit" && threadId
+      ? undefined
+      : ctx.reply.replyToId
+    : readFirstString(ctx.params, ["replyTo", "reply_to"]);
+  return resolveFeishuReplyMode({ replyToId, threadId });
 }
 
 function isSupportedFeishuDirectConversationId(conversationId: string): boolean {

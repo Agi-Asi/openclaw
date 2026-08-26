@@ -2367,6 +2367,30 @@ describe("feishuPlugin actions", () => {
     });
   });
 
+  it.each(["implicit", "explicit"] as const)(
+    "preserves topic routing with a prepared %s reply",
+    async (source) => {
+      mockFeishuOutboundTextDelivery("om_reply");
+      await feishuPlugin.actions!.handleAction!({
+        channel: "feishu",
+        action: "send",
+        cfg,
+        params: { to: "chat:oc_group_1", text: "reply", replyTo: "om_inbound" },
+        sessionKey: "feishu:group:oc_group_1:topic:om_inbound",
+        toolContext: { currentChannelId: "oc_group_1", currentMessageId: "om_inbound" },
+        reply:
+          source === "explicit"
+            ? { source, replyToId: "om_inbound" }
+            : { source, replyToId: "om_inbound", mode: "all" },
+      });
+      expect(feishuOutboundSendTextMock).toHaveBeenCalledWith(
+        expect.objectContaining(
+          source === "implicit" ? { threadId: "om_inbound" } : { replyToId: "om_inbound" },
+        ),
+      );
+    },
+  );
+
   it.each([
     { name: "destination changes", params: { to: "chat:oc_other" } },
     { name: "top-level send requested", params: { to: "chat:oc_group_1", topLevel: true } },
