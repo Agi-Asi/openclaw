@@ -64,9 +64,15 @@ type WalkState = {
   wrapperPayloadDepth: number;
   spanBase: SpanBase;
   parentCommandId?: string;
+  treeDepth: number;
 };
 
 const MAX_WRAPPER_PAYLOAD_DEPTH = 2;
+// Guard the post-parse tree walk against deeply-nested ASTs (e.g. thousands of
+// nested command substitutions) that would overflow the JS call stack before
+// the 128 KiB / 500 ms parser guards fire.  The parser itself can handle such
+// inputs cleanly; only the recursive walk stage is at risk.
+const MAX_TREE_WALK_DEPTH = 500;
 
 const PARSEABLE_SHELL_WRAPPERS = new Set<string>(POSIX_PARSEABLE_SHELL_WRAPPERS);
 
@@ -893,6 +899,19 @@ async function walk(
   context: CommandContext,
   state: WalkState,
 ): Promise<void> {
+  // Protect against deeply nested ASTs (e.g. thousands of nested command
+  // substitutions) that would overflow the JS call stack even when the input
+  // passes the 128 KiB / 500 ms parser guards.
+  if (state.treeDepth > MAX_TREE_WALK_DEPTH) {
+    output.hasParseError = true;
+    output.risks.push({
+      kind: "syntax-error",
+      text: node.text.slice(0, 200),
+      span: spanFromNode(node, state.spanBase),
+    });
+    return;
+  }
+
   recordShape(node, output);
 
   const span = spanFromNode(node, state.spanBase);
@@ -996,6 +1015,7 @@ async function walk(
               wrapperPayloadDepth: state.wrapperPayloadDepth + 1,
               spanBase: wrapperSpanBase,
               parentCommandId: commandId,
+              treeDepth: state.treeDepth + 1,
             });
           } finally {
             wrapperTree.delete();
@@ -1005,7 +1025,7 @@ async function walk(
     }
   }
   for (const child of node.namedChildren) {
-    await walk(child, output, childContext, state);
+    await walk(child, output, childContext, { ...state, treeDepth: state.treeDepth + 1 });
   }
 }
 
@@ -1192,6 +1212,7 @@ export async function explainShellCommand(source: string): Promise<CommandExplan
     await walk(tree.rootNode, output, "top-level", {
       wrapperPayloadDepth: 0,
       spanBase: ROOT_SPAN_BASE,
+      treeDepth: 0,
     });
     const topLevelCommands = output.commands.filter((command) => command.context === "top-level");
     const operators = resolveOperators(source, output.commands, output.operatorSources);
