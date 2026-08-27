@@ -287,6 +287,7 @@ OpenClaw builds the candidate list from the currently requested `provider/model`
     - overloaded/provider-busy errors
     - timeout-shaped failover errors
     - billing disables
+    - `model_not_found` / HTTP 404 when the provider body indicates an invalid or retired model id — this is the most common trigger when a provider deprecates a model; the journal shows `reason=model_not_found` and the `model-fallback/decision` log lines confirm the advance to the next candidate
     - `LiveSessionModelSwitchError` for a stale current or earlier candidate; later configured targets redirect directly, while targets outside the chain return to the bounded session-model retry owner
     - other unrecognized errors when there are still remaining candidates
 
