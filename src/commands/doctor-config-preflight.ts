@@ -418,7 +418,14 @@ export async function runDoctorConfigPreflight(
 
     const warnings = snapshot.warnings ?? [];
     if (warnings.length > 0) {
-      note(formatConfigIssueLines(warnings, "-").join("\n"), "Config warnings");
+      // Use console.warn so the message goes through the logging capture pipeline
+      // and respects logging.consoleStyle: "json". The note() call previously used
+      // here bypassed that pipeline by writing a raw @clack/prompts box to
+      // process.stdout with no level, subsystem tag, or timestamp — making it
+      // invisible to structured log consumers. The same warning content is also
+      // emitted by logConfigWarningsOnce (io.warnings.ts) during Gateway startup,
+      // which already uses the proper logger path. Fixes #129842.
+      console.warn(`Config warnings:\n${formatConfigIssueLines(warnings, "-").join("\n")}`);
     }
 
     const baseConfig = snapshot.sourceConfig ?? snapshot.config ?? {};
