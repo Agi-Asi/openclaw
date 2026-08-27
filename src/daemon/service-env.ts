@@ -392,6 +392,14 @@ export function buildNodeServiceEnvironment(params: {
     CF_ACCESS_CLIENT_ID: cloudflareAccessClientId,
     CF_ACCESS_CLIENT_SECRET: cloudflareAccessClientSecret,
     OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: allowInsecurePrivateWs,
+    // On macOS the generated LaunchAgent plist inherits whatever the launchd
+    // manager session exports — including NODE_COMPILE_CACHE if the operator set
+    // it globally.  With a large packaged/read-only runtime tree and an
+    // unsuitable shared cache directory the node process can spend the entire
+    // startup window in compile-cache initialization.  Disable the cache for
+    // Darwin node services unconditionally; Linux / Windows are unaffected.
+    // Fixes #130020.
+    ...(platform === "darwin" ? { NODE_DISABLE_COMPILE_CACHE: "1" } : {}),
     ...resolveNodeServiceIdentityEnvironment(),
   };
 }

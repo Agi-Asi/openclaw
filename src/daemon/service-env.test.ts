@@ -1056,3 +1056,43 @@ describe("shared Node TLS env defaults focused", () => {
     expect(env.NODE_EXTRA_CA_CERTS).toBe("/custom/ca-bundle.crt");
   });
 });
+
+describe("buildNodeServiceEnvironment compile-cache fencing", () => {
+  // Regression for #130020: macOS node LaunchAgents could inherit
+  // NODE_COMPILE_CACHE from the launchd manager and spend the entire startup
+  // window in compile-cache initialization with a large packaged runtime tree.
+
+  it("sets NODE_DISABLE_COMPILE_CACHE=1 for Darwin node services even when NODE_COMPILE_CACHE is absent", () => {
+    const env = buildNodeServiceEnvironment({
+      env: { HOME: "/Users/user" },
+      platform: "darwin",
+    });
+    expect(env.NODE_DISABLE_COMPILE_CACHE).toBe("1");
+    expect(env.NODE_COMPILE_CACHE).toBeUndefined();
+  });
+
+  it("sets NODE_DISABLE_COMPILE_CACHE=1 for Darwin node services even when NODE_COMPILE_CACHE is set in the source env", () => {
+    const env = buildNodeServiceEnvironment({
+      env: { HOME: "/Users/user", NODE_COMPILE_CACHE: "/tmp/node-cache" },
+      platform: "darwin",
+    });
+    expect(env.NODE_DISABLE_COMPILE_CACHE).toBe("1");
+    expect(env.NODE_COMPILE_CACHE).toBeUndefined();
+  });
+
+  it("does not add NODE_DISABLE_COMPILE_CACHE for Linux node services", () => {
+    const env = buildNodeServiceEnvironment({
+      env: { HOME: "/home/user" },
+      platform: "linux",
+    });
+    expect(env.NODE_DISABLE_COMPILE_CACHE).toBeUndefined();
+  });
+
+  it("does not add NODE_DISABLE_COMPILE_CACHE for Windows node services", () => {
+    const env = buildNodeServiceEnvironment({
+      env: { HOME: "C:\\Users\\user" },
+      platform: "win32",
+    });
+    expect(env.NODE_DISABLE_COMPILE_CACHE).toBeUndefined();
+  });
+});
