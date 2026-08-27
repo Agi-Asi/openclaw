@@ -69,7 +69,19 @@ function errorMessage(error: unknown): string {
 
 export async function loadModelProvidersData(
   client: GatewayBrowserClient,
-  opts: { agentId: string; refresh?: boolean; signal?: AbortSignal },
+  opts: {
+    agentId: string;
+    refresh?: boolean;
+    signal?: AbortSignal;
+    /**
+     * Called when supplemental data (provider quota and session cost) finishes
+     * loading in the background. Receives a partial update to merge into the
+     * existing page state. Fixes #130111: the core provider controls are now
+     * usable as soon as auth/catalog/config resolve; quota and cost update
+     * independently without gating the entire page.
+     */
+    onSupplementalLoad?: (patch: Pick<ModelProvidersData, "providerUsage" | "costByProvider">) => void;
+  },
 ): Promise<ModelProvidersData> {
   const request = <T>(method: string, params?: unknown): Promise<T> =>
     opts?.signal
@@ -96,27 +108,49 @@ export async function loadModelProvidersData(
       (error: unknown) => ({ ok: false as const, error }),
     ),
   );
-  const [authStatus, models, catalogResult, config, providerUsageFetch, costByProvider] =
-    await Promise.all([
-      loadModelAuthStatus(client, opts).then(
-        (result) => ({ ok: true as const, result }),
-        (error: unknown) => ({ ok: false as const, error }),
-      ),
-      modelsLoad,
-      catalogRefresh,
-      request<ConfigSnapshot>("config.get", {})
-        .then((snapshot) => resolveEditableSnapshotConfig(snapshot))
-        .catch(() => null),
-      requestProviderUsage(client, opts.signal ? { signal: opts.signal } : undefined),
-      requestSessionUsage(client, {
-        startDate: localDate(MODEL_PROVIDERS_COST_DAYS - 1),
-        endDate: localDate(0),
-        scope: "family",
-        timeZone: "local",
-      })
-        .then((result) => result?.aggregates?.byProvider ?? null)
-        .catch(() => null),
-    ]);
+
+  // Load supplemental (quota + cost) independently so they do not gate the
+  // core provider controls. Start both requests immediately so they race in
+  // parallel while the core await below runs.
+  const providerUsagePromise = requestProviderUsage(
+    client,
+    opts.signal ? { signal: opts.signal } : undefined,
+  );
+  const costByProviderPromise = requestSessionUsage(client, {
+    startDate: localDate(MODEL_PROVIDERS_COST_DAYS - 1),
+    endDate: localDate(0),
+    scope: "family",
+    timeZone: "local",
+  })
+    .then((result) => result?.aggregates?.byProvider ?? null)
+    .catch(() => null);
+
+  const [authStatus, models, catalogResult, config] = await Promise.all([
+    loadModelAuthStatus(client, opts).then(
+      (result) => ({ ok: true as const, result }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+    modelsLoad,
+    catalogRefresh,
+    request<ConfigSnapshot>("config.get", {})
+      .then((snapshot) => resolveEditableSnapshotConfig(snapshot))
+      .catch(() => null),
+  ]);
+
+  // Fire-and-forget the supplemental load; notify the caller when it settles.
+  if (opts.onSupplementalLoad) {
+    const notify = opts.onSupplementalLoad;
+    void Promise.all([providerUsagePromise, costByProviderPromise]).then(
+      ([providerUsage, costByProvider]) => {
+        notify({ providerUsage, costByProvider });
+      },
+      () => {
+        // Individual requests already catch their own errors; this path only
+        // fires if an uncaught rejection slips through — swallow it here.
+      },
+    );
+  }
+
   return {
     authStatus:
       authStatus.ok && Array.isArray(authStatus.result?.providers) ? authStatus.result : null,
@@ -128,8 +162,9 @@ export async function loadModelProvidersData(
         ? errorMessage(models.error)
         : null,
     config,
-    providerUsage: providerUsageFetch,
-    costByProvider,
+    // Supplemental data is null on the initial render; it arrives via onSupplementalLoad.
+    providerUsage: null,
+    costByProvider: null,
     updatedAt: Date.now(),
     // Auth status is the primary provider list; its failure is the only one
     // worth surfacing as a page-level error.
