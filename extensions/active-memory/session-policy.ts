@@ -221,6 +221,10 @@ function isEligibleInteractiveSession(ctx: {
   sessionKey?: string;
   sessionId?: string;
   messageProvider?: string;
+  // `channel` is the canonical hook-context field set by buildAgentHookContextChannelFields;
+  // for Codex-backed Dashboard sessions the Codex attempt context forwards messageChannel
+  // but may leave messageProvider unset, so the check must also consider channel. Fixes #130051.
+  channel?: string;
   channelId?: string;
 }): boolean {
   if (ctx.trigger !== "user") {
@@ -242,7 +246,7 @@ function isEligibleInteractiveSession(ctx: {
   if (!ctx.sessionKey && !ctx.sessionId) {
     return false;
   }
-  const provider = (ctx.messageProvider ?? "").trim().toLowerCase();
+  const provider = (ctx.messageProvider ?? ctx.channel ?? "").trim().toLowerCase();
   if (provider === "webchat") {
     return true;
   }
@@ -252,6 +256,8 @@ function isEligibleInteractiveSession(ctx: {
 function resolveChatType(ctx: {
   sessionKey?: string;
   messageProvider?: string;
+  // Also consider the canonical `channel` hook-context field for Codex Dashboard sessions.
+  channel?: string;
   channelId?: string;
   mainKey?: string;
 }): ActiveMemoryChatType | undefined {
@@ -278,14 +284,14 @@ function resolveChatType(ctx: {
       agentSessionParts[0] === "agent" &&
       (agentSessionParts[2] === mainKey || agentSessionParts[2] === "main")
     ) {
-      const provider = (ctx.messageProvider ?? "").trim().toLowerCase();
+      const provider = (ctx.messageProvider ?? ctx.channel ?? "").trim().toLowerCase();
       const channelId = (ctx.channelId ?? "").trim();
       if (provider && provider !== "webchat" && channelId) {
         return "direct";
       }
     }
   }
-  const provider = (ctx.messageProvider ?? "").trim().toLowerCase();
+  const provider = (ctx.messageProvider ?? ctx.channel ?? "").trim().toLowerCase();
   if (provider === "webchat") {
     return "direct";
   }
@@ -297,6 +303,7 @@ function isAllowedChatType(
   ctx: {
     sessionKey?: string;
     messageProvider?: string;
+    channel?: string;
     channelId?: string;
     mainKey?: string;
   },
@@ -311,6 +318,7 @@ function isAllowedChatType(
 function isPrivateRecallDestination(ctx: {
   sessionKey?: string;
   messageProvider?: string;
+  channel?: string;
   channelId?: string;
   mainKey?: string;
 }): boolean {
