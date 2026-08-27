@@ -282,7 +282,16 @@ export function createFeishuMessageReceiveHandler({
           return null;
         }
         const rootId = event.message.root_id?.trim();
-        const threadKey = rootId ? `thread:${rootId}` : "chat";
+        const threadId = event.message.thread_id?.trim();
+        // When root_id is present it is the canonical topic anchor.
+        // When root_id is absent but thread_id is present, use thread_id so
+        // that distinct topic threads with no root_id do not share one bucket
+        // (fixes #130028: distinct omt-topic-* threads were aliased to "chat").
+        const threadKey = rootId
+          ? `thread:${rootId}`
+          : threadId
+            ? `thread:${threadId}`
+            : "chat";
         return `feishu:${accountId}:${chatId}:${threadKey}:${senderId}`;
       },
       shouldDebounce: ({ event }) => {
