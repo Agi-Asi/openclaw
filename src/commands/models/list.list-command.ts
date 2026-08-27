@@ -77,7 +77,7 @@ export async function modelsListCommand(
   })();
   const humanReadable = !opts.json && !opts.plain;
   const [
-    { loadAuthProfileStoreWithoutExternalProfiles, ensureAuthProfileStore },
+    { loadAuthProfileStoreWithoutExternalProfiles },
     { resolveAgentWorkspaceDir },
     { resolveDefaultAgentWorkspaceDir },
   ] = await Promise.all([
@@ -124,29 +124,6 @@ export async function modelsListCommand(
   const authStore = inheritedAuthDir
     ? loadAuthProfileStoreWithoutExternalProfiles(agentDir, { inheritedAuthDir })
     : loadAuthProfileStoreWithoutExternalProfiles(agentDir);
-  // Load a store that includes the anthropic:claude-cli profile so its OAuth
-  // credential can be found during auth evaluation.  Without this, a model
-  // configured with agentRuntime.id: "claude-cli" reports available: null
-  // because loadAuthProfileStoreWithoutExternalProfiles strips external-CLI
-  // profile metadata and the evaluator never sees the credential.  Fixes #130673.
-  const { CLAUDE_CLI_PROFILE_ID } = await import("../../agents/auth-profiles/constants.js");
-  const claudeCliStore = ensureAuthProfileStore(agentDir, {
-    allowKeychainPrompt: false,
-    externalCliProfileIds: [CLAUDE_CLI_PROFILE_ID],
-    ...(inheritedAuthDir ? { inheritedAuthDir } : {}),
-  });
-  // If the claude-cli OAuth profile has usable material, synthesize a
-  // preparedRuntimeAuthModes entry for "anthropic" so the evaluator can return
-  // availability: true instead of null for anthropic models routed through it.
-  const claudeCliCredential = claudeCliStore.profiles[CLAUDE_CLI_PROFILE_ID];
-  const claudeCliHasUsableOAuth =
-    claudeCliCredential?.type === "oauth" &&
-    claudeCliCredential.access &&
-    claudeCliCredential.refresh &&
-    claudeCliCredential.expires > Date.now();
-  const preparedRuntimeAuthModes = claudeCliHasUsableOAuth
-    ? ({ anthropic: "oauth" as const })
-    : undefined;
   const authIndex = createModelListAuthIndex({
     cfg,
     authStore,
@@ -156,7 +133,6 @@ export async function modelsListCommand(
     // Default output can append authenticated catalog rows beyond the configured
     // default, so keep the nonprompting OpenAI CLI overlay available in every view.
     externalCliProviderIds: ["openai"],
-    ...(preparedRuntimeAuthModes ? { preparedRuntimeAuthModes } : {}),
   });
 
   let modelRegistry: ModelRegistry | undefined;

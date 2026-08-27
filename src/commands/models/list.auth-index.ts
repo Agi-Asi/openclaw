@@ -8,7 +8,6 @@ import {
 import type { createOpenAIModelRoutesResolver } from "../../agents/openai-model-routes.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
-import type { PreparedAgentCredentialModes } from "../../agents/agent-auth-credential-modes.js";
 
 export type ModelListAuthRef = ModelAuthAvailabilityRef;
 export type ModelListAuthEvaluation = ModelAuthAvailabilityEvaluation;
@@ -28,14 +27,6 @@ type CreateModelListAuthIndexParams = {
   metadataSnapshot: PluginMetadataSnapshot;
   externalCliProviderIds?: readonly string[];
   routeResolverFactory?: typeof createOpenAIModelRoutesResolver;
-  /**
-   * Pre-resolved credential modes from an external-CLI auth store snapshot
-   * (e.g. the anthropic:claude-cli profile). When present these are forwarded
-   * to createModelAuthAvailabilityResolver so models routed through an external
-   * runtime (agentRuntime.id: "claude-cli") report the correct availability
-   * instead of null. Fixes #130673.
-   */
-  preparedRuntimeAuthModes?: PreparedAgentCredentialModes;
 };
 
 function listValidatedSyntheticAuthProviderRefs(params: {
@@ -72,9 +63,6 @@ export function createModelListAuthIndex(
       listValidatedSyntheticAuthProviderRefs({
         metadataSnapshot: params.metadataSnapshot,
       }),
-    ...(params.preparedRuntimeAuthModes
-      ? { preparedRuntimeAuthModes: params.preparedRuntimeAuthModes }
-      : {}),
   });
   return {
     providerDiscoveryProviderIds: resolver.providerDiscoveryProviderIds,
