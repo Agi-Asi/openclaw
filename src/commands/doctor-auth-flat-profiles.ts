@@ -1067,6 +1067,15 @@ export async function maybeMigrateAuthProfileJsonStoresToSqlite(params: {
       const rawState = parseAuthProfileMigrationSource(
         receiptByPath.get(path.resolve(candidate.statePath)),
       );
+      // Canonicalize openai-codex:* profile IDs in the standalone state file's
+      // order/lastGood/usageStats before coercing.  The auth-store migration builds
+      // and applies the profileIdMap to the auth file, but the state file is a
+      // separate artifact that bypasses canonicalizeLegacyOpenAIAuthStore (which
+      // requires raw.profiles).  Without this, rotation bookkeeping retains legacy
+      // IDs even after credential records have been migrated to openai:*. (#130018)
+      if (openAIProfileIdMap.size > 0) {
+        canonicalizeLegacyOpenAIRotationState(rawState, openAIProfileIdMap);
+      }
       const state = coerceAuthProfileState(rawState);
       if (
         !canonicalStore &&
@@ -1710,6 +1719,36 @@ function canonicalizeLegacyOpenAIAuthStore(
   return rewrite.changed || orderChanged || usageChanged || lastGoodChanged
     ? rewrite.profileIdMap.size
     : null;
+}
+
+/**
+ * Canonicalizes legacy OpenAI Codex provider/profile references in a standalone
+ * rotation-state object (one that has order/lastGood/usageStats but no profiles).
+ *
+ * The auth-store migration builds a profileIdMap from the credential records and
+ * applies it to the store file, but a separately-persisted state file (statePath)
+ * is not passed through canonicalizeLegacyOpenAIAuthStore because that function
+ * requires raw.profiles. This helper applies the same mapping to the state fields
+ * so that rotation bookkeeping is not left referencing openai-codex:* IDs after
+ * the corresponding credentials have been migrated to openai:* IDs. Fixes #130018.
+ */
+function canonicalizeLegacyOpenAIRotationState(
+  raw: unknown,
+  profileIdMap: ReadonlyMap<string, string>,
+): boolean {
+  if (!isRecord(raw) || profileIdMap.size === 0) {
+    return false;
+  }
+  // Build a mutable copy of the map so canonicalizeOpenAIAuthOrder can extend it.
+  const mutableMap = new Map<string, string>(profileIdMap);
+  const orderChanged = canonicalizeOpenAIAuthOrder(raw, mutableMap);
+  const usageChanged = isRecord(raw.usageStats)
+    ? renameMappedProfileIdKeys(raw.usageStats, mutableMap)
+    : false;
+  const lastGoodChanged = isRecord(raw.lastGood)
+    ? canonicalizeOpenAILastGood(raw.lastGood, mutableMap)
+    : false;
+  return orderChanged || usageChanged || lastGoodChanged;
 }
 
 function recoverArchivedOpenAICodexAuthProfileIdMap(params: {
