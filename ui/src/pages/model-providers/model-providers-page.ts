@@ -92,6 +92,16 @@ export class ModelProvidersPage extends OpenClawLightDomElement {
         agentId,
         ...(force ? { refresh: true } : {}),
         signal,
+        // Merge supplemental data (quota, cost) once it arrives so the core
+        // provider controls render without waiting for slow supplemental sources.
+        // Fixes #130111.
+        onSupplementalLoad: (patch) => {
+          if (this.data && this.dataClient === client) {
+            this.data = { ...this.data, ...patch };
+            this.refreshPolicy.markProviderUsage(patch.providerUsage, this.data.updatedAt, this.gateway.epoch);
+            this.requestUpdate();
+          }
+        },
       }).then((data) => ({ client, data }));
     },
     onComplete: ({ client, data }) => {
