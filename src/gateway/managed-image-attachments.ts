@@ -110,7 +110,10 @@ type ManagedImageAttachmentLimitsConfig = Partial<
   Pick<ManagedImageAttachmentLimits, "maxBytes" | "maxWidth" | "maxHeight" | "maxPixels">
 >;
 
-type ManagedMediaKind = Extract<MediaKind, "image" | "audio" | "video">;
+// "document" is included so that structured file attachments sent through the
+// message tool (e.g. text/csv, application/pdf) are saved and served as
+// downloadable artifacts rather than silently dropped. Fixes #129898.
+type ManagedMediaKind = Extract<MediaKind, "image" | "audio" | "video" | "document">;
 
 type ParsedMediaDataUrl =
   | { kind: "not-data-url" }
@@ -621,7 +624,12 @@ function parseMediaDataUrl(
   }
 
   const mediaKind = mediaKindFromMime(contentType);
-  if (mediaKind !== "image" && mediaKind !== "audio" && mediaKind !== "video") {
+  if (
+    mediaKind !== "image" &&
+    mediaKind !== "audio" &&
+    mediaKind !== "video" &&
+    mediaKind !== "document"
+  ) {
     return { kind: "unsupported-data-url" };
   }
 
@@ -818,7 +826,9 @@ function resolveManagedSessionOwnerAgentId(
 
 function resolveManagedRecordKind(record: ManagedImageRecord): ManagedMediaKind | null {
   const kind = mediaKindFromMime(record.original.contentType);
-  return kind === "image" || kind === "audio" || kind === "video" ? kind : null;
+  return kind === "image" || kind === "audio" || kind === "video" || kind === "document"
+    ? kind
+    : null;
 }
 
 function buildManagedMediaBlock(
@@ -1437,13 +1447,18 @@ export async function createManagedOutgoingMediaBlocks(params: {
         continue;
       }
       const mediaKind = mediaKindFromMime(savedOriginalContentType);
-      if (mediaKind !== "image" && mediaKind !== "audio" && mediaKind !== "video") {
+      if (
+        mediaKind !== "image" &&
+        mediaKind !== "audio" &&
+        mediaKind !== "video" &&
+        mediaKind !== "document"
+      ) {
         await fs.rm(savedOriginal.path, { force: true }).catch(() => {});
         savedOriginalPath = null;
         continue;
       }
       if (localMediaPath && mediaKind !== "image" && params.allowLocalNonImage !== true) {
-        throw new Error("Local audio/video media requires an explicitly trusted reply payload");
+        throw new Error("Local audio/video/document media requires an explicitly trusted reply payload");
       }
       const maxBytes = maxBytesForManagedMediaKind(mediaKind, limits);
       if (savedOriginal.size > maxBytes) {
