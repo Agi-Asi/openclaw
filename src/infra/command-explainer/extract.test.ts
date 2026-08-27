@@ -621,6 +621,18 @@ describe("command explainer tree-sitter runtime", () => {
     expect(typeof span?.endIndex).toBe("number");
   });
 
+  it("returns a syntax-error risk instead of overflowing the call stack on deeply nested command substitutions", async () => {
+    // Reproduce the RangeError reported in #129827: ~2000 nested $() levels
+    // overflow the JS call stack even though the source is well under 128 KiB.
+    const n = 2000;
+    const cmd = "$( ".repeat(n) + "echo hi" + " )".repeat(n);
+    // Must not throw; must return a marked-error explanation instead.
+    const explanation = await explainShellCommand(cmd);
+    expect(explanation.ok).toBe(false);
+    const hasSyntaxError = explanation.risks.some((r) => r.kind === "syntax-error");
+    expect(hasSyntaxError).toBe(true);
+  });
+
   it("parses and extracts a repeated approval-sized corpus without parser state leakage", async () => {
     const corpus = [
       'ls | grep "stuff" | python -c \'print("hi")\'',
