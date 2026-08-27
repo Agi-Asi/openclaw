@@ -66,7 +66,13 @@ describe("lazy locale registry", () => {
         async (locale) => [locale, await loadLazyLocaleTranslation(locale)] as const,
       ),
     );
-    for (const [locale, catalog] of catalogs) {
+    // A newly-registered locale has no .tm.jsonl yet (it's generated post-merge
+    // by control-ui-locale-refresh). The plugin returns an empty catalog for
+    // those so source-PR CI can pass. Skip the content assertion for empties
+    // but still verify that the registry can resolve the locale without
+    // throwing. Fixes #130070.
+    const generatedCatalogs = catalogs.filter(([, catalog]) => catalog?.common !== undefined);
+    for (const [locale, catalog] of generatedCatalogs) {
       expect(catalog?.common, locale).toHaveProperty("health");
     }
     const byLocale = Object.fromEntries(catalogs);
