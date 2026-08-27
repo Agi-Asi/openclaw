@@ -63,6 +63,15 @@ function normalizeLegacyTaskRow(row: Record<string, unknown>): SqliteBindRow {
   const executorAgentId = requesterAgentId ? childAgentId || persistedAgentId : persistedAgentId;
   const deliveryStatus =
     row.delivery_status === "not-requested" ? "not_applicable" : row.delivery_status;
+  // A cron task that reached `reconciling` before the legacy runtime shut down
+  // has no surviving runtime to finish the reconciliation after restart.
+  // Carry it forward as explicit historical evidence rather than a live pending
+  // row that pressure / readiness checks will treat as active forever.
+  // Fixes #130017.
+  const isCronReconciling = runtime === "cron" && legacyStringValue(row.status) === "reconciling";
+  const settledStatus = isCronReconciling ? "lost" : row.status;
+  const settledDeliveryStatus = isCronReconciling ? "not_applicable" : deliveryStatus;
+  const settledNotifyPolicy = isCronReconciling ? "silent" : row.notify_policy;
   return {
     task_id: taskId,
     runtime,
@@ -79,9 +88,9 @@ function normalizeLegacyTaskRow(row: Record<string, unknown>): SqliteBindRow {
     run_id: legacyBindValue(row.run_id),
     label: legacyBindValue(row.label),
     task: legacyBindValue(row.task ?? ""),
-    status: legacyBindValue(row.status ?? ""),
-    delivery_status: legacyBindValue(deliveryStatus ?? ""),
-    notify_policy: legacyBindValue(row.notify_policy ?? ""),
+    status: legacyBindValue(settledStatus ?? ""),
+    delivery_status: legacyBindValue(settledDeliveryStatus ?? ""),
+    notify_policy: legacyBindValue(settledNotifyPolicy ?? ""),
     created_at: normalizeLegacySqliteInteger(row.created_at as number | bigint | null) ?? 0,
     started_at: normalizeLegacySqliteInteger(row.started_at as number | bigint | null),
     ended_at: normalizeLegacySqliteInteger(row.ended_at as number | bigint | null),
