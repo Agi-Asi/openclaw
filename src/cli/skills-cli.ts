@@ -14,7 +14,7 @@ import {
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../agents/agent-scope.js";
-import { getRuntimeConfig } from "../config/config.js";
+import { getRuntimeConfig, readBestEffortConfig } from "../config/config.js";
 import { resolveGatewayPort } from "../config/paths.js";
 import { CLAWHUB_TRUST_ERROR_CODE } from "../infra/clawhub-install-trust.js";
 import {
@@ -201,7 +201,24 @@ function resolveAgentOption(
 async function loadSkillsStatusReport(
   options?: ResolveSkillsWorkspaceOptions,
 ): Promise<SkillStatusReport> {
-  const resolved = resolveSkillsWorkspace({ ...options, skipPluginValidation: true });
+  // Browse commands (skills, skills check, skills info, skills list) have
+  // configGuard: "skip" in the command catalog so startup validation is bypassed,
+  // but resolveSkillsWorkspace() still called getRuntimeConfig() which re-throws
+  // on the same invalid config key. Use readBestEffortConfig() here with
+  // observe:false so read-only browse commands never persist config-health state
+  // as a side effect. This lets users inspect skill metadata even when their
+  // config contains an unrelated invalid key. Fixes #130569.
+  const config = await readBestEffortConfig({ observe: false, skipPluginValidation: true });
+  const explicitAgentId = normalizeExplicitAgentId(options?.agentId);
+  const inferredAgentId = explicitAgentId
+    ? undefined
+    : resolveAgentIdByWorkspacePath(config, options?.cwd ?? process.cwd());
+  const agentId = explicitAgentId
+    ? resolveConfiguredAgentId(config, explicitAgentId)
+    : (inferredAgentId ??
+      resolveDefaultAgentId(config, { surface: "the skills command", hint: "Pass --agent <id>." }));
+  const workspaceDir = resolveAgentWorkspaceDir(config, agentId);
+  const resolved = { config, agentId, workspaceDir };
   try {
     return await callSkillsGateway<SkillStatusReport>({
       config: resolved.config,
