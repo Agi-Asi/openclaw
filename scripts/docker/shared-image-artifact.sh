@@ -103,10 +103,33 @@ gh_api_get_with_retry() {
   for attempt in 1 2 3; do
     : > "$response_file"
     : > "$error_file"
-    if gh api --method GET "$endpoint" > "$response_file" 2> "$error_file"; then
+    local gh_exit_code
+    # gh api has no built-in request deadline; a stalled TCP connection (headers
+    # never sent) would hang indefinitely and burn the entire job-level timeout
+    # before the retry loop below could engage. Wrap with `timeout` so a hung
+    # request is killed after 60 s and the error path runs normally. Fixes #130570.
+    timeout 60 gh api --method GET "$endpoint" > "$response_file" 2> "$error_file"
+    gh_exit_code=$?
+    if [[ "$gh_exit_code" -eq 0 ]]; then
       cat "$response_file"
       rm -rf -- "$retry_dir"
       return 0
+    fi
+
+    # timeout(1) exits 124 when it kills the child; treat that as a transient
+    # network stall so the retry loop engages instead of failing immediately.
+    if [[ "$gh_exit_code" -eq 124 ]]; then
+      printf 'warning: %s GitHub API GET timed out (60s) on attempt %d/3' \
+        "$label" "$attempt" >&2
+      if [[ "$attempt" -lt 3 ]]; then
+        retry_delay=$((attempt * 2))
+        printf '; retrying in %ss.\n' "$retry_delay" >&2
+        sleep "$retry_delay"
+        continue
+      fi
+      printf '.\n' >&2
+      rm -rf -- "$retry_dir"
+      fail "$label GitHub API GET timed out after $attempt attempt(s)."
     fi
 
     if [[ "$attempt" -lt 3 ]] &&
