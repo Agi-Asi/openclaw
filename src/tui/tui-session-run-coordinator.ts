@@ -320,8 +320,15 @@ export class TuiSessionRunCoordinator {
           result.loaded &&
           result.runOutcome.state === "active" &&
           result.runOutcome.runId === runId;
+        const historyStillActiveUnidentified =
+          result.loaded && result.runOutcome.state === "active-unidentified";
 
-        if (historyOwned && !restoredInFlight && (result.loaded || !gapRecovery)) {
+        if (
+          historyOwned &&
+          !restoredInFlight &&
+          !historyStillActiveUnidentified &&
+          (result.loaded || !gapRecovery)
+        ) {
           this.context.finalizeHistoryOwnedRun({ runId, result, previouslyDisplayed });
         }
         if (deferred && (!result.loaded || historyOwned || restoredInFlight)) {

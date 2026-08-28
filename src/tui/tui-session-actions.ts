@@ -473,7 +473,9 @@ export function createSessionActions(context: SessionActionContext) {
         messages?: unknown[];
         sessionId?: string;
         sessionInfo?: SessionInfoEntry &
-          Partial<Pick<SessionEntry, "abortedLastRun" | "lastRunError" | "status">>;
+          Partial<Pick<SessionEntry, "abortedLastRun" | "lastRunError" | "status">> & {
+            hasActiveRun?: boolean;
+          };
         defaults?: SessionInfoDefaults;
         thinkingLevel?: string;
         fastMode?: FastMode;
@@ -623,6 +625,7 @@ export function createSessionActions(context: SessionActionContext) {
       void rememberSessionKey?.(state.currentSessionKey);
       tui.requestRender(true);
       const status = sessionInfo?.status;
+      const hasActiveRun = sessionInfo?.hasActiveRun === true || status === "running";
       const runOutcome = inFlightRunId
         ? ({ state: "active", runId: inFlightRunId } as const)
         : status === "failed" || status === "timeout"
@@ -632,7 +635,9 @@ export function createSessionActions(context: SessionActionContext) {
             } as const)
           : status === "killed" || sessionInfo?.abortedLastRun === true
             ? ({ state: "interrupted" } as const)
-            : ({ state: "completed" } as const);
+            : hasActiveRun
+              ? ({ state: "active-unidentified" } as const)
+              : ({ state: "completed" } as const);
       return { loaded: true, runOutcome };
     } catch (err) {
       if (isCurrentLoad() && !isAbortError(err)) {

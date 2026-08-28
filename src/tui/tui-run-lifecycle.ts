@@ -10,11 +10,12 @@ import {
   getPendingSubmitAcceptedRunId,
   hasPendingSubmit,
 } from "./tui-submit-state.js";
-import type {
-  AgentEvent,
-  SessionChangedEvent,
-  TuiHistoryRunOutcome,
-  TuiStateAccess,
+import {
+  isTerminalTuiHistoryRunOutcome,
+  type AgentEvent,
+  type SessionChangedEvent,
+  type TuiHistoryRunOutcome,
+  type TuiStateAccess,
 } from "./tui-types.js";
 
 const DEFAULT_STREAMING_WATCHDOG_MS = 30_000;
@@ -277,7 +278,7 @@ export function createTuiRunLifecycle(context: TuiRunLifecycleContext) {
       clearStaleStreamingIfNoTrackedRunRemains();
       return;
     }
-    if (runOutcome && runOutcome.state !== "active") {
+    if (runOutcome && isTerminalTuiHistoryRunOutcome(runOutcome)) {
       if (runOutcome.state === "failed") {
         runCoordinator.notePersistedRun(activeRunId);
         renderTerminalRunError({ runId: activeRunId, errorMessage: runOutcome.errorMessage });
