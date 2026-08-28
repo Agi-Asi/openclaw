@@ -222,6 +222,22 @@ describe("TuiSessionRunCoordinator", () => {
     resolveHistory?.(completedHistory);
   });
 
+  it("does not finalize a gap-recovery run when history is active but unidentified", async () => {
+    const unidentifiedHistory = {
+      loaded: true,
+      runOutcome: { state: "active-unidentified" as const },
+    };
+    const { coordinator, loadHistory, finalizeHistoryOwnedRun } = createCoordinator({
+      loadHistory: async () => unidentifiedHistory,
+    });
+
+    coordinator.queueGapHistoryReload(["run-gap"]);
+
+    await vi.waitFor(() => expect(loadHistory).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(coordinator.isHistoryReloadingRun("run-gap")).toBe(false));
+    expect(finalizeHistoryOwnedRun).not.toHaveBeenCalled();
+  });
+
   it("does not finalize a gap-recovery run when authoritative history fails", async () => {
     const { coordinator, loadHistory, finalizeHistoryOwnedRun } = createCoordinator({
       loadHistory: async () => {

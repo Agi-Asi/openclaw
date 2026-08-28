@@ -2966,6 +2966,33 @@ describe("tui session actions", () => {
   });
 
   it.each([
+    {
+      name: "hasActiveRun without an in-flight run id",
+      sessionInfo: { hasActiveRun: true, status: "running" },
+    },
+    {
+      name: "running status without hasActiveRun",
+      sessionInfo: { status: "running" },
+    },
+  ])("keeps liveness-only history ($name) nonterminal", async ({ sessionInfo }) => {
+    const { loadHistory } = createTestSessionActions({
+      client: makeTuiBackend({
+        listSessions: vi.fn(),
+        loadHistory: vi.fn().mockResolvedValue({
+          sessionId: "session-main",
+          sessionInfo,
+          messages: [],
+        }),
+      }),
+    });
+
+    await expect(loadHistory()).resolves.toEqual({
+      loaded: true,
+      runOutcome: { state: "active-unidentified" },
+    });
+  });
+
+  it.each([
     { verboseLevel: "off", showsTool: false, showsOutput: false },
     { verboseLevel: "on", showsTool: true, showsOutput: false },
     { verboseLevel: "full", showsTool: true, showsOutput: true },

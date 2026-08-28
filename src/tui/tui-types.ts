@@ -35,8 +35,13 @@ export type TuiResult = {
 
 export type TuiHistoryRunOutcome =
   | { state: "active"; runId: string }
+  | { state: "active-unidentified" }
   | { state: "completed" | "interrupted" }
   | { state: "failed"; errorMessage: string };
+
+export function isTerminalTuiHistoryRunOutcome(outcome: TuiHistoryRunOutcome): boolean {
+  return outcome.state === "completed" || outcome.state === "failed" || outcome.state === "interrupted";
+}
 
 export type TuiHistoryLoadResult =
   | { loaded: true; runOutcome: TuiHistoryRunOutcome }
