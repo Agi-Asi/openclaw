@@ -8,7 +8,11 @@ import {
   MIGRATION_REASON_MISSING_SOURCE_OR_TARGET,
 } from "openclaw/plugin-sdk/migration";
 import type { MigrationItem } from "openclaw/plugin-sdk/plugin-entry";
-import { appendRegularFile, pathExists } from "openclaw/plugin-sdk/security-runtime";
+import {
+  appendRegularFile,
+  pathExists,
+  readRegularFile,
+} from "openclaw/plugin-sdk/security-runtime";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 
 export function resolveHomePath(input: string): string {
@@ -83,13 +87,14 @@ export async function appendItem(item: MigrationItem): Promise<MigrationItem> {
       typeof item.details?.sourceLabel === "string"
         ? item.details.sourceLabel
         : path.basename(item.source);
-    const header = `\n\n<!-- Imported from Claude: ${label} -->\n\n`;
     const body = content.trimEnd();
     if (!body) {
       return markMigrationItemSkipped(item, "source file is empty");
     }
-    const importBlock = `${header}${body}\n`;
-    const existing = await fs.readFile(item.target, "utf8").catch(() => "");
+    const importBlock = `\n\n<!-- Imported from Claude: ${label} -->\n\n${body}\n`;
+    const existing = (await pathExists(item.target))
+      ? (await readRegularFile({ filePath: item.target })).buffer.toString("utf8")
+      : "";
     if (existing.includes(importBlock)) {
       return markMigrationItemSkipped(item, "already imported from Claude");
     }
